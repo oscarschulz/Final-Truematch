@@ -1,0 +1,72 @@
+{
+  "jael2319@gmail.com": {
+    "id": "2YyrovabCC6NV9yNImxR",
+    "email": "jael2319@gmail.com",
+    "name": "Jael",
+    "age": "",
+    "city": "",
+    "plan": "free",
+    "planStart": "2025-12-27T23:54:08.014Z",
+    "planEnd": null,
+    "avatarUrl": "",
+    "prefsSaved": false,
+    "emailVerified": false,
+    "planActive": true
+  },
+  "jael2319thisdoesnotexists@gmail.com": {
+    "id": "w8Ny02CHAqBpTtPGwsmY",
+    "email": "jael2319thisdoesnotexists@gmail.com",
+    "name": "Jael",
+    "age": "",
+    "city": "",
+    "plan": "free",
+    "planStart": "2025-12-27T23:55:06.517Z",
+    "planEnd": null,
+    "avatarUrl": "",
+    "prefsSaved": false,
+    "emailVerified": true,
+    "planActive": true
+  },
+  "amirajaelthisdoesnotexist@gmail.com": {
+    "id": "7d6nnHgzEZKaPpKqF1Am",
+    "email": "amirajaelthisdoesnotexist@gmail.com",
+    "name": "amira",
+    "age": "",
+    "city": "",
+    "plan": "free",
+    "planStart": "2025-12-28T01:33:51.861Z",
+    "planEnd": null,
+    "avatarUrl": "",
+    "prefsSaved": true,
+    "emailVerified": true,
+    "planActive": true
+  },
+  "aries.aquino1109thisdoesnotexist9283742@gmail.com": {
+    "id": "47Hn1DCIHg9VSSaYNtOl",
+    "email": "aries.aquino1109thisdoesnotexist9283742@gmail.com",
+    "name": "Aries Santos Aquino",
+    "age": 29,
+    "city": "San Miguel",
+    "plan": "tier1",
+    "planStart": "2025-12-27T11:19:00.477Z",
+    "planEnd": "2026-01-26T11:19:00.477Z",
+    "avatarUrl": "",
+    "prefsSaved": true,
+    "emailVerified": true,
+    "planActive": true
+  },
+  "aries.aquino1109thisdoesnotexist92837421@gmail.com": {
+    "id": "VMYiOAdv50SGHa36PJDN",
+    "email": "aries.aquino1109thisdoesnotexist92837421@gmail.com",
+    "name": "Amira",
+    "age": "",
+    "city": "",
+    "plan": "free",
+    "planStart": "2025-12-28T02:23:28.184Z",
+    "planEnd": null,
+    "avatarUrl": "",
+    "prefsSaved": false,
+    "emailVerified": false,
+    "planActive": true
+  }
+}
