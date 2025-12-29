@@ -95,6 +95,8 @@ const DB = {
   shortlistState: {},
   datesState: {},
   approvedState: {},
+  messages: {},
+  messageUsage: {},
   emailVerify: {}
 };
 const SERVER_SWIPE_COUNTS = {}; 
@@ -183,6 +185,54 @@ function saveSwipesStore() {
 // ---------------- Plan rules & date helpers ----------------
 // Centralized in its own module so you can change plan logic in one place.
 const { PLAN_RULES, DAY_MS, todayKey } = require('./planRules');
+
+// Normalize plan keys for consistent backend handling (mirrors frontend tiers).
+function normalizePlanKey(rawPlan) {
+  if (!rawPlan) return 'free';
+  const p = String(rawPlan).toLowerCase().replace(/\s+/g, '');
+  if (p.includes('plus') || p.includes('tier1')) return 'tier1';
+  if (p.includes('elite') || p.includes('tier2')) return 'tier2';
+  if (p.includes('concierge') || p.includes('tier3')) return 'tier3';
+  if (p.includes('free')) return 'free';
+  return PLAN_RULES[rawPlan] ? rawPlan : 'free';
+}
+
+// Messaging limits: only free plan has a strict daily cap; paid tiers are unlimited.
+function getMessagesDailyLimit(plan) {
+  const key = normalizePlanKey(plan);
+  if (key === 'free') return 20;
+  return null;
+}
+
+// Per-user daily usage helper for messages; resets counters when the day changes.
+function getOrInitMessageUsage(email, plan) {
+  const today = todayKey();
+  if (!email) {
+    return {
+      dayKey: today,
+      sentToday: 0,
+      limit: getMessagesDailyLimit(plan)
+    };
+  }
+
+  if (!DB.messageUsage[email]) {
+    DB.messageUsage[email] = {
+      dayKey: today,
+      sentToday: 0,
+      limit: getMessagesDailyLimit(plan)
+    };
+    return DB.messageUsage[email];
+  }
+
+  const usage = DB.messageUsage[email];
+  if (!usage.dayKey || usage.dayKey !== today) {
+    usage.dayKey = today;
+    usage.sentToday = 0;
+  }
+  usage.limit = getMessagesDailyLimit(plan);
+  return usage;
+}
+
 
 // 🔹 SPECIAL DEMO ACCOUNT (global constants)
 const DEMO_EMAIL = 'aries.aquino@gmail.com';
@@ -1786,6 +1836,163 @@ app.get('/api/dates', async (_req, res) => {
     console.error('dates error:', err);
     return res.status(500).json({ ok: false, message: 'server error' });
   }
+});
+
+// ---------------- Messages (per-match chat + daily limits) -------------------
+// NOTE: This is an in-memory demo implementation. In production you would persist
+// messages in Firestore or another database, but the interface can stay the same.
+
+// List all message threads for the logged-in user, including usage info.
+app.get('/api/messages', (req, res) => {
+  const email = DB.user && DB.user.email;
+  if (!email) {
+    return res.status(401).json({ ok: false, message: 'not logged in' });
+  }
+
+  const user = (DB.users && DB.users[email]) || DB.user || {};
+  const plan = user.plan || null;
+  const usage = getOrInitMessageUsage(email, plan);
+
+  const byPeer = DB.messages[email] || {};
+  const threads = Object.keys(byPeer).map((peerEmail) => {
+    const list = byPeer[peerEmail] || [];
+    const last = list.length ? list[list.length - 1] : null;
+    return {
+      peerEmail,
+      count: list.length,
+      lastMessage: last
+        ? {
+            id: last.id,
+            from: last.from,
+            to: last.to,
+            text: last.text,
+            sentAt: last.sentAt
+          }
+        : null
+    };
+  });
+
+  return res.json({
+    ok: true,
+    plan: normalizePlanKey(plan),
+    usage: {
+      dayKey: usage.dayKey,
+      sentToday: usage.sentToday || 0,
+      limit: usage.limit
+    },
+    threads
+  });
+});
+
+// Get the full conversation with a specific peer.
+app.get('/api/messages/thread/:peer', (req, res) => {
+  const email = DB.user && DB.user.email;
+  if (!email) {
+    return res.status(401).json({ ok: false, message: 'not logged in' });
+  }
+
+  const peerRaw = req.params.peer || '';
+  const peerEmail = String(peerRaw).trim().toLowerCase();
+  if (!peerEmail) {
+    return res.status(400).json({ ok: false, message: 'peer required' });
+  }
+
+  const user = (DB.users && DB.users[email]) || DB.user || {};
+  const plan = user.plan || null;
+  const usage = getOrInitMessageUsage(email, plan);
+
+  const byPeer = DB.messages[email] || {};
+  const list = byPeer[peerEmail] || [];
+
+  return res.json({
+    ok: true,
+    plan: normalizePlanKey(plan),
+    usage: {
+      dayKey: usage.dayKey,
+      sentToday: usage.sentToday || 0,
+      limit: usage.limit
+    },
+    messages: list
+  });
+});
+
+// Send a message to a peer. Free plan has 20 messages/day cap; paid tiers are unlimited.
+app.post('/api/messages/send', (req, res) => {
+  const email = DB.user && DB.user.email;
+  if (!email) {
+    return res.status(401).json({ ok: false, message: 'not logged in' });
+  }
+
+  const body = req.body || {};
+  const peerRaw = body.to || body.peer || '';
+  const textRaw = body.text || body.message || '';
+
+  const peerEmail = String(peerRaw).trim().toLowerCase();
+  const text = String(textRaw).trim();
+
+  if (!peerEmail || !text) {
+    return res.status(400).json({ ok: false, message: 'to and text are required' });
+  }
+
+  // Optional guard: only allow chat with matches. Uncomment to enforce strictly:
+  // const myMatches = DB.matches[email] || [];
+  // if (!myMatches.includes(peerEmail)) {
+  //   return res.status(403).json({ ok: false, message: 'messages allowed only with matches' });
+  // }
+
+  const user = (DB.users && DB.users[email]) || DB.user || {};
+  const plan = user.plan || null;
+  const usage = getOrInitMessageUsage(email, plan);
+
+  const limit = usage.limit;
+  const used = usage.sentToday || 0;
+
+  if (limit != null && used >= limit) {
+    return res.status(403).json({
+      ok: false,
+      message: 'daily_message_limit_reached',
+      usage: {
+        dayKey: usage.dayKey,
+        sentToday: used,
+        limit
+      }
+    });
+  }
+
+  const nowIso = new Date().toISOString();
+  const msg = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    from: email.toLowerCase(),
+    to: peerEmail,
+    text,
+    sentAt: nowIso
+  };
+
+  // Store under sender
+  if (!DB.messages[email]) DB.messages[email] = {};
+  if (!Array.isArray(DB.messages[email][peerEmail])) {
+    DB.messages[email][peerEmail] = [];
+  }
+  DB.messages[email][peerEmail].push(msg);
+
+  // Store symmetric view for the recipient
+  if (!DB.messages[peerEmail]) DB.messages[peerEmail] = {};
+  if (!Array.isArray(DB.messages[peerEmail][email])) {
+    DB.messages[peerEmail][email] = [];
+  }
+  DB.messages[peerEmail][email].push(msg);
+
+  usage.sentToday = used + 1;
+
+  return res.json({
+    ok: true,
+    message: msg,
+    usage: {
+      dayKey: usage.dayKey,
+      sentToday: usage.sentToday,
+      limit
+    }
+  });
 });
 
 // ---------------- Plan selection -------------------
