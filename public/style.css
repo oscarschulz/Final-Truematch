@@ -47,8 +47,8 @@ body::before{
   background: #000000;
 }
 
-/* Containers */
-.container{ width:100%; max-width:1100px; margin:0 auto; padding:0 1.25rem; }
+/* Containers (WIDER CONTAINER) */
+.container{ width:100%; max-width:1300px; margin:0 auto; padding:0 1.5rem; }
 
 /* =========================================================================
    HEADER (FIXED, TRANSPARENT & WIDE)
@@ -144,8 +144,14 @@ body::before{
 }
 
 /* =========================================================================
-   HERO & SECTIONS (Updated for Premium UI)
+   HERO & SECTIONS (Global Section Styles - FULL SCREEN)
    ========================================================================= */
+
+section { 
+  padding: 5rem 0 3rem; 
+  min-height: 100vh; /* FULL SCREEN */
+  display: flex; flex-direction: column; justify-content: center;
+}
 
 .hero .hero-container {
   max-width: 100%; 
@@ -249,160 +255,462 @@ body::before{
 }
 
 /* =========================================================================
-   HOW IT WORKS SECTION (NEW STYLE: Active Glow, Steps, Numbers)
+   HOW IT WORKS SECTION (Active Glow, Steps, Numbers)
    ========================================================================= */
-section{ 
-  padding: 3.2rem 0; 
-  min-height: 100vh; 
-  display: flex; flex-direction: column; justify-content: center;
-}
 
 /* Updated Title: Glowing Text Only (No Box) */
 .section__title{ 
-  font-size: 2.8rem; 
+  font-size: 2.5rem; 
   font-weight: 800; 
-  margin: 0 auto 4rem; /* Centered */
+  margin: 0 auto 3rem; 
   text-align: center;
   text-transform: uppercase;
   letter-spacing: 2px;
   color: var(--text);
-  
   /* Text Glow Effect */
   text-shadow: 0 0 15px rgba(100, 233, 238, 0.5), 0 0 30px rgba(100, 233, 238, 0.3);
 }
 
-/* Steps Wrapper with Connector Line */
 .steps-wrapper {
-  display: flex;
-  justify-content: space-between;
-  gap: 4rem; /* Wide spacing */
-  position: relative;
-  padding-top: 2rem;
-  max-width: 1200px;
-  width: 100%;
+  display: flex; justify-content: space-between; gap: 4rem; 
+  position: relative; padding-top: 2rem; max-width: 1200px; width: 100%;
 }
 
-/* Connector Line (Background) */
 .steps-wrapper::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 0;
-  width: 100%;
-  height: 2px;
+  content: ''; position: absolute; top: 50%; left: 0; width: 100%; height: 2px;
   background: linear-gradient(90deg, transparent, var(--primary), transparent);
-  z-index: 0;
-  opacity: 0.3;
+  z-index: 0; opacity: 0.3;
 }
 
-/* The Step Card: Square-ish & Glowing */
 .step-card {
-  flex: 1;
-  background: rgba(255, 255, 255, 0.03); /* Glass */
-  backdrop-filter: blur(10px);
-  /* ACTIVE GLOWING BORDER IMMEDIATELY (Permanent) */
+  flex: 1; background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(10px);
   border: 1px solid var(--primary); 
   box-shadow: 0 0 20px rgba(100, 233, 238, 0.2), inset 0 0 10px rgba(100, 233, 238, 0.05); 
-  padding: 3rem 2.5rem; 
-  border-radius: 20px;
-  position: relative;
-  z-index: 1;
-  transition: transform 0.4s ease, box-shadow 0.4s ease;
-  text-align: left;
-  
-  /* Square-ish shape logic */
-  min-height: 380px; /* Taller */
+  padding: 3rem 2.5rem; border-radius: 20px;
+  position: relative; z-index: 1;
+  transition: transform 0.4s ease, box-shadow 0.4s ease; text-align: left;
+  min-height: 380px; display: flex; flex-direction: column; justify-content: center; align-items: flex-start;
+}
+
+.step-card:hover { transform: translateY(-15px); box-shadow: 0 15px 40px rgba(100, 233, 238, 0.35); }
+.step-card h3 { margin: 1rem 0 0.5rem; font-size: 1.4rem; font-weight: 700; color: var(--text); }
+.step-number {
+  font-size: 4.5rem; font-weight: 800; color: transparent;
+  -webkit-text-stroke: 1px rgba(100, 233, 238, 0.6); opacity: 0.8;
+  margin-bottom: -15px; display: block;
+}
+
+@media (max-width: 768px){
+  .steps-wrapper { flex-direction: column; gap: 2rem; }
+  .steps-wrapper::before { width: 2px; height: 100%; left: 20px; top: 0; }
+  .step-card { margin-left: 20px; min-height: auto; }
+}
+
+/* =========================================================================
+   FEATURES SECTION (BENTO GRID + ICONS - Compact Version)
+   ========================================================================= */
+.bento-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr; 
+  gap: 1.5rem; /* Reduced Gap */
+  max-width: 1000px; /* Reduced Width */
+  margin: 0 auto;
+  width: 100%;
+}
+
+.bento-card {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(10px);
+  /* ACTIVE GLOWING BORDER */
+  border: 1px solid var(--primary);
+  box-shadow: 0 0 15px rgba(100, 233, 238, 0.15), inset 0 0 10px rgba(100, 233, 238, 0.05);
+  border-radius: 20px; /* Smaller Radius */
+  padding: 2rem; /* Reduced Padding */
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  align-items: flex-start;
+  position: relative;
+  overflow: hidden;
 }
 
-/* Hover Effect: Float Higher & Intense Glow */
-.step-card:hover {
-  transform: translateY(-15px); 
-  box-shadow: 0 15px 40px rgba(100, 233, 238, 0.35);
+/* Hover Effect */
+.bento-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 15px 30px rgba(100, 233, 238, 0.25);
 }
 
-.step-card h3 {
-  margin: 1rem 0 0.5rem;
-  font-size: 1.4rem;
+/* Bento Span Modifiers */
+.bento-card.wide {
+  grid-column: span 2; 
+}
+
+.bento-card.wide .bento-content {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.bento-icon {
+  width: 54px; /* Reduced Icon Size */
+  height: 54px;
+  color: var(--primary);
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 8px rgba(100, 233, 238, 0.5));
+  margin-bottom: 1rem;
+}
+
+.bento-card.wide .bento-icon { margin-bottom: 0; }
+
+.bento-card h3 {
+  font-size: 1.3rem;
+  margin-bottom: 0.5rem;
   font-weight: 700;
   color: var(--text);
 }
 
-/* Giant Number */
-.step-number {
-  font-size: 4.5rem;
-  font-weight: 800;
-  color: transparent;
-  -webkit-text-stroke: 1px rgba(100, 233, 238, 0.6); /* Clearer Outline */
-  opacity: 0.8;
-  margin-bottom: -15px;
-  display: block;
+.bento-card p {
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 0;
 }
 
-/* How It Works Responsive */
+/* Responsive Bento */
 @media (max-width: 768px){
-  .steps-wrapper { flex-direction: column; gap: 2rem; }
-  .steps-wrapper::before { 
-    width: 2px; height: 100%; left: 20px; top: 0; /* Vertical Line */
-  }
-  .step-card { margin-left: 20px; min-height: auto; }
+  .bento-grid { grid-template-columns: 1fr; }
+  .bento-card.wide { grid-column: span 1; }
+  .bento-card.wide .bento-content { flex-direction: column; align-items: flex-start; gap: 0; }
+  .bento-card.wide .bento-icon { margin-bottom: 1rem; }
+  section { padding: 4rem 0; }
 }
 
-/* Generic .card for Features/Other Sections (Unaffected) */
-.cardgrid{ display:grid; grid-template-columns: repeat(3, 1fr); gap: 1.1rem; }
+/* =========================================================================
+   PRICING SECTION (VIP RANK COLORS - 4 COLUMNS WIDE & SPACED)
+   ========================================================================= */
+.pricing-grid {
+  display: grid;
+  /* FORCE 4 COLUMNS by default so they are in one straight row */
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3rem; /* Increased Gap to let it breathe */
+  align-items: stretch;
+  width: 100%;
+}
 
-#features .cardgrid{
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  max-width: 960px; margin: 0 auto;
+.price-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.03); /* Dark Glass */
+  backdrop-filter: blur(14px);
+  border-radius: 20px;
+  padding: 3rem 2rem; /* Increased Padding for a wider look */
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  border: 1px solid transparent; 
+  min-width: 260px; /* Ensure they don't get too skinny */
 }
-@media (max-width: 768px){
-  #features .cardgrid{ grid-template-columns: 1fr; }
-  section { min-height: auto; padding: 4rem 0; }
-}
-.card{
-  background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.10);
-  border-radius: var(--radius); padding: 1.5rem 1.5rem;
-  box-shadow: var(--shadow); backdrop-filter: blur(12px);
-}
-.card h3{ margin:.1rem 0 .5rem; font-weight: 700; }
-.muted{ color: var(--muted); }
-.tiny{ font-size:.85rem; }
 
-/* Pricing */
-.pricing{ display:grid; grid-template-columns: repeat(3, 1fr); gap: 1.1rem; align-items:stretch; }
-.price{
-  position:relative; background: rgba(0,0,0,.38); border: 1px solid rgba(255,255,255,.10);
-  border-radius: var(--radius); padding: 1.3rem 1.25rem;
-  box-shadow: var(--shadow); backdrop-filter: blur(14px);
-  display:flex; flex-direction:column;
+/* TIER COLORS & GLOWS (Active Immediately) */
+
+/* 1. FREE (Silver/White) */
+.price-card.free {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.1), inset 0 0 10px rgba(255, 255, 255, 0.05);
 }
+.price-card.free .price__tag { background: rgba(255, 255, 255, 0.1); color: #fff; border-color: rgba(255,255,255,0.3); }
+.price-card.free .price-btn { border: 1px solid rgba(255, 255, 255, 0.3); color: #fff; }
+.price-card.free:hover { transform: translateY(-5px); box-shadow: 0 10px 30px rgba(255, 255, 255, 0.25); }
+
+/* 2. PLUS (Cyan - Standard) */
+.price-card.plus {
+  border: 1px solid var(--primary);
+  box-shadow: 0 0 20px rgba(100, 233, 238, 0.25), inset 0 0 10px rgba(100, 233, 238, 0.05);
+}
+.price-card.plus .price__tag { background: rgba(100, 233, 238, 0.1); color: var(--primary); border-color: var(--primary); }
+.price-card.plus .price-btn { background: var(--primary); color: #000; border: none; }
+.price-card.plus:hover { transform: translateY(-5px); box-shadow: 0 10px 40px rgba(100, 233, 238, 0.45); }
+
+/* 3. ELITE (Purple - Premium) */
+.price-card.elite {
+  border: 1px solid #9d4edd;
+  box-shadow: 0 0 20px rgba(157, 78, 221, 0.35), inset 0 0 10px rgba(157, 78, 221, 0.1);
+}
+.price-card.elite .price__tag { background: rgba(157, 78, 221, 0.2); color: #e0aaff; border-color: #9d4edd; }
+.price-card.elite .price-btn { background: #9d4edd; color: #fff; border: none; }
+.price-card.elite:hover { transform: translateY(-5px); box-shadow: 0 10px 40px rgba(157, 78, 221, 0.55); }
+
+/* 4. CONCIERGE (Gold - Ultimate) */
+.price-card.concierge {
+  border: 1px solid #ffd700;
+  box-shadow: 0 0 25px rgba(255, 215, 0, 0.35), inset 0 0 15px rgba(255, 215, 0, 0.1);
+}
+.price-card.concierge .price__tag { background: rgba(255, 215, 0, 0.2); color: #ffe66d; border-color: #ffd700; }
+.price-card.concierge .price-btn { background: #ffd700; color: #000; border: none; font-weight: 800; }
+.price-card.concierge:hover { transform: translateY(-5px); box-shadow: 0 10px 50px rgba(255, 215, 0, 0.65); }
+
+/* Pricing Internals */
 .price__tag{
   display:inline-flex; align-items:center; gap:.5rem; padding:.25rem .55rem;
   border-radius: 999px; border: 1px solid rgba(255,255,255,.12);
-  background: rgba(255,255,255,.06); font-size:.82rem; text-transform: uppercase; font-weight: 700; align-self: flex-start;
+  font-size:.82rem; text-transform: uppercase; font-weight: 700; align-self: flex-start;
 }
-.price__value{ font-size: 2.2rem; font-weight: 800; margin:.55rem 0 .3rem; }
-.price ul{ margin:.8rem 0 1.1rem; padding-left: 1.1rem; color: var(--muted); flex:1; }
-.price li{ margin: .35rem 0; }
-.price.is-featured{ border-color: rgba(100,233,238,.35); box-shadow: 0 0 0 1px rgba(100,233,238,.20) inset, var(--shadow); }
+.price__value{ font-size: 2.5rem; font-weight: 800; margin:.8rem 0 .3rem; }
+.price__value small { font-size: 1rem; color: var(--muted); font-weight: 400; }
+.price__list{ margin: 1.5rem 0 2.5rem; padding-left: 1.1rem; color: var(--muted); flex:1; list-style-type: disc; line-height: 1.6; }
+.price__list li{ margin: .6rem 0; }
+.price-btn { width: 100%; }
 
-/* FAQ */
-.faq details{ background: rgba(0,0,0,.35); border-radius:12px; padding:1.2rem; margin-bottom:.6rem; border:1px solid rgba(255,255,255,.06); width: 100%; max-width: 800px; }
-.faq summary{ cursor:pointer; font-weight:700; font-size: 1.1rem; }
-
-/* Footer */
-.footer{ 
-  padding:2.4rem 0 2.8rem; border-top:1px solid rgba(255,255,255,.08); 
-  min-height: 50vh; display: flex; flex-direction: column; justify-content: center;
+/* Pricing Responsive Overrides */
+@media (max-width: 1200px) {
+  .pricing-grid {
+    grid-template-columns: repeat(2, 1fr); /* 2x2 Layout on Tablets/Smaller Laptops */
+    gap: 2rem;
+  }
 }
-.footer__grid{ display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
-.footer__brand{ display:flex; align-items:center; gap:.75rem; }
-.footer__brand .brand__logo{ width:24px; height:24px; }
-.footer__nav a{ color:var(--muted); text-decoration:none; margin-left:1rem; font-size:.9rem; }
-.footer__nav a:hover{ color:var(--primary); }
+
+@media (max-width: 600px) {
+  .pricing-grid {
+    grid-template-columns: 1fr; /* Stack on Mobile */
+  }
+}
+
+/* =========================================================================
+   FAQ SECTION (Updated: Always Glowing Glass Accordion)
+   ========================================================================= */
+.faq-wrapper {
+  max-width: 800px;
+  margin: 0 auto;
+  display: flex; flex-direction: column; gap: 1rem;
+}
+
+.faq-card {
+  background: rgba(255, 255, 255, 0.03);
+  /* ACTIVE GLOW AGAD */
+  border: 1px solid var(--primary);
+  box-shadow: 0 0 15px rgba(100, 233, 238, 0.15), inset 0 0 10px rgba(100, 233, 238, 0.05);
+  border-radius: 16px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+/* Hover Effect */
+.faq-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 25px rgba(100, 233, 238, 0.25), inset 0 0 15px rgba(100, 233, 238, 0.1);
+}
+
+/* Open State - Mas matingkad na glow */
+.faq-card[open] {
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 0 30px rgba(100, 233, 238, 0.3), inset 0 0 20px rgba(100, 233, 238, 0.1);
+}
+
+.faq-card summary {
+  padding: 1.5rem;
+  font-weight: 700;
+  font-size: 1.1rem;
+  cursor: pointer;
+  list-style: none; /* Hide default triangle */
+  display: flex; justify-content: space-between; align-items: center;
+  color: var(--text);
+  transition: color 0.3s ease;
+}
+
+.faq-card summary:hover { color: var(--primary); }
+
+/* Custom Plus Icon */
+.faq-icon {
+  font-size: 1.5rem;
+  font-weight: 300;
+  color: var(--primary); /* Cyan para terno */
+  text-shadow: 0 0 10px var(--primary); /* Glow din ang icon */
+  transition: transform 0.3s ease, color 0.3s ease;
+}
+
+/* Rotate icon when open */
+.faq-card[open] summary .faq-icon {
+  transform: rotate(45deg);
+}
+
+.faq-content {
+  padding: 0 1.5rem 1.5rem;
+  border-top: 1px solid rgba(100, 233, 238, 0.2); /* Cyan divider */
+  animation: fadeIn 0.3s ease;
+}
+
+.faq-content p { margin: 0; line-height: 1.6; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Hide default marker for webkit */
+.faq-card summary::-webkit-details-marker { display: none; }
+
+/* FAQ Responsive */
+@media (max-width: 600px) {
+  .faq-card summary { font-size: 1rem; padding: 1.2rem; }
+}
+
+/* =========================================================================
+   FOOTER (Updated: Final Clean Split Layout)
+   ========================================================================= */
+.site-footer {
+  position: relative;
+  background: #02040a;
+  border-top: 1px solid var(--primary); /* Laser Top Border */
+  box-shadow: 0 -5px 30px rgba(100, 233, 238, 0.15); /* Top Glow */
+  overflow: hidden;
+  padding: 4rem 0 2rem;
+  margin-top: 4rem;
+}
+
+/* Adjusted Watermark */
+.footer-watermark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -40%);
+  font-size: 14rem;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.02);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 0;
+  user-select: none;
+}
+
+/* MAIN SPLIT CONTENT CONTAINER */
+.footer-middle-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center; /* Center vertically */
+  gap: 4rem;
+  position: relative;
+  z-index: 2;
+  margin-bottom: 4rem;
+}
+
+/* Left Side: Brand, Socials & Legal */
+.footer-left-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1.5rem;
+}
+
+/* New Left-Aligned Brand Block */
+.footer-split-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 0.5rem; /* Spacing before socials */
+}
+.footer-split-brand .brand__logo { width: 36px; height: 36px; }
+.footer-split-brand span { font-size: 1.3rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #fff; }
+
+
+.footer-socials {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.footer-socials a {
+  color: var(--muted);
+  width: 24px;
+  height: 24px;
+  transition: all 0.3s ease;
+}
+
+.footer-socials a:hover {
+  color: var(--primary);
+  transform: translateY(-3px);
+  filter: drop-shadow(0 0 8px var(--primary));
+}
+
+.footer-legal {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.footer-legal a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+  transition: color 0.3s ease;
+}
+
+.footer-legal a:hover { color: var(--primary); }
+
+/* Right Side: Newsletter Card */
+.footer-newsletter-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(100, 233, 238, 0.3); /* Cyan hint */
+  padding: 2rem;
+  border-radius: 20px;
+  max-width: 450px;
+  width: 100%;
+  box-shadow: 0 0 20px rgba(100, 233, 238, 0.05); /* Subtle card glow */
+}
+
+.footer-newsletter-card h3 {
+  font-size: 1.4rem;
+  margin-bottom: 0.3rem;
+  color: var(--text);
+}
+
+.footer-form {
+  display: flex;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.footer-form input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.8rem 1.2rem;
+  border-radius: 50px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.9rem;
+  transition: all 0.3s ease;
+}
+
+.footer-form input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 15px rgba(100, 233, 238, 0.3);
+}
+
+.small-btn { padding: 0.8rem 1.5rem; font-size: 0.9rem; }
+
+/* BOTTOM: Copyright */
+.footer-bottom-copyright {
+  text-align: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  padding-top: 2rem;
+  position: relative;
+  z-index: 2;
+}
+
+/* Footer Responsive */
+@media (max-width: 768px) {
+  .footer-middle-content {
+    flex-direction: column-reverse; /* Put newsletter on top of links in mobile */
+    gap: 3rem;
+    text-align: center;
+  }
+
+  .footer-left-section { align-items: center; }
+  
+  .footer-newsletter-card { max-width: 100%; }
+  
+  .footer-form { flex-direction: column; }
+  
+  .footer-watermark { font-size: 5rem; }
+}
 
 /* =========================================================
    ELECTRIC CURRENTS BACKGROUND (Retained)
