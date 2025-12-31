@@ -24,7 +24,12 @@
 }
 
 *{ box-sizing:border-box; }
-html, body{ scroll-behavior:smooth; }
+html, body{ 
+  scroll-behavior:smooth; 
+  /* IMPORTANT: Prevent horizontal scrollbar caused by off-screen elements */
+  overflow-x: hidden; 
+  width: 100%;
+}
 
 body{
   margin:0;
@@ -743,3 +748,89 @@ body.has-bg-canvas::before{ z-index: -2 !important; background: transparent !imp
 .tm-intent-btn__title { display: block; font-weight: 600; margin-bottom: 0.2rem; }
 .tm-intent-btn__desc { display: block; font-size: 0.8rem; opacity: 0.8; }
 .tm-intent-modal__footer { display: flex; justify-content: flex-end; }
+
+/* =========================================
+   DESKTOP ANIMATIONS (High Impact Update)
+   Only applies to screens larger than 991px
+   ========================================= */
+@media (min-width: 991px) {
+  
+  /* --- 1. BASE SETTINGS --- */
+  .reveal-left, 
+  .reveal-right, 
+  .reveal-up,
+  .reveal-down {
+    opacity: 0;
+    /* Ginawang 1s para may time makita ang byahe, pero mabilis ang pasok */
+    transition: transform 1s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease-in;
+    will-change: opacity, transform;
+  }
+
+  /* --- 2. POSITIONS (Increased Distance = Ramdam ang Pasok) --- */
+  
+  /* Left -> Galing sa labas ng screen (Full width) */
+  .reveal-left { transform: translateX(-100vw); }
+
+  /* Right -> Galing sa labas ng screen (Full width) */
+  .reveal-right { transform: translateX(100vw); }
+
+  /* Up -> Galing sa ilalim (Tinaasan ko: 150px para malayo ang aakyatin) */
+  .reveal-up { transform: translateY(150px); }
+
+  /* Down -> Galing sa ibabaw (Tinaasan ko: -150px para malayo ang bababaan) */
+  .reveal-down { transform: translateY(-150px); }
+
+
+  /* --- 3. HERO OVERRIDES (Cinematic) --- */
+  /* Hero stays slow and majestic (1.5s) */
+  .hero .reveal-left,
+  .hero .reveal-right {
+    transition-duration: 1.5s;
+    transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+
+  /* --- 4. VISIBLE STATE (Reset) --- */
+  .reveal-trigger.is-visible .reveal-left,
+  .reveal-trigger.is-visible .reveal-right,
+  .reveal-trigger.is-visible .reveal-up,
+  .reveal-trigger.is-visible .reveal-down,
+  .reveal-left.is-visible,
+  .reveal-right.is-visible,
+  .reveal-up.is-visible {
+    opacity: 1;
+    transform: translate(0, 0) !important;
+  }
+
+  /* --- 5. STAGGER DELAYS --- */
+  .reveal-delay-100 { transition-delay: 0.1s; }
+  .reveal-delay-200 { transition-delay: 0.2s; }
+  .reveal-delay-300 { transition-delay: 0.3s; }
+  
+  /* --- 6. HOVER EFFECTS --- */
+  .bento-card:hover, 
+  .price-card:hover, 
+  .step-card:hover {
+    transform: translateY(-10px) scale(1.02) !important;
+    box-shadow: 0 20px 40px rgba(100, 233, 238, 0.15);
+    border-color: var(--primary);
+  }
+}
+
+/* =========================================
+   DESKTOP HEADER ANIMATIONS (Slide Down)
+   ========================================= */
+@media (min-width: 991px) {
+  @keyframes slideDownFade {
+    0% { opacity: 0; transform: translateY(-30px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slideDownFadeCenter {
+    0% { opacity: 0; transform: translate(-50%, -30px); }
+    100% { opacity: 1; transform: translate(-50%, 0); }
+  }
+
+  .site-header .brand { animation: slideDownFade 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; opacity: 0; }
+  .site-header .nav__menu { animation: slideDownFadeCenter 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; animation-delay: 0.2s; opacity: 0; }
+  .site-header .nav__actions { animation: slideDownFade 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; animation-delay: 0.4s; opacity: 0; }
+}

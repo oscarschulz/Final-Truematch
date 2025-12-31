@@ -12,6 +12,8 @@
   <link rel="stylesheet" href="animations.css" />
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="responsive.css" />
+  
+  <link rel="stylesheet" href="fomo.css" />
 </head>
 
 <body>
@@ -31,6 +33,16 @@
         <span class="nav__bar"></span>
       </button>
 
+      <div class="nav__dropdown" id="navDropdown" aria-label="Mobile menu">
+        <a href="#how-it-works">How It Works</a>
+        <a href="#features">Why Us</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#faq">FAQ</a>
+        <div style="height:.6rem"></div>
+        <a class="btn" href="auth.html">Sign In</a>
+        <a class="btn primary" href="auth.html?mode=signup">Sign Up</a>
+      </div>
+
       <nav class="nav__menu" aria-label="Primary">
         <a href="#how-it-works">How it works</a>
         <a href="#features">Why Us</a>
@@ -40,27 +52,18 @@
 
       <div class="nav__actions">
         <a class="btn" href="auth.html">Sign In</a>
-        <a class="btn primary" href="auth.html#signup">Sign Up</a>
+        <a class="btn primary" href="auth.html?mode=signup">Sign Up</a>
       </div>
       
-      <div class="nav__dropdown" aria-label="Mobile menu">
-        <a href="#how-it-works">How It Works</a>
-        <a href="#features">Why Us</a>
-        <a href="#pricing">Pricing</a>
-        <a href="#faq">FAQ</a>
-        <div style="height:.6rem"></div>
-        <a class="btn" href="auth.html">Sign In</a>
-        <a class="btn primary" href="auth.html#signup">Sign Up</a>
-      </div>
     </div>
   </header>
 
   <main>
     <section class="hero">
       <div class="container hero-container">
-        <div class="hero__grid">
+        <div class="hero__grid reveal-trigger">
           
-          <div class="hero__copy">
+          <div class="hero__copy reveal-left">
             <div class="pill">Curated dates • Real people • Less time wasted</div>
             
             <h1>Curated Dates for <span class="highlight">Busy Professionals</span></h1>
@@ -84,7 +87,7 @@
             </div>
           </div>
 
-          <div class="hero__media">
+          <div class="hero__media reveal-right">
             <div class="hero__img-wrapper floating">
               <img
                 src="assets/images/truematch-hero-logo.png"
@@ -112,8 +115,9 @@
       <div class="container">
         <h2 class="section__title">How it works</h2>
         
-        <div class="steps-wrapper">
-          <div class="step-card">
+        <div class="steps-wrapper reveal-trigger">
+          
+          <div class="step-card reveal-left">
             <div class="step-number">01</div>
             <h3>Tell us your preferences</h3>
             <p class="muted">
@@ -121,7 +125,7 @@
             </p>
           </div>
 
-          <div class="step-card">
+          <div class="step-card reveal-up reveal-delay-100">
             <div class="step-number">02</div>
             <h3>Get curated profiles</h3>
             <p class="muted">
@@ -129,13 +133,14 @@
             </p>
           </div>
 
-          <div class="step-card">
+          <div class="step-card reveal-right reveal-delay-200">
             <div class="step-number">03</div>
             <h3>Approve & set a date</h3>
             <p class="muted">
               Choose the profiles you like. We help move things forward so you can meet IRL.
             </p>
           </div>
+
         </div>
       </div>
     </section>
@@ -144,9 +149,9 @@
       <div class="container">
         <h2 class="section__title">Why TrueMatch</h2>
         
-        <div class="bento-grid">
+        <div class="bento-grid reveal-trigger">
           
-          <div class="bento-card wide">
+          <div class="bento-card wide reveal-down">
             <div class="bento-content">
               <div class="bento-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -161,7 +166,7 @@
             </div>
           </div>
 
-          <div class="bento-card">
+          <div class="bento-card reveal-left reveal-delay-100">
             <div class="bento-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                 <rect x="4" y="4" width="16" height="20" rx="2" transform="rotate(-5 12 14)" />
@@ -172,7 +177,7 @@
             <p class="muted">Tinder-style swiping for extra discovery. Included with Tier 2 &amp; Tier 3 plans.</p>
           </div>
 
-          <div class="bento-card">
+          <div class="bento-card reveal-right reveal-delay-100">
             <div class="bento-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                 <circle cx="12" cy="12" r="10" />
@@ -183,7 +188,7 @@
             <p class="muted">Subscribe to see safe, non-explicit content from approved creators and unlock PPVs.</p>
           </div>
 
-          <div class="bento-card wide">
+          <div class="bento-card wide reveal-up reveal-delay-200">
             <div class="bento-content">
               <div class="bento-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -204,9 +209,9 @@
     <section id="pricing">
       <div class="container">
         <h2 class="section__title">Membership Tiers</h2>
-        <div class="pricing-grid">
+        <div class="pricing-grid reveal-trigger">
           
-          <div class="price-card free">
+          <div class="price-card free reveal-down">
             <span class="price__tag">Free</span>
             <div class="price__value">$0 <small>/mo</small></div>
             <p class="muted tiny">Everything you need to look around.</p>
@@ -215,10 +220,10 @@
               <li>Limited Swipes</li>
               <li>Basic Chat</li>
             </ul>
-            <a class="btn price-btn" href="auth.html#signup">Sign Up Free</a>
+            <a class="btn price-btn" href="auth.html?mode=signup">Sign Up Free</a>
           </div>
 
-          <div class="price-card plus">
+          <div class="price-card plus reveal-up reveal-delay-100">
             <span class="price__tag">Plus</span>
             <div class="price__value">$28.12 <small>/mo</small></div>
             <p class="muted tiny">More control and visibility.</p>
@@ -228,10 +233,10 @@
               <li>Read receipts</li>
               <li>Priority matching</li>
             </ul>
-            <a class="btn primary price-btn" href="auth.html#signup" data-plan="tier1">Get Plus</a>
+            <a class="btn primary price-btn" href="auth.html?mode=signup&prePlan=tier1">Get Plus</a>
           </div>
 
-          <div class="price-card elite">
+          <div class="price-card elite reveal-down reveal-delay-200">
             <span class="price__tag">Elite</span>
             <div class="price__value">$95 <small>/mo</small></div>
             <p class="muted tiny">For high-value connections.</p>
@@ -241,10 +246,10 @@
               <li>Higher visibility</li>
               <li>Soft concierge support</li>
             </ul>
-            <a class="btn primary price-btn" href="auth.html#signup" data-plan="tier2">Join Elite</a>
+            <a class="btn primary price-btn" href="auth.html?mode=signup&prePlan=tier2">Join Elite</a>
           </div>
 
-          <div class="price-card concierge">
+          <div class="price-card concierge reveal-up reveal-delay-300">
             <span class="price__tag">Concierge</span>
             <div class="price__value">$485 <small>/mo</small></div>
             <p class="muted tiny">Fully managed experience.</p>
@@ -254,7 +259,7 @@
               <li>Personalized sourcing</li>
               <li>Limited availability</li>
             </ul>
-            <a class="btn primary price-btn" href="auth.html#signup" data-plan="tier3">Apply Now</a>
+            <a class="btn primary price-btn" href="auth.html?mode=signup&prePlan=tier3">Apply Now</a>
           </div>
 
         </div>
@@ -265,9 +270,9 @@
       <div class="container">
         <h2 class="section__title">FAQ</h2>
         
-        <div class="faq-wrapper">
+        <div class="faq-wrapper reveal-trigger">
           
-          <details class="faq-card">
+          <details class="faq-card reveal-up">
             <summary>
               Is this just another dating app?
               <span class="faq-icon">+</span>
@@ -279,7 +284,7 @@
             </div>
           </details>
 
-          <details class="faq-card">
+          <details class="faq-card reveal-up reveal-delay-100">
             <summary>
               How do I get matches?
               <span class="faq-icon">+</span>
@@ -291,7 +296,7 @@
             </div>
           </details>
 
-          <details class="faq-card">
+          <details class="faq-card reveal-up reveal-delay-200">
             <summary>
               Can I cancel anytime?
               <span class="faq-icon">+</span>
@@ -303,7 +308,7 @@
             </div>
           </details>
 
-          <details class="faq-card">
+          <details class="faq-card reveal-up reveal-delay-300">
             <summary>
               Is my profile visible to everyone?
               <span class="faq-icon">+</span>
@@ -373,6 +378,23 @@
     </div>
   </footer>
 
+  <div id="tm-fomo" class="fomo-container" aria-hidden="true">
+    <div class="fomo-avatar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+      </svg>
+    </div>
+    <div class="fomo-details">
+      <p class="fomo-text"></p>
+      <span class="fomo-time">Just now</span>
+    </div>
+    <div class="fomo-verified">
+      <svg viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+      </svg>
+    </div>
+  </div>
 
   <script>
   (() => {
@@ -534,5 +556,6 @@
 
   <script src="./tm-loader.js"></script>
   <script src="script.js"></script>
+  <script src="fomo.js"></script>
 </body>
 </html>
