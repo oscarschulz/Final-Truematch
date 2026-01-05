@@ -2,117 +2,386 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TrueMatch — Payment</title>
+  <meta name="viewport" content="width=1200"> <title>TrueMatch — Secure Checkout</title>
 
-  <link rel="stylesheet" href="/style.css">
-  <link rel="stylesheet" href="/animations.css">
-  <link rel="stylesheet" href="/responsive.css">
-  <link rel="stylesheet" href="/auth.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <script src="./tm-loader.js"></script>
 
   <style>
-    /* background canvas (kept) */
-    #tm-bg-canvas{
-      position:fixed; inset:0; width:100vw; height:100vh; pointer-events:none;
-      z-index:0; opacity:.95; transform:translateZ(0);
+    /* ============================
+       CORE STYLES
+       ============================ */
+    :root {
+      --bg: #0a0f1a;
+      --primary: #64E9EE;     /* Cyan Neon */
+      --text: #F6FAFF;
+      --muted: #94a3b8;
+      --card-bg: rgba(13, 20, 35, 0.85);
+      --glass-border: rgba(100, 233, 238, 0.3);
     }
-    body.has-bg-canvas > :not(#tm-bg-canvas){ position:relative; z-index:1; }
-    html{ background:#000; }
-    @media (prefers-reduced-motion: reduce){ #tm-bg-canvas{ opacity:.35; } }
 
-    /* center header (Payment + subtitle) */
-    .auth-header{
-      margin-top: 24px;
-      width: 100%;
-      padding: 0 24px;
+    *, *::before, *::after {
       box-sizing: border-box;
-      text-align: center;
+    }
+
+    body {
+      margin: 0; padding: 0;
+      background: #02040a !important;
+      color: var(--text);
+      font-family: 'Montserrat', sans-serif;
+      height: 100vh;
+      width: 100%;
+      overflow: hidden; /* No scrollbars for pure desktop feel */
       display: flex;
       flex-direction: column;
+      min-width: 1100px; /* Force minimum desktop width */
+    }
+
+    #tm-bg-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 0; pointer-events: none; }
+
+    /* ============================
+       ANIMATIONS
+       ============================ */
+    @keyframes cardEntrance { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+    @keyframes slideInLeft { from { opacity: 0; transform: translateX(-50px); } to { opacity: 1; transform: translateX(0); } }
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes breatheBorder { 0% { border-color: rgba(100, 233, 238, 0.3); box-shadow: 0 0 30px rgba(100, 233, 238, 0.1); } 100% { border-color: rgba(100, 233, 238, 0.6); box-shadow: 0 0 60px rgba(100, 233, 238, 0.2); } }
+    @keyframes shimmer { 0% { left: -100%; } 20% { left: 100%; } 100% { left: 100%; } }
+    @keyframes containerFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-15px)} }
+    @keyframes autoFlip { 0%, 30% { transform: rotateY(0deg); } 40%, 70% { transform: rotateY(180deg); } 80%, 100% { transform: rotateY(360deg); } }
+
+    /* ============================
+       HEADER
+       ============================ */
+    .auth-top-nav {
+      position: fixed; top: 0; left: 0; width: 100%;
+      padding: 30px 50px; 
+      display: flex; justify-content: space-between; align-items: center;
+      z-index: 100; pointer-events: none;
+      opacity: 0; animation: fadeInUp 0.8s ease-out forwards;
+    }
+
+    .nav-brand {
+      display: flex; align-items: center; gap: 12px;
+      text-decoration: none; color: #fff;
+      font-weight: 800; font-size: 1.5rem; letter-spacing: 1px;
+      pointer-events: auto; text-transform: uppercase;
+    }
+    .nav-brand img { width: 40px; height: auto; }
+
+    .nav-right-group {
+      display: flex; align-items: center; gap: 15px;
+      pointer-events: auto;
+    }
+
+    .nav-btn {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 20px; border-radius: 50px;
+      background: rgba(255, 255, 255, 0.08); 
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #fff; text-decoration: none; 
+      font-size: 0.8rem; font-weight: 700;
+      letter-spacing: 1px; white-space: nowrap; 
+      backdrop-filter: blur(10px); 
+      transition: all 0.3s ease; 
+      cursor: pointer;
+    }
+    .nav-btn svg { width: 16px; height: 16px; stroke-width: 2.5; }
+    .nav-btn:hover { 
+      background: rgba(100, 233, 238, 0.1); 
+      border-color: #64E9EE; color: #64E9EE;
+      box-shadow: 0 0 20px rgba(100,233,238,0.2); 
+      transform: translateY(-2px);
+    }
+
+    /* ============================
+       SPLIT LAYOUT (Desktop Fixed)
+       ============================ */
+    .split-layout {
+      display: flex;
+      width: 100%;
+      height: 100%;
+      position: relative;
+      z-index: 1;
       align-items: center;
-      gap: 6px;
+      justify-content: center;
+      padding-top: 60px; /* Space for header */
     }
-    .auth-header h1,
-    .auth-header p{ text-align:center; }
 
-    /* feature list */
-    .feature-list{ list-style:none; margin:12px 0 0; padding:0; }
-    .feature-item{
-      display:flex; align-items:center; gap:10px;
-      padding:8px 0; border-top:1px solid rgba(255,255,255,.06);
+    .unified-card {
+      display: flex;
+      flex-direction: row; /* FORCE ROW */
+      width: 100%;
+      max-width: 1100px;
+      min-width: 1000px; /* Force minimum width to prevent squashing */
+      height: 700px;
+      background: rgba(13, 20, 35, 0.85);
+      backdrop-filter: blur(30px);
+      border: 1px solid rgba(100, 233, 238, 0.3);
+      border-radius: 40px;
+      box-shadow: 0 0 60px rgba(100, 233, 238, 0.15), inset 0 0 30px rgba(100, 233, 238, 0.05);
+      position: relative;
+      overflow: hidden;
+      opacity: 0;
+      animation: breatheBorder 4s infinite alternate, cardEntrance 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) 0.1s forwards;
     }
-    .feature-item:first-child{ border-top:0; }
-    .feature-icon{
-      width:20px; height:20px; display:inline-flex; align-items:center; justify-content:center;
-      border-radius:999px; font-size:12px; line-height:1;
-      background:rgba(100,233,238,.15); outline:1px solid rgba(100,233,238,.35); color:#64E9EE;
-      flex:0 0 20px;
-    }
-    .feature-text{ color:#cfcfcf; font-size:.95rem; }
 
-    .plan-row{ margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-
-    /* alert + helper strip */
-    .notice{
-      margin:0 auto 14px; padding:10px 12px;
-      border:1px solid rgba(255,255,255,.14);
-      border-radius:14px; background:rgba(255,255,255,.04);
-      color:#d9e1ff; font-size:.95rem;
+    /* --- LEFT SIDE: 3 FLIPPING CARDS --- */
+    .visual-side {
+      width: 45%;
+      position: relative;
+      display: flex; align-items: center; justify-content: center;
+      border-right: 1px solid rgba(255,255,255,0.05);
+      overflow: hidden;
+      perspective: 1500px;
+      opacity: 0; animation: slideInLeft 1s ease-out 0.3s forwards;
     }
-    .notice strong{ color:#fff; }
 
-    /* back row */
-    .top-actions{
-      width:100%; max-width:840px; margin:14px auto -4px; padding:0 16px; box-sizing:border-box;
-      display:flex; justify-content:space-between; align-items:center; gap:12px;
+    .cards-container {
+      position: relative;
+      width: 300px;
+      height: 450px;
+      animation: containerFloat 6s ease-in-out infinite;
     }
-    .link-back{
-      display:inline-flex; align-items:center; gap:8px; text-decoration:none;
-      border:1px solid rgba(255,255,255,.14); border-radius:999px; padding:8px 12px;
-      color:#cfe0ff; background:rgba(255,255,255,.02);
-    }
-    .link-back:hover{ background:rgba(255,255,255,.06); color:#fff; }
 
-    .secure-badge{ color:#b8c4e6; font-size:.9rem; }
+    .atm-card-wrap {
+      position: absolute;
+      width: 280px;
+      height: 170px;
+      transform-style: preserve-3d;
+      left: 0; right: 0; margin: auto;
+    }
+
+    .atm-card {
+      width: 100%; height: 100%;
+      position: relative;
+      transform-style: preserve-3d;
+      border-radius: 16px;
+      box-shadow: 0 15px 35px rgba(0,0,0,0.5);
+    }
+
+    .card-face {
+      position: absolute; inset: 0;
+      backface-visibility: hidden;
+      border-radius: 16px;
+      padding: 20px;
+      display: flex; flex-direction: column; justify-content: space-between;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+    .card-face.front { z-index: 2; }
+    .card-face.back { transform: rotateY(180deg); background: #111; justify-content: center; align-items: center; }
+
+    /* Cards Config */
+    .card-1 { top: 0; animation: autoFlip 8s infinite ease-in-out; animation-delay: 0s; z-index: 3; }
+    .card-1 .front { background: linear-gradient(135deg, rgba(0, 242, 234, 0.2), rgba(0, 242, 234, 0.05)); backdrop-filter: blur(15px); }
+    .card-1 .back { background: linear-gradient(135deg, #0d3b3d, #000); }
+
+    .card-2 { top: 120px; left: 30px; animation: autoFlip 8s infinite ease-in-out; animation-delay: 2.5s; z-index: 2; }
+    .card-2 .front { background: linear-gradient(135deg, rgba(189, 0, 255, 0.2), rgba(189, 0, 255, 0.05)); backdrop-filter: blur(15px); }
+    .card-2 .back { background: linear-gradient(135deg, #320d3d, #000); }
+
+    .card-3 { top: 240px; animation: autoFlip 8s infinite ease-in-out; animation-delay: 5s; z-index: 1; }
+    .card-3 .front { background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 215, 0, 0.05)); backdrop-filter: blur(15px); }
+    .card-3 .back { background: linear-gradient(135deg, #3d340d, #000); }
+
+    /* Card Graphics */
+    .chip { width: 35px; height: 25px; background: linear-gradient(135deg, #e0aa3e, #fcf6ba); border-radius: 5px; margin-bottom: 10px; }
+    .card-num { font-family: monospace; font-size: 1.1rem; letter-spacing: 2px; color: #fff; text-shadow: 0 1px 2px #000; }
+    .card-name { font-size: 0.7rem; text-transform: uppercase; color: rgba(255,255,255,0.7); letter-spacing: 1px; margin-top: auto; }
+    .card-logo-sm { position: absolute; top: 20px; right: 20px; width: 25px; opacity: 0.8; }
+    .mag-stripe { width: 100%; height: 35px; background: #000; position: absolute; top: 25px; left: 0; }
+    .cvv { background: #fff; color: #000; padding: 2px 5px; font-family: monospace; font-size: 0.8rem; margin-top: 20px; border-radius: 2px; }
+
+    /* --- RIGHT SIDE: FORM (VIBRANT) --- */
+    .form-side {
+      width: 55%;
+      padding: 40px 50px;
+      display: flex; flex-direction: column; justify-content: center;
+      position: relative;
+      background: radial-gradient(circle at top right, rgba(100, 233, 238, 0.07), transparent 60%);
+    }
+
+    /* Staggered Animations */
+    .form-element-1 { opacity: 0; animation: fadeInUp 0.6s ease-out 0.4s forwards; }
+    .form-element-2 { opacity: 0; animation: fadeInUp 0.6s ease-out 0.5s forwards; }
+    .form-element-3 { opacity: 0; animation: fadeInUp 0.6s ease-out 0.6s forwards; }
+    .form-element-4 { opacity: 0; animation: fadeInUp 0.6s ease-out 0.7s forwards; }
+    .form-element-5 { opacity: 0; animation: fadeInUp 0.6s ease-out 0.8s forwards; }
+
+    .card-header { text-align: center; margin-bottom: 25px; }
+    .card-title { 
+      font-size: 1.8rem; font-weight: 800; margin: 0; text-transform: uppercase; letter-spacing: 1px; 
+      background: linear-gradient(to right, #fff, var(--primary)); 
+      background-clip: text; /* FIXED: Added standard property */
+      -webkit-background-clip: text; 
+      -webkit-text-fill-color: transparent;
+      text-shadow: 0 0 20px rgba(100,233,238,0.5);
+    }
+    .card-subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 5px; }
+
+    .notice-box {
+      background: rgba(255, 215, 0, 0.1); border: 1px solid rgba(255, 215, 0, 0.3); color: #ffda47;
+      padding: 10px 14px; border-radius: 12px; font-size: 0.8rem; line-height: 1.4; margin-bottom: 20px; text-align: left;
+      box-shadow: 0 0 15px rgba(255, 215, 0, 0.1);
+    }
+
+    .plan-summary {
+      background: linear-gradient(145deg, rgba(13, 20, 35, 0.9), rgba(100, 233, 238, 0.05));
+      border-radius: 16px; padding: 25px; margin-bottom: 20px; 
+      border: 1px solid rgba(100, 233, 238, 0.2); box-shadow: inset 0 0 20px rgba(100, 233, 238, 0.05);
+      position: relative;
+    }
+    .plan-summary::after {
+      content: ''; position: absolute; bottom: 70px; left: 25px; right: 25px; border-bottom: 2px dashed rgba(100, 233, 238, 0.2);
+    }
+
+    .summary-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .plan-label { font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+    .plan-name { font-size: 1.1rem; color: #fff; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+    
+    .total-row { display: flex; justify-content: space-between; align-items: baseline; margin-top: 25px; padding-top: 10px; }
+    .total-label { font-size: 1rem; font-weight: 700; color: var(--primary); text-transform: uppercase; }
+    .plan-price { font-size: 2.2rem; font-weight: 800; color: var(--primary); text-shadow: 0 0 25px rgba(100,233,238,0.7); line-height: 1; }
+
+    .feature-list { list-style: none; padding: 0; margin: 15px 0; text-align: left; opacity: 0.9; }
+    .feature-item { display: flex; align-items: flex-start; gap: 10px; padding: 5px 0; font-size: 0.85rem; color: #eee; }
+    .feature-icon { color: var(--primary); font-weight: 800; filter: drop-shadow(0 0 5px rgba(100, 233, 238, 0.5)); }
+
+    /* Action Buttons */
+    .action-group { display: flex; flex-direction: column; gap: 12px; width: 100%; margin-top: auto; }
+    
+    .btn { width: 100%; padding: 14px; border-radius: 50px; font-size: 0.95rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; transition: all 0.3s; display: flex; justify-content: center; align-items: center; text-decoration: none; border: 1px solid transparent; font-family: 'Montserrat', sans-serif; gap: 10px; }
+    
+    .btn-primary { background: var(--primary); color: #000; box-shadow: 0 0 20px rgba(100, 233, 238, 0.4); border-color: var(--primary); position: relative; overflow: hidden; }
+    .btn-primary::after { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); animation: shimmer 3s infinite; }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 0 40px rgba(100, 233, 238, 0.8); }
+
+    .btn-outline { background: transparent; border-color: rgba(255,255,255,0.3); color: var(--muted); }
+    .btn-outline:hover { border-color: #fff; color: #fff; transform: translateY(-1px); box-shadow: 0 0 15px rgba(255,255,255,0.1); }
+
+    /* Badges */
+    .wallet-badges { display: flex; gap: 15px; justify-content: center; align-items: center; margin-top: 20px; }
+    .badge-icon { height: 26px; width: auto; filter: drop-shadow(0 0 5px rgba(255,255,255,0.2)); transition: all 0.3s ease; opacity: 0.9; }
+    .badge-icon:hover { transform: scale(1.15); opacity: 1; filter: drop-shadow(0 0 10px rgba(255,255,255,0.4)); }
+    .more-badge { font-size: 1.2rem; color: rgba(255,255,255,0.5); font-weight: 700; letter-spacing: 2px; }
+
+    .simple-footer { position: absolute; bottom: 15px; width: 100%; text-align: center; color: #334155; font-size: 0.7rem; left: 0; padding: 0 20px; }
+    .simple-footer a { color: #555; text-decoration: none; margin: 0 5px; }
+    .simple-footer a:hover { color: var(--primary); }
+
+    /* NO MOBILE MEDIA QUERY - FORCE DESKTOP */
   </style>
 </head>
-<body class="tm-dark has-bg-canvas">
-  <!-- Interactive background (constellation) -->
+
+<body class="tm-dark">
   <canvas id="tm-bg-canvas" aria-hidden="true"></canvas>
 
-  <div class="top-actions">
-    <a id="btnBack" href="/tier.html" class="link-back" aria-label="Back to plans" data-back-tier="1">← Back</a>
-    <div class="secure-badge">Secure crypto checkout via Coinbase</div>
-    <button id="btnLogout" class="link-back" type="button" aria-label="Log out">Logout</button>
+  <nav class="auth-top-nav">
+    <a href="index.html" class="nav-brand">
+      <img src="assets/images/truematch-mark.png" alt="Logo" />
+      <span>TrueMatch</span>
+    </a>
+    <div class="nav-right-group">
+      <a id="btnBack" href="/tier.html" class="nav-btn" data-back-tier="1">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+        <span>Back</span>
+      </a>
+      <button id="btnLogout" class="nav-btn" type="button" style="border-color:transparent; background:transparent;">
+        <span>Logout</span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="split-layout">
+    <div class="unified-card">
+      
+      <div class="visual-side">
+        <div class="cards-container">
+          <div class="atm-card-wrap card-1">
+            <div class="atm-card">
+              <div class="card-face front">
+                <div class="card-top"><img src="assets/images/truematch-mark.png" class="card-logo-sm" alt="Logo"><div class="chip"></div></div>
+                <div class="card-num">**** **** **** 1001</div>
+                <div class="card-name">PLUS MEMBER</div>
+              </div>
+              <div class="card-face back"><div class="mag-stripe"></div><div class="cvv">123</div></div>
+            </div>
+          </div>
+          <div class="atm-card-wrap card-2">
+            <div class="atm-card">
+              <div class="card-face front">
+                <div class="card-top"><img src="assets/images/truematch-mark.png" class="card-logo-sm" alt="Logo"><div class="chip"></div></div>
+                <div class="card-num">**** **** **** 2002</div>
+                <div class="card-name">ELITE ACCESS</div>
+              </div>
+              <div class="card-face back"><div class="mag-stripe"></div><div class="cvv">999</div></div>
+            </div>
+          </div>
+          <div class="atm-card-wrap card-3">
+            <div class="atm-card">
+              <div class="card-face front">
+                <div class="card-top"><img src="assets/images/truematch-mark.png" class="card-logo-sm" alt="Logo"><div class="chip"></div></div>
+                <div class="card-num">**** **** **** 3003</div>
+                <div class="card-name">CONCIERGE</div>
+              </div>
+              <div class="card-face back"><div class="mag-stripe"></div><div class="cvv">000</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-side">
+        <div class="card-header form-element-1">
+          <h1 class="card-title">Checkout</h1>
+          <p class="card-subtitle">Secure your exclusive access.</p>
+        </div>
+
+        <div class="notice-box form-element-2">
+          <strong>Note:</strong> Payment is processed securely via Coinbase. Access is granted immediately after confirmation.
+        </div>
+
+        <div class="plan-summary form-element-3">
+          <div class="summary-row">
+            <span class="plan-label">Selected Plan</span>
+            <span class="plan-name" id="planLabel">Loading...</span>
+          </div>
+          
+          <ul id="planFeatures" class="feature-list"></ul>
+
+          <div class="total-row">
+            <span class="total-label">Total Due Today</span>
+            <span class="plan-price" id="planAmount">--</span>
+          </div>
+        </div>
+
+        <div class="action-group form-element-4">
+          <button id="btnPay" class="btn btn-primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Proceed to Payment
+          </button>
+          
+          <a id="linkChangePlan" href="/tier.html" class="btn btn-outline" data-back-tier="1">Change Plan</a>
+
+          <div class="wallet-badges">
+            <img src="https://cryptologos.cc/logos/binance-coin-bnb-logo.svg" class="badge-icon" alt="Binance" title="Binance Pay">
+            <img src="https://cryptologos.cc/logos/tether-usdt-logo.svg" class="badge-icon" alt="USDT" title="Tether (USDT)">
+            <img src="https://cryptologos.cc/logos/usd-coin-usdc-logo.svg" class="badge-icon" alt="USDC" title="USD Coin">
+            <img src="https://cryptologos.cc/logos/ethereum-eth-logo.svg" class="badge-icon" alt="ETH" title="Ethereum">
+            <span class="more-badge">...</span>
+          </div>
+        </div>
+
+        <footer class="simple-footer form-element-5">
+          © 2026 TrueMatch Inc. <a href="#">Terms</a> • <a href="#">Privacy</a>
+        </footer>
+      </div>
+
+    </div>
   </div>
 
-  <header class="auth-header">
-    <img src="/assets/images/truematch-hero-logo.png" alt="TrueMatch" class="auth-logo">
-    <h1>Payment</h1>
-    <p>Complete your subscription.</p>
-  </header>
-
-  <main class="auth-wrap">
-    <div class="auth-card">
-      <div class="notice">
-        <strong>Heads up:</strong> You will not be taken to your dashboard until payment is successfully completed. 
-        If you close or cancel checkout, you’ll be returned to Plan Selection.
-      </div>
-
-      <p><strong>Plan:</strong> <span id="planLabel">—</span></p>
-      <p><strong>Amount:</strong> <span id="planAmount">—</span></p>
-
-      <!-- single-tier feature mirror -->
-      <ul id="planFeatures" class="feature-list"></ul>
-
-      <div class="plan-row">
-        <button id="btnPay" class="btn btn-primary">Pay now</button>
-        <a id="linkChangePlan" href="/tier.html" class="btn btn-outline-inverse" data-back-tier="1">Change plan</a>
-      </div>
-    </div>
-  </main>
-
-  <!-- kept: background script -->
   <script>
   (() => {
     const canvas = document.getElementById('tm-bg-canvas');
@@ -120,76 +389,62 @@
     const ctx = canvas.getContext('2d', { alpha: true });
     if (!ctx) return;
     const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
     const mouse = { x: 0, y: 0, active: false };
     const particles = [];
     let cw = 0, ch = 0, dpr = 1, raf = null;
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-    function pickCount(){ const area = innerWidth * innerHeight; return clamp(Math.floor(area/22000)+28, 38, 90); }
-    function resize(){
-      dpr = Math.min(devicePixelRatio||1, 2);
-      cw = innerWidth; ch = innerHeight;
-      canvas.width = Math.floor(cw*dpr); canvas.height = Math.floor(ch*dpr);
-      canvas.style.width = cw+'px'; canvas.style.height = ch+'px';
-      ctx.setTransform(dpr,0,0,dpr,0,0); init(); draw(true);
+    function pickCount() { return clamp(Math.floor((window.innerWidth * window.innerHeight) / 22000) + 28, 38, 90); }
+    function resize() {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      cw = window.innerWidth; ch = window.innerHeight;
+      canvas.width = Math.floor(cw * dpr); canvas.height = Math.floor(ch * dpr);
+      canvas.style.width = cw + 'px'; canvas.style.height = ch + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      init(); draw(true);
     }
-    function init(){
-      particles.length = 0; const n = pickCount();
-      for (let i=0;i<n;i++) particles.push({ x:Math.random()*cw, y:Math.random()*ch, vx:(Math.random()-.5)*.35, vy:(Math.random()-.5)*.35, r:1+Math.random()*1.3 });
-    }
-    function step(){
-      for (const p of particles){
-        p.x+=p.vx; p.y+=p.vy;
-        if (p.x<0||p.x>cw) p.vx*=-1; if (p.y<0||p.y>ch) p.vy*=-1;
-        p.x=clamp(p.x,0,cw); p.y=clamp(p.y,0,ch);
-        if (mouse.active){
-          const dx=p.x-mouse.x, dy=p.y-mouse.y, d2=dx*dx+dy*dy, inf=220;
-          if (d2<inf*inf && d2>1e-3){ const d=Math.sqrt(d2), f=(1-d/inf)*.035; p.vx+=(dx/d)*f; p.vy+=(dy/d)*f; }
-        }
-        p.vx*=.985; p.vy*=.985;
+    function init() {
+      particles.length = 0; const count = pickCount();
+      for (let i = 0; i < count; i++) {
+        particles.push({ x: Math.random() * cw, y: Math.random() * ch, vx: (Math.random() - 0.5) * 0.35, vy: (Math.random() - 0.5) * 0.35, r: 1 + Math.random() * 1.3 });
       }
     }
-    function draw(staticOnly=false){
-      ctx.clearRect(0,0,cw,ch);
-      ctx.globalCompositeOperation='lighter';
-      const md=150, md2=md*md;
-      for (let i=0;i<particles.length;i++){
-        const a=particles[i];
-        for (let j=i+1;j<particles.length;j++){
-          const b=particles[j], dx=a.x-b.x, dy=a.y-b.y, d2=dx*dx+dy*dy;
-          if (d2<=md2){ const t=1-(Math.sqrt(d2)/md), apha=t*.12;
-            ctx.strokeStyle=`rgba(255,255,255,${apha})`; ctx.lineWidth=1;
-            ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+    function step() {
+      for (const p of particles) {
+        p.x += p.vx; p.y += p.vy;
+        if (p.x < 0 || p.x > cw) p.vx *= -1; if (p.y < 0 || p.y > ch) p.vy *= -1;
+        if (mouse.active) {
+          const dx = p.x - mouse.x; const dy = p.y - mouse.y; const dist2 = dx * dx + dy * dy;
+          if (dist2 < 48400 && dist2 > 0.001) {
+             const dist = Math.sqrt(dist2); const force = (1 - dist / 220) * 0.035;
+             p.vx += (dx / dist) * force; p.vy += (dy / dist) * force;
+          }
+        }
+        p.vx *= 0.985; p.vy *= 0.985;
+      }
+    }
+    function draw(isStatic = false) {
+      ctx.clearRect(0, 0, cw, ch); ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < particles.length; i++) {
+        const a = particles[i];
+        for (let j = i + 1; j < particles.length; j++) {
+          const b = particles[j]; const dx = a.x - b.x; const dy = a.y - b.y; const d2 = dx * dx + dy * dy;
+          if (d2 <= 22500) {
+            const alpha = (1 - (Math.sqrt(d2) / 150)) * 0.12;
+            ctx.strokeStyle = `rgba(255,255,255,${alpha})`; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
           }
         }
       }
-      if (mouse.active){
-        const r=210, r2=r*r;
-        for (const p of particles){
-          const dx=p.x-mouse.x, dy=p.y-mouse.y, d2=dx*dx+dy*dy;
-          if (d2<r2){ const t=1-(Math.sqrt(d2)/r), a=t*.18;
-            ctx.strokeStyle=`rgba(100,233,238,${a})`; ctx.lineWidth=1;
-            ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(mouse.x,mouse.y); ctx.stroke();
-          }
-        }
-      }
-      for (const p of particles){ ctx.fillStyle='rgba(255,255,255,.55)'; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); }
-      ctx.globalCompositeOperation='source-over';
-      if (!reduceMotion && !staticOnly) step();
+      for (const p of particles) { ctx.fillStyle = `rgba(255,255,255,0.55)`; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill(); }
+      ctx.globalCompositeOperation = 'source-over';
+      if (!reduceMotion && !isStatic) step();
     }
-    function loop(){ draw(false); raf=requestAnimationFrame(loop); }
-    function onMove(e){ const t=e.touches&&e.touches[0]; mouse.x=(t?t.clientX:e.clientX); mouse.y=(t?t.clientY:e.clientY); mouse.active=true; }
-    function onLeave(){ mouse.active=false; }
-    addEventListener('resize', ()=>{ cancelAnimationFrame(raf); raf=null; resize(); if(!reduceMotion) loop(); }, { passive:true });
-    addEventListener('mousemove', onMove, { passive:true });
-    addEventListener('touchmove', onMove, { passive:true });
-    addEventListener('mouseleave', onLeave, { passive:true });
-    addEventListener('touchend', onLeave, { passive:true });
-    resize(); if(!reduceMotion) loop();
+    function loop() { draw(false); raf = requestAnimationFrame(loop); }
+    window.addEventListener('resize', () => { cancelAnimationFrame(raf); resize(); if (!reduceMotion) loop(); }, {passive:true});
+    window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true; });
+    resize(); if (!reduceMotion) loop();
   })();
   </script>
 
-  <script src="./tm-loader.js"></script>
   <script src="/pay.js" type="module"></script>
 </body>
 </html>

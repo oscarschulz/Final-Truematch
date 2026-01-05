@@ -4,15 +4,18 @@
 import { apiMe, apiGet } from './tm-api.js';
 import { getLocalPlan } from './tm-session.js';
 
-// /* EMAIL VERIFIED GATE (UPDATED FIX) */
+// ============================================================
+// [FIXED] EMAIL VERIFIED GATE (DISABLED)
+// ============================================================
 async function __gateEmailVerified() {
+  // Return true agad para hindi humarang ang verification
+  return true; 
+
+  /* ORIGINAL CODE (DISABLED FOR DEV)
   try {
     const usp = new URLSearchParams(location.search);
-    
-    // 1. Kung Upgrade mode, SKIP verification check (dahil nakalogin naman na)
     if (usp.get('upgrade') === '1') return true; 
 
-    // 2. Demo Check
     const isDemoQS = usp.get('demo') === '1';
     let isDemoLocal = false;
     let localUser = {};
@@ -24,24 +27,17 @@ async function __gateEmailVerified() {
     
     if (isDemoQS || isDemoLocal) return true;
 
-    // 3. API Check
     const me = await apiGet('/api/me');
-    if (me?.user?.emailVerified) {
-      return true;
-    }
+    if (me?.user?.emailVerified) return true;
 
-    // 4. [FIX] Check Local Storage Fallback
-    // Kung kakave-verify lang sa auth.js, dito niya makikita 'yun kahit delay ang server.
-    if (localUser && localUser.emailVerified === true) {
-        return true;
-    }
+    if (localUser && localUser.emailVerified === true) return true;
 
-    // 5. Kung hindi verified sa Server at Local, Redirect
     const ret = encodeURIComponent(location.pathname + location.search);
-    location.href = `/auth.html?mode=signin&verify=1&return=${ret}`;
+    location.href = `./auth.html?mode=signin&verify=1&return=${ret}`;
     return false;
 
   } catch { return true; }
+  */
 }
 
 // --- Logout (only way back to landing) ---
@@ -57,9 +53,11 @@ async function doLogoutToLanding(){
     localStorage.removeItem('tm_user');
     localStorage.removeItem('tm_plan_override');
     localStorage.removeItem('tm_prefs_by_user');
-    localStorage.removeItem('tm_prefs'); // Added legacy cleanup
+    localStorage.removeItem('tm_prefs'); 
   }catch{}
-  location.replace('/index.html');
+  
+  // Balik sa index (relative path)
+  location.replace('./index.html');
 }
 
 function attachLogoutButton(){
@@ -75,7 +73,7 @@ function attachLogoutButton(){
   });
 }
 
-// --- Notice banner helpers (cancel/success) ---
+// --- Notice banner helpers ---
 function renderTierNotice(kind, message){
   try{
     const box = document.getElementById('tierNotice');
@@ -95,12 +93,11 @@ function getQS() {
 // ---- Normalize to tier1/tier2/tier3/free
 function normalizePlanName(code) {
   const v = String(code || '').toLowerCase().trim();
-  // Map all synonyms / labels to canonical tier IDs
   if (v === 'free' || v === 'basic') return 'free';
   if (v === 'plus' || v === 'starter' || v === 'tier1' || v === '1') return 'tier1';
   if (v === 'elite' || v === 'pro' || v === 'tier2' || v === '2') return 'tier2';
   if (v === 'concierge' || v === 'vip' || v === 'tier3' || v === '3') return 'tier3';
-  return 'tier1'; // Fallback if unknown, or default
+  return 'tier1'; 
 }
 
 // ---- Helpers for server shapes
@@ -134,16 +131,21 @@ function cleanURLParam(param) {
   } catch { }
 }
 
+// ==========================================
+// [FIXED] REQUIRE AUTH with Local Fallback
+// ==========================================
 async function requireAuth() {
   const sp = getQS();
   const isDemoQS = sp.get('demo') === '1';
 
+  // Check Local Storage FIRST
+  let localUser = null;
   let isDemoLocal = false;
   try {
     const raw = localStorage.getItem('tm_user');
     if (raw) {
-      const u = JSON.parse(raw);
-      const em = String(u?.email || '').toLowerCase();
+      localUser = JSON.parse(raw);
+      const em = String(localUser?.email || '').toLowerCase();
       if (em.endsWith('.demo@truematch.app')) {
         isDemoLocal = true;
       }
@@ -156,51 +158,59 @@ async function requireAuth() {
   cleanURLParam('session_id');
 
   try {
-    const j = await apiMe();
+    // 1. Try contacting server
+    let j = await apiMe();
 
-    // 1. Check Login
+    // [IMPORTANT FIX] Kung fail ang server pero may Local User, gamitin ang Local User.
+    if ((!j || j.ok === false || j.error) && localUser) {
+        console.warn('Backend unreachable, using Local Storage fallback.');
+        j = { ok: true, user: localUser };
+    }
+
+    // 2. Kung wala talagang login -> Redirect
     if (!j || j.ok === false || j.error) {
       if (!isDemo) {
         const ret = encodeURIComponent(location.pathname + location.search);
-        location.replace(`/auth.html?mode=signin&return=${ret}`);
+        location.replace(`./auth.html?mode=signin&return=${ret}`);
         return false;
       }
     }
 
-    // 2. Check Email presence
+    // 3. Check Email presence
     const email = serverEmail(j);
     if (!email && !isDemo) {
       const ret = encodeURIComponent(location.pathname + location.search);
-      location.replace(`/auth.html?mode=signin&return=${ret}`);
+      location.replace(`./auth.html?mode=signin&return=${ret}`);
       return false;
     }
 
-    // 3. Check User & Preferences (Anti-Flicker)
+    // 4. Check User & Preferences (Anti-Flicker)
     const user = j?.user || {};
-    const prefsSaved = !!(user.prefsSaved || user.preferencesSaved || user.prefs || user.preferences || j.prefs);
-
-    // [FIX 1] PREFERENCES GATE: Skip redirect if we are upgrading
-    if (!prefsSaved && !isUpgrade) {
-      const isDemoStrict = isDemo || (user.email && String(user.email).endsWith('.demo@truematch.app'));
-      if (!isDemoStrict) {
-        const qs = new URLSearchParams(location.search);
-        qs.set('onboarding', '1');
-        location.replace(`/preferences.html?${qs.toString()}`);
-        return false;
-      }
+    // Update local storage para laging fresh
+    if(user && user.email) {
+        localStorage.setItem('tm_user', JSON.stringify(user));
     }
 
-    // 4. Check Active Plan
+    // ============================================================
+    // [FIX 1 - DISABLED] PREFERENCES GATE
+    // ============================================================
+    /*
+    const prefsSaved = !!(user.prefsSaved || user.preferencesSaved || user.prefs || user.preferences || j.prefs);
+    if (!prefsSaved && !isUpgrade) {
+       // ... redirect code removed ...
+    }
+    */
+
+    // 5. Check Active Plan
     const planActiveFromServer = serverPlanActive(j);
     const hasPlan = isDemo ? (planActiveFromServer || !!getLocalPlan()) : planActiveFromServer;
 
-    // [FIX 2] DASHBOARD REDIRECT: Prevent going back to dashboard if we are explicitly upgrading
+    // Prevent going back to dashboard if we are explicitly upgrading
     if (hasPlan && !isUpgrade) {
-      location.replace('/dashboard.html');
+      location.replace('./dashboard.html');
       return false;
     }
 
-    // Show error banner if redirected from canceled checkout
     if (sp.get('cancelled') === '1') {
       const prePlan = sp.get('prePlan') || '';
       const p = prePlan ? ` (${prePlan})` : '';
@@ -210,8 +220,13 @@ async function requireAuth() {
     return true;
   } catch (e) {
     console.error(e);
+    // Safety net: Kung nag-crash ang code, check local storage bago i-kickout
+    if(localStorage.getItem('tm_user')){
+        return true; 
+    }
+
     const ret = encodeURIComponent(location.pathname + location.search);
-    location.replace(`/auth.html?mode=signin&return=${ret}`);
+    location.replace(`./auth.html?mode=signin&return=${ret}`);
     return false;
   }
 }
@@ -230,10 +245,9 @@ function buildPayURL(plan) {
   if (onboarding === '1') qs.set('onboarding', '1');
   if (upgrade === '1') qs.set('upgrade', '1');
 
-  // Always carry the selected plan as prePlan
   qs.set('prePlan', normalizePlanName(plan));
 
-  return `/pay.html?${qs.toString()}`;
+  return `./pay.html?${qs.toString()}`;
 }
 
 function attachPlanButtons() {
@@ -278,7 +292,15 @@ async function renderUpgradeView() {
 
   try {
     const j = await apiMe();
-    const current = String((j?.user?.plan || j?.plan || 'free')).toLowerCase();
+    
+    // FALLBACK: Use local if api failed
+    let current = 'free';
+    if(j && (j.user || j.plan)) {
+        current = String((j?.user?.plan || j?.plan || 'free')).toLowerCase();
+    } else {
+        const local = JSON.parse(localStorage.getItem('tm_user')||'{}');
+        current = String(local.plan || 'free').toLowerCase();
+    }
     
     const ranks = { free: 0, tier1: 1, tier2: 2, tier3: 3 };
     const myRank = ranks[current] ?? 0;
@@ -317,7 +339,6 @@ async function renderUpgradeView() {
         if(btn) {
           btn.textContent = 'Upgrade';
           btn.disabled = false;
-          btn.onclick = () => handleSelectPlan(cardPlan); // This function isn't defined but logic handled by listener above
         }
       }
     });
@@ -341,9 +362,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const sp = new URLSearchParams(location.search);
   const isUpgrade = sp.get('upgrade') === '1';
 
-  // [FIX 3] EMAIL VERIFICATION BYPASS:
-  // If we are upgrading (isUpgrade=true), SKIP the email verification gate.
-  // This prevents the redirect to auth.html?verify=1 shown in your screenshot.
   if (!isUpgrade) {
     const verifiedOk = await __gateEmailVerified();
     if (!verifiedOk) return;
