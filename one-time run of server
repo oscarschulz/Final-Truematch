@@ -1,0 +1,36 @@
+# ====== SET THIS to your TrueMatch project root ======
+PROJECT="/d/Downloads/From C/TrueMatch Final"
+
+# go to backend (where run-dev.sh should live)
+cd "$PROJECT/backend" || { echo "ERROR: backend folder not found"; exit 1; }
+
+# (1) Fix CRLF -> LF (prevents bash\r error)
+sed -i 's/\r$//' run-dev.sh
+
+# (2) Make it executable (optional, pero recommended)
+chmod +x run-dev.sh
+
+# (3) Kill any existing ngrok that might be blocking :4040 (safe)
+taskkill /F /IM ngrok.exe >/dev/null 2>&1 || true
+
+# (4) Sanity checks
+node -v || exit 1
+npm -v || exit 1
+ngrok version || { echo "ERROR: ngrok not found in PATH"; exit 1; }
+
+# (5) Install backend deps if needed (safe to rerun)
+if [ -f package.json ]; then
+  npm install
+fi
+
+# (6) Run dev script
+./run-dev.sh
+
+#copy of all these on gitbash
+
+#if after pull and there's an error, run this:
+
+cd backend
+sed -i 's/\r$//' run-dev.sh
+chmod +x run-dev.sh
+./run-dev.sh

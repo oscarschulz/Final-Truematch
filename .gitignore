@@ -52,3 +52,4 @@ Thumbs.db
 # =========================
 coverage/
 .nyc_output/
+backend/service_account.json

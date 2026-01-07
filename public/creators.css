@@ -1,137 +1,289 @@
-/* creators.css — Styles specific to the Creator Space */
+/* creators.css — Desktop Only & Seamless Infinite Loop */
 
-/* [FIX] Reset dashboard.css backgrounds & Force TRUE BLACK */
-html::before, html::after, body::after, body::before {
-  display: none !important;
-  content: none !important;
-  background: none !important;
+:root {
+  --bg: #02040a;
+  --primary: #64E9EE;
+  --text: #F6FAFF;
+  --muted: #94a3b8;
+  --card-bg: rgba(13, 20, 35, 0.90);
+  --glass-border: rgba(100, 233, 238, 0.3);
 }
 
-html, body {
-  background-color: #000 !important;
-  background-image: none !important;
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
   margin: 0; padding: 0;
-  min-height: 100vh; 
-  display: flex; flex-direction: column;
+  background-color: var(--bg) !important;
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  height: 100vh;
+  overflow: hidden;
 }
 
-/* --- Background Canvas Styles --- */
-#tm-bg-canvas {
-  position: fixed; inset: 0; width: 100vw; height: 100vh;
-  pointer-events: none; z-index: 0; opacity: 1;
-}
-body > :not(#tm-bg-canvas) { position: relative; z-index: 1; }
+#tm-bg-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 0; pointer-events: none; }
 
-.feed-wrapper {
-  max-width: 600px; margin: 0 auto; padding: 0 20px 60px; width: 100%;
-  margin-top: 40px; 
+/* --- ENTRANCE ANIMATIONS --- */
+@keyframes cardEntrance {
+  0% { opacity: 0; transform: scale(0.96) translateY(30px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-.feed-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 24px; padding-bottom: 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+@keyframes contentFadeUp {
+  0% { opacity: 0; transform: translateY(20px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
 
-/* --- Post Card Styling --- */
-.post-card { 
-  background: rgba(24, 24, 27, 0.8); 
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255,255,255,0.1); 
-  border-radius: 16px; padding: 20px; 
-  margin-bottom: 24px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+@keyframes navSlideDown {
+  0% { opacity: 0; transform: translateY(-20px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
 
-.post-header { margin-bottom: 12px; }
-
-.post-img { 
-  width: 100%; aspect-ratio: 4/5; object-fit: cover; 
-  border-radius: 12px; margin: 12px 0; background: #000;
-  border: 1px solid rgba(255,255,255,0.05);
-}
-
-/* Locked Content Overlay */
-.locked-container {
-  position: relative; overflow: hidden; border-radius: 12px; margin: 12px 0;
-}
-.locked-blur { filter: blur(20px); opacity: 0.5; width: 100%; display: block; }
-.locked-overlay {
-  position: absolute; inset: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  z-index: 2; background: rgba(0,0,0,0.4);
-}
-
-/* =========================================================
-   LAYER 1: LOCKED SCREEN (Bottom) -> z-index: 999
-   ========================================================= */
-.denied-state {
-  position: fixed; inset: 0; z-index: 999; 
-  display: flex; flex-direction: column; 
-  align-items: center;         
-  justify-content: flex-start; 
-  padding-top: 25vh;           
-  padding-left: 20px; padding-right: 20px;
-  background: transparent; 
-  backdrop-filter: none;
-}
-
-.denied-card {
-  background: rgba(20, 20, 20, 0.95); 
-  padding: 40px; border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.15); 
-  max-width: 480px; width: 100%;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9); 
-  animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-/* =========================================================
-   LAYER 2: PAYMENT OVERLAY (Top) -> z-index: 2000
-   ========================================================= */
-.payment-overlay {
-  position: fixed; inset: 0; z-index: 2000; /* Higher than Layer 1 */
-  
-  /* DEFAULT STATE: HIDDEN */
-  display: none; 
+/* HEADER */
+.auth-top-nav {
+  position: absolute; top: 0; left: 0; width: 100%;
+  padding: 30px 50px; 
+  display: flex; justify-content: space-between; align-items: center;
+  z-index: 100;
   opacity: 0;
-  pointer-events: none;
+  animation: navSlideDown 0.8s ease-out forwards;
+}
+.nav-brand {
+  display: flex; align-items: center; gap: 12px;
+  text-decoration: none; color: #fff;
+  font-weight: 800; font-size: 1.5rem; letter-spacing: 1px; text-transform: uppercase;
+}
+.nav-brand img { width: 40px; height: auto; }
+.nav-back-btn {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 20px; border-radius: 50px;
+  background: rgba(255, 255, 255, 0.08); 
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff; text-decoration: none; 
+  font-size: 0.8rem; font-weight: 700; letter-spacing: 1px;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px); 
+  transition: all 0.3s ease; text-transform: uppercase;
+}
+.nav-back-btn:hover { border-color: #64E9EE; color: #64E9EE; }
 
-  background: rgba(0, 0, 0, 0.8);           
-  backdrop-filter: blur(5px);
-  padding: 20px;
+/* LAYOUT */
+.split-layout {
+  position: relative; z-index: 5;
+  width: 100%; height: 100vh;
+  display: flex; justify-content: center;
+  padding-top: 100px; padding-bottom: 40px;
+  padding-left: 20px; padding-right: 20px;
+}
+.unified-card {
+  display: flex; flex-direction: row;
+  width: 100%; max-width: 1100px;
+  height: 100%;
+  background: var(--card-bg);
+  -webkit-backdrop-filter: blur(30px);
+  backdrop-filter: blur(30px);
+  border: 1px solid var(--glass-border);
+  border-radius: 40px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); 
+  overflow: hidden;
+  opacity: 0;
+  animation: cardEntrance 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: 0.1s;
+}
+
+/* LEFT SIDE (FIXED LOOP) */
+.visual-side {
+  flex: 0 0 35%;
+  background: radial-gradient(circle at center, rgba(100, 233, 238, 0.08), transparent 70%);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  position: relative; 
+  overflow: hidden;
+  display: flex; flex-direction: column;
   
-  transition: opacity 0.3s ease;
+  /* UPDATED: Dito na natin ilalagay ang padding para sa title space */
+  padding-top: 90px; 
 }
 
-/* ACTIVE STATE: SHOWN (Added via JS) */
-.payment-overlay.is-visible {
-  display: flex !important;
-  opacity: 1;
-  pointer-events: auto;
-  align-items: center; justify-content: center; 
+.feed-title-overlay {
+  position: absolute; top: 0; left: 0; width: 100%; height: 90px;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 10; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;
+  color: #fff; text-shadow: 0 0 10px rgba(0,0,0,0.8);
+  background: linear-gradient(to bottom, var(--card-bg) 20%, transparent);
+  pointer-events: none;
 }
 
-.payment-card {
-  background: #101012; 
-  border: 1px solid var(--primary, #64E9EE); 
-  border-radius: 16px; 
-  padding: 30px;
-  width: 100%; max-width: 360px;
-  text-align: center;
-  box-shadow: 0 20px 80px rgba(0,0,0,1);
-  transform: translateY(20px);
-  transition: transform 0.3s ease;
+/* TRACK - SEAMLESS LOOP FIX */
+.vertical-scroll-track {
+  display: flex; flex-direction: column;
+  /* Removed padding-top here to fix the math */
+  padding-top: 0; 
+  /* Use linear to make it continuous (no ease-in-out) */
+  animation: scrollUp 25s linear infinite; 
+}
+/* Pause on hover (Optional, remove if you want non-stop) */
+.vertical-scroll-track:hover {
+  animation-play-state: paused;
 }
 
+@keyframes scrollUp {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-50%); } 
+}
+
+/* ITEMS */
+.notif-group {
+  display: flex; flex-direction: column; gap: 15px; 
+  padding: 0 30px;
+  padding-bottom: 15px; /* Gap between the two groups */
+}
+.notif-item {
+  display: flex; align-items: center; gap: 15px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 12px 15px;
+  border-radius: 16px;
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+  min-height: 70px;
+}
+
+/* ICONS */
+.icon-box {
+  width: 40px; height: 40px; flex-shrink: 0;
+  background: rgba(255,255,255,0.1); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; 
+  font-size: 1rem; 
+  transition: all 0.5s ease;
+}
+.icon-box.active {
+  background: rgba(100, 233, 238, 0.2) !important; 
+  color: var(--primary) !important;
+  box-shadow: 0 0 10px rgba(100, 233, 238, 0.3);
+}
+
+.text-box p { margin: 0; font-size: 0.8rem; color: #eee; line-height: 1.4; }
+.text-box strong { color: var(--primary); }
+.text-box span { display: block; font-size: 0.65rem; color: var(--muted); margin-top: 2px; }
+
+.fade-bottom {
+  position: absolute; bottom: 0; left: 0; width: 100%; height: 100px;
+  background: linear-gradient(to top, var(--card-bg) 20%, transparent);
+  z-index: 5; pointer-events: none;
+}
+
+/* RIGHT SIDE */
+.form-side {
+  flex: 1; padding: 40px;
+  display: flex; flex-direction: column; 
+  background: radial-gradient(circle at top right, rgba(100, 233, 238, 0.05), transparent 60%);
+  overflow-y: auto;
+}
+
+/* Text Gradients */
+.header-text h1, .feed-header h2 { 
+  font-size: 2rem; font-weight: 800; margin: 0; 
+  background: linear-gradient(to right, #fff, var(--primary));
+  background-clip: text; 
+  -webkit-background-clip: text; 
+  -webkit-text-fill-color: transparent;
+  text-transform: uppercase; letter-spacing: 1px;
+}
+
+.header-text p { color: var(--muted); margin-top: 8px; font-size: 0.95rem; }
+.denied-wrapper { display: flex; flex-direction: column; height: 100%; justify-content: center; }
+.lock-visual { 
+  font-size: 50px; color: rgba(255,255,255,0.1); margin: 30px auto; 
+  border: 2px dashed rgba(255,255,255,0.1); border-radius: 50%; width: 100px; height: 100px;
+  display: flex; align-items: center; justify-content: center;
+}
+.info-grid { width: 100%; margin: 20px 0; }
+.info-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.info-label { color: var(--muted); font-size: 0.9rem; font-weight: 600; }
+.info-value { color: #fff; font-size: 0.9rem; font-weight: 600; text-transform: uppercase; }
+
+/* Feed & Posts */
+.feed-wrapper { width: 100%; }
+.feed-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px; }
+.stories-scroll { display: flex; gap: 15px; overflow-x: auto; padding-bottom: 10px; margin-bottom: 20px; scrollbar-width: none; }
+.story-item { display: flex; flex-direction: column; align-items: center; gap: 5px; cursor: pointer; min-width: 60px; }
+.story-ring {
+  width: 55px; height: 55px; border-radius: 50%; padding: 2px;
+  border: 2px solid rgba(255,255,255,0.1); transition: transform 0.2s;
+}
+.story-ring.live { border-color: #ff4757; box-shadow: 0 0 10px rgba(255, 71, 87, 0.5); }
+.story-item:hover .story-ring { border-color: var(--primary); transform: scale(1.05); }
+.story-ring img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.story-item span { font-size: 0.7rem; color: var(--muted); }
+.filter-row { display: flex; gap: 8px; }
+.chip {
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+  color: var(--muted); padding: 6px 14px; border-radius: 20px; font-weight: 600; font-size: 0.75rem;
+  cursor: pointer; transition: 0.2s;
+}
+.chip.active, .chip:hover { border-color: var(--primary); color: var(--primary); background: rgba(100, 233, 238, 0.1); }
+
+.post-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 20px; padding: 20px; margin-bottom: 20px;
+}
+.post-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.post-img { width: 100%; border-radius: 12px; margin: 10px 0; border: 1px solid rgba(255,255,255,0.1); }
+.locked-container { position: relative; overflow: hidden; border-radius: 12px; margin: 10px 0; }
+.locked-blur { filter: blur(15px); opacity: 0.4; width: 100%; display: block; }
+.locked-overlay {
+  position: absolute; inset: 0; display: flex; flex-direction: column; 
+  align-items: center; justify-content: center; z-index: 2;
+}
+
+/* BUTTONS */
+.btn-row, .btn-group { display: flex; flex-direction: column; gap: 15px; margin-top: 30px; width: 100%; }
+.btn {
+  width: 100%; padding: 14px; border-radius: 50px; text-align: center; text-decoration: none;
+  font-weight: 800; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.5px;
+  cursor: pointer; transition: transform 0.2s ease, box-shadow 0.2s ease; border: 1px solid transparent;
+}
+.btn-primary { 
+  background-color: #64E9EE; color: #000; border: 1px solid #64E9EE;
+}
+.btn-primary:hover { 
+  background-color: #64E9EE; color: #000; transform: translateY(-2px);
+  box-shadow: 0 0 15px rgba(100, 233, 238, 0.6);
+}
+.btn-ghost { 
+  background: transparent; border-color: rgba(255,255,255,0.3); color: var(--muted); 
+}
+.btn-ghost:hover { border-color: #fff; color: #fff; transform: translateY(-1px); }
+.card-footer, .footer-note { margin-top: auto; padding-top: 20px; text-align: center; color: rgba(255,255,255,0.3); font-size: 0.75rem; }
+
+/* MODALS */
+.payment-overlay { 
+  position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 2000; 
+  display: none; align-items: center; justify-content: center; 
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+}
+.payment-overlay.is-visible { display: flex !important; }
+.payment-card { 
+  background: var(--card-bg); padding: 40px; border-radius: 30px; width: 90%; max-width: 400px;
+  border: 1px solid var(--glass-border); text-align: center;
+  opacity: 0;
+  transform: scale(0.9);
+  transition: all 0.3s ease;
+}
 .payment-overlay.is-visible .payment-card {
-  transform: translateY(0);
+  opacity: 1;
+  transform: scale(1);
+  animation: contentFadeUp 0.4s ease-out;
 }
 
-.payment-actions {
-  display: flex; gap: 12px; margin-top: 24px;
-}
-
-@keyframes popIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+/* Stagger Classes */
+.stagger-1 { opacity: 0; animation: contentFadeUp 0.6s ease-out forwards; animation-delay: 0.3s; }
+.stagger-2 { opacity: 0; animation: contentFadeUp 0.6s ease-out forwards; animation-delay: 0.4s; }
+.stagger-3 { opacity: 0; animation: contentFadeUp 0.6s ease-out forwards; animation-delay: 0.5s; }
+.stagger-4 { opacity: 0; animation: contentFadeUp 0.6s ease-out forwards; animation-delay: 0.6s; }
+.stagger-5 { opacity: 0; animation: contentFadeUp 0.6s ease-out forwards; animation-delay: 0.7s; }
