@@ -211,35 +211,37 @@
 
   // ---- Form helpers ----
   function getFormValues() {
-    const cityInput = qs('input[name="city"]');
-    const ageMinInput = qs('input[name="ageMin"]');
-    const ageMaxInput = qs('input[name="ageMax"]');
-    const ethnicitySelect = qs('select[name="ethnicity"]');
-    const lookingForSelect = qs('select[name="lookingFor"]');
-    const intent = qs('select[name="intent"]')?.value || '';
-    const dealbreakers =
-      qs('textarea[name="dealbreakers"]')?.value?.trim() || '';
-    const sharedValues = qsa('input[name="sharedValues"]:checked').map(
-      (cb) => cb.value
-    );
+  const cityInput = qs('input[name="city"]');
+  const ageMinInput = qs('input[name="ageMin"]');
+  const ageMaxInput = qs('input[name="ageMax"]');
+  const ethnicitySelect = qs('select[name="ethnicity"]');
 
-    const city = cityInput ? cityInput.value.trim() : '';
-    const ageMin = ageMinInput ? Number(ageMinInput.value) : NaN;
-    const ageMax = ageMaxInput ? Number(ageMaxInput.value) : NaN;
-    const ethnicity = ethnicitySelect ? ethnicitySelect.value : '';
-    const lookingFor = lookingForSelect ? lookingForSelect.value : '';
+  const lookingForRadio = qs('input[name="lookingFor"]:checked');
+  const lookingFor = lookingForRadio ? lookingForRadio.value : '';
 
-    return {
-      city,
-      ageMin,
-      ageMax,
-      ethnicity,
-      lookingFor,
-      intent,
-      dealbreakers,
-      sharedValues
-    };
-  }
+  const dealbreakers =
+    qs('textarea[name="dealbreakers"]')?.value?.trim() || '';
+
+  const sharedValues = qsa('input[name="sharedValues"]:checked').map(
+    (cb) => cb.value
+  );
+
+  const city = cityInput ? cityInput.value.trim() : '';
+  const ageMin = ageMinInput ? Number(ageMinInput.value) : NaN;
+  const ageMax = ageMaxInput ? Number(ageMaxInput.value) : NaN;
+  const ethnicity = ethnicitySelect ? ethnicitySelect.value : '';
+
+  return {
+    city,
+    ageMin,
+    ageMax,
+    ethnicity,
+    lookingFor,
+    dealbreakers,
+    sharedValues
+  };
+}
+
 
   function validateFormValues(prefs) {
     if (!prefs) return false;
@@ -291,12 +293,11 @@
       qs('select[name="ethnicity"]').value = prefs.ethnicity;
     }
 
-    if (prefs.lookingFor && qs('select[name="lookingFor"]')) {
-      qs('select[name="lookingFor"]').value = prefs.lookingFor;
-    }
-
-    if (prefs.intent && qs('select[name="intent"]')) {
-      qs('select[name="intent"]').value = prefs.intent;
+    if (prefs.lookingFor) {
+    const val = Array.isArray(prefs.lookingFor) ? prefs.lookingFor[0] : prefs.lookingFor;
+      qsa('input[name="lookingFor"]').forEach(r => {
+        r.checked = (r.value === val);
+      });
     }
 
     if ('dealbreakers' in prefs && qs('textarea[name="dealbreakers"]')) {
