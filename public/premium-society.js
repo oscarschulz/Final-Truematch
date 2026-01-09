@@ -12,6 +12,12 @@ const DOM = {
   tabReview: document.getElementById('tabReview'),
   tabLounge: document.getElementById('tabLounge'),
 
+  // Icons
+  iconApply: document.getElementById('iconApply'),
+  iconReview: document.getElementById('iconReview'),
+  iconLounge: document.getElementById('iconLounge'),
+  sidebarRoleLabel: document.getElementById('sidebarRoleLabel'),
+
   // Views
   viewOverview: document.getElementById('viewOverview'),
   viewApply: document.getElementById('viewApply'),
@@ -22,7 +28,7 @@ const DOM = {
   btnProfileToggle: document.getElementById('btnProfileToggle'),
   profileMenu: document.getElementById('profileMenu'),
 
-  // Form Inputs
+  // Form
   frm: document.getElementById('frmPremiumApply'),
   fullName: document.getElementById('fullName'),
   age: document.getElementById('age'),
@@ -31,10 +37,11 @@ const DOM = {
   btnSubmitApply: document.getElementById('btnSubmitApply'),
   applyError: document.getElementById('applyError'),
 
-  // Misc
+  // Chat & Misc
   btnRefresh: document.getElementById('btnRefresh'),
   txtConcierge: document.getElementById('txtConcierge'),
   btnSendConcierge: document.getElementById('btnSendConcierge'),
+  chatBody: document.getElementById('chatBody'),
   pendingWhen: document.getElementById('pendingWhen'),
   btnHeroApply: document.getElementById('btnHeroApply'),
   globalLoader: document.getElementById('globalLoader')
@@ -47,24 +54,18 @@ function triggerAnimations(container) {
   const elements = container.querySelectorAll('.reveal-up, .reveal-left, .reveal-right, .reveal-down');
   elements.forEach(el => {
     el.classList.remove('is-visible'); 
-    void el.offsetWidth; // Force Reflow
+    void el.offsetWidth; 
     el.classList.add('is-visible'); 
   });
 }
 
-// ---------------------------------------------------------
-// 1. VIEW SWITCHING
-// ---------------------------------------------------------
-
 window.switchView = function(viewName) {
-  // Hide all
   DOM.viewOverview.hidden = true;
   DOM.viewApply.hidden = true;
   DOM.viewReview.hidden = true;
   DOM.viewLounge.hidden = true;
   if(DOM.globalLoader) DOM.globalLoader.hidden = true;
 
-  // Deactivate Tabs
   DOM.tabOverview.classList.remove('active');
   DOM.tabApply.classList.remove('active');
   DOM.tabReview.classList.remove('active');
@@ -72,7 +73,6 @@ window.switchView = function(viewName) {
 
   let activeView = null;
 
-  // Activate
   switch(viewName) {
     case 'overview':
       DOM.viewOverview.hidden = false;
@@ -97,6 +97,7 @@ window.switchView = function(viewName) {
       DOM.tabLounge.classList.add('active');
       DOM.pageTitle.textContent = 'The Lounge';
       activeView = DOM.viewLounge;
+      setTimeout(() => scrollToBottom(), 100);
       break;
   }
 
@@ -104,67 +105,73 @@ window.switchView = function(viewName) {
 };
 
 // ---------------------------------------------------------
-// 2. UNLOCKED ACCESS LOGIC
+// SIDEBAR STATUS LOGIC
 // ---------------------------------------------------------
+function updateSidebarVisuals(status) {
+  const setIcon = (el, iconClass) => { if(el) el.innerHTML = `<i class="${iconClass}"></i>`; };
+
+  if (status === 'locked') {
+    setIcon(DOM.iconApply, 'fa-solid fa-arrow-right');
+    setIcon(DOM.iconReview, 'fa-solid fa-lock');
+    setIcon(DOM.iconLounge, 'fa-solid fa-lock');
+    if(DOM.sidebarRoleLabel) DOM.sidebarRoleLabel.textContent = "Guest";
+  } else if (status === 'pending') {
+    setIcon(DOM.iconApply, 'fa-solid fa-check');
+    setIcon(DOM.iconReview, 'fa-solid fa-clock');
+    setIcon(DOM.iconLounge, 'fa-solid fa-lock');
+    if(DOM.sidebarRoleLabel) DOM.sidebarRoleLabel.textContent = "Pending";
+  } else if (status === 'approved') {
+    setIcon(DOM.iconApply, 'fa-solid fa-check');
+    setIcon(DOM.iconReview, 'fa-solid fa-check');
+    setIcon(DOM.iconLounge, 'fa-solid fa-crown');
+    if(DOM.sidebarRoleLabel) DOM.sidebarRoleLabel.textContent = "Member";
+    if(DOM.sidebarRoleLabel) DOM.sidebarRoleLabel.style.color = "#00ff88";
+  }
+}
 
 function setSidebarAccess(status) {
-  // Always unlocked for dev/design purposes as requested
+  updateSidebarVisuals(status);
   DOM.tabApply.disabled = false;
   DOM.tabReview.disabled = false;
   DOM.tabLounge.disabled = false;
 
   if (!window.hasSwitched) {
-    if (status === 'locked') {
-       switchView('overview');
-    } else if (status === 'pending') {
-       switchView('review');
-    } else if (status === 'approved') {
-       switchView('lounge');
-    }
+    if (status === 'locked') switchView('overview');
+    else if (status === 'pending') switchView('review');
+    else if (status === 'approved') switchView('lounge');
     window.hasSwitched = true;
   }
 }
 
 // ---------------------------------------------------------
-// 3. BACKEND INTEGRATION
+// BACKEND INTEGRATION
 // ---------------------------------------------------------
-
 function normalizeStatus(val) { return String(val || '').trim().toLowerCase(); }
 
 function computePremiumState(user) {
   const plan = normalizeStatus(user?.plan);
   const planActive = !!user?.planActive;
   const premiumStatus = normalizeStatus(user?.premiumStatus);
-
   const approved = (plan === 'tier3' && planActive) || premiumStatus === 'approved';
   const pending = premiumStatus === 'pending';
-
   return { approved, pending };
 }
 
 async function refreshStatus() {
   if(DOM.globalLoader) DOM.globalLoader.hidden = false;
-
   try {
     const res = await apiGet('/api/me');
     if(DOM.globalLoader) DOM.globalLoader.hidden = true;
-
-    if (!res?.ok) {
-      setSidebarAccess('locked');
-      return;
-    }
+    if (!res?.ok) { setSidebarAccess('locked'); return; }
 
     const user = res.user || {};
     const s = computePremiumState(user);
 
-    if (s.approved) {
-      setSidebarAccess('approved');
-    } else if (s.pending) {
+    if (s.approved) setSidebarAccess('approved');
+    else if (s.pending) {
       if (DOM.pendingWhen) DOM.pendingWhen.textContent = new Date(user?.premiumApplication?.appliedAt || Date.now()).toLocaleDateString();
       setSidebarAccess('pending');
-    } else {
-      setSidebarAccess('locked');
-    }
+    } else setSidebarAccess('locked');
 
   } catch (err) {
     console.error('API Error', err);
@@ -189,10 +196,8 @@ async function submitApplication(e) {
   try {
     const res = await apiPost('/api/me/premium/apply', payload);
     if (!res?.ok) throw new Error(res.message || 'Error');
-
     await refreshStatus();
     switchView('review');
-
   } catch (err) {
     DOM.applyError.hidden = false;
     DOM.applyError.textContent = err.message || 'Failed to submit.';
@@ -203,8 +208,59 @@ async function submitApplication(e) {
 }
 
 // ---------------------------------------------------------
-// 4. INIT
+// CHAT FUNCTIONALITY
 // ---------------------------------------------------------
+function scrollToBottom() {
+  if(DOM.chatBody) {
+    DOM.chatBody.scrollTop = DOM.chatBody.scrollHeight;
+  }
+}
+
+function setupConciergeDraft() {
+  const key = 'tm_concierge_draft';
+  const txt = DOM.txtConcierge;
+  const btn = DOM.btnSendConcierge;
+
+  // Handle Enter (Send) vs Shift+Enter (New Line)
+  if(txt) {
+    txt.addEventListener("keydown", function(event) {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault(); 
+        btn.click(); 
+      }
+    });
+  }
+
+  if(btn) {
+    btn.onclick = () => {
+      const msg = txt?.value;
+      if(msg && msg.trim() !== "") {
+        localStorage.setItem(key, msg);
+        
+        const bubble = document.createElement('div');
+        bubble.className = 'msg-row msg-outgoing';
+        // Use innerText for safety, wrap in bubble
+        const bubbleContent = document.createElement('div');
+        bubbleContent.className = 'msg-bubble';
+        bubbleContent.innerText = msg;
+        
+        const meta = document.createElement('div');
+        meta.className = 'msg-meta';
+        meta.innerText = 'Just now';
+
+        bubble.appendChild(bubbleContent);
+        bubble.appendChild(meta);
+        
+        if(DOM.chatBody) {
+          DOM.chatBody.appendChild(bubble);
+          setTimeout(() => scrollToBottom(), 50); 
+        }
+        
+        txt.value = ""; 
+      }
+    };
+  }
+}
 
 function setupProfileToggle() {
   if (DOM.btnProfileToggle) {
@@ -215,14 +271,16 @@ function setupProfileToggle() {
   }
 }
 
-function setupConciergeDraft() {
-  const key = 'tm_concierge_draft';
-  if(DOM.btnSendConcierge) {
-    DOM.btnSendConcierge.onclick = () => {
-      if(DOM.txtConcierge?.value) localStorage.setItem(key, DOM.txtConcierge.value);
-      alert('Request sent to Concierge (Demo).');
-    };
-  }
+// ---------------------------------------------------------
+// PERKS TOGGLE (NEW)
+// ---------------------------------------------------------
+function setupPerksToggle() {
+  const perks = document.querySelectorAll('.perk-pill, .perk-item');
+  perks.forEach(p => {
+    p.addEventListener('click', () => {
+      p.classList.toggle('active');
+    });
+  });
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -232,5 +290,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   setupProfileToggle();
   setupConciergeDraft();
+  setupPerksToggle(); // Initialize perks logic
   await refreshStatus();
 });

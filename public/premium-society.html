@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   
-  <script src="https://kit.fontawesome.com/5e3a761cdf.js" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
   <link rel="stylesheet" href="animations.css">
   <link rel="stylesheet" href="premium-society.css">
@@ -22,7 +22,6 @@
   <div class="dashboard-layout">
     
     <aside class="dashboard-sidebar">
-      
       <div class="sidebar-brand">
         <img src="assets/images/truematch-mark.png" alt="TrueMatch" class="brand__logo" />
         <span class="brand__name">TRUEMATCH</span>
@@ -32,29 +31,40 @@
 
       <nav class="sidebar-nav" id="sidebarNav">
         <button class="nav-tab active" id="tabOverview" onclick="switchView('overview')">
-          <div class="tab-icon"><i class="fa-solid fa-layer-group"></i></div>
-          <div class="tab-text">Overview</div>
+          <div class="tab-content-wrapper">
+            <div class="tab-icon"><i class="fa-solid fa-layer-group"></i></div>
+            <div class="tab-text">Overview</div>
+          </div>
+          <div class="status-indicator"><i class="fa-solid fa-check"></i></div>
         </button>
 
         <button class="nav-tab" id="tabApply" onclick="switchView('apply')">
-          <div class="tab-icon"><i class="fa-solid fa-file-signature"></i></div>
-          <div class="tab-text">Application</div>
+          <div class="tab-content-wrapper">
+            <div class="tab-icon"><i class="fa-solid fa-file-signature"></i></div>
+            <div class="tab-text">Application</div>
+          </div>
+          <div class="status-indicator" id="iconApply"></div>
         </button>
 
         <button class="nav-tab" id="tabReview" onclick="switchView('review')">
-          <div class="tab-icon"><i class="fa-solid fa-hourglass-start"></i></div>
-          <div class="tab-text">Status</div>
+          <div class="tab-content-wrapper">
+            <div class="tab-icon"><i class="fa-solid fa-hourglass-half"></i></div>
+            <div class="tab-text">Status</div>
+          </div>
+          <div class="status-indicator" id="iconReview"><i class="fa-solid fa-lock"></i></div>
         </button>
 
         <button class="nav-tab" id="tabLounge" onclick="switchView('lounge')">
-          <div class="tab-icon"><i class="fa-solid fa-gem"></i></div>
-          <div class="tab-text">The Lounge</div>
+          <div class="tab-content-wrapper">
+            <div class="tab-icon"><i class="fa-solid fa-gem"></i></div>
+            <div class="tab-text">The Lounge</div>
+          </div>
+          <div class="status-indicator" id="iconLounge"><i class="fa-solid fa-lock"></i></div>
         </button>
       </nav>
 
       <div class="sidebar-foot">
         <div class="profile-wrapper">
-          
           <div class="profile-menu" id="profileMenu">
             <a href="profile.html" class="menu-link"><i class="fa-solid fa-user"></i> Profile</a>
             <div class="menu-divider"></div>
@@ -65,7 +75,10 @@
           <button class="profile-btn" id="btnProfileToggle">
             <div class="btn-user">
               <div class="user-avatar-placeholder"><i class="fa-solid fa-user"></i></div>
-              <span>My Account</span>
+              <div class="user-info-col">
+                <span class="user-name">My Account</span>
+                <span class="user-role" id="sidebarRoleLabel">Guest</span>
+              </div>
             </div>
             <i class="fa-solid fa-chevron-up chevron"></i>
           </button>
@@ -95,121 +108,320 @@
           </div>
 
           <div id="viewOverview" class="view-section" hidden>
-            <section class="premium-hero">
-              <div class="premium-hero__copy reveal-up is-visible">
+            <div class="ambient-glow glow-blue top-right"></div>
+
+            <section class="premium-hero-split">
+              <div class="premium-hero-left reveal-left is-visible">
                 <div class="pill">Exclusive Access</div>
-                <h1 class="premium-title">The <span class="highlight">Premium</span> Society</h1>
+                <h1 class="premium-title text-shimmer">The <span class="highlight">Premium</span> Society</h1>
                 <p class="premium-subtitle">
-                  Vetted membership for high-value individuals. Unlock concierge introductions and priority matching.
+                  Vetted membership for high-value individuals. Unlock concierge introductions, priority matching, and a quieter network.
                 </p>
-                <div class="hero-cta">
+                
+                <div class="hero-cta-group">
                   <button class="btn btn--primary" onclick="switchView('apply')" id="btnHeroApply">
                     Apply for Access
                   </button>
-                  <p class="hero-note">Already verified? Go to <a href="#" onclick="switchView('lounge')">The Lounge</a></p>
+                  <a href="#" onclick="switchView('lounge')" class="text-link">Already a member?</a>
+                </div>
+
+                <div class="social-proof-row">
+                  <div class="avatars-overlap">
+                    <div class="avatar-circle" style="background-image: url('assets/images/avatar1.jpg'); background-color: #444;"></div>
+                    <div class="avatar-circle" style="background-image: url('assets/images/avatar2.jpg'); background-color: #555;"></div>
+                    <div class="avatar-circle" style="background-image: url('assets/images/avatar3.jpg'); background-color: #666;"></div>
+                  </div>
+                  <span class="proof-text">Join <strong>250+</strong> verified members</span>
                 </div>
               </div>
-              
-              <div class="premium-hero__grid reveal-up reveal-delay-200 is-visible">
-                <div class="bento-card">
-                  <div class="bento-icon"><i class="fa-solid fa-shield-halved"></i></div>
-                  <h3>Verified Only</h3>
-                  <p>Strict vetting ensures high intent and safety.</p>
-                </div>
-                <div class="bento-card">
-                  <div class="bento-icon"><i class="fa-solid fa-bell-concierge"></i></div>
-                  <h3>Concierge</h3>
-                  <p>Hand-picked matches tailored to you.</p>
-                </div>
-                <div class="bento-card">
-                  <div class="bento-icon"><i class="fa-solid fa-fingerprint"></i></div>
-                  <h3>Private</h3>
-                  <p>Members-only access and events.</p>
+
+              <div class="premium-hero-right reveal-right is-visible">
+                <div class="floating-card-container">
+                  <div class="glass-card-visual">
+                    <div class="card-chip"></div>
+                    <div class="card-logo">TRUEMATCH</div>
+                    <div class="card-number">•••• •••• •••• 8821</div>
+                    <div class="card-meta">
+                      <span>PREMIUM MEMBER</span>
+                      <span>VALID THRU 12/28</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </section>
+            
+            <div class="premium-bento-grid reveal-up reveal-delay-200 is-visible">
+              <div class="bento-card wide">
+                <div class="bento-content-row">
+                  <div class="bento-icon-lg"><i class="fa-solid fa-bell-concierge"></i></div>
+                  <div>
+                    <h3>Concierge Service</h3>
+                    <p class="muted">A dedicated matchmaker to curate your introductions and plan your dates.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="bento-card">
+                <div class="bento-icon"><i class="fa-solid fa-shield-halved"></i></div>
+                <h3>Verified Only</h3>
+                <p class="muted">Strict vetting ensures high intent and safety.</p>
+              </div>
+              <div class="bento-card">
+                <div class="bento-icon"><i class="fa-solid fa-fingerprint"></i></div>
+                <h3>Private</h3>
+                <p class="muted">Members-only access and events.</p>
+              </div>
+            </div>
+
+            <div class="locked-content-teaser reveal-up reveal-delay-300">
+              <div class="teaser-header">
+                <h3>Upcoming Exclusive Events</h3>
+                <span class="badge-locked"><i class="fa-solid fa-lock"></i> Members Only</span>
+              </div>
+              <div class="teaser-blur-container">
+                <div class="blur-item"><span>Cocktail Night • Makati</span></div>
+                <div class="blur-item"><span>Yacht Mixer • Subic</span></div>
+                <div class="blur-item"><span>Private Dining • BGC</span></div>
+                <div class="blur-overlay">
+                  <i class="fa-solid fa-lock"></i>
+                  <span>Apply to Unlock Access</span>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div id="viewApply" class="view-section" hidden>
-             <div class="form-container glass-panel reveal-up">
-               <h2 class="section-title">Membership Application</h2>
-               <p class="section-desc">Join the waitlist. We review every profile manually.</p>
+             
+             <div class="ambient-glow glow-purple center-left"></div>
+             <div class="ambient-glow glow-cyan center-right"></div>
+
+             <div class="split-layout-container glass-panel reveal-up">
                
-               <form id="frmPremiumApply">
-                 <div class="tm-form-grid">
-                   <label class="tm-field reveal-up reveal-delay-100">
-                     <span>Full Name</span><input id="fullName" class="tm-input" required placeholder="e.g. Alex Doe" />
-                   </label>
-                   <label class="tm-field reveal-up reveal-delay-100">
-                     <span>Age</span><input id="age" type="number" class="tm-input" min="18" required placeholder="18+" />
-                   </label>
-                   <label class="tm-field reveal-up reveal-delay-200">
-                     <span>Occupation</span><input id="occupation" class="tm-input" required placeholder="e.g. Architect" />
-                   </label>
-                   <label class="tm-field reveal-up reveal-delay-200">
-                     <span>Financial Status</span>
-                     <select id="finance" class="tm-input" required>
-                       <option value="" disabled selected>Select Status...</option>
-                       <option value="stable">Stable Income</option>
-                       <option value="high_income">High Income</option>
-                       <option value="wealthy">Wealthy / HNW</option>
-                       <option value="other">Prefer not to say</option>
-                     </select>
-                   </label>
+               <div class="visual-side">
+                 <div class="phone-mockup">
+                   <div class="phone-notch"></div>
+                   <div class="phone-screen">
+                     <div class="swipe-stack">
+                       <div class="swipe-card card-3"></div>
+                       <div class="swipe-card card-2"></div>
+                       <div class="swipe-card card-1">
+                         <div class="card-avatar"></div>
+                         <div class="card-info">
+                           <div class="card-name-bar"></div>
+                           <div class="card-line"></div>
+                         </div>
+                         <div class="match-badge">MATCH!</div>
+                       </div>
+                     </div>
+                     <div class="phone-ui-bottom">
+                       <div class="ui-btn btn-x"><i class="fa-solid fa-xmark"></i></div>
+                       <div class="ui-btn btn-heart"><i class="fa-solid fa-heart"></i></div>
+                     </div>
+                   </div>
+                 </div>
+                 <div class="visual-text">
+                   <h3 class="highlight-text">Find Your Match</h3>
+                   <p>Join the elite circle of verified profiles.</p>
+                 </div>
+               </div>
+
+               <div class="form-side">
+                 <div class="form-header-compact">
+                   <div class="form-icon-circle"><i class="fa-solid fa-pen-nib"></i></div>
+                   <h2 class="section-title gradient-title">Membership Application</h2>
+                   <p class="section-desc">Manual vetting in progress.</p>
                  </div>
                  
-                 <div class="form-actions reveal-up reveal-delay-300">
-                   <button type="submit" id="btnSubmitApply" class="btn btn--primary full-width">
-                     Submit Application
-                   </button>
-                 </div>
-                 <div id="applyError" class="tm-error" hidden></div>
-               </form>
+                 <form id="frmPremiumApply">
+                   <div class="tm-form-stack">
+                     
+                     <label class="tm-field">
+                       <span class="field-label"><i class="fa-solid fa-user"></i> Full Name</span>
+                       <input id="fullName" class="tm-input" required placeholder="e.g. Alex Doe" />
+                     </label>
+
+                     <div class="tm-form-row">
+                       <label class="tm-field field-sm">
+                         <span class="field-label"><i class="fa-solid fa-calendar-days"></i> Age</span>
+                         <input id="age" type="number" class="tm-input" min="18" max="99" required placeholder="25" />
+                       </label>
+                       <label class="tm-field field-lg">
+                         <span class="field-label"><i class="fa-solid fa-briefcase"></i> Job</span>
+                         <input id="occupation" class="tm-input" required placeholder="e.g. CEO" />
+                       </label>
+                     </div>
+
+                     <label class="tm-field">
+                       <span class="field-label"><i class="fa-solid fa-coins"></i> Financial Status</span>
+                       <div class="select-wrapper">
+                         <select id="finance" class="tm-input" required>
+                           <option value="" disabled selected>Select status...</option>
+                           <option value="stable">Stable Income</option>
+                           <option value="high_income">High Income</option>
+                           <option value="wealthy">Wealthy / HNW</option>
+                           <option value="other">Prefer not to say</option>
+                         </select>
+                         <i class="fa-solid fa-chevron-down select-arrow"></i>
+                       </div>
+                     </label>
+
+                   </div>
+                   
+                   <div class="form-footer">
+                     <button type="submit" id="btnSubmitApply" class="btn btn--primary full-width">
+                       Submit Application <i class="fa-solid fa-arrow-right"></i>
+                     </button>
+                     <div class="security-badge">
+                       <i class="fa-solid fa-lock"></i>
+                       <span>Encrypted & Confidential</span>
+                     </div>
+                   </div>
+
+                   <div id="applyError" class="tm-error" hidden></div>
+                 </form>
+               </div>
+
              </div>
           </div>
 
           <div id="viewReview" class="view-section" hidden>
-             <div class="status-box glass-panel reveal-up">
-               <div class="status-icon-ring pending reveal-up"><i class="fa-solid fa-clock"></i></div>
-               <h2 class="status-title reveal-up reveal-delay-100">Under Review</h2>
-               <p class="status-text reveal-up reveal-delay-100">
-                 We have received your application. Our team is currently verifying your credentials.
-               </p>
-               <div class="status-details reveal-up reveal-delay-200">
-                 <div class="kv-row"><span>Current Status</span> <strong class="color-pending">Pending</strong></div>
-                 <div class="kv-row"><span>Date Submitted</span> <strong id="pendingWhen">-</strong></div>
+             <div class="split-layout-container glass-panel reveal-up">
+               
+               <div class="visual-side scanner-side">
+                 <div class="scanner-wrapper big-scanner">
+                   <div class="scanner-circle"></div>
+                   <div class="scanner-radar"></div>
+                   <div class="scanner-icon"><i class="fa-solid fa-user-shield"></i></div>
+                   <div class="scanner-status-text">ANALYZING PROFILE...</div>
+                 </div>
+                 <div class="visual-text">
+                   <h3 class="highlight-text">Under Review</h3>
+                   <p>Our team is verifying your credentials.</p>
+                 </div>
                </div>
-               <button class="btn btn--ghost reveal-up reveal-delay-300" id="btnRefresh">
-                 <i class="fa-solid fa-rotate-right"></i> Check for Updates
-               </button>
+
+               <div class="form-side">
+                 <div class="form-header-compact">
+                   <h2 class="section-title">Application Status</h2>
+                   <p class="section-desc">Reference ID: #TM-Pending</p>
+                 </div>
+
+                 <div class="verification-timeline">
+                   <div class="v-step completed">
+                     <div class="v-circle"><i class="fa-solid fa-check"></i></div>
+                     <span>Sent</span>
+                   </div>
+                   <div class="v-line completed"></div>
+                   <div class="v-step active">
+                     <div class="v-circle"><div class="v-pulse"></div></div>
+                     <span>Vetting</span>
+                   </div>
+                   <div class="v-line"></div>
+                   <div class="v-step">
+                     <div class="v-circle"><i class="fa-solid fa-lock"></i></div>
+                     <span>Result</span>
+                   </div>
+                 </div>
+
+                 <div class="review-ticket">
+                   <div class="ticket-header">PRIORITY PASS</div>
+                   <div class="ticket-row">
+                     <span class="t-label">Status</span>
+                     <span class="t-val color-pending"><i class="fa-solid fa-circle-notch fa-spin"></i> Processing</span>
+                   </div>
+                   <div class="ticket-row">
+                     <span class="t-label">Date</span>
+                     <span id="pendingWhen" class="t-val">-</span>
+                   </div>
+                   <div class="ticket-dashed-line"></div>
+                   <div class="ticket-footer-note">
+                     <i class="fa-solid fa-clock"></i> Wait time: 24-48 Hours
+                   </div>
+                 </div>
+
+                 <button class="btn btn--ghost full-width" id="btnRefresh">
+                   <i class="fa-solid fa-rotate-right"></i> Refresh Status
+                 </button>
+               </div>
+
              </div>
           </div>
 
           <div id="viewLounge" class="view-section" hidden>
-            <div class="lounge-container">
-               <div class="lounge-header reveal-down">
-                 <div><h2>The Lounge</h2><p class="muted">Members-only concierge & benefits.</p></div>
-                 <div class="badge-premium"><i class="fa-solid fa-crown"></i> MEMBER</div>
+            <div class="ambient-glow glow-blue center-left"></div>
+            <div class="ambient-glow glow-purple top-right"></div>
+
+            <div class="lounge-dashboard-grid reveal-up">
+               
+               <div class="lounge-match-panel glass-panel">
+                 <div class="lounge-panel-header">
+                   <h3><i class="fa-solid fa-star"></i> Featured Match</h3>
+                   <span class="refresh-pill"><i class="fa-solid fa-bolt"></i> Live</span>
+                 </div>
+                 
+                 <div class="elite-portrait-card">
+                   <div class="elite-img-full" style="background-image: url('https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=600&q=80');"></div>
+                   <div class="elite-overlay-content">
+                     <div class="match-percentage">98% Match</div>
+                     <h2 class="elite-name-lg">Sophia, 24 <i class="fa-solid fa-certificate"></i></h2>
+                     <p class="elite-job-lg">Model • Paris, France</p>
+                     <div class="elite-actions">
+                       <button class="action-btn btn-pass"><i class="fa-solid fa-xmark"></i></button>
+                       <button class="action-btn btn-like"><i class="fa-solid fa-heart"></i></button>
+                     </div>
+                   </div>
+                 </div>
                </div>
 
-               <div class="premium-lounge-grid">
-                 <div class="premium-panel glass-panel reveal-left">
-                   <div class="panel-head"><div class="bento-icon"><i class="fa-solid fa-feather-pointed"></i></div><h3>Concierge Request</h3></div>
-                   <p class="panel-desc">Tell us what you're looking for or request a date plan.</p>
-                   <textarea id="txtConcierge" class="premium-textarea" rows="4" placeholder="Type your request here..."></textarea>
-                   <div class="align-right"><button id="btnSendConcierge" class="btn btn--primary">Send Request</button></div>
+               <div class="lounge-chat-panel glass-panel">
+                 <div class="chat-header-desktop">
+                   <div class="concierge-info">
+                     <div class="c-avatar-lg"><i class="fa-solid fa-bell-concierge"></i></div>
+                     <div>
+                       <h4>Personal Concierge</h4>
+                       <span class="status-online">Online • Typically replies instantly</span>
+                     </div>
+                   </div>
+                   <div class="chat-options"><i class="fa-solid fa-ellipsis-vertical"></i></div>
                  </div>
 
-                 <div class="premium-panel glass-panel reveal-right">
-                   <div class="panel-head"><div class="bento-icon"><i class="fa-solid fa-star"></i></div><h3>Active Privileges</h3></div>
-                   <ul class="premium-list">
-                     <li><i class="fa-solid fa-check-circle"></i> Unlimited Matching</li>
-                     <li><i class="fa-solid fa-check-circle"></i> Verified Profile Badge</li>
-                     <li><i class="fa-solid fa-check-circle"></i> Priority Support</li>
-                     <li><i class="fa-solid fa-check-circle"></i> Exclusive Event Access</li>
-                   </ul>
+                 <div class="chat-body-desktop" id="chatBody">
+                   <div class="chat-divider"><span>Today</span></div>
+                   
+                   <div class="msg-row msg-incoming">
+                     <div class="msg-bubble">
+                       Welcome to the lounge, VIP. I've curated a list of matches for you based on your recent activity.
+                     </div>
+                   </div>
+                   
+                   <div class="msg-row msg-incoming">
+                     <div class="msg-bubble">
+                       Would you like me to reserve a table at <strong>The Peak</strong> for your date this Friday?
+                     </div>
+                     <div class="msg-meta">10:30 AM</div>
+                   </div>
+
+                 </div>
+
+                 <div class="chat-input-area">
+                   <div class="input-bar-wrapper">
+                     <button class="attach-btn"><i class="fa-solid fa-paperclip"></i></button>
+                     <textarea id="txtConcierge" rows="1" placeholder="Type a message..." class="chat-textarea"></textarea>
+                     <button id="btnSendConcierge" class="send-btn-desktop">Send</button>
+                   </div>
                  </div>
                </div>
+
+               <div class="lounge-perks-panel glass-panel">
+                 <h4>Active Privileges</h4>
+                 <div class="perks-row-desktop">
+                   <div class="perk-pill active" id="perkTravel"><i class="fa-solid fa-jet-fighter"></i> Travel Mode</div>
+                   <div class="perk-pill" id="perkIncognito"><i class="fa-solid fa-eye-slash"></i> Incognito</div>
+                   <div class="perk-pill active" id="perkBoost"><i class="fa-solid fa-bolt"></i> Boost Active</div>
+                   <div class="perk-pill" id="perkEvents"><i class="fa-solid fa-champagne-glasses"></i> Event Access</div>
+                 </div>
+               </div>
+
             </div>
           </div>
 
@@ -234,6 +446,10 @@
     const ctx = canvas.getContext('2d', { alpha: true });
     let cw, ch, particles = [];
     
+    let mouse = { x: null, y: null };
+    window.addEventListener('mousemove', (e) => { mouse.x = e.x; mouse.y = e.y; });
+    window.addEventListener('mouseleave', () => { mouse.x = null; mouse.y = null; });
+
     function resize() {
       cw = canvas.width = window.innerWidth;
       ch = canvas.height = window.innerHeight;
@@ -243,45 +459,71 @@
     
     function init() {
       particles = [];
-      const count = Math.floor((cw * ch) / 25000);
+      const count = Math.floor((cw * ch) / 20000); 
       for (let i = 0; i < count; i++) {
         particles.push({
           x: Math.random() * cw,
           y: Math.random() * ch,
           vx: (Math.random() - 0.5) * 0.5,
           vy: (Math.random() - 0.5) * 0.5,
-          r: Math.random() * 1.5 + 0.5
+          size: Math.random() * 2 + 0.5,
+          baseX: Math.random() * cw, 
+          baseY: Math.random() * ch
         });
       }
     }
     
     function animate() {
       ctx.clearRect(0, 0, cw, ch);
-      ctx.strokeStyle = 'rgba(100, 233, 238, 0.15)'; 
-      ctx.lineWidth = 0.5;
       
       for (let i = 0; i < particles.length; i++) {
-        const p = particles[i];
-        p.x += p.vx; p.y += p.vy;
+        let p = particles[i];
         
+        // Standard Movement
+        p.x += p.vx;
+        p.y += p.vy;
+
         if (p.x < 0 || p.x > cw) p.vx *= -1;
         if (p.y < 0 || p.y > ch) p.vy *= -1;
+
+        // Mouse Interaction
+        if (mouse.x != null) {
+            let dx = mouse.x - p.x;
+            let dy = mouse.y - p.y;
+            let distance = Math.sqrt(dx * dx + dy * dy);
+            let forceDirectionX = dx / distance;
+            let forceDirectionY = dy / distance;
+            let maxDistance = 150;
+            let force = (maxDistance - distance) / maxDistance;
+            
+            if (distance < maxDistance) {
+                p.x -= forceDirectionX * force * 2;
+                p.y -= forceDirectionY * force * 2;
+            }
+        }
+
+        // Draw Particle
+        ctx.fillStyle = 'rgba(100, 233, 238, ' + (p.size/3) + ')';
+        ctx.beginPath(); 
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); 
+        ctx.fill();
         
-        ctx.fillStyle = 'rgba(100, 233, 238, 0.4)';
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
-        
+        // Draw Connections
         for (let j = i + 1; j < particles.length; j++) {
           const p2 = particles[j];
           const dx = p.x - p2.x; const dy = p.y - p2.y;
           const dist = Math.sqrt(dx*dx + dy*dy);
-          if (dist < 100) {
+          if (dist < 120) {
             ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p2.x, p2.y);
-            ctx.globalAlpha = 1 - (dist / 100); ctx.stroke(); ctx.globalAlpha = 1;
+            ctx.strokeStyle = 'rgba(100, 233, 238, ' + (1 - dist/120) * 0.15 + ')';
+            ctx.lineWidth = 0.5;
+            ctx.stroke();
           }
         }
       }
       requestAnimationFrame(animate);
     }
+    
     window.addEventListener('resize', resize); resize(); animate();
   })();
   </script>
