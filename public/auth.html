@@ -4,7 +4,7 @@
   <script>window.API_BASE = '';</script>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-  <title>TrueMatch • Access</title>
+  <title>iTRUEMATCH • Access</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -27,7 +27,7 @@
   <nav class="auth-top-nav">
     <a href="index.html" class="nav-brand">
       <img src="assets/images/truematch-mark.png" alt="Logo" />
-      <span>TrueMatch</span>
+      <span>iTRUEMATCH</span>
     </a>
     <a href="index.html" class="nav-back-btn">
       <span>BACK TO HOME</span>
@@ -69,7 +69,7 @@
         <header class="mobile-header">
           <a href="index.html" class="brand">
             <img src="assets/images/truematch-mark.png" alt="Logo" />
-            <span>TrueMatch</span>
+            <span>iTRUEMATCH</span>
           </a>
         </header>
 
@@ -93,7 +93,7 @@
                   </div>
                   <div class="actions-row">
                     <label class="remember-me"><input type="checkbox"> <span>Remember me</span></label>
-                    <a href="#" class="forgot-link">Forgot?</a>
+                    <a href="#" class="forgot-link" id="btnOpenForgot">Forgot?</a>
                   </div>
                   <button type="submit" class="btn-primary neon-btn">Sign In</button>
                   <div class="divider"><span>OR</span></div>
@@ -140,12 +140,13 @@
           </div>
         </div>
         
-        <footer class="simple-footer">© 2026 TrueMatch Inc.</footer>
+        <footer class="simple-footer">© 2026 iTRUEMATCH Inc.</footer>
       </div>
 
     </div> </div>
 
   <div id="tm_loader_overlay"><div class="loader-spinner"></div></div>
+
   <dialog id="dlgVerify" class="modal">
     <form method="dialog" id="frmVerify" class="modal__body">
       <h3>Verify Email</h3>
@@ -158,6 +159,42 @@
         <button type="button" id="btnCloseVerify" class="btn-ghost">Close</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="dlgForgot" class="modal">
+    <div class="modal__body">
+      
+      <div id="forgotStep1">
+        <h3>Forgot Password?</h3>
+        <p class="muted">Enter your email to find your account.</p>
+        
+        <div class="modal-input-wrapper">
+            <input type="email" id="forgotEmailInput" class="code-input full-text" placeholder="name@email.com">
+        </div>
+        <p id="forgotError" class="error-text" style="display:none; color:#ff4757; font-size:0.8rem; margin-top:5px;">Account not found.</p>
+
+        <div class="modal-actions">
+            <button type="button" id="btnForgotVerify" class="btn-primary">Verify</button>
+            <button type="button" id="btnForgotCancel" class="btn-ghost">Cancel</button>
+        </div>
+      </div>
+
+      <div id="forgotStep2" style="display: none;">
+        <h3>Reset Password</h3>
+        <p class="muted">Create a strong password.</p>
+        
+        <div class="modal-input-wrapper" style="gap:10px; display:flex; flex-direction:column;">
+            <input type="password" id="forgotNewPass" class="code-input full-text" placeholder="New Password">
+            <input type="password" id="forgotConfirmPass" class="code-input full-text" placeholder="Confirm Password">
+        </div>
+        
+        <div class="modal-actions">
+            <button type="button" id="btnForgotBack" class="btn-ghost">Back</button>
+            <button type="button" id="btnForgotChange" class="btn-primary">Change Password</button>
+        </div>
+      </div>
+
+    </div>
   </dialog>
 
   <script>

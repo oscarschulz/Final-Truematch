@@ -4,7 +4,7 @@
   <script>window.API_BASE = '';</script>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>TrueMatch — Plan Status</title>
+  <title>iTRUEMATCH — Plan Status</title>
 
   <link rel="icon" href="assets/images/truematch-mark.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -54,7 +54,8 @@
       display: flex; align-items: center; gap: 12px;
       text-decoration: none; color: #fff;
       font-weight: 800; font-size: 1.5rem; letter-spacing: 1px;
-      text-transform: uppercase;
+      /* UPDATED: Allow mixed case for iTRUEMATCH */
+      text-transform: none;
     }
     .nav-brand img { width: 40px; height: auto; }
 
@@ -269,6 +270,60 @@
     .card-footer a { color: rgba(255,255,255,0.5); text-decoration: none; margin: 0 5px; }
     .card-footer a:hover { color: var(--primary); }
 
+    /* ==========================================================================
+       RESPONSIVE FIX FOR LAPTOPS (1280x800 & 1366x768)
+       Ensures layout fits without scrollbars on main body
+       ========================================================================== */
+    @media screen and (max-width: 1400px), screen and (max-height: 850px) {
+      .auth-top-nav {
+        padding: 15px 30px;
+      }
+      .nav-brand { font-size: 1.2rem; }
+      .nav-brand img { width: 32px; }
+
+      .split-layout {
+        padding-top: 80px; /* Reduced top padding */
+        padding-bottom: 20px;
+      }
+
+      .unified-card {
+        height: auto;
+        min-height: 500px;
+        max-width: 900px;
+      }
+
+      /* Scale down Visual Side (Card Animation) */
+      .visual-side {
+        flex: 0 0 35%; /* Make it narrower */
+      }
+      
+      .membership-card-ui {
+        transform: scale(0.85); /* Shrink the visual card */
+      }
+
+      /* Adjust Form Side */
+      .form-side {
+        padding: 30px;
+      }
+
+      .header-text h1 { font-size: 1.6rem; }
+      .header-text p { font-size: 0.85rem; margin-top: 5px; }
+
+      .info-grid { margin: 20px 0; }
+      .info-row { padding: 10px 0; }
+      .info-label, .info-value { font-size: 0.85rem; }
+
+      #pTier, #pActive {
+        padding: 3px 10px; font-size: 0.75rem;
+      }
+
+      .quota-container { margin: 15px 0; }
+      
+      .btn-row { margin-top: 20px; gap: 10px; }
+      .btn { padding: 10px; font-size: 0.8rem; }
+    }
+
+    /* Mobile (Frozen/Existing) */
     @media (max-width: 900px) {
       .split-layout { padding: 100px 20px 40px; display: block; }
       .unified-card { flex-direction: column; height: auto; max-width: 500px; margin: 0 auto; }
@@ -285,7 +340,7 @@
   <nav class="auth-top-nav">
     <a href="index.html" class="nav-brand">
       <img src="assets/images/truematch-mark.png" alt="Logo" />
-      <span>TrueMatch</span>
+      <span>iTRUEMATCH</span>
     </a>
     <div class="nav-actions">
       <a href="dashboard.html" class="nav-back-btn">
@@ -354,7 +409,7 @@
         </div>
 
         <div class="card-footer">
-          © 2026 TrueMatch Inc. <a href="#">Terms</a> • <a href="#">Privacy</a>
+          © 2026 iTRUEMATCH Inc. <a href="#">Terms</a> • <a href="#">Privacy</a>
         </div>
       </div>
 

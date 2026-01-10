@@ -265,7 +265,7 @@
   function saveLocalUser(u) {
     const minimal = {
       id: u?.id || "local-demo",
-      email: u?.email || "user@truematch.app",
+      email: u?.email || "user@itruematch.app",
       name: u?.name || "User",
       plan: u?.plan || u?.tier || u?.subscription || "",
     };
@@ -364,9 +364,9 @@
 
   // ---------- Demo accounts
   const DEMO = {
-    "tier1.demo@truematch.app": { password: "111111", name: "Demo Tier 1", plan: "tier1" },
-    "tier2.demo@truematch.app": { password: "222222", name: "Demo Tier 2", plan: "tier2" },
-    "tier3.demo@truematch.app": { password: "333333", name: "Demo Tier 3", plan: "tier3" },
+    "tier1.demo@itruematch.app": { password: "111111", name: "Demo Tier 1", plan: "tier1" },
+    "tier2.demo@itruematch.app": { password: "222222", name: "Demo Tier 2", plan: "tier2" },
+    "tier3.demo@itruematch.app": { password: "333333", name: "Demo Tier 3", plan: "tier3" },
   };
 
   async function tryDemoLogin(email, pass) {
@@ -589,4 +589,113 @@
       } finally { try { tmHideLoader(); } catch {} }
     });
   });
+
+  // =========================================================
+  // NEW FORGOT PASSWORD LOGIC (WITH BACK BTN & CLICK OUTSIDE)
+  // =========================================================
+  whenReady(() => {
+    const btnOpenForgot = document.getElementById('btnOpenForgot');
+    const dlgForgot = document.getElementById('dlgForgot');
+    const step1 = document.getElementById('forgotStep1');
+    const step2 = document.getElementById('forgotStep2');
+    const btnCancel = document.getElementById('btnForgotCancel');
+    const btnVerify = document.getElementById('btnForgotVerify');
+    const btnBack = document.getElementById('btnForgotBack');
+    const btnChange = document.getElementById('btnForgotChange');
+    
+    // Open Modal
+    if (btnOpenForgot && dlgForgot) {
+        btnOpenForgot.addEventListener('click', (e) => {
+            e.preventDefault();
+            step1.style.display = 'block';
+            step2.style.display = 'none';
+            document.getElementById('forgotEmailInput').value = '';
+            document.getElementById('forgotNewPass').value = '';
+            document.getElementById('forgotConfirmPass').value = '';
+            document.getElementById('forgotError').style.display = 'none';
+            dlgForgot.showModal();
+        });
+
+        // Click Outside to Close Logic
+        dlgForgot.addEventListener('click', (e) => {
+            const rect = dlgForgot.getBoundingClientRect();
+            const isInDialog = (rect.top <= e.clientY && e.clientY <= rect.top + rect.height &&
+              rect.left <= e.clientX && e.clientX <= rect.left + rect.width);
+            if (!isInDialog) {
+              dlgForgot.close();
+            }
+        });
+    }
+
+    // Close Modal Button
+    if (btnCancel && dlgForgot) {
+        btnCancel.addEventListener('click', () => {
+            dlgForgot.close();
+        });
+    }
+
+    // STEP 1: Verify Account
+    if (btnVerify) {
+        btnVerify.addEventListener('click', () => {
+            const email = document.getElementById('forgotEmailInput').value;
+            const errorMsg = document.getElementById('forgotError');
+            
+            if(!email) return;
+
+            // Simulate Loading
+            btnVerify.textContent = "Checking...";
+            
+            // SIMULATE REALTIME CHECK (Replace with real API call if needed)
+            setTimeout(() => {
+                // Mock: Always success for demo unless email is "error@test.com"
+                if (email === "error@test.com") {
+                    errorMsg.style.display = 'block';
+                    btnVerify.textContent = "Verify";
+                } else {
+                    // Success: Flip to Step 2
+                    step1.style.display = 'none';
+                    step2.style.display = 'block';
+                    btnVerify.textContent = "Verify"; // Reset text
+                }
+            }, 1000);
+        });
+    }
+
+    // BACK BUTTON (Step 2 -> Step 1)
+    if (btnBack) {
+        btnBack.addEventListener('click', () => {
+             step2.style.display = 'none';
+             step1.style.display = 'block';
+        });
+    }
+
+    // STEP 2: Change Password
+    if (btnChange) {
+        btnChange.addEventListener('click', () => {
+            const pass1 = document.getElementById('forgotNewPass').value;
+            const pass2 = document.getElementById('forgotConfirmPass').value;
+
+            if (!pass1 || !pass2) {
+                alert("Please enter a new password.");
+                return;
+            }
+
+            if (pass1 !== pass2) {
+                alert("Passwords do not match.");
+                return;
+            }
+
+            // Simulate Changing Password
+            btnChange.textContent = "Updating...";
+            
+            setTimeout(() => {
+                alert("Password Changed Successfully! We sent a confirmation link to your email.");
+                // Simulate Backend Logic: Send Email Link trigger here
+                btnChange.textContent = "Change Password";
+                dlgForgot.close();
+            }, 1500);
+        });
+    }
+  });
+
 })();

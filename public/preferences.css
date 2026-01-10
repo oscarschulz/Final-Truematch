@@ -72,6 +72,11 @@ body {
   box-shadow: 0 0 20px rgba(100,233,238,0.2); transform: translateY(-2px);
 }
 
+/* FIX NAV BRAND TEXT TRANSFORM */
+.nav-brand {
+    text-transform: none !important;
+}
+
 
 /* --- 3. LEFT SIDE (TIMELINE) --- */
 .pref-visual-side {

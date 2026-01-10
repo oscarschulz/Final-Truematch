@@ -4,7 +4,7 @@
   <script>window.API_BASE = '';</script>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-  <title>TrueMatch • Preferences</title>
+  <title>iTRUEMATCH • Preferences</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="auth.css">
   <link rel="stylesheet" href="preferences.css">
+  <link rel="stylesheet" href="responsive.css">
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -24,7 +25,7 @@
   <nav class="auth-top-nav">
     <a href="index.html" class="nav-brand">
       <img src="assets/images/truematch-mark.png" alt="Logo" />
-      <span>TrueMatch</span>
+      <span>iTRUEMATCH</span>
     </a>
     
     <div class="nav-actions">
@@ -129,9 +130,9 @@
               </div>
 
               <div class="advanced-content">
-                 <h3 class="section-label">Advanced filters</h3>
-                 
-                 <div class="pref-group">
+                  <h3 class="section-label">Advanced filters</h3>
+                  
+                  <div class="pref-group">
                     <div class="select-wrapper">
                       <select id="intent" name="intent">
                         <option value="">No preference</option>
@@ -140,13 +141,13 @@
                         <option value="open">Open to see what happens</option>
                       </select>
                     </div>
-                 </div>
+                  </div>
 
-                 <div class="pref-group">
+                  <div class="pref-group">
                     <textarea id="dealbreakers" name="dealbreakers" rows="3" placeholder="Habits, values or lifestyles you absolutely cannot accept."></textarea>
-                 </div>
+                  </div>
 
-                 <div class="pref-field">
+                  <div class="pref-field">
                     <p class="static-label" style="margin-bottom:10px;">Shared values you care about</p>
                     <div class="tags-group">
                       <label><input type="checkbox" name="sharedValues" value="family"> Family-focused</label>
@@ -155,7 +156,7 @@
                       <label><input type="checkbox" name="sharedValues" value="fitness"> Health & fitness</label>
                       <label><input type="checkbox" name="sharedValues" value="travel"> Travel & experiences</label>
                     </div>
-                 </div>
+                  </div>
               </div>
             </section>
 

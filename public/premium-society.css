@@ -44,7 +44,8 @@ body.tm-page::before { content: ""; position: fixed; inset: 0; pointer-events: n
 .dashboard-sidebar { width: var(--sidebar-w); background: rgba(8, 12, 20, 0.7); backdrop-filter: blur(25px); border-right: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; flex-shrink: 0; z-index: 20; box-shadow: 10px 0 40px rgba(0,0,0,0.4); }
 .sidebar-brand { height: 90px; display: flex; align-items: center; gap: 12px; padding: 0 28px; }
 .brand__logo { width: 36px; height: auto; filter: drop-shadow(0 0 8px rgba(100, 233, 238, 0.4)); }
-.brand__name { font-weight: 800; letter-spacing: 1.5px; font-size: 1.1rem; color: #fff; text-transform: uppercase; }
+/* FIX: Removed uppercase for iTRUEMATCH */
+.brand__name { font-weight: 800; letter-spacing: 1.5px; font-size: 1.1rem; color: #fff; text-transform: none; }
 .sidebar-header { padding: 0 28px 10px; font-size: 0.65rem; font-weight: 700; color: var(--muted); letter-spacing: 2px; opacity: 0.6; text-transform: uppercase; }
 .sidebar-nav { flex: 1; padding: 10px 16px; display: flex; flex-direction: column; gap: 8px; }
 .nav-tab { display: flex; align-items: center; justify-content: space-between; width: 100%; text-align: left; background: transparent; border: none; padding: 14px 20px; border-radius: 12px; cursor: pointer; color: var(--muted); font-family: var(--font-main); font-weight: 600; font-size: 0.9rem; transition: all 0.3s; position: relative; overflow: hidden; opacity: 0; transform: translateX(-20px); animation: slideInItem 0.6s forwards; }
@@ -274,7 +275,7 @@ select option { background-color: #0d1426; color: #fff; padding: 10px; }
 .btn-like:hover { transform: scale(1.1); box-shadow: 0 0 20px rgba(100,233,238,0.5); }
 
 /* MAIN CONCIERGE CHAT */
-.lounge-chat-panel { grid-column: 2; display: flex; flex-direction: column; padding: 0; height: 500px; background: rgba(8, 12, 20, 0.6); overflow: hidden; }
+.lounge-chat-panel { grid-column: 2; display: flex; flex-direction: column; padding: 0; height: 480px; background: rgba(8, 12, 20, 0.6); overflow: hidden; }
 .chat-header-desktop { padding: 15px 25px; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); }
 .concierge-info { display: flex; align-items: center; gap: 15px; }
 .c-avatar-lg { width: 42px; height: 42px; background: linear-gradient(135deg, var(--primary), #29a3ff); border-radius: 50%; display: grid; place-items: center; font-size: 1.2rem; color: #000; }
@@ -343,3 +344,80 @@ select option { background-color: #0d1426; color: #fff; padding: 10px; }
 
 .custom-loader { width: 48px; height: 48px; border: 4px solid var(--primary); border-bottom-color: transparent; border-radius: 50%; display: inline-block; animation: rotation 1s linear infinite; margin-bottom: 16px; }
 @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+/* =========================================================
+   1280x800 LAPTOP OPTIMIZATIONS (COMPACT MODE)
+   ========================================================= */
+@media screen and (max-width: 1400px), screen and (max-height: 850px) {
+  
+  /* Sidebar Compact */
+  :root { --sidebar-w: 240px; }
+  .sidebar-brand { height: 70px; padding: 0 20px; }
+  .brand__name { font-size: 1rem; }
+  .sidebar-header { padding: 0 20px 8px; font-size: 0.6rem; }
+  .nav-tab { padding: 10px 15px; font-size: 0.85rem; }
+  .sidebar-foot { padding: 15px; }
+
+  /* Main Area Compact */
+  .dashboard-header { height: 70px; padding: 0 30px; }
+  .header-title { font-size: 1.5rem; }
+  .dashboard-content-scroll { padding: 15px 30px 40px; }
+
+  /* Hero Section */
+  .premium-hero-split { min-height: auto; margin-bottom: 30px; gap: 20px; }
+  .premium-hero-left { max-width: 480px; }
+  .premium-title { font-size: 2.5rem; margin-bottom: 15px; }
+  .premium-subtitle { font-size: 0.95rem; margin-bottom: 20px; }
+  .pill { padding: 4px 12px; font-size: 0.7rem; margin-bottom: 15px; }
+  .hero-cta-group { gap: 15px; }
+  .btn { padding: 10px 20px; font-size: 0.85rem; }
+  .floating-card-container { width: 280px; height: 170px; } /* Smaller card */
+
+  /* Bento Grid */
+  .premium-bento-grid { gap: 15px; margin-bottom: 30px; }
+  .bento-card { padding: 20px; }
+  .bento-icon, .bento-icon-lg { font-size: 1.5rem; margin-bottom: 10px; }
+  .bento-card h3 { font-size: 1rem; }
+  .bento-card p { font-size: 0.8rem; }
+
+  /* APPLICATION TAB */
+  .split-layout-container { min-height: 450px; } /* Force shorter container */
+  .visual-side { padding: 20px; }
+  .phone-mockup { width: 180px; height: 340px; } /* Smaller phone */
+  .highlight-text { font-size: 1.5rem; }
+  
+  .form-side { padding: 25px; }
+  .form-icon-circle { width: 50px; height: 50px; font-size: 1.2rem; }
+  .gradient-title { font-size: 1.8rem; }
+  .tm-form-stack { gap: 15px; }
+  .tm-input { padding: 10px 14px; font-size: 0.9rem; border-radius: 10px; }
+  .field-label { font-size: 0.75rem; margin-bottom: 5px; }
+  .form-footer { margin-top: 20px; }
+
+  /* STATUS TAB */
+  .scanner-wrapper { width: 100px; height: 100px; margin-bottom: 15px; }
+  .big-scanner { width: 120px; height: 120px; }
+  .scanner-icon { font-size: 1.8rem; }
+  .verification-timeline { margin-bottom: 25px; }
+  .v-circle { width: 35px; height: 35px; }
+  .review-ticket { padding: 15px; margin-bottom: 15px; }
+  .ticket-row { font-size: 0.85rem; margin-bottom: 8px; }
+
+  /* LOUNGE TAB */
+  .lounge-dashboard-grid { grid-template-columns: 280px 1fr; gap: 15px; }
+  .lounge-match-panel { padding: 15px; gap: 15px; }
+  .elite-portrait-card { height: 350px; } /* Compact card height */
+  .elite-name-lg { font-size: 1.2rem; }
+  .elite-job-lg { font-size: 0.8rem; margin-bottom: 10px; }
+  .action-btn { width: 40px; height: 40px; font-size: 1rem; }
+  
+  .lounge-chat-panel { height: 420px; } /* Shorter chat window */
+  .chat-header-desktop { padding: 10px 20px; }
+  .c-avatar-lg { width: 36px; height: 36px; font-size: 1rem; }
+  .chat-body-desktop { padding: 15px; gap: 15px; }
+  .msg-bubble { padding: 10px 15px; font-size: 0.85rem; }
+  
+  .lounge-perks-panel { padding: 15px 20px; }
+  .perks-row-desktop { gap: 10px; flex-wrap: wrap; }
+  .perk-pill { padding: 6px 12px; font-size: 0.7rem; }
+}

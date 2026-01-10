@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=1200"> <title>TrueMatch — Secure Checkout</title>
+  <meta name="viewport" content="width=1200"> <title>iTRUEMATCH — Secure Checkout</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -68,7 +68,9 @@
       display: flex; align-items: center; gap: 12px;
       text-decoration: none; color: #fff;
       font-weight: 800; font-size: 1.5rem; letter-spacing: 1px;
-      pointer-events: auto; text-transform: uppercase;
+      pointer-events: auto; 
+      /* FIXED: Remove uppercase to allow 'iTRUEMATCH' casing */
+      text-transform: none; 
     }
     .nav-brand img { width: 40px; height: auto; }
 
@@ -215,7 +217,7 @@
     .card-title { 
       font-size: 1.8rem; font-weight: 800; margin: 0; text-transform: uppercase; letter-spacing: 1px; 
       background: linear-gradient(to right, #fff, var(--primary)); 
-      background-clip: text; /* FIXED: Added standard property */
+      background-clip: text; 
       -webkit-background-clip: text; 
       -webkit-text-fill-color: transparent;
       text-shadow: 0 0 20px rgba(100,233,238,0.5);
@@ -272,7 +274,60 @@
     .simple-footer a { color: #555; text-decoration: none; margin: 0 5px; }
     .simple-footer a:hover { color: var(--primary); }
 
-    /* NO MOBILE MEDIA QUERY - FORCE DESKTOP */
+    /* ==========================================================================
+       RESPONSIVE FIX FOR LAPTOPS (1280x800 & 1366x768)
+       Ensures no scrolling, perfect fit without breaking Desktop (1920x1080)
+       ========================================================================== */
+    @media screen and (max-width: 1400px), screen and (max-height: 850px) {
+      .auth-top-nav {
+        padding: 15px 30px; /* Slimmer navbar */
+      }
+      
+      .split-layout {
+        padding-top: 60px; /* Pull content up */
+      }
+
+      .unified-card {
+        height: 580px; /* Reduced fixed height to fit 800px screens */
+        max-width: 950px;
+        min-width: 900px;
+      }
+
+      /* Scale down Visual Side (Cards) */
+      .cards-container {
+        transform: scale(0.8); /* Make floating cards smaller */
+      }
+
+      /* Adjust Right Side (Form) Spacing */
+      .form-side {
+        padding: 25px 35px;
+      }
+
+      .card-title { font-size: 1.5rem; margin-bottom: 5px; }
+      .card-subtitle { font-size: 0.85rem; margin-bottom: 10px; }
+      
+      .notice-box {
+        margin-bottom: 15px;
+        padding: 8px 12px;
+        font-size: 0.75rem;
+      }
+
+      .plan-summary {
+        padding: 15px 20px;
+        margin-bottom: 15px;
+      }
+      .plan-summary::after { bottom: 60px; }
+
+      .plan-price { font-size: 1.8rem; }
+      .total-row { margin-top: 15px; }
+
+      .action-group { gap: 10px; }
+      .btn { padding: 12px; font-size: 0.85rem; }
+      
+      .wallet-badges { margin-top: 10px; }
+      .badge-icon { height: 22px; }
+    }
+
   </style>
 </head>
 
@@ -282,7 +337,7 @@
   <nav class="auth-top-nav">
     <a href="index.html" class="nav-brand">
       <img src="assets/images/truematch-mark.png" alt="Logo" />
-      <span>TrueMatch</span>
+      <span>iTRUEMATCH</span>
     </a>
     <div class="nav-right-group">
       <a id="btnBack" href="/tier.html" class="nav-btn" data-back-tier="1">
@@ -375,7 +430,7 @@
         </div>
 
         <footer class="simple-footer form-element-5">
-          © 2026 TrueMatch Inc. <a href="#">Terms</a> • <a href="#">Privacy</a>
+          © 2026 iTRUEMATCH Inc. <a href="#">Terms</a> • <a href="#">Privacy</a>
         </footer>
       </div>
 

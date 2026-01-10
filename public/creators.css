@@ -50,7 +50,9 @@ body {
 .nav-brand {
   display: flex; align-items: center; gap: 12px;
   text-decoration: none; color: #fff;
-  font-weight: 800; font-size: 1.5rem; letter-spacing: 1px; text-transform: uppercase;
+  font-weight: 800; font-size: 1.5rem; letter-spacing: 1px; 
+  /* ALLOW LOWERCASE "i" */
+  text-transform: none; 
 }
 .nav-brand img { width: 40px; height: auto; }
 .nav-back-btn {
@@ -98,8 +100,6 @@ body {
   position: relative; 
   overflow: hidden;
   display: flex; flex-direction: column;
-  
-  /* UPDATED: Dito na natin ilalagay ang padding para sa title space */
   padding-top: 90px; 
 }
 
@@ -115,12 +115,9 @@ body {
 /* TRACK - SEAMLESS LOOP FIX */
 .vertical-scroll-track {
   display: flex; flex-direction: column;
-  /* Removed padding-top here to fix the math */
   padding-top: 0; 
-  /* Use linear to make it continuous (no ease-in-out) */
   animation: scrollUp 25s linear infinite; 
 }
-/* Pause on hover (Optional, remove if you want non-stop) */
 .vertical-scroll-track:hover {
   animation-play-state: paused;
 }
@@ -287,3 +284,94 @@ body {
 .stagger-3 { opacity: 0; animation: contentFadeUp 0.6s ease-out forwards; animation-delay: 0.5s; }
 .stagger-4 { opacity: 0; animation: contentFadeUp 0.6s ease-out forwards; animation-delay: 0.6s; }
 .stagger-5 { opacity: 0; animation: contentFadeUp 0.6s ease-out forwards; animation-delay: 0.7s; }
+
+
+/* ==========================================================================
+   RESPONSIVE FIX FOR LAPTOPS (1280x800 & 1366x768)
+   Ensures layout fits without scrollbars on main body
+   ========================================================================== */
+
+@media screen and (max-width: 1400px), screen and (max-height: 850px) {
+  
+  /* Compact the Main Layout Padding */
+  .split-layout {
+    padding-top: 70px; /* Reduced from 100px */
+    padding-bottom: 20px;
+  }
+
+  /* Shrink the Main Card */
+  .unified-card {
+    height: 95%; /* Adjust height dynamically */
+    max-height: 650px; /* Force a max height for small laptops */
+    border-radius: 20px;
+  }
+
+  /* Compact Navbar */
+  .auth-top-nav {
+    padding: 15px 30px;
+  }
+  .nav-brand {
+    font-size: 1.2rem;
+  }
+  .nav-brand img {
+    width: 32px;
+  }
+
+  /* Left Side: Adjust Title & Spacing */
+  .visual-side {
+    padding-top: 60px; /* Pull content up */
+  }
+  .feed-title-overlay {
+    height: 60px;
+    font-size: 0.9rem;
+  }
+  
+  /* Notifications */
+  .notif-item {
+    min-height: 60px;
+    padding: 10px;
+  }
+  .icon-box {
+    width: 35px; height: 35px; font-size: 0.9rem;
+  }
+  .text-box p {
+    font-size: 0.75rem;
+  }
+
+  /* Right Side: Fonts & Buttons */
+  .form-side {
+    padding: 25px;
+  }
+  .header-text h1 {
+    font-size: 1.6rem;
+  }
+  .header-text p {
+    font-size: 0.85rem;
+    margin-top: 5px;
+  }
+  
+  .lock-visual {
+    width: 80px; height: 80px;
+    font-size: 30px;
+    margin: 15px auto;
+  }
+
+  .info-grid {
+    margin: 10px 0;
+  }
+  .info-row {
+    padding: 10px 0;
+  }
+  .info-label, .info-value {
+    font-size: 0.8rem;
+  }
+
+  .btn-row {
+    margin-top: 15px;
+    gap: 10px;
+  }
+  .btn {
+    padding: 10px;
+    font-size: 0.8rem;
+  }
+}
