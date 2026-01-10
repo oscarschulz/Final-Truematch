@@ -2177,3 +2177,11 @@ dialog select option:checked {
   }
   /* Optional: Kung gusto mong bumaba ang button sa mobile, remove 'nowrap' above */
 }
+/* Tab panels – only show the active one */
+.panels .panel {
+  display: none;
+}
+
+.panels .panel.is-active {
+  display: block;
+}

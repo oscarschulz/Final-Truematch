@@ -211,37 +211,38 @@
 
   // ---- Form helpers ----
   function getFormValues() {
-  const cityInput = qs('input[name="city"]');
-  const ageMinInput = qs('input[name="ageMin"]');
-  const ageMaxInput = qs('input[name="ageMax"]');
-  const ethnicitySelect = qs('select[name="ethnicity"]');
+    const cityInput = qs('input[name="city"]');
+    const ageMinInput = qs('input[name="ageMin"]');
+    const ageMaxInput = qs('input[name="ageMax"]');
+    const ethnicitySelect = qs('select[name="ethnicity"]');
 
-  const lookingForRadio = qs('input[name="lookingFor"]:checked');
-  const lookingFor = lookingForRadio ? lookingForRadio.value : '';
+    // preferences.html uses radio cards for "lookingFor" (men/women)
+    const lookingForRadio = qs('input[name="lookingFor"]:checked');
+    const lookingFor = lookingForRadio ? String(lookingForRadio.value || '').toLowerCase() : '';
 
-  const dealbreakers =
-    qs('textarea[name="dealbreakers"]')?.value?.trim() || '';
+    const intent = qs('select[name="intent"]')?.value || '';
+    const dealbreakers =
+      qs('textarea[name="dealbreakers"]')?.value?.trim() || '';
+    const sharedValues = qsa('input[name="sharedValues"]:checked').map(
+      (cb) => cb.value
+    );
 
-  const sharedValues = qsa('input[name="sharedValues"]:checked').map(
-    (cb) => cb.value
-  );
+    const city = cityInput ? cityInput.value.trim() : '';
+    const ageMin = ageMinInput ? Number(ageMinInput.value) : NaN;
+    const ageMax = ageMaxInput ? Number(ageMaxInput.value) : NaN;
+    const ethnicity = ethnicitySelect ? ethnicitySelect.value : '';
 
-  const city = cityInput ? cityInput.value.trim() : '';
-  const ageMin = ageMinInput ? Number(ageMinInput.value) : NaN;
-  const ageMax = ageMaxInput ? Number(ageMaxInput.value) : NaN;
-  const ethnicity = ethnicitySelect ? ethnicitySelect.value : '';
-
-  return {
-    city,
-    ageMin,
-    ageMax,
-    ethnicity,
-    lookingFor,
-    dealbreakers,
-    sharedValues
-  };
-}
-
+    return {
+      city,
+      ageMin,
+      ageMax,
+      ethnicity,
+      lookingFor,
+      intent,
+      dealbreakers,
+      sharedValues
+    };
+  }
 
   function validateFormValues(prefs) {
     if (!prefs) return false;
@@ -292,12 +293,16 @@
     if (prefs.ethnicity && qs('select[name="ethnicity"]')) {
       qs('select[name="ethnicity"]').value = prefs.ethnicity;
     }
-
     if (prefs.lookingFor) {
-    const val = Array.isArray(prefs.lookingFor) ? prefs.lookingFor[0] : prefs.lookingFor;
-      qsa('input[name="lookingFor"]').forEach(r => {
-        r.checked = (r.value === val);
+      let lf = prefs.lookingFor;
+      if (Array.isArray(lf)) lf = lf[0];
+      const val = String(lf || '').toLowerCase();
+      qsa('input[name="lookingFor"]').forEach((r) => {
+        r.checked = String(r.value || '').toLowerCase() === val;
       });
+    }
+if (prefs.intent && qs('select[name="intent"]')) {
+      qs('select[name="intent"]').value = prefs.intent;
     }
 
     if ('dealbreakers' in prefs && qs('textarea[name="dealbreakers"]')) {

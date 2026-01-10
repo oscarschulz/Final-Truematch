@@ -773,17 +773,25 @@ async function loadMe() {
     if (!data || !data.ok || !data.user) { window.location.href = '/auth.html?mode=login'; return; }
 
     const user = data.user;
+
+    // Respect the plan coming from the database.
+    // Only fall back to URL/localStorage if WALANG plan (legacy users).
     let planCandidate = user.plan;
-    if (!planCandidate || planCandidate === 'free') {
-       const urlParams = new URLSearchParams(window.location.search);
-       const paramPlan = urlParams.get('plan') || urlParams.get('prePlan');
-       if (paramPlan) planCandidate = paramPlan;
-       else planCandidate = getLocalPlan?.() || 'free';
+
+    if (!planCandidate) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const paramPlan = urlParams.get('plan') || urlParams.get('prePlan');
+      if (paramPlan) {
+        planCandidate = paramPlan;
+      } else {
+        planCandidate = getLocalPlan?.() || 'free';
+      }
     }
 
     state.me = user;
-    state.prefs = data.prefs || user.preferences || {}; 
-    state.plan = normalizePlanKey(planCandidate);
+    state.prefs = data.prefs || user.preferences || {};
+    state.plan = normalizePlanKey(planCandidate || 'free');
+
     
     if (typeof saveLocalUser === 'function') saveLocalUser({ ...user, plan: state.plan });
 
