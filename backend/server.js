@@ -49,7 +49,7 @@ const corsOptions = {
 
     if (CORS_ALLOWLIST.includes(o)) return cb(null, true);
 
-    return cb(new Error('Not allowed by CORS'));
+    return cb(null, false);
   },
   credentials: true,
   allowedHeaders: ['Content-Type', 'x-admin-key'],
