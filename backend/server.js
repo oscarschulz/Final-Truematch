@@ -3010,43 +3010,74 @@ const RESEND_GAP_MS = 60 * 1000;      // 60 seconds
 if (!DB.emailVerify) DB.emailVerify = {};
 
 async function sendVerificationEmail(toEmail, code) {
-  const mailer = await getMailer();
-  const from = process.env.SMTP_FROM || process.env.SMTP_USER || 'no-reply@truematch.local';
-  const subj = 'Your TrueMatch verification code';
-  const html = `<p>Hello,</p><p>Your verification code is:</p><p style="font-size:22px;letter-spacing:3px;"><b>${code}</b></p><p>This code expires in 10 minutes.</p>`;
-  const text = `Your TrueMatch verification code: ${code} (expires in 10 minutes)`;
+  const subject = 'Your TrueMatch verification code';
 
-  // If SMTP is off, keep your current DEV behavior
+  // Piliin kung Resend o SMTP
+  const provider = (process.env.MAIL_PROVIDER || '').toLowerCase();
+  const useResend = !!process.env.RESEND_API_KEY && provider !== 'smtp';
+
+  const from =
+    process.env.RESEND_FROM ||
+    process.env.MAIL_FROM ||
+    process.env.SMTP_FROM ||
+    `TrueMatch <${process.env.SMTP_USER || 'noreply@itruematch.com'}>`;
+
+  const html = `
+    <div style="font-family: Inter, Arial, sans-serif; background:#0b1220; color:#e8f1ff; padding:24px; border-radius:16px;">
+      <h2 style="margin:0 0 12px 0; font-size:20px;">Verify your email</h2>
+      <p style="margin:0 0 18px 0; opacity:0.9;">Use the code below to complete your sign-in / sign-up.</p>
+      <div style="font-size:28px; letter-spacing:6px; font-weight:800; background:#0f1a2d; padding:14px 16px; border-radius:12px; display:inline-block;">
+        ${code}
+      </div>
+      <p style="margin:18px 0 0 0; opacity:0.75; font-size:12px;">If you didn’t request this, you can ignore this email.</p>
+    </div>
+  `;
+  const text = `Your TrueMatch verification code is: ${code}`;
+
+  // ---------- A. Resend (HTTPS API, no SMTP ports) ----------
+  if (useResend) {
+    try {
+      const { Resend } = require('resend');
+      const resend = new Resend(process.env.RESEND_API_KEY);
+
+      const resp = await resend.emails.send({
+        from,
+        to: [toEmail],
+        subject,
+        html,
+        text,
+      });
+
+      if (resp.error) {
+        console.error('[mail] Resend error:', resp.error);
+        // hahayaan nating mag-fallback sa SMTP kung meron
+      } else {
+        console.log('[mail] Resend accepted:', resp.data?.id || '');
+        return true;
+      }
+    } catch (err) {
+      console.error('[mail] Resend send failed:', err?.message || err);
+      // hahayaan nating mag-fallback sa SMTP kung meron
+    }
+  }
+
+  // ---------- B. Fallback: SMTP (kung gumagana) ----------
+  const mailer = await getMailer();
   if (!mailer) {
     console.log('[DEV] Verification code for', toEmail, '→', code);
     return true;
   }
 
   try {
-    await mailer.sendMail({ from, to: toEmail, subject: subj, text, html });
+    await mailer.sendMail({ from, to: toEmail, subject, text, html });
+    console.log('[mail] SMTP accepted');
     return true;
   } catch (err) {
-    console.error('Email send failed:', err?.message || err);
-
-    // Fallback: send the code to ADMIN_EMAIL so you still receive it immediately
-    const admin = (process.env.ADMIN_EMAIL || '').trim();
-    if (admin) {
-      try {
-        await mailer.sendMail({
-          from,
-          to: admin,
-          subject: `[BOUNCE/FALLBACK] ${subj}`,
-          text: `Original TO: ${toEmail}\n\n${text}`,
-          html: `<p><b>Original TO:</b> ${toEmail}</p>${html}`
-        });
-        console.warn(`[mail] Fallback sent to admin ${admin}`);
-      } catch (e2) {
-        console.error('[mail] Fallback to admin failed:', e2?.message || e2);
-      }
-    }
-    return false; // route will surface the failure to the client
+    console.error('[mail] Email send failed:', err?.message || err);
+    return false;
   }
 }
+
 // ---------------- SWIPE & MATCHING ENGINE ----------------
 
 // 1. Get Candidates (Real Users)
