@@ -3009,75 +3009,117 @@ const CODE_TTL_MS = 10 * 60 * 1000;   // 10 minutes
 const RESEND_GAP_MS = 60 * 1000;      // 60 seconds
 if (!DB.emailVerify) DB.emailVerify = {};
 
-async function sendVerificationEmail(toEmail, code) {
-  const subject = 'Your TrueMatch verification code';
+function promiseTimeout(promise, ms, label = "operation") {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+}
 
-  // Piliin kung Resend o SMTP
-  const provider = (process.env.MAIL_PROVIDER || '').toLowerCase();
-  const useResend = !!process.env.RESEND_API_KEY && provider !== 'smtp';
+async function sendWithResend({ to, subject, html, text }) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) throw new Error("RESEND_API_KEY is missing");
 
   const from =
     process.env.RESEND_FROM ||
     process.env.MAIL_FROM ||
-    process.env.SMTP_FROM ||
-    `TrueMatch <${process.env.SMTP_USER || 'noreply@itruematch.com'}>`;
+    "iTrueMatch <noreply@itruematch.com>";
 
+  const payload = {
+    from,
+    to,
+    subject,
+    html,
+    text,
+  };
+
+  const resp = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const msg =
+      (data && (data.message || data.error || data.name)) ||
+      JSON.stringify(data);
+    throw new Error(`Resend API error (${resp.status}): ${msg}`);
+  }
+
+  return data;
+}
+
+async function sendVerificationEmail(toEmail, code) {
+  const subj = "Your iTrueMatch verification code";
   const html = `
-    <div style="font-family: Inter, Arial, sans-serif; background:#0b1220; color:#e8f1ff; padding:24px; border-radius:16px;">
-      <h2 style="margin:0 0 12px 0; font-size:20px;">Verify your email</h2>
-      <p style="margin:0 0 18px 0; opacity:0.9;">Use the code below to complete your sign-in / sign-up.</p>
-      <div style="font-size:28px; letter-spacing:6px; font-weight:800; background:#0f1a2d; padding:14px 16px; border-radius:12px; display:inline-block;">
+    <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;">
+      <h2 style="margin:0 0 12px 0;">Verify your email</h2>
+      <p style="margin:0 0 16px 0;">Use this code to finish signing in:</p>
+      <div style="font-size:28px;letter-spacing:6px;font-weight:700;padding:14px 16px;border:1px solid #ddd;border-radius:12px;display:inline-block;">
         ${code}
       </div>
-      <p style="margin:18px 0 0 0; opacity:0.75; font-size:12px;">If you didn’t request this, you can ignore this email.</p>
+      <p style="margin:16px 0 0 0;color:#666;font-size:12px;">
+        If you didn’t request this, you can ignore this email.
+      </p>
     </div>
   `;
-  const text = `Your TrueMatch verification code is: ${code}`;
 
-  // ---------- A. Resend (HTTPS API, no SMTP ports) ----------
-  if (useResend) {
+  // Preferred: Resend (fast; avoids SMTP port issues on hosts)
+  if (process.env.RESEND_API_KEY) {
     try {
-      const { Resend } = require('resend');
-      const resend = new Resend(process.env.RESEND_API_KEY);
-
-      const resp = await resend.emails.send({
-        from,
-        to: [toEmail],
-        subject,
-        html,
-        text,
-      });
-
-      if (resp.error) {
-        console.error('[mail] Resend error:', resp.error);
-        // hahayaan nating mag-fallback sa SMTP kung meron
-      } else {
-        console.log('[mail] Resend accepted:', resp.data?.id || '');
-        return true;
-      }
+      const data = await promiseTimeout(
+        sendWithResend({
+          to: toEmail,
+          subject: subj,
+          html,
+          text: `Your iTrueMatch verification code is ${code}`,
+        }),
+        12000,
+        "Resend"
+      );
+      console.log(`[mail] Resend OTP sent to ${toEmail}`, data?.id ? `id=${data.id}` : "");
+      return true;
     } catch (err) {
-      console.error('[mail] Resend send failed:', err?.message || err);
-      // hahayaan nating mag-fallback sa SMTP kung meron
+      console.error("[mail] Resend send failed:", err?.message || err);
+      // fall through to SMTP fallback
     }
   }
 
-  // ---------- B. Fallback: SMTP (kung gumagana) ----------
-  const mailer = await getMailer();
-  if (!mailer) {
-    console.log('[DEV] Verification code for', toEmail, '→', code);
-    return true;
-  }
-
+  // Fallback: SMTP (keep this for local/dev, but protect with a short timeout)
   try {
-    await mailer.sendMail({ from, to: toEmail, subject, text, html });
-    console.log('[mail] SMTP accepted');
+    const mailer = await getMailer();
+    if (!mailer) {
+      console.error("[mail] No mailer configured (set RESEND_API_KEY or SMTP_* env vars).");
+      return false;
+    }
+
+    const from = process.env.MAIL_FROM || process.env.SMTP_USER || "noreply@itruematch.com";
+
+    await promiseTimeout(
+      mailer.sendMail({
+        from,
+        to: toEmail,
+        subject: subj,
+        html,
+        text: `Your iTrueMatch verification code is ${code}`,
+      }),
+      12000,
+      "SMTP sendMail"
+    );
+
+    console.log("[mail] OTP email sent via SMTP to:", toEmail);
     return true;
   } catch (err) {
-    console.error('[mail] Email send failed:', err?.message || err);
+    console.error("[mail] Email send failed:", err?.message || err);
     return false;
   }
 }
-
 // ---------------- SWIPE & MATCHING ENGINE ----------------
 
 // 1. Get Candidates (Real Users)
