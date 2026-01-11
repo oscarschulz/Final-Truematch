@@ -150,7 +150,8 @@
   <dialog id="dlgVerify" class="modal">
     <form method="dialog" id="frmVerify" class="modal__body">
       <h3>Verify Email</h3>
-      <p class="muted">Code sent to <b id="verifyEmailTxt"></b></p>
+      <p class="muted" id="verifyStatusLine">We’ll send a 6‑digit code to <b id="verifyEmailTxt"></b></p>
+          <p id="verifyMsg" class="verify-msg" role="status" aria-live="polite"></p>
       <input id="verifyCode" class="code-input" placeholder="000000" maxlength="6">
       <div class="modal-actions">
         <button type="button" id="btnResendCode" class="btn btn--ghost">Resend</button>

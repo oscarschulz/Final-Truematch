@@ -377,3 +377,16 @@ form { display: flex; flex-direction: column; gap: 18px; width: 100%; }
 
 .modal-actions { display: flex; gap: 10px; margin-top: 15px; }
 .btn-ghost { background: transparent; border: 1px solid #334155; color: #fff; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-family: 'Montserrat', sans-serif; font-weight: 600; flex: 1; }
+
+/* OTP verification status */
+.verify-msg{
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.35;
+  min-height: 18px;
+}
+.verify-msg.is-ok{ color: rgba(100, 233, 238, 0.95); }
+.verify-msg.is-error{ color: rgba(255, 120, 120, 0.95); }
+/* ============================
+   END OF FILE
+   ============================ */

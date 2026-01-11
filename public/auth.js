@@ -385,17 +385,37 @@
   }
 
   // ---------- Email verification (OTP)
-  async function apiSendVerificationCode(email) { return await callAPI("/api/auth/send-verification-code", { email }); }
-  async function apiVerifyEmailCode(email, code) { return await callAPI("/api/auth/verify-email-code", { email, code }); }
+  async function apiSendVerificationCode(email) {
+  const out = await callAPI("/api/auth/send-verification-code", { email }, { timeoutMs: 15000 });
+  if (out && typeof out === "object") return out;
+
+  // Network/timeout: do NOT pretend the email was sent
+  return {
+    ok: false,
+    code: "NETWORK_ERROR",
+    message: "Email not deliverable. Please double-check the address and try again.",
+  };
+}
+  async function apiVerifyEmailCode(email, code) {
+  const out = await callAPI("/api/auth/verify-email-code", { email, code }, { timeoutMs: 15000 });
+  if (out && typeof out === "object") return out;
+
+  return {
+    ok: false,
+    code: "NETWORK_ERROR",
+    message: "Verification failed. Please try again.",
+  };
+}
 
   function safeDialogClose(dlg) {
     try { if (typeof dlg.close === "function") dlg.close(); else dlg.removeAttribute("open"); } catch {}
   }
 
-  function openVerifyDialog(email) {
+  function openVerifyDialog(email, opts = {}) {
     const dlg = $("#dlgVerify");
     if (!dlg) return false;
     const emailTxt = $("#verifyEmailTxt");
+  const statusLine = $("#verifyStatusLine");
     const codeInput = $("#verifyCode");
     const msg = $("#verifyMsg");
     const btnResend = $("#btnResendCode");
@@ -404,6 +424,31 @@
     const targetEmail = (email || getEmailCandidate() || "").trim();
     if (emailTxt) emailTxt.textContent = targetEmail || "";
     if (msg) msg.textContent = "";
+
+  function setVerifyStatusMsg(type, text) {
+    if (!msg) return;
+    msg.classList.remove("is-ok", "is-error");
+    if (type === "ok") msg.classList.add("is-ok");
+    if (type === "error") msg.classList.add("is-error");
+    msg.textContent = text || "";
+  }
+
+  // Initial state (called right after attempting to send OTP)
+  if (opts && typeof opts === "object") {
+    const sentOk = !!opts.sentOk;
+    const initialMessage =
+      opts.initialMessage ||
+      (sentOk
+        ? "Code sent. Check your inbox (and spam)."
+        : "Email not deliverable. Please double-check the address and resend.");
+
+    setVerifyStatusMsg(sentOk ? "ok" : "error", initialMessage);
+
+    // Keep the status line neutral (avoid claiming delivery)
+    if (statusLine && emailTxt) {
+      statusLine.childNodes[0].textContent = "We’ll send a 6-digit code to ";
+    }
+  }
     if (codeInput) { codeInput.value = ""; setTimeout(() => codeInput.focus(), 0); }
 
     if (btnResend) {
@@ -457,44 +502,45 @@
     return true;
   }
 
-  async function ensureVerifiedBeforeContinue(email) {
+  async function ensureVerifiedBeforeContinue(email, preSendResult = null) {
+  try {
+    const me = await apiGet("/api/me");
+    const verified = !!(me?.user?.emailVerified);
+    if (verified) return true;
+
+    const e = (email || me?.user?.email || getEmailCandidate() || "").trim().toLowerCase();
+    if (!e) {
+      openVerifyDialog("", { sentOk: false, initialMessage: "Please enter your email first." });
+      return false;
+    }
+
+    const out = preSendResult || await apiSendVerificationCode(e);
+    openVerifyDialog(e, { sentOk: !!(out && out.ok) });
+    return false;
+  } catch (err) {
+    openVerifyDialog(email || "", {
+      sentOk: false,
+      initialMessage: "Email not deliverable. Please double-check the address and resend.",
+    });
+    return false;
+  }
+}
+
+  async function finishLogin(email){
+  const me = await apiGet("/api/me");
+  if (!me?.user) throw new Error(me?.message || "No session");
+  if (!me.user.emailVerified){
+    let sendOut = null;
     try {
-      const me = await apiGet("/api/me");
-      const verified = !!(me?.user?.emailVerified);
-      if (verified) return true;
-      const e = (email || me?.user?.email || getEmailCandidate() || "").trim().toLowerCase();
-      if (!e) return openVerifyDialog(""); 
-      try { await apiSendVerificationCode(e); } catch {}
-      return openVerifyDialog(e);
-    } catch { return true; }
-  }
-
-  async function finishLogin(extraQuery) {
-    const qs = new URLSearchParams(location.search);
-    const demo = qs.get("demo") === "1";
-
-    if (demo) {
-      const prefs = hasLocalPrefs();
-      if (prefs) return gotoDashboard(extraQuery);
-      return gotoPreferences(extraQuery);
+      sendOut = await apiSendVerificationCode(email);
+    } catch (err) {
+      sendOut = { ok: false };
     }
-
-    const resp = await fetchMe();
-    const user = resp?.user;
-
-    if (user && !user.emailVerified) {
-      const e = (user.email || getEmailCandidate() || "").trim().toLowerCase();
-      try { if (e) await apiSendVerificationCode(e); } catch {}
-      await ensureVerifiedBeforeContinue(e);
-      return;
-    }
-
-    const prefsServer = !!(user?.prefsSaved || user?.preferencesSaved);
-    const prefs = prefsServer || hasLocalPrefs();
-
-    if (prefs) return gotoDashboard(extraQuery);
-    gotoPreferences(extraQuery);
+    await ensureVerifiedBeforeContinue(email, sendOut);
+    return;
   }
+  gotoPreferences();
+}
 
   whenReady(() => {
     try {
