@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>TrueMatch — Dashboard</title>
+  <title>iTrueMatch — Dashboard</title>
   <link rel="icon" href="assets/images/truematch-mark.png" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="dashboard.css" />
@@ -19,11 +19,14 @@
       <div>
         <a class="brand" href="dashboard.html">
           <img src="assets/images/truematch-mark.png" class="brand__logo" alt="Logo" />
-          <span class="brand__name">TrueMatch</span>
+          <span class="brand__name">iTrueMatch</span>
         </a>
         <nav class="nav-links" id="tabbar">
           <button class="nav-btn is-active" data-panel="home"><i class="fa-solid fa-house"></i> <span>Home</span></button>
-          <button class="nav-btn" data-panel="swipe"><i class="fa-solid fa-layer-group"></i> <span>Swipe</span></button>
+          <button class="nav-btn" data-panel="swipe">
+            <i class="fa-solid fa-layer-group"></i> <span>Swipe</span>
+            <span class="nav-badge">12</span>
+          </button>
           <button class="nav-btn" data-panel="matches"><i class="fa-solid fa-comments"></i> <span>Matches</span></button>
           <button class="nav-btn" data-panel="shortlist"><i class="fa-solid fa-list-check"></i> <span>Shortlist</span></button>
           <button class="nav-btn" data-panel="creators"><i class="fa-solid fa-fire"></i> <span>Creators</span></button>
@@ -38,46 +41,36 @@
 
     <main class="main-feed">
       
-      <section class="panel is-active" data-panel="home">
-        
-        <div class="stories-rail-container glass-card">
-          <div class="home-card-header" style="margin-bottom: 10px;">
-            <h3 class="tiny muted" style="margin:0; letter-spacing:1px;">RECENT MOMENTS</h3>
-            <button class="btn btn--sm btn--ghost" onclick="document.querySelector('[data-panel=creators]').click()">View All</button>
+      <section class="panel is-active" data-panel="home" id="panel-home">
+        <div class="home-top-bar glass-card">
+          <div class="greeting-box">
+            <h2 style="margin:0; font-size:1.4rem;">Hello, <span id="homeWelcomeName" style="color:#00aff0;">Member</span> 👋</h2>
+            <p class="tiny muted" id="homePlanSummary" style="margin:0;">Status loading...</p>
           </div>
-          <div class="stories-scroll" id="storiesContainer">
-            </div>
+          <div class="notif-icon-box" id="btnNotifToggle">
+             <i class="fa-solid fa-bell"></i>
+             <span class="notif-dot"></span>
+             <div class="notif-dropdown" id="notifDropdown">
+                <div class="notif-header">Notifications</div>
+                <div class="notif-list">
+                    <div class="notif-item unread">
+                        <div class="notif-icon"><i class="fa-solid fa-heart"></i></div>
+                        <div class="notif-text"><strong>Jessica</strong> liked you.<br><span class="tiny">2m ago</span></div>
+                    </div>
+                </div>
+                <div class="notif-footer">Mark all read</div>
+             </div>
+          </div>
         </div>
 
-        <div class="home-social-grid">
-          <div class="social-main">
-            <div class="welcome-banner glass-card" style="border-left: 4px solid #00aff0;">
-              <div style="flex:1;">
-                <h2 style="margin:0; font-size:1.5rem;">Hello, <span id="homeWelcomeName" style="color:#00aff0;">Member</span> 👋</h2>
-                <p class="muted" style="margin-top:4px; font-size:0.9rem;" id="homePlanSummary">Loading status...</p>
-              </div>
-              <div id="homePlanPill" class="plan-chip">Free Plan</div>
-            </div>
+        <h3 class="section-title">Who Liked You <span class="badge-pill" id="admirerCount">0 New</span></h3>
+        <div class="admirer-list-container" id="admirerContainer"></div>
 
-            <h3 class="section-title">Activity Feed</h3>
-            <div class="activity-feed">
-              <div class="feed-item glass-card">
-                <div class="feed-icon" style="background: rgba(255, 51, 102, 0.2); color: #ff3366;"><i class="fa-solid fa-heart"></i></div>
-                <div class="feed-content">
-                  <p><strong>Someone liked your profile!</strong></p>
-                  <p class="muted tiny">2m ago • Check Matches</p>
-                </div>
-                <button class="btn btn--sm btn--primary" onclick="document.querySelector('[data-panel=matches]').click()">View</button>
-              </div>
-              <div class="feed-item glass-card">
-                <div class="feed-icon" style="background: rgba(0, 255, 191, 0.2); color: #00ffbf;"><i class="fa-solid fa-image"></i></div>
-                <div class="feed-content">
-                  <p><strong>Bella posted a new photo.</strong></p>
-                  <p class="muted tiny">15m ago • Creator Exclusive</p>
-                </div>
-              </div>
+        <div style="margin-top: auto; border-top: 1px solid rgba(255,255,255,0.1); padding: 25px 30px 20px; margin-left: -30px; margin-right: -30px; background: rgba(0,0,0,0.3);">
+            <h3 class="tiny muted" style="margin-bottom:15px; letter-spacing:1px; text-align:left; padding-left: 5px;">RECENT MOMENTS</h3>
+            <div class="stories-rail-container glass-card" style="margin:0; border:none; background:transparent; box-shadow:none; padding:0;">
+              <div class="stories-scroll left-align" id="storiesContainer"></div>
             </div>
-          </div>
         </div>
       </section>
 
@@ -92,179 +85,116 @@
           <div class="swipe-stack" id="swipeStack"></div>
           <div class="swipe-controls" id="swipeControls">
             <button id="btnSwipePass" class="btn-round btn-round--pass"><i class="fa-solid fa-xmark"></i></button>
+            <button id="btnSwipeSuper" class="btn-round btn-round--super"><i class="fa-solid fa-star"></i></button>
             <button id="btnSwipeLike" class="btn-round btn-round--like"><i class="fa-solid fa-heart"></i></button>
           </div>
+          <p class="tiny muted" style="margin-top:15px; opacity:0.6;">Use <i class="fa-solid fa-arrow-left"></i> <i class="fa-solid fa-arrow-right"></i> keys</p>
         </div>
       </section>
 
       <section class="panel" data-panel="matches">
-        <div class="feed-header">Matches</div>
+        <div class="feed-header">Matches & Messages</div>
+        <div style="padding: 10px 0;">
+            <input type="text" class="tm-input" placeholder="Search matches..." style="background:rgba(255,255,255,0.05); border-radius:99px; padding-left:20px;">
+        </div>
+
+        <h3 class="section-title" style="margin-top:10px;">New Matches <span class="badge-pill bg-gold" id="newMatchCount">0</span></h3>
+        <div class="stories-rail-container" style="margin-bottom: 20px;">
+            <div class="stories-scroll left-align" id="newMatchesRail"></div>
+        </div>
+
+        <h3 class="section-title">Messages</h3>
         <div id="matchesContainer" class="matches-grid"></div>
       </section>
 
-      <section class="panel" data-panel="shortlist">
-        <div class="feed-header">Shortlist</div>
-        <div class="swipe-empty"><i class="fa-solid fa-clipboard-list" style="font-size:2rem; color:#555;"></i><h3>Curated Picks</h3></div>
-        </section>
-
-      <section class="panel" data-panel="creators">
-        <div class="feed-header">Creators</div>
-        <div class="card glass-card">
-          <div id="creatorStateNone"><h3>Become a Creator</h3><p class="muted">Share content and earn.</p><button class="btn btn--primary" id="btnOpenCreatorApply">Apply Now</button></div>
-          <div id="creatorStatePending" hidden><h3>⏳ Pending</h3></div>
-          <div id="creatorStateApproved" hidden><button class="btn btn--primary" onclick="location.href='creators.html'">Go to Studio</button></div>
-        </div>
-      </section>
-
-      <section class="panel" data-panel="premium">
-        <div class="feed-header">Premium</div>
-        <div class="card glass-card" style="text-align:center; padding:30px;">
-          <i class="fa-solid fa-gem" style="font-size:3rem; color:#64E9EE; margin-bottom:15px;"></i>
-          <h3>Premium Society</h3>
-          <div id="premiumStateNone"><button class="btn btn--primary" id="btnOpenPremiumApplyMain">Apply for Access</button></div>
-          <div id="premiumStatePending" hidden><p style="color:#ffd700;">Pending Review...</p></div>
-          <div id="premiumStateApproved" hidden><p style="color:#00ff88;">Member Access Granted.</p></div>
-        </div>
-      </section>
-
-      <section class="panel" data-panel="settings">
-        <div class="feed-header">Settings</div>
-        <div class="card glass-card">
-          <div class="settings-header">
-            <div class="settings-avatar"><img id="sAvatar" src="assets/images/truematch-mark.png" alt="Avatar"></div>
-            <div class="settings-text-col"><h3 id="sNameDisplay">Member</h3><p id="sEmailDisplay" class="muted tiny">...</p></div>
-            <button id="btnEditProfile" class="btn btn--ghost btn--sm">Edit</button>
-          </div>
-          <div class="settings-grid">
-            <div class="settings-row"><span class="muted">City</span><span id="dispCity">-</span></div>
-            <div class="settings-row"><span class="muted">Age</span><span id="dispAge">-</span></div>
-             <div class="settings-row"><span class="muted">Looking For</span><span id="dispLooking">-</span></div>
-          </div>
-          <div style="margin-top:20px;"><button id="btnChangePassword" class="btn btn--ghost btn--sm">Password</button></div>
-        </div>
-      </section>
+      <section class="panel" data-panel="shortlist" id="panel-shortlist"><div class="feed-header">Shortlist</div></section>
+      <section class="panel" data-panel="creators"><div class="feed-header">Creators</div><div class="glass-card"><div id="creatorStateNone"><h3>Become a Creator</h3><p class="muted">Share content and earn.</p><button class="btn btn--primary" id="btnOpenCreatorApply">Apply Now</button></div></div></section>
+      <section class="panel" data-panel="premium"><div class="feed-header">Premium</div><div class="glass-card" style="text-align:center; padding:30px;"><i class="fa-solid fa-gem" style="font-size:3rem; color:#64E9EE; margin-bottom:15px;"></i><h3>Premium Society</h3><div id="premiumStateNone"><button class="btn btn--primary" id="btnOpenPremiumApplyMain">Apply for Access</button></div></div></section>
+      <section class="panel" data-panel="settings"><div class="feed-header">Settings</div><div class="glass-card"><div class="settings-header"><div class="settings-avatar"><img id="sAvatar" src="assets/images/truematch-mark.png" alt="Avatar"></div><div class="settings-text-col"><h3 id="sNameDisplay">Member</h3><p id="sEmailDisplay" class="muted tiny">...</p></div><button id="btnEditProfile" class="btn btn--ghost btn--sm">Edit</button></div><div class="settings-grid"><div class="settings-row"><span class="muted">City</span><span id="dispCity">-</span></div><div class="settings-row"><span class="muted">Age</span><span id="dispAge">-</span></div><div class="settings-row"><span class="muted">Looking For</span><span id="dispLooking">-</span></div></div><div style="margin-top:20px;"><button id="btnChangePassword" class="btn btn--ghost btn--sm">Password</button></div></div></section>
     </main>
 
     <aside class="right-sidebar">
       <div class="search-box"><i class="fa-solid fa-magnifying-glass"></i> Search...</div>
-      
       <div class="glass-card stats-widget">
         <div class="home-card-header"><h3 style="margin:0;">Swipes Left</h3></div>
         <div data-kpi="remaining" style="text-align:center; padding: 15px 0;">
-          <div class="progress-ring">
-            <svg width="100" height="100">
-              <circle class="bg" cx="50" cy="50" r="40"></circle>
-              <circle class="fg" id="statsRingCircle" cx="50" cy="50" r="40" style="stroke-dasharray: 251; stroke-dashoffset: 0;"></circle> 
-            </svg>
-            <div class="progress-text"><h2 id="statsCountDisplay" style="font-size:1.8rem; margin:0;">20</h2></div>
-          </div>
+          <div class="progress-ring"><svg width="100" height="100"><circle class="bg" cx="50" cy="50" r="40"></circle><circle class="fg" id="statsRingCircle" cx="50" cy="50" r="40" style="stroke-dasharray: 251; stroke-dashoffset: 0;"></circle></svg><div class="progress-text"><h2 id="statsCountDisplay" style="font-size:1.8rem; margin:0;">20</h2></div></div>
           <p class="tiny muted" style="margin-top:8px;">Resets Daily</p>
         </div>
       </div>
-
-      <div class="glass-card teaser-card">
-        <div class="teaser-header"><h3>Quick Match</h3><span class="tiny muted">Suggested</span></div>
-        <div class="teaser-profile" style="background-image: url('assets/images/truematch-mark.png');">
-          <div class="teaser-overlay"><h4>Mia, 24</h4><p>📍 Manila</p></div>
-          
-          <div class="teaser-arrows">
-            <button class="arrow-btn left" id="btnQuickPass"><i class="fa-solid fa-chevron-left"></i></button>
-            <button class="arrow-btn right" id="btnQuickLike"><i class="fa-solid fa-chevron-right"></i></button>
-          </div>
-        </div>
-        
-        <div class="teaser-actions">
-          <button class="btn-round btn-round--pass btn--sm" id="btnQuickPass2"><i class="fa-solid fa-xmark"></i></button>
-          <button class="btn-round btn-round--like btn--sm" id="btnQuickLike2"><i class="fa-solid fa-heart"></i></button>
-        </div>
-      </div>
-
       <div class="glass-card">
-        <h3>Go Premium</h3>
-        <p class="muted tiny">Unlimited swipes & concierge.</p>
-        <button class="btn btn--primary btn--wide" id="btnSidebarSubscribe">Subscribe</button>
+        <div class="home-card-header" style="margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
+            <h3 style="margin:0; font-size:0.9rem;">Active Nearby</h3><span class="live-pulse">● LIVE</span>
+        </div>
+        <div class="active-grid" id="activeNearbyContainer"></div>
+      </div>
+      <div class="premium-card">
+        <div class="premium-content"><i class="fa-solid fa-crown" style="font-size:2rem; margin-bottom:10px;"></i><h3>iTrueMatch Gold</h3><p>See who likes you & unlimited swipes.</p><button class="btn btn--white" id="btnSidebarSubscribe">Upgrade Now</button></div>
       </div>
     </aside>
-
   </div>
 
   <dialog id="dlgProfile" class="tm-dialog">
-    <form method="dialog" id="frmProfile" class="tm-form">
-      <div class="dialog__header"><h3>Edit Profile</h3></div>
-      <div class="dialog__body">
-        <input type="text" id="inpName" class="tm-input" placeholder="Name">
-        <input type="number" id="inpUserAge" class="tm-input" placeholder="Age">
-        <input type="text" id="inpCity" class="tm-input" placeholder="City">
-        <input type="email" id="inpEmail" class="tm-input" placeholder="Email">
-        <label class="muted tiny">Preferences</label>
-        <div style="display:flex; gap:10px;">
-           <input type="number" id="inpAgeMin" class="tm-input" placeholder="Min Age">
-           <input type="number" id="inpAgeMax" class="tm-input" placeholder="Max Age">
-        </div>
-        <select id="inpLooking" class="tm-input">
-           <option value="women">Women</option>
-           <option value="men">Men</option>
-           <option value="both">Both</option>
-        </select>
-        <input type="text" id="inpEthnicity" class="tm-input" placeholder="Ethnicity Pref" hidden>
-        <input type="file" id="inpAvatarFile" hidden>
-      </div>
-      <div class="dialog__footer">
-        <button type="button" id="btnCancelProfile" class="btn btn--ghost">Cancel</button>
-        <button type="submit" class="btn btn--primary">Save</button>
-      </div>
-    </form>
+    <form method="dialog" id="frmProfile" class="tm-form"><div class="dialog__header"><h3>Edit Profile</h3></div><div class="dialog__body"><input type="text" id="inpName" class="tm-input" placeholder="Name"><input type="number" id="inpUserAge" class="tm-input" placeholder="Age"><input type="text" id="inpCity" class="tm-input" placeholder="City"><input type="email" id="inpEmail" class="tm-input" placeholder="Email"><label class="muted tiny">Preferences</label><div style="display:flex; gap:10px;"><input type="number" id="inpAgeMin" class="tm-input" placeholder="Min Age"><input type="number" id="inpAgeMax" class="tm-input" placeholder="Max Age"></div><select id="inpLooking" class="tm-input"><option value="women">Women</option><option value="men">Men</option><option value="both">Both</option></select><input type="text" id="inpEthnicity" class="tm-input" placeholder="Ethnicity Pref" hidden><input type="file" id="inpAvatarFile" hidden></div><div class="dialog__footer"><button type="button" id="btnCancelProfile" class="btn btn--ghost">Cancel</button><button type="submit" class="btn btn--primary">Save</button></div></form>
   </dialog>
 
   <dialog id="dlgPassword" class="tm-dialog">
-    <form method="dialog" id="frmPassword" class="tm-form">
-      <div class="dialog__header"><h3>Change Password</h3></div>
-      <div class="dialog__body"><input type="password" name="newPassword" class="tm-input" placeholder="New Password"></div>
-      <div class="dialog__footer"><button type="button" id="btnCancelPassword" class="btn btn--ghost">Cancel</button><button type="submit" class="btn btn--primary">Update</button></div>
-    </form>
+    <form method="dialog" id="frmPassword" class="tm-form"><div class="dialog__header"><h3>Change Password</h3></div><div class="dialog__body"><input type="password" name="newPassword" class="tm-input" placeholder="New Password"></div><div class="dialog__footer"><button type="button" id="btnCancelPassword" class="btn btn--ghost">Cancel</button><button type="submit" class="btn btn--primary">Update</button></div></form>
   </dialog>
 
-  <dialog id="dlgPremiumApply" class="tm-dialog">
-    <form method="dialog" id="frmPremiumApply" class="tm-form">
-      <div class="dialog__header"><h3>Premium Application</h3></div>
-      <div class="dialog__body"><input type="text" name="fullName" class="tm-input" placeholder="Full Name"><input type="text" name="occupation" class="tm-input" placeholder="Occupation"><textarea name="finance" class="tm-input" placeholder="Annual Income"></textarea></div>
-      <div class="dialog__footer"><button type="button" id="btnPremiumCancel" class="btn btn--ghost">Cancel</button><button type="submit" class="btn btn--primary">Submit</button></div>
-    </form>
+  <dialog id="dlgPremiumApply" class="tm-dialog premium-dialog">
+    <div class="premium-header-bg"><i class="fa-solid fa-gem premium-icon-large"></i><h2>iTrueMatch <span class="text-gold">GOLD</span></h2><p>Unlock the ultimate experience.</p></div>
+    <div class="premium-benefits-list"><div class="p-benefit"><i class="fa-solid fa-check"></i> Unlimited Swipes</div><div class="p-benefit"><i class="fa-solid fa-check"></i> See Who Liked You</div><div class="p-benefit"><i class="fa-solid fa-check"></i> Priority Matching</div></div>
+    <form method="dialog" id="frmPremiumApply" class="tm-form" style="padding: 0 20px 20px;"><div class="dialog__body" style="padding: 10px 0;"><label class="tiny muted" style="display:block; margin-bottom:5px;">APPLICATION FORM</label><input type="text" name="fullName" class="tm-input input-gold" placeholder="Full Name"><input type="text" name="occupation" class="tm-input input-gold" placeholder="Occupation"><textarea name="finance" class="tm-input input-gold" placeholder="Annual Income Source"></textarea></div><div class="dialog__footer" style="border:none; padding-top:0;"><button type="button" id="btnPremiumCancel" class="btn btn--ghost">Cancel</button><button type="submit" class="btn btn--gold" style="flex:1;">Submit Application</button></div></form>
   </dialog>
 
   <dialog id="dlgCreatorApply" class="tm-dialog">
-    <form method="dialog" id="frmCreatorApply" class="tm-form">
-      <div class="dialog__header"><h3>Creator Application</h3></div>
-      <div class="dialog__body"><input type="text" name="handle" class="tm-input" placeholder="@handle"><input type="number" name="price" class="tm-input" placeholder="Price"><textarea name="contentStyle" class="tm-input" placeholder="Style"></textarea></div>
-      <div class="dialog__footer"><button type="button" id="btnCloseCreatorApply" class="btn btn--ghost">Cancel</button><button type="submit" class="btn btn--primary">Submit</button></div>
-    </form>
+    <form method="dialog" id="frmCreatorApply" class="tm-form"><div class="dialog__header"><h3>Creator Application</h3></div><div class="dialog__body"><input type="text" name="handle" class="tm-input" placeholder="@handle"><input type="number" name="price" class="tm-input" placeholder="Price"><textarea name="contentStyle" class="tm-input" placeholder="Style"></textarea></div><div class="dialog__footer"><button type="button" id="btnCloseCreatorApply" class="btn btn--ghost">Cancel</button><button type="submit" class="btn btn--primary">Submit</button></div></form>
+  </dialog>
+
+  <dialog id="dlgStory" class="tm-dialog" style="padding:0; overflow:hidden; background: #000; border: 1px solid #333; max-width: 380px; height: 70vh; border-radius: 20px;">
+    <div class="story-view" style="position:relative; width:100%; height:100%; display:flex; flex-direction:column;">
+      <div class="story-header-overlay" style="position:absolute; top:0; left:0; right:0; padding:15px; z-index:10; background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);">
+         <div class="story-progress-bar" style="height:3px; background:rgba(255,255,255,0.3); border-radius:3px; margin-bottom:10px; overflow:hidden;"><div class="fill" style="width:100%; height:100%; background:#fff;"></div></div>
+         <div class="story-user" style="display:flex; align-items:center; gap:10px;"><img id="storyUserImg" src="" style="width:35px; height:35px; border-radius:50%; border:2px solid #00aff0; object-fit:cover;"><div style="flex:1;"><h4 id="storyUserName" style="margin:0; font-size:0.95rem; color:#fff;">Name</h4><span class="time" style="font-size:0.75rem; color:#ddd;">2h ago</span></div><button id="btnCloseStory" style="background:transparent; border:none; color:#fff; font-size:1.5rem; cursor:pointer;"><i class="fa-solid fa-xmark"></i></button></div>
+      </div>
+      <img id="storyMainImg" src="" style="width:100%; height:100%; object-fit:cover;">
+    </div>
+  </dialog>
+
+  <dialog id="dlgChat" class="tm-dialog" style="max-width: 450px; height: 600px; padding:0; overflow:hidden;">
+    <div style="display:flex; flex-direction:column; height:100%;">
+        <div class="chat-header" style="padding:15px; background:rgba(255,255,255,0.05); border-bottom:1px solid rgba(255,255,255,0.1); display:flex; align-items:center; justify-content:space-between;">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <img id="chatUserImg" src="" style="width:40px; height:40px; border-radius:50%; object-fit:cover;">
+                <div>
+                    <h4 id="chatUserName" style="margin:0;">User</h4>
+                    <p style="margin:0; font-size:0.75rem; color:#00ff88;">● Online</p>
+                </div>
+            </div>
+            <button id="btnCloseChat" class="btn btn--sm btn--ghost" style="border:none; font-size:1.2rem;"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        
+        <div id="chatBody" style="flex:1; padding:20px; overflow-y:auto; display:flex; flex-direction:column; gap:15px;">
+            </div>
+
+        <div style="padding:15px; background:rgba(0,0,0,0.5); border-top:1px solid rgba(255,255,255,0.1); display:flex; gap:10px;">
+            <input type="text" class="tm-input" placeholder="Type a message..." style="border-radius:99px;">
+            <button class="btn btn--primary" style="border-radius:50%; width:45px; padding:0;"><i class="fa-solid fa-paper-plane"></i></button>
+        </div>
+    </div>
   </dialog>
 
   <div id="tm-toast" class="toast">Action successful</div>
 
   <script>
-    // Canvas Background Animation
     (() => {
       const canvas = document.getElementById('tm-bg-canvas');
       const ctx = canvas.getContext('2d');
       let W, H, pts = [];
-      function resize() {
-        W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight;
-        pts = [];
-        for(let i=0; i<60; i++) pts.push({x:Math.random()*W, y:Math.random()*H, vx:(Math.random()-.5)*.5, vy:(Math.random()-.5)*.5});
-      }
-      function loop() {
-        ctx.clearRect(0,0,W,H);
-        ctx.fillStyle = 'rgba(255,255,255,0.4)';
-        pts.forEach(p => {
-          p.x += p.vx; p.y += p.vy;
-          if(p.x<0 || p.x>W) p.vx*=-1; if(p.y<0 || p.y>H) p.vy*=-1;
-          ctx.beginPath(); ctx.arc(p.x, p.y, 1.5, 0, Math.PI*2); ctx.fill();
-        });
-        requestAnimationFrame(loop);
-      }
-      window.addEventListener('resize', resize);
-      resize(); loop();
+      function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; pts = []; for(let i=0; i<60; i++) pts.push({x:Math.random()*W, y:Math.random()*H, vx:(Math.random()-.5)*.5, vy:(Math.random()-.5)*.5}); }
+      function loop() { ctx.clearRect(0,0,W,H); ctx.fillStyle = 'rgba(255,255,255,0.4)'; pts.forEach(p => { p.x += p.vx; p.y += p.vy; if(p.x<0 || p.x>W) p.vx*=-1; if(p.y<0 || p.y>H) p.vy*=-1; ctx.beginPath(); ctx.arc(p.x, p.y, 1.5, 0, Math.PI*2); ctx.fill(); }); requestAnimationFrame(loop); }
+      window.addEventListener('resize', resize); resize(); loop();
     })();
   </script>
   
