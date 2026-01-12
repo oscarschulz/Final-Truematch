@@ -3,6 +3,10 @@
    ============================ */
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap');
 
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
 body.tm-dark {
   margin: 0; padding: 0;
   background: #02040a;
@@ -23,6 +27,7 @@ body.tm-dark {
   z-index: 1; 
   align-items: center; 
   justify-content: center;
+  padding: 20px;
 }
 
 /* ============================
@@ -41,8 +46,6 @@ body.tm-dark {
   text-decoration: none; color: #fff;
   font-weight: 800; font-size: 1.5rem; letter-spacing: 1px;
   pointer-events: auto; 
-  
-  /* FIXED: Remove uppercase to allow 'iTRUEMATCH' */
   text-transform: none; 
 }
 .nav-brand img { width: 40px; height: auto; }
@@ -61,7 +64,7 @@ body.tm-dark {
 }
 
 /* ============================
-   THE UNIFIED CARD
+   THE UNIFIED CARD (LAYOUT FIX)
    ============================ */
 .unified-card {
   display: flex;
@@ -75,7 +78,7 @@ body.tm-dark {
   box-shadow: 0 0 40px rgba(100, 233, 238, 0.15), inset 0 0 30px rgba(100, 233, 238, 0.05);
   animation: breatheBorder 4s infinite alternate, cardEntrance 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
   position: relative;
-  overflow: hidden;
+  overflow: hidden; 
   opacity: 0; 
   transform: scale(0.95);
 }
@@ -95,250 +98,92 @@ body.tm-dark {
 }
 
 /* ============================
-   LEFT SIDE: CHAT INTERFACE
+   LEFT SIDE (LAYOUT FIX: 50%)
    ============================ */
 .auth-visual-side {
   width: 50%; 
+  flex: 0 0 50%;
+  max-width: 50%;
   position: relative; 
   display: flex; align-items: center; justify-content: center;
   background: transparent;
   perspective: 1000px;
   opacity: 0;
   animation: slideInLeft 1s ease-out 0.2s forwards;
+  overflow: hidden;
 }
-
+.visual-content img { max-width: 100%; height: auto; object-fit: contain; }
 .visual-content { position: relative; z-index: 5; text-align: center; width: 100%; padding: 0; }
-
-.chat-interface-wrapper {
-  position: relative; z-index: 10;
-  width: 360px;
-  height: 620px;
-  transition: transform 0.1s ease-out;
-  margin: 0 auto;
-}
-
-.chat-phone-body {
-  width: 100%; height: 100%;
-  background: rgba(0, 0, 0, 0.4); 
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 40px; 
-  box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-  display: flex; flex-direction: column; overflow: hidden; position: relative;
-}
-
-.chat-header-ui {
-  padding: 20px 25px; border-bottom: 1px solid rgba(255,255,255,0.05);
-  display: flex; align-items: center; gap: 15px; background: rgba(255,255,255,0.02);
-}
+.chat-interface-wrapper { position: relative; z-index: 10; width: 360px; height: 620px; transition: transform 0.1s ease-out; margin: 0 auto; }
+.chat-phone-body { width: 100%; height: 100%; background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255,255,255,0.1); border-radius: 40px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); display: flex; flex-direction: column; overflow: hidden; position: relative; }
+.chat-header-ui { padding: 20px 25px; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; gap: 15px; background: rgba(255,255,255,0.02); }
 .chat-avatar { width: 40px; height: 40px; border-radius: 50%; background: #222; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid rgba(100,233,238,0.3); }
 .chat-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .online-dot { width: 10px; height: 10px; background: #10b981; border-radius: 50%; position: absolute; bottom: 0; right: 0; border: 2px solid #0a0f19; }
 .chat-info { display: flex; flex-direction: column; text-align: left; }
 .chat-name { font-weight: 700; font-size: 1rem; color: #fff; }
 .chat-status { font-size: 0.75rem; color: #64E9EE; font-weight: 500; }
-
-.chat-messages-area {
-  flex: 1; padding: 25px;
-  display: flex; flex-direction: column; gap: 15px; justify-content: flex-end; position: relative;
-}
-
-.chat-bubble {
-  max-width: 85%; padding: 12px 18px; border-radius: 18px;
-  font-size: 0.9rem; line-height: 1.4; opacity: 0; transform: translateY(10px); text-align: left;
-  animation: msgPopIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-}
+.chat-messages-area { flex: 1; padding: 25px; display: flex; flex-direction: column; gap: 15px; justify-content: flex-end; position: relative; }
+.chat-bubble { max-width: 85%; padding: 12px 18px; border-radius: 18px; font-size: 0.9rem; line-height: 1.4; opacity: 0; transform: translateY(10px); text-align: left; animation: msgPopIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
 @keyframes msgPopIn { to { opacity: 1; transform: translateY(0); } }
 .chat-bubble.received { align-self: flex-start; background: rgba(255,255,255,0.08); color: #e2e8f0; border-bottom-left-radius: 4px; border: 1px solid rgba(100,233,238,0.1); }
 .chat-bubble.sent { align-self: flex-end; background: linear-gradient(135deg, #64E9EE 0%, #29a3ff 100%); color: #000; font-weight: 600; border-bottom-right-radius: 4px; box-shadow: 0 5px 15px rgba(100,233,238,0.2); }
-
 .typing-bubble { width: 60px; height: 35px; display: flex; align-items: center; justify-content: center; gap: 4px; }
 .dot { width: 6px; height: 6px; background: rgba(255,255,255,0.5); border-radius: 50%; animation: typeBounce 1.4s infinite; }
 .dot:nth-child(1) { animation-delay: 0s; }
 .dot:nth-child(2) { animation-delay: 0.2s; }
 .dot:nth-child(3) { animation-delay: 0.4s; }
 @keyframes typeBounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); background: #64E9EE; } }
-
 .reaction-layer { position: absolute; bottom: 0; right: 20px; width: 50px; height: 100%; pointer-events: none; }
 .floating-heart { position: absolute; bottom: 80px; font-size: 1.8rem; animation: floatHeart 2s ease-out forwards; }
 @keyframes floatHeart { 0% { transform: translateY(0) scale(0.5); opacity: 0; } 20% { opacity: 1; transform: translateY(-20px) scale(1.2); } 100% { transform: translateY(-150px) scale(1); opacity: 0; } }
-
-.floating-badge {
-  position: absolute; padding: 10px 20px; border-radius: 50px;
-  background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.15);
-  backdrop-filter: blur(10px); font-weight: 700; font-size: 0.8rem;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5); animation: floatBadge 4s ease-in-out infinite;
-}
+.floating-badge { position: absolute; padding: 10px 20px; border-radius: 50px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.15); backdrop-filter: blur(10px); font-weight: 700; font-size: 0.8rem; box-shadow: 0 10px 30px rgba(0,0,0,0.5); animation: floatBadge 4s ease-in-out infinite; }
 .badge-1 { top: 15%; left: -20px; color: #ff4757; animation-delay: 0s; }
 .badge-2 { bottom: 20%; right: -25px; color: #2ed573; animation-delay: 2s; }
 @keyframes floatBadge { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
 
-
 /* ============================
-   RIGHT SIDE: LOGIN FORM & FLIP FIX
+   RIGHT SIDE (LAYOUT FIX: 50%)
    ============================ */
-.auth-form-side {
-  width: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  position: relative; 
-  background: transparent;
-}
+.auth-form-side { width: 50%; flex: 0 0 50%; max-width: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; background: transparent; padding: 0 20px; }
 .mobile-header { display: none; margin-bottom: 30px; }
 
 /* ---- FLIP CARD LAYERING FIX ---- */
-.flip-wrapper {
-  perspective: 2000px; 
-  width: 100%; 
-  max-width: 420px; 
-  height: 600px; 
-  position: relative; 
-  z-index: 10; 
-}
-
-.flip-card { 
-  width: 100%; 
-  height: 100%; 
-  position: relative; 
-  transform-style: preserve-3d; 
-  transition: transform 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275); 
-}
+.flip-wrapper { perspective: 2000px; width: 100%; max-width: 420px; height: 600px; position: relative; z-index: 10; }
+.flip-card { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; transition: transform 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
 .flip-card.flipped { transform: rotateY(180deg); }
+.card-face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; background: transparent; border: none; box-shadow: none; padding: 20px 30px; display: flex; flex-direction: column; justify-content: center; cursor: auto; z-index: 5; transition: z-index 0.4s step-end; }
+.card-face.front { transform: rotateY(0deg); z-index: 10; }
+.card-face.back { transform: rotateY(180deg); z-index: 1; }
+.flip-card.flipped .card-face.front { z-index: 1; pointer-events: none; }
+.flip-card.flipped .card-face.back { z-index: 10; pointer-events: auto; }
 
-.card-face {
-  position: absolute; 
-  inset: 0; 
-  backface-visibility: hidden; 
-  -webkit-backface-visibility: hidden;
-  background: transparent; 
-  border: none;
-  box-shadow: none;
-  padding: 20px 30px;
-  display: flex; 
-  flex-direction: column; 
-  justify-content: center;
-  cursor: auto;
-  
-  /* CRITICAL FIX: Z-index transition ensures buttons are clickable */
-  z-index: 5;
-  transition: z-index 0.4s step-end; 
-}
+/* --- STAGGERED ENTRANCE ANIMATIONS --- */
+@keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slideInLeft { from { opacity: 0; transform: translateX(-30px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes fadeInDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+.face-content .auth-header { opacity: 0; animation: fadeInUp 0.6s ease-out 0.3s forwards; }
+.face-content form .input-group:nth-child(1) { opacity: 0; animation: fadeInUp 0.6s ease-out 0.4s forwards; }
+.face-content form .input-group:nth-child(2) { opacity: 0; animation: fadeInUp 0.6s ease-out 0.5s forwards; }
+.face-content form .input-group:nth-child(3) { opacity: 0; animation: fadeInUp 0.6s ease-out 0.6s forwards; }
+.face-content .actions-row { opacity: 0; animation: fadeInUp 0.6s ease-out 0.65s forwards; }
+.face-content .btn-primary { opacity: 0; animation: fadeInUp 0.6s ease-out 0.7s forwards; }
+.face-content .terms-micro { opacity: 0; animation: fadeInUp 0.6s ease-out 0.75s forwards; }
+.face-content .divider { opacity: 0; animation: fadeInUp 0.6s ease-out 0.8s forwards; }
+.face-content .btn-oauth { opacity: 0; animation: fadeInUp 0.6s ease-out 0.9s forwards; }
+.face-content .switch-area { opacity: 0; animation: fadeInUp 0.6s ease-out 1s forwards; }
 
-/* Front Face (Login) */
-.card-face.front {
-  transform: rotateY(0deg);
-  z-index: 10; /* Default: Top */
-}
-
-/* Back Face (Signup) */
-.card-face.back { 
-  transform: rotateY(180deg); 
-  z-index: 1; /* Default: Bottom */
-}
-
-/* --- THE MAGIC LOGIC --- 
-   When flipped, swap the Z-indexes so the BACK face receives clicks 
-*/
-.flip-card.flipped .card-face.front {
-  z-index: 1;
-  pointer-events: none; /* Ignore clicks on invisible front */
-}
-
-.flip-card.flipped .card-face.back {
-  z-index: 10;
-  pointer-events: auto; /* Catch clicks on visible back */
-}
-/* ------------------------------- */
-
-/* --- STAGGERED ENTRANCE ANIMATIONS FOR FORM --- */
-
-/* Keyframes for Staggered Entrance */
-@keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes slideInLeft {
-  from { opacity: 0; transform: translateX(-30px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-
-@keyframes fadeInDown {
-  from { opacity: 0; transform: translateY(-20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* Staggered Delays for Login/Signup Contents */
-/* Header */
-.face-content .auth-header {
-  opacity: 0;
-  animation: fadeInUp 0.6s ease-out 0.3s forwards;
-}
-
-/* Input Fields Sequence */
-.face-content form .input-group:nth-child(1) {
-  opacity: 0;
-  animation: fadeInUp 0.6s ease-out 0.4s forwards;
-}
-.face-content form .input-group:nth-child(2) {
-  opacity: 0;
-  animation: fadeInUp 0.6s ease-out 0.5s forwards;
-}
-.face-content form .input-group:nth-child(3) {
-  opacity: 0;
-  animation: fadeInUp 0.6s ease-out 0.6s forwards;
-}
-
-/* Actions Row (Remember me / Forgot) */
-.face-content .actions-row {
-  opacity: 0;
-  animation: fadeInUp 0.6s ease-out 0.65s forwards;
-}
-
-/* Main Button */
-.face-content .btn-primary {
-  opacity: 0;
-  animation: fadeInUp 0.6s ease-out 0.7s forwards;
-}
-
-/* Terms Micro text */
-.face-content .terms-micro {
-  opacity: 0;
-  animation: fadeInUp 0.6s ease-out 0.75s forwards;
-}
-
-/* Divider */
-.face-content .divider {
-  opacity: 0;
-  animation: fadeInUp 0.6s ease-out 0.8s forwards;
-}
-
-/* OAuth Button */
-.face-content .btn-oauth {
-  opacity: 0;
-  animation: fadeInUp 0.6s ease-out 0.9s forwards;
-}
-
-/* Switch Area (Bottom Link) */
-.face-content .switch-area {
-  opacity: 0;
-  animation: fadeInUp 0.6s ease-out 1s forwards;
-}
-
-
-/* FORM STYLING (Existing) */
+/* FORM STYLING */
 .auth-header { text-align: center; margin-bottom: 30px; }
 .auth-header h1 { font-size: 2.2rem; margin: 0 0 8px; color: #fff; text-shadow: 0 0 15px rgba(100,233,238,0.5); font-weight: 800; }
 .auth-header p { color: #94a3b8; font-size: 1rem; margin: 0; font-weight: 500; }
 form { display: flex; flex-direction: column; gap: 18px; width: 100%; }
 .input-group { position: relative; width: 100%; }
-.input-group input {
-  width: 100%; padding: 16px; background: rgba(0, 0, 0, 0.4); 
-  border: 1px solid rgba(100, 233, 238, 0.2); border-radius: 12px; 
-  color: #fff; font-size: 1rem; font-family: 'Montserrat', sans-serif; font-weight: 500;
-  transition: all 0.3s; cursor: text;
-}
+.input-group input { width: 100%; padding: 16px; background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(100, 233, 238, 0.2); border-radius: 12px; color: #fff; font-size: 1rem; font-family: 'Montserrat', sans-serif; font-weight: 500; transition: all 0.3s; cursor: text; }
 .input-group input:focus { border-color: #64E9EE; background: rgba(100,233,238,0.08); box-shadow: 0 0 15px rgba(100, 233, 238, 0.2); outline: none; }
 .input-group label { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 0.9rem; pointer-events: none; transition: 0.3s; padding: 0 4px; background: transparent; font-weight: 500; }
 .input-group input:focus + label, .input-group input:not(:placeholder-shown) + label { top: 0; font-size: 0.8rem; color: #64E9EE; background: #0b1120; font-weight: 700; }
-.btn-primary { width: 100%; padding: 16px; border-radius: 50px; border: none; background: #64E9EE; color: #000; font-weight: 800; font-size: 1.1rem; cursor: pointer; margin-top: 10px; font-family: 'Montserrat', sans-serif; text-transform: uppercase; letter-spacing: 1px; box-shadow: 0 0 20px rgba(100, 233, 238, 0.4); transition: transform 0.2s, box-shadow 0.2s; }
+.btn-primary { width: 100%; padding: 16px; border-radius: 50px; border: none; background: #64E9EE; color: #000; font-weight: 800; font-size: 1.1rem; cursor: pointer; margin-top: 10px; font-family: 'Montserrat', sans-serif; text-transform: uppercase; letter-spacing: 1px; box-shadow: 0 0 20px rgba(100, 233, 238, 0.4); transition: transform 0.2s, box-shadow 0.2s; position: relative; }
 .btn-primary:hover { transform: translateY(-3px); background: #fff; box-shadow: 0 0 40px rgba(100, 233, 238, 0.8); }
 .actions-row { display: flex; justify-content: space-between; font-size: 0.9rem; color: #94a3b8; font-weight: 500; cursor: default; }
 .forgot-link { color: #64E9EE; text-decoration: none; font-weight: 600; cursor: pointer; }
@@ -357,36 +202,156 @@ form { display: flex; flex-direction: column; gap: 18px; width: 100%; }
 @media (max-width: 1000px) {
   .unified-card { flex-direction: column; height: auto; max-width: 500px; padding: 40px 0; }
   .auth-top-nav { padding: 15px 20px; }
-  .auth-visual-side { width: 100%; height: 600px; }
-  .auth-form-side { width: 100%; padding: 20px; }
+  .auth-visual-side { width: 100%; flex: 0 0 100%; max-width: 100%; height: 300px; margin-bottom: 20px; }
+  .auth-form-side { width: 100%; flex: 0 0 100%; max-width: 100%; padding: 20px; }
   .flip-wrapper { height: 650px; }
-  .unified-card::after { display: none; } /* Hide vertical divider on mobile */
+  .unified-card::after { display: none; }
+  /* Split Modal Responsive: Stack them */
+  .split-modal-layout { flex-direction: column; }
+  .modal-left-visual, .modal-right-form { width: 100%; height: auto; }
+  .modal-left-visual { height: 180px; }
 }
 
-/* MODAL STYLES (EXISTING & FORGOT PASSWORD) */
-#dlgVerify, #dlgForgot { background: #0f172a; border: 1px solid #64E9EE; color: #fff; border-radius: 16px; padding: 24px; width: 90%; max-width: 400px; }
-.code-input { width: 100%; background: #000; color: #fff; border: 1px solid #334155; padding: 12px; font-size: 1.5rem; text-align: center; letter-spacing: 5px; margin: 15px 0; border-radius: 8px; font-family: 'Montserrat', sans-serif; font-weight: 700; cursor: text; }
-
-/* FIX FOR FORGOT PASSWORD INPUTS TO LOOK NORMAL (NOT OTP STYLE) */
-.code-input.full-text {
-    font-size: 1rem !important;
-    text-align: left !important;
-    letter-spacing: normal !important;
-    padding: 16px !important;
-}
-
-.modal-actions { display: flex; gap: 10px; margin-top: 15px; }
-.btn-ghost { background: transparent; border: 1px solid #334155; color: #fff; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-family: 'Montserrat', sans-serif; font-weight: 600; flex: 1; }
-
-/* OTP verification status */
-.verify-msg{
-  margin-top: 10px;
-  font-size: 13px;
-  line-height: 1.35;
-  min-height: 18px;
-}
-.verify-msg.is-ok{ color: rgba(100, 233, 238, 0.95); }
-.verify-msg.is-error{ color: rgba(255, 120, 120, 0.95); }
 /* ============================
-   END OF FILE
+   MODAL STYLES (BASE)
    ============================ */
+dialog {
+  background: #0f172a; 
+  border: 1px solid #64E9EE; 
+  color: #fff; 
+  border-radius: 20px; 
+  padding: 30px; 
+  width: 90%; 
+  max-width: 420px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.7);
+  margin: auto;
+  opacity: 0;
+  transform: scale(0.9) translateY(20px);
+  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+dialog[open] { opacity: 1; transform: scale(1) translateY(0); animation: neonPulse 3s infinite ease-in-out; }
+dialog::backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); transition: all 0.3s ease; }
+
+/* ============================
+   SPLIT MODAL STYLE (NEW)
+   ============================ */
+dialog.split-modal {
+  max-width: 900px; /* Wider for split layout */
+  padding: 0; /* Remove default padding for full bleed */
+  border-radius: 24px;
+  overflow: hidden;
+  background: #0f172a;
+}
+
+.split-modal-layout {
+  display: flex;
+  width: 100%;
+  min-height: 500px; /* Height of the modal */
+}
+
+/* LEFT SIDE: VISUAL */
+.modal-left-visual {
+  width: 45%;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-right: 1px solid rgba(100, 233, 238, 0.1);
+}
+
+/* Abstract Decoration in Visual */
+.decor-circle { position: absolute; border-radius: 50%; background: radial-gradient(circle, rgba(100,233,238,0.2) 0%, transparent 70%); filter: blur(20px); }
+.c1 { width: 200px; height: 200px; top: -50px; left: -50px; }
+.c2 { width: 150px; height: 150px; bottom: 20px; right: -30px; background: radial-gradient(circle, rgba(168, 85, 247, 0.2) 0%, transparent 70%); }
+
+.illustration-float {
+  z-index: 2;
+  text-align: center;
+  animation: floatIllustration 4s ease-in-out infinite;
+}
+@keyframes floatIllustration { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-15px);} }
+
+.visual-text h4 { margin: 20px 0 5px; font-size: 1.4rem; color: #fff; text-shadow: 0 0 10px rgba(100,233,238,0.5); }
+.visual-text p { color: #94a3b8; margin: 0; font-size: 0.9rem; }
+
+/* RIGHT SIDE: FORM */
+.modal-right-form {
+  width: 55%;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+}
+
+/* Close button positioning for split modal */
+.close-icon-btn.dark-bg {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  color: #64748b;
+  z-index: 20;
+}
+.close-icon-btn.dark-bg:hover { color: #fff; background: rgba(255,255,255,0.1); }
+
+/* Align Left overrides for split modal */
+.modal__body.align-left { text-align: left; width: 100%; }
+.modal__body.align-left h3 { text-align: left; font-size: 1.8rem; margin-bottom: 10px; }
+.modal__body.align-left .muted { text-align: left; margin-bottom: 30px; }
+
+/* Action Buttons Column */
+.column-actions {
+  flex-direction: column;
+  gap: 15px;
+  margin-top: 30px;
+}
+.btn-text-only {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 10px;
+  transition: color 0.2s;
+}
+.btn-text-only:hover { color: #fff; }
+
+/* ============================
+   SHARED / EXISTING STYLES
+   ============================ */
+.close-icon-btn { position: absolute; top: 15px; right: 15px; background: none; border: none; color: #64748b; cursor: pointer; padding: 5px; border-radius: 50%; transition: all 0.2s; display: flex; align-items: center; justify-content: center; }
+.close-icon-btn:hover { color: #fff; background: rgba(255,255,255,0.1); }
+
+/* Code Input - General */
+.code-input { width: 100%; background: #02040a; color: #fff; border: 1px solid #334155; border-radius: 12px; font-family: 'Montserrat', sans-serif; font-weight: 600; cursor: text; transition: all 0.3s; }
+.code-input:focus { border-color: #64E9EE; box-shadow: 0 0 15px rgba(100, 233, 238, 0.3); outline: none; }
+
+.otp-style { padding: 12px; font-size: 1.8rem; text-align: center; letter-spacing: 8px; margin: 15px 0; }
+
+.modal-input-wrapper.with-icon { position: relative; width: 100%; }
+.input-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; color: #64748b; pointer-events: none; z-index: 2; transition: color 0.3s; }
+.code-input.full-text { font-size: 1rem !important; text-align: left !important; letter-spacing: normal !important; padding: 16px 16px 16px 45px !important; }
+.code-input.full-text:focus + .input-icon, .code-input.full-text:not(:placeholder-shown) + .input-icon { color: #64E9EE; }
+.modal-input-wrapper:focus-within .input-icon { color: #64E9EE; filter: drop-shadow(0 0 5px rgba(100, 233, 238, 0.8)); transform: translateY(-50%) scale(1.1); }
+
+.modal-actions { display: flex; gap: 10px; margin-top: 25px; }
+.btn-ghost { background: transparent; border: 1px solid #334155; color: #fff; padding: 12px 20px; border-radius: 50px; cursor: pointer; font-family: 'Montserrat', sans-serif; font-weight: 600; flex: 1; transition: all 0.2s; }
+.btn-ghost:hover { border-color: #fff; background: rgba(255,255,255,0.05); }
+
+/* Shiny Button */
+.btn-primary { position: relative; overflow: hidden; z-index: 1; }
+.btn-primary::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(120deg, transparent, rgba(255, 255, 255, 0.4), transparent); transition: all 0.6s; z-index: -1; }
+.btn-primary:hover::before { left: 100%; }
+
+.verify-msg{ margin-top: 10px; font-size: 13px; line-height: 1.35; min-height: 18px; text-align: center; }
+.verify-msg.is-ok{ color: #64E9EE; }
+.verify-msg.is-error{ color: #ff4757; }
+
+@keyframes neonPulse {
+  0% { box-shadow: 0 20px 50px rgba(0,0,0,0.7), 0 0 0px rgba(100, 233, 238, 0); border-color: rgba(100, 233, 238, 0.4); }
+  50% { box-shadow: 0 20px 50px rgba(0,0,0,0.7), 0 0 20px rgba(100, 233, 238, 0.2); border-color: rgba(100, 233, 238, 1); }
+  100% { box-shadow: 0 20px 50px rgba(0,0,0,0.7), 0 0 0px rgba(100, 233, 238, 0); border-color: rgba(100, 233, 238, 0.4); }
+}

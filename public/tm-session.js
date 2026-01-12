@@ -134,6 +134,7 @@ export function savePrefsForCurrentUser(prefs) {
 export function hasLocalPrefs() {
   return !!getRawPrefsForCurrentUser();
 }
+
 // -------- Generic JSON helpers + auth clear (used by dashboard) --------
 
 export function readJSON(key, fallback = null) {
@@ -162,4 +163,17 @@ export function clearAuth() {
   } catch {
     // ignore
   }
+}
+
+// ==========================================
+// FIX PARA SA DASHBOARD ERROR
+// ==========================================
+
+// Ang dashboard.js ay naghahanap ng 'clearSession'
+// Kaya ituturo natin ito sa existing 'clearAuth' function mo.
+export const clearSession = clearAuth;
+
+// Dagdag na rin natin ito dahil madalas hinahanap ng dashboard
+export function isAuthenticated() {
+    return !!getCurrentUser();
 }

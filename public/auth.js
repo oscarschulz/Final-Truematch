@@ -1,28 +1,19 @@
-// auth.js — aligned to your current auth.html (loginEmail/signupEmail + dlgVerify IDs)
+// auth.js
 (() => {
   if (!/\/auth\.html(?:$|[?#])/.test(location.pathname)) return;
 
-  // Backend origin (no trailing slash). Your auth.html sets window.API_BASE = '' in <head>.
   const API_BASE = (() => {
     const v = String(window.API_BASE || "").trim().replace(/\/$/, "");
     if (v) return v;
-
-    // file:// dev fallback
     if (location.protocol === "file:") return "http://localhost:3000";
-
     const host = location.hostname;
     const port = location.port || "";
-
-    // If frontend has a port and it's not 3000, assume backend on 3000
     if (port && port !== "3000") {
       return `${location.protocol}//${host}:3000`;
     }
-
-    // Same origin
     return `${location.origin}`;
   })();
 
-  // ---------- Helpers
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
@@ -44,12 +35,8 @@
     }
   };
 
-  // =========================================================
-  // ANIMATIONS & CHAT SIMULATION LOGIC
-  // =========================================================
   whenReady(() => {
-    
-    // --- A. Left Side Mouse Parallax (3D Move) ---
+    // --- Visual Parallax ---
     const visualSide = $(".auth-visual-side");
     const visualContent = $(".visual-content"); 
     const parallaxContent = $("#parallaxContent");
@@ -68,30 +55,26 @@
       });
     }
 
-    // --- B. Flip Card Logic ---
+    // --- Flip Card Logic ---
     const flipCard = $("#authFlipCard");
     if (flipCard) {
-      // Global click listener for background flip
       flipCard.addEventListener('click', (e) => {
         const target = e.target;
-        // Don't flip if user is interacting with form
         if (target.closest('input') || target.closest('button') || target.closest('a') || target.closest('label') || target.closest('.forgot-link')) {
           return;
         }
-        // Toggle flip
         const isFlipped = flipCard.classList.contains('flipped');
         setActiveTab(isFlipped ? 'login' : 'signup');
         setParam('mode', isFlipped ? 'login' : 'signup');
       });
 
-      // Switch buttons listeners
       document.body.addEventListener('click', (e) => {
         if (e.target.closest('#toSignup')) { e.preventDefault(); setActiveTab('signup'); setParam('mode', 'signup'); }
         if (e.target.closest('#toLogin')) { e.preventDefault(); setActiveTab('login'); setParam('mode', 'login'); }
       });
     }
 
-    // --- C. CHAT SIMULATION LOOP ---
+    // --- Chat Sim ---
     const chatContainer = $("#chatContainer");
     const reactionLayer = $("#reactionLayer");
 
@@ -101,11 +84,8 @@
         { a: "Are you real? 🤔", b: "Come find out... 🤫" },
         { a: "VIP Lounge tonight? 🥂", b: "On my way. 🚀" }
       ];
-
       const wait = (ms) => new Promise(r => setTimeout(r, ms));
-
       async function typeMessage(text, isReceived) {
-        // Typing indicator
         const typingId = "typing-" + Date.now();
         const typingHTML = `
           <div class="chat-bubble ${isReceived ? 'received' : 'sent'} typing-bubble" id="${typingId}">
@@ -114,17 +94,13 @@
         `;
         chatContainer.insertAdjacentHTML('beforeend', typingHTML);
         chatContainer.scrollTop = chatContainer.scrollHeight;
-
         await wait(1200);
-
         const typingEl = document.getElementById(typingId);
         if(typingEl) typingEl.remove();
-
         const msgHTML = `<div class="chat-bubble ${isReceived ? 'received' : 'sent'}">${text}</div>`;
         chatContainer.insertAdjacentHTML('beforeend', msgHTML);
         chatContainer.scrollTop = chatContainer.scrollHeight;
       }
-
       function showReaction() {
         const hearts = ['❤️', '🔥', '😍', '💋'];
         const heart = document.createElement('div');
@@ -134,7 +110,6 @@
         reactionLayer && reactionLayer.appendChild(heart);
         setTimeout(() => heart.remove(), 2000);
       }
-
       async function runChatSimulation() {
         while(true) { 
           for (const scene of scenarios) {
@@ -150,34 +125,15 @@
       }
       runChatSimulation(); 
     }
-    
-    // --- D. Text Slider ---
-    const slides = $$('.slide-text');
-    if (slides.length > 0) {
-      let currentSlide = 0;
-      slides[0].classList.add('active'); 
-      setInterval(() => {
-        slides[currentSlide].classList.remove('active');
-        currentSlide = (currentSlide + 1) % slides.length;
-        slides[currentSlide].classList.add('active');
-      }, 3000); 
-    }
   });
-
-  // =========================================================
-  // CORE AUTH LOGIC (RETAINED & OPTIMIZED)
-  // =========================================================
 
   function getEmailCandidate() {
     const fromModal = $("#verifyEmailTxt")?.textContent?.trim();
     if (fromModal) return fromModal.toLowerCase();
-
     const loginEmail = $("#loginEmail")?.value?.trim();
     const signupEmail = $("#signupEmail")?.value?.trim();
-
     if (loginEmail) return loginEmail.toLowerCase();
     if (signupEmail) return signupEmail.toLowerCase();
-
     try {
       const raw = localStorage.getItem("tm_user");
       if (raw) {
@@ -185,50 +141,41 @@
         if (u?.email) return String(u.email).trim().toLowerCase();
       }
     } catch {}
-
     const any = $('input[name="email"]')?.value?.trim();
     return (any || "").toLowerCase();
   }
 
-  // [FIXED] Added Timeout to API call to prevent long waiting if backend is down
   async function callAPI(path, payload = {}) {
     try {
-      // Create a timeout controller (1.5 seconds max wait)
       const controller = new AbortController();
       const id = setTimeout(() => controller.abort(), 1500);
-
       const res = await fetch(API_BASE + path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify(payload),
-        signal: controller.signal // Connect signal
+        signal: controller.signal
       });
-      clearTimeout(id); // Clear timeout on success
-
+      clearTimeout(id);
       const ok = res.ok;
       const status = res.status;
       let data = null;
       try { data = await res.json(); } catch {}
       return { ok, status, ...(data || {}) };
     } catch {
-      // Offline / backend not running — allow demo routing immediately
       return { ok: true, demo: true, status: 0 };
     }
   }
 
   async function apiGet(path) {
     try {
-      // Also add timeout for GET requests
       const controller = new AbortController();
       const id = setTimeout(() => controller.abort(), 1000);
-      
       const res = await fetch(API_BASE + path, { 
         credentials: "include",
         signal: controller.signal 
       });
       clearTimeout(id);
-
       let data = null;
       try { data = await res.json(); } catch {}
       return data;
@@ -272,28 +219,6 @@
     try { localStorage.setItem("tm_user", JSON.stringify(minimal)); } catch {}
   }
 
-  function localPlan() {
-    try {
-      const raw = localStorage.getItem("tm_user");
-      if (raw) {
-        const u = JSON.parse(raw);
-        if (u?.plan) return String(u.plan);
-      }
-    } catch {}
-    return "";
-  }
-
-  function hasLocalPrefs() {
-    try {
-      const email = getEmailCandidate();
-      if (!email) return false;
-      const rawMap = localStorage.getItem("tm_prefs_by_user");
-      if (!rawMap) return false;
-      const map = JSON.parse(rawMap) || {};
-      return !!(map && typeof map === "object" && map[email]);
-    } catch { return false; }
-  }
-
   function mergeExtraParams(base, extraQuery) {
     const q = new URLSearchParams(base || "");
     if (extraQuery) {
@@ -303,11 +228,6 @@
       }
     }
     return q;
-  }
-
-  function gotoDashboard(extraQuery) {
-    const q = mergeExtraParams("", extraQuery);
-    location.replace(`/dashboard.html${q.toString() ? `?${q.toString()}` : ""}`);
   }
 
   function gotoPreferences(extraQuery) {
@@ -320,23 +240,9 @@
     location.replace(`/preferences.html${merged.toString() ? `?${merged.toString()}` : ""}`);
   }
 
-  function gotoTier(extraQuery) {
-    const current = new URLSearchParams(location.search);
-    const q = new URLSearchParams();
-    if (current.get("demo")) q.set("demo", current.get("demo"));
-    if (current.get("prePlan")) q.set("prePlan", current.get("prePlan"));
-    const merged = mergeExtraParams(q.toString(), extraQuery);
-    merged.set("onboarding", "1");
-    location.replace(`/tier.html${merged.toString() ? `?${merged.toString()}` : ""}`);
-  }
-
-  async function fetchMe() { return await apiGet("/api/me"); }
-
-  // ---------- Sync Tab Logic (Flip)
   function setActiveTab(mode) {
     const wantLogin = String(mode).toLowerCase() !== "signup";
     const flipCard = $("#authFlipCard");
-    
     if (flipCard) {
       if (wantLogin) {
         flipCard.classList.remove("flipped");
@@ -344,14 +250,12 @@
         flipCard.classList.add("flipped");
       }
     }
-    
     const tabBtns = $$("[data-tab-btn]");
     tabBtns.forEach((b) => {
       const isLogin = b.dataset.tabBtn === "login";
       b.setAttribute("aria-selected", String(isLogin === wantLogin));
       b.classList.toggle("active", isLogin === wantLogin);
     });
-
     setTimeout(() => {
         const focusEl = wantLogin ? $("#loginEmail") : $("#signupName");
         if(focusEl) focusEl.focus();
@@ -362,7 +266,6 @@
     setActiveTab((getParam("mode") || "login").toLowerCase());
   });
 
-  // ---------- Demo accounts
   const DEMO = {
     "tier1.demo@itruematch.app": { password: "111111", name: "Demo Tier 1", plan: "tier1" },
     "tier2.demo@itruematch.app": { password: "222222", name: "Demo Tier 2", plan: "tier2" },
@@ -384,28 +287,16 @@
     return true;
   }
 
-  // ---------- Email verification (OTP)
   async function apiSendVerificationCode(email) {
-  const out = await callAPI("/api/auth/send-verification-code", { email }, { timeoutMs: 15000 });
-  if (out && typeof out === "object") return out;
-
-  // Network/timeout: do NOT pretend the email was sent
-  return {
-    ok: false,
-    code: "NETWORK_ERROR",
-    message: "Email not deliverable. Please double-check the address and try again.",
-  };
-}
+    const out = await callAPI("/api/auth/send-verification-code", { email }, { timeoutMs: 15000 });
+    if (out && typeof out === "object") return out;
+    return { ok: false, code: "NETWORK_ERROR", message: "Email not deliverable. Please double-check the address and try again." };
+  }
   async function apiVerifyEmailCode(email, code) {
-  const out = await callAPI("/api/auth/verify-email-code", { email, code }, { timeoutMs: 15000 });
-  if (out && typeof out === "object") return out;
-
-  return {
-    ok: false,
-    code: "NETWORK_ERROR",
-    message: "Verification failed. Please try again.",
-  };
-}
+    const out = await callAPI("/api/auth/verify-email-code", { email, code }, { timeoutMs: 15000 });
+    if (out && typeof out === "object") return out;
+    return { ok: false, code: "NETWORK_ERROR", message: "Verification failed. Please try again." };
+  }
 
   function safeDialogClose(dlg) {
     try { if (typeof dlg.close === "function") dlg.close(); else dlg.removeAttribute("open"); } catch {}
@@ -415,40 +306,33 @@
     const dlg = $("#dlgVerify");
     if (!dlg) return false;
     const emailTxt = $("#verifyEmailTxt");
-  const statusLine = $("#verifyStatusLine");
+    const statusLine = $("#verifyStatusLine");
     const codeInput = $("#verifyCode");
     const msg = $("#verifyMsg");
     const btnResend = $("#btnResendCode");
     const btnClose = $("#btnCloseVerify");
+    const btnCloseX = $("#btnCloseVerifyX");
 
     const targetEmail = (email || getEmailCandidate() || "").trim();
     if (emailTxt) emailTxt.textContent = targetEmail || "";
     if (msg) msg.textContent = "";
 
-  function setVerifyStatusMsg(type, text) {
-    if (!msg) return;
-    msg.classList.remove("is-ok", "is-error");
-    if (type === "ok") msg.classList.add("is-ok");
-    if (type === "error") msg.classList.add("is-error");
-    msg.textContent = text || "";
-  }
-
-  // Initial state (called right after attempting to send OTP)
-  if (opts && typeof opts === "object") {
-    const sentOk = !!opts.sentOk;
-    const initialMessage =
-      opts.initialMessage ||
-      (sentOk
-        ? "Code sent. Check your inbox (and spam)."
-        : "Email not deliverable. Please double-check the address and resend.");
-
-    setVerifyStatusMsg(sentOk ? "ok" : "error", initialMessage);
-
-    // Keep the status line neutral (avoid claiming delivery)
-    if (statusLine && emailTxt) {
-      statusLine.childNodes[0].textContent = "We’ll send a 6-digit code to ";
+    function setVerifyStatusMsg(type, text) {
+      if (!msg) return;
+      msg.classList.remove("is-ok", "is-error");
+      if (type === "ok") msg.classList.add("is-ok");
+      if (type === "error") msg.classList.add("is-error");
+      msg.textContent = text || "";
     }
-  }
+
+    if (opts && typeof opts === "object") {
+      const sentOk = !!opts.sentOk;
+      const initialMessage = opts.initialMessage || (sentOk ? "Code sent. Check your inbox (and spam)." : "Email not deliverable. Please double-check the address and resend.");
+      setVerifyStatusMsg(sentOk ? "ok" : "error", initialMessage);
+      if (statusLine && emailTxt) {
+        statusLine.childNodes[0].textContent = "We’ll send a 6-digit code to ";
+      }
+    }
     if (codeInput) { codeInput.value = ""; setTimeout(() => codeInput.focus(), 0); }
 
     if (btnResend) {
@@ -463,6 +347,7 @@
       };
     }
     if (btnClose) btnClose.onclick = () => safeDialogClose(dlg);
+    if (btnCloseX) btnCloseX.onclick = () => safeDialogClose(dlg);
 
     const form = $("#frmVerify") || dlg.querySelector("form");
     if (form && !form.dataset.bound) {
@@ -472,14 +357,12 @@
         const code = String(codeInput?.value || "").trim();
         const e = String(emailTxt?.textContent || targetEmail || getEmailCandidate()).trim().toLowerCase();
         if (!e || !code) return;
-
         if (msg) msg.textContent = "Verifying…";
         try { tmShowLoader('Verifying code…','Finalizing'); } catch {}
         try {
           const out = await apiVerifyEmailCode(e, code);
           const ok = !!(out?.ok || out?.verified);
           if (!ok) { if (msg) msg.textContent = out?.message || "Invalid code."; return; }
-          
           try {
             const raw = localStorage.getItem("tm_user");
             if (raw) {
@@ -488,7 +371,6 @@
               localStorage.setItem("tm_user", JSON.stringify(u));
             }
           } catch {}
-
           if (msg) msg.textContent = "Verified ✅";
           safeDialogClose(dlg);
           const extra = new URLSearchParams(location.search);
@@ -503,44 +385,42 @@
   }
 
   async function ensureVerifiedBeforeContinue(email, preSendResult = null) {
-  try {
-    const me = await apiGet("/api/me");
-    const verified = !!(me?.user?.emailVerified);
-    if (verified) return true;
-
-    const e = (email || me?.user?.email || getEmailCandidate() || "").trim().toLowerCase();
-    if (!e) {
-      openVerifyDialog("", { sentOk: false, initialMessage: "Please enter your email first." });
+    try {
+      const me = await apiGet("/api/me");
+      const verified = !!(me?.user?.emailVerified);
+      if (verified) return true;
+      const e = (email || me?.user?.email || getEmailCandidate() || "").trim().toLowerCase();
+      if (!e) {
+        openVerifyDialog("", { sentOk: false, initialMessage: "Please enter your email first." });
+        return false;
+      }
+      const out = preSendResult || await apiSendVerificationCode(e);
+      openVerifyDialog(e, { sentOk: !!(out && out.ok) });
+      return false;
+    } catch (err) {
+      openVerifyDialog(email || "", {
+        sentOk: false,
+        initialMessage: "Email not deliverable. Please double-check the address and resend.",
+      });
       return false;
     }
-
-    const out = preSendResult || await apiSendVerificationCode(e);
-    openVerifyDialog(e, { sentOk: !!(out && out.ok) });
-    return false;
-  } catch (err) {
-    openVerifyDialog(email || "", {
-      sentOk: false,
-      initialMessage: "Email not deliverable. Please double-check the address and resend.",
-    });
-    return false;
   }
-}
 
   async function finishLogin(email){
-  const me = await apiGet("/api/me");
-  if (!me?.user) throw new Error(me?.message || "No session");
-  if (!me.user.emailVerified){
-    let sendOut = null;
-    try {
-      sendOut = await apiSendVerificationCode(email);
-    } catch (err) {
-      sendOut = { ok: false };
+    const me = await apiGet("/api/me");
+    if (!me?.user) throw new Error(me?.message || "No session");
+    if (!me.user.emailVerified){
+      let sendOut = null;
+      try {
+        sendOut = await apiSendVerificationCode(email);
+      } catch (err) {
+        sendOut = { ok: false };
+      }
+      await ensureVerifiedBeforeContinue(email, sendOut);
+      return;
     }
-    await ensureVerifiedBeforeContinue(email, sendOut);
-    return;
+    gotoPreferences();
   }
-  gotoPreferences();
-}
 
   whenReady(() => {
     try {
@@ -552,31 +432,24 @@
     } catch {}
   });
 
-  // ---------- Sign up form
   whenReady(() => {
     const signupForm = $("#signupForm");
     if (!signupForm || signupForm.dataset.tmBound === "1") return;
     signupForm.dataset.tmBound = "1";
-
     signupForm.addEventListener("submit", async (e) => {
       e.preventDefault();
       const fd = new FormData(signupForm);
       try { tmShowLoader('Creating account…','Securing session'); } catch {}
       try {
         const payload = Object.fromEntries(fd.entries());
-        // Backend expects `name` for full name
         payload.name = payload.name || payload.fullName || '';
         try { delete payload.fullName; } catch (e) {}
-
         const out = await callAPI("/api/auth/register", payload);
         const ok = !!(out?.ok || out?.created || out?.status === 200 || out?.status === 201 || out?.demo);
-
         if (!ok) {
           alert(out?.message || "Signup failed.");
           return;
         }
-
-        // AUTO FLIP BACK TO LOGIN
         setActiveTab("login");
         setParam("mode", "login");
         const email = String(payload.email || "").trim();
@@ -585,30 +458,24 @@
     });
   });
 
-  // ---------- Login form
   whenReady(() => {
     const loginForm = $("#loginForm");
     if (!loginForm || loginForm.dataset.tmBound === "1") return;
     loginForm.dataset.tmBound = "1";
-
     loginForm.addEventListener("submit", async (e) => {
       e.preventDefault();
       try { tmShowLoader('Signing in…','Checking credentials'); } catch {}
       try {
         const email = String($("#loginEmail")?.value || "").trim();
         const password = String($("#loginPass")?.value || "").trim();
-
         if (await tryDemoLogin(email, password)) return;
-
         const res = await callAPI("/api/auth/login", { email, password });
         const offline = !!(res && (res.demo || res.status === 0));
         const ok = !!(res && (res.ok || offline));
-
         if (!ok) {
           alert(res?.message || "Login failed.");
           return;
         }
-
         saveLocalUser(res.user || { email, name: email.split("@")[0] || "User" });
         const extra = new URLSearchParams();
         if (offline) extra.set("demo", "1");
@@ -617,12 +484,10 @@
     });
   });
 
-  // ---------- Google button
   whenReady(() => {
     const googleBtn = $("#btnGoogleLogin");
     if (!googleBtn || googleBtn.dataset.tmBound === "1") return;
     googleBtn.dataset.tmBound = "1";
-
     googleBtn.addEventListener("click", async (e) => {
       e.preventDefault();
       try { tmShowLoader('Signing in…','Opening Google'); } catch {}
@@ -636,20 +501,17 @@
     });
   });
 
-  // =========================================================
-  // NEW FORGOT PASSWORD LOGIC (WITH BACK BTN & CLICK OUTSIDE)
-  // =========================================================
   whenReady(() => {
     const btnOpenForgot = document.getElementById('btnOpenForgot');
     const dlgForgot = document.getElementById('dlgForgot');
     const step1 = document.getElementById('forgotStep1');
     const step2 = document.getElementById('forgotStep2');
     const btnCancel = document.getElementById('btnForgotCancel');
+    const btnCloseForgotX = document.getElementById('btnCloseForgotX');
     const btnVerify = document.getElementById('btnForgotVerify');
     const btnBack = document.getElementById('btnForgotBack');
     const btnChange = document.getElementById('btnForgotChange');
     
-    // Open Modal
     if (btnOpenForgot && dlgForgot) {
         btnOpenForgot.addEventListener('click', (e) => {
             e.preventDefault();
@@ -661,53 +523,45 @@
             document.getElementById('forgotError').style.display = 'none';
             dlgForgot.showModal();
         });
-
-        // Click Outside to Close Logic
         dlgForgot.addEventListener('click', (e) => {
             const rect = dlgForgot.getBoundingClientRect();
-            const isInDialog = (rect.top <= e.clientY && e.clientY <= rect.top + rect.height &&
-              rect.left <= e.clientX && e.clientX <= rect.left + rect.width);
+            const isInDialog = (rect.top <= e.clientY && e.clientY <= rect.top + rect.height && rect.left <= e.clientX && e.clientX <= rect.left + rect.width);
             if (!isInDialog) {
               dlgForgot.close();
             }
         });
     }
 
-    // Close Modal Button
     if (btnCancel && dlgForgot) {
-        btnCancel.addEventListener('click', () => {
-            dlgForgot.close();
-        });
+        btnCancel.addEventListener('click', () => { dlgForgot.close(); });
+    }
+    if (btnCloseForgotX && dlgForgot) {
+        btnCloseForgotX.addEventListener('click', () => { dlgForgot.close(); });
     }
 
-    // STEP 1: Verify Account
     if (btnVerify) {
         btnVerify.addEventListener('click', () => {
             const email = document.getElementById('forgotEmailInput').value;
             const errorMsg = document.getElementById('forgotError');
-            
             if(!email) return;
-
-            // Simulate Loading
+            btnVerify.disabled = true;
+            const originalText = btnVerify.textContent;
             btnVerify.textContent = "Checking...";
-            
-            // SIMULATE REALTIME CHECK (Replace with real API call if needed)
             setTimeout(() => {
-                // Mock: Always success for demo unless email is "error@test.com"
                 if (email === "error@test.com") {
                     errorMsg.style.display = 'block';
-                    btnVerify.textContent = "Verify";
+                    btnVerify.textContent = originalText;
+                    btnVerify.disabled = false;
                 } else {
-                    // Success: Flip to Step 2
                     step1.style.display = 'none';
                     step2.style.display = 'block';
-                    btnVerify.textContent = "Verify"; // Reset text
+                    btnVerify.textContent = originalText;
+                    btnVerify.disabled = false;
                 }
             }, 1000);
         });
     }
 
-    // BACK BUTTON (Step 2 -> Step 1)
     if (btnBack) {
         btnBack.addEventListener('click', () => {
              step2.style.display = 'none';
@@ -715,29 +569,25 @@
         });
     }
 
-    // STEP 2: Change Password
     if (btnChange) {
         btnChange.addEventListener('click', () => {
             const pass1 = document.getElementById('forgotNewPass').value;
             const pass2 = document.getElementById('forgotConfirmPass').value;
-
             if (!pass1 || !pass2) {
                 alert("Please enter a new password.");
                 return;
             }
-
             if (pass1 !== pass2) {
                 alert("Passwords do not match.");
                 return;
             }
-
-            // Simulate Changing Password
+            btnChange.disabled = true;
+            const originalText = btnChange.textContent;
             btnChange.textContent = "Updating...";
-            
             setTimeout(() => {
                 alert("Password Changed Successfully! We sent a confirmation link to your email.");
-                // Simulate Backend Logic: Send Email Link trigger here
-                btnChange.textContent = "Change Password";
+                btnChange.textContent = originalText;
+                btnChange.disabled = false;
                 dlgForgot.close();
             }, 1500);
         });

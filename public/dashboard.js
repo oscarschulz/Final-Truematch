@@ -1,131 +1,84 @@
 // ---------------------------------------------------------------------
-// TrueMatch Dashboard – main client-side controller
+// TrueMatch Dashboard – Main Controller (Final Fixed Version)
 // ---------------------------------------------------------------------
 
-import { getLocalPlan, saveLocalUser } from './tm-session.js';
-// [FIX] Added apiPost to imports
+import { getLocalPlan, saveLocalUser, clearSession } from './tm-session.js';
 import { apiGet, apiPost, apiUpdateProfile, apiSavePrefs } from './tm-api.js';
 
 // ---------------------------------------------------------------------
-// 1. Global state + DOM cache
+// CONFIG & DEV MODE
 // ---------------------------------------------------------------------
+const DEV_MODE = true; // Set to FALSE if you have a real backend running.
 
+// Mock User Data (Fallback)
+function getMockUser() {
+  return {
+    id: 1, name: 'Miguel', email: 'miguel@truematch.com', age: 27, city: 'Manila',
+    avatarUrl: 'assets/images/truematch-mark.png', plan: 'tier2',
+    creatorStatus: 'approved', premiumStatus: 'none', hasCreatorAccess: true
+  };
+}
+
+// ---------------------------------------------------------------------
+// 1. GLOBAL STATE
+// ---------------------------------------------------------------------
 const state = {
   me: null,
-  prefs: null, 
+  prefs: null,
   plan: 'free',
   activeTab: 'home',
-
-  // Usage / quotas
-  usage: {
-    swipesRemaining: 20,
-    swipesLimit: 20,
-    shortlistCount: 0,
-    shortlistLimit: 5,
-    approvedCount: 0,
-    datesCount: 0
-  },
   isLoading: false,
 };
 
-const DOM = {
-  tabs: null,
-  tabPanels: null,
-  headerName: null,
-  headerEmail: null,
-  headerPlanBadge: null,
-  headerAvatar: null,
-  homeWelcomeName: null,
-  homePlanPill: null,
-  homePlanSummary: null,
-  homeAccountList: null,
-  kpiRemaining: null,        
-  kpiShortlistTotal: null,   
-  kpiShortlistApproved: null,
-  kpiDates: null,            
-  swipeStack: null,
-  swipeEmpty: null,
-  swipeControls: null,
-  btnSwipePass: null,
-  btnSwipeLike: null,
-  btnRefreshSwipe: null,
-  sAvatar: null,
-  sNameDisplay: null,
-  sEmailDisplay: null,
-  dispCity: null,
-  dispAge: null,
-  dispEthnicity: null,
-  dispLooking: null,
-  btnEditProfile: null,
-  btnChangePassword: null,
-  btnLogoutPanel: null,
-  dlgProfile: null,
-  frmProfile: null,
-  btnCloseProfile: null,
-  btnCancelProfile: null,
-  inpName: null,
-  inpEmail: null,
-  inpCity: null,
-  inpUserAge: null,
-  inpAvatarFile: null,
-  previewAvatar: null,
-  inpAgeMin: null,
-  inpAgeMax: null,
-  inpEthnicity: null,
-  inpLooking: null,
-  dlgPassword: null,
-  frmPassword: null,
-  btnCancelPassword: null,
-  creatorStateNone: null,
-  creatorStatePending: null,
-  creatorStateApproved: null,
-  btnOpenCreatorApply: null,
-  dlgCreatorApply: null,
-  frmCreatorApply: null,
-  btnCloseCreatorApply: null,
-  creatorsPaywall: null,
-  creatorsUnlocked: null,
-  btnSubscribeCreators: null,
-  premiumStateNone: null,
-  premiumStatePending: null,
-  premiumStateApproved: null,
-  btnOpenPremiumApply: null,
-  dlgPremiumApply: null,
-  frmPremiumApply: null,
-  btnPremiumCancel: null,
-  logoutBtn: null,
-  errorBanner: null,
-  loadingOverlay: null,
-  toast: null,
-  matchesContainer: null,
-};
-
 // ---------------------------------------------------------------------
-// 2. Helpers
+// 2. DOM ELEMENTS CACHE
 // ---------------------------------------------------------------------
+const DOM = {};
 
 function cacheDom() {
-  DOM.tabs = document.querySelectorAll('.tab[data-panel], .nav-btn[data-panel], [data-panel]:not(.panel)');
-  DOM.tabPanels = document.querySelectorAll('.panel[data-panel]');
-  DOM.matchesContainer = document.getElementById('matchesContainer');
-  
-  DOM.headerName = document.querySelector('[data-me-name]');
-  DOM.headerEmail = document.querySelector('[data-me-email]');
-  DOM.headerPlanBadge = document.querySelector('[data-me-plan]');
-  DOM.headerAvatar = document.querySelector('[data-me-avatar]');
+  // Navigation
+  DOM.tabs = document.querySelectorAll('.nav-btn');
+  DOM.panels = document.querySelectorAll('.panel[data-panel]');
+  DOM.btnLogout = document.getElementById('btn-logout');
 
+  // Header & Home
+  DOM.brandName = document.querySelector('.brand__name');
   DOM.homeWelcomeName = document.getElementById('homeWelcomeName');
   DOM.homePlanPill = document.getElementById('homePlanPill');
   DOM.homePlanSummary = document.getElementById('homePlanSummary');
-  DOM.homeAccountList = document.getElementById('homeAccountList');
+  DOM.storiesContainer = document.getElementById('storiesContainer');
+  
+  // Settings / Profile Display
+  DOM.sAvatar = document.getElementById('sAvatar');
+  DOM.sNameDisplay = document.getElementById('sNameDisplay');
+  DOM.sEmailDisplay = document.getElementById('sEmailDisplay');
+  DOM.dispCity = document.getElementById('dispCity');
+  DOM.dispAge = document.getElementById('dispAge');
+  DOM.dispLooking = document.getElementById('dispLooking');
 
-  // KPIs
-  DOM.kpiRemaining = document.querySelector('[data-kpi="remaining"] h3') || document.querySelector('[data-kpi="remaining"]');
-  DOM.kpiShortlistTotal = document.querySelector('[data-kpi="shortlist"] h3') || document.getElementById('kpiShortlistTotal'); 
-  DOM.kpiShortlistApproved = document.querySelector('[data-kpi="shortlist-approved"] h3');
-  DOM.kpiDates = document.querySelector('[data-kpi="dates"] h3');
+  // Modals (Dialogs)
+  DOM.dlgProfile = document.getElementById('dlgProfile');
+  DOM.frmProfile = document.getElementById('frmProfile');
+  DOM.btnEditProfile = document.getElementById('btnEditProfile');
+  DOM.btnCloseProfile = document.getElementById('btnCancelProfile'); 
 
-  // Swipe
+  DOM.dlgPassword = document.getElementById('dlgPassword');
+  DOM.frmPassword = document.getElementById('frmPassword');
+  DOM.btnChangePassword = document.getElementById('btnChangePassword');
+  DOM.btnCancelPassword = document.getElementById('btnCancelPassword');
+
+  // Inputs
+  DOM.inpName = document.getElementById('inpName');
+  DOM.inpEmail = document.getElementById('inpEmail');
+  DOM.inpCity = document.getElementById('inpCity');
+  DOM.inpUserAge = document.getElementById('inpUserAge');
+  DOM.inpAvatarFile = document.getElementById('inpAvatarFile');
+  DOM.inpAgeMin = document.getElementById('inpAgeMin');
+  DOM.inpAgeMax = document.getElementById('inpAgeMax');
+  DOM.inpEthnicity = document.getElementById('inpEthnicity');
+  DOM.inpLooking = document.getElementById('inpLooking');
+
+  // Swipe UI (Main)
   DOM.swipeStack = document.getElementById('swipeStack');
   DOM.swipeEmpty = document.getElementById('swipeEmpty');
   DOM.swipeControls = document.getElementById('swipeControls');
@@ -133,80 +86,43 @@ function cacheDom() {
   DOM.btnSwipeLike = document.getElementById('btnSwipeLike');
   DOM.btnRefreshSwipe = document.getElementById('btnRefreshSwipe');
 
-  // Settings
-  DOM.sAvatar = document.getElementById('sAvatar');
-  DOM.sNameDisplay = document.getElementById('sNameDisplay');
-  DOM.sEmailDisplay = document.getElementById('sEmailDisplay');
-  DOM.dispCity = document.getElementById('dispCity');
-  DOM.dispAge = document.getElementById('dispAge');
-  DOM.dispEthnicity = document.getElementById('dispEthnicity');
-  DOM.dispLooking = document.getElementById('dispLooking');
-  DOM.btnEditProfile = document.getElementById('btnEditProfile');
-  DOM.btnChangePassword = document.getElementById('btnChangePassword');
-  DOM.btnLogoutPanel = document.getElementById('btn-logout-panel');
+  // Sidebar Widgets
+  DOM.btnSidebarSubscribe = document.getElementById('btnSidebarSubscribe'); 
+  DOM.btnQuickPass = document.getElementById('btnQuickPass');
+  DOM.btnQuickLike = document.getElementById('btnQuickLike');
+  DOM.btnQuickPass2 = document.getElementById('btnQuickPass2');
+  DOM.btnQuickLike2 = document.getElementById('btnQuickLike2');
+  
+  DOM.statsRingCircle = document.getElementById('statsRingCircle');
+  DOM.statsCountDisplay = document.getElementById('statsCountDisplay');
 
-  // Modals
-  DOM.dlgProfile = document.getElementById('dlgProfile');
-  DOM.frmProfile = document.getElementById('frmProfile');
-  DOM.btnCloseProfile = document.getElementById('btnCloseProfile');
-  DOM.btnCancelProfile = document.getElementById('btnCancelProfile');
-  DOM.inpName = document.getElementById('inpName');
-  DOM.inpEmail = document.getElementById('inpEmail');
-  DOM.inpCity = document.getElementById('inpCity');
-  DOM.inpUserAge = document.getElementById('inpUserAge'); 
-  DOM.inpAvatarFile = document.getElementById('inpAvatarFile'); 
-  DOM.previewAvatar = document.getElementById('previewAvatar'); 
-  DOM.inpAgeMin = document.getElementById('inpAgeMin');
-  DOM.inpAgeMax = document.getElementById('inpAgeMax');
-  DOM.inpEthnicity = document.getElementById('inpEthnicity');
-  DOM.inpLooking = document.getElementById('inpLooking');
-
-  DOM.dlgPassword = document.getElementById('dlgPassword');
-  DOM.frmPassword = document.getElementById('frmPassword');
-  DOM.btnCancelPassword = document.getElementById('btnCancelPassword');
-
-  DOM.creatorStateNone = document.getElementById('creatorStateNone');
-  DOM.creatorStatePending = document.getElementById('creatorStatePending');
-  DOM.creatorStateApproved = document.getElementById('creatorStateApproved');
+  // Panel Containers
+  DOM.matchesContainer = document.getElementById('matchesContainer');
+  DOM.panelShortlistBody = document.querySelector('[data-panel="shortlist"]');
+  DOM.panelApprovedBody = document.getElementById('premiumStateApproved');
+  
+  // Applications
   DOM.btnOpenCreatorApply = document.getElementById('btnOpenCreatorApply');
   DOM.dlgCreatorApply = document.getElementById('dlgCreatorApply');
-  DOM.frmCreatorApply = document.getElementById('frmCreatorApply');
   DOM.btnCloseCreatorApply = document.getElementById('btnCloseCreatorApply');
-  DOM.creatorsPaywall = document.getElementById('creatorsPaywall');
-  DOM.creatorsUnlocked = document.getElementById('creatorsUnlocked');
-  DOM.btnSubscribeCreators = document.getElementById('btnSubscribeCreators');
-
-  DOM.premiumStateNone = document.getElementById('premiumStateNone');
-  DOM.premiumStatePending = document.getElementById('premiumStatePending');
-  DOM.premiumStateApproved = document.getElementById('premiumStateApproved');
-  DOM.btnOpenPremiumApply = document.getElementById('btnOpenPremiumApply');
+  
+  // Premium Application
+  DOM.btnOpenPremiumApply = document.getElementById('btnOpenPremiumApplyMain');
   DOM.dlgPremiumApply = document.getElementById('dlgPremiumApply');
-  DOM.frmPremiumApply = document.getElementById('frmPremiumApply');
   DOM.btnPremiumCancel = document.getElementById('btnPremiumCancel');
 
-  DOM.logoutBtn = document.querySelector('[data-action="logout"]') || document.getElementById('btn-logout');
-  DOM.errorBanner = document.querySelector('[data-error-banner]');
-  DOM.loadingOverlay = document.querySelector('[data-loading-overlay]');
+  // Utilities
   DOM.toast = document.getElementById('tm-toast');
 }
 
-function showToast(msg) {
-  const el = DOM.toast || document.getElementById('tm-toast');
-  if(!el) return;
-  el.textContent = msg;
-  el.classList.add('toast--visible');
-  setTimeout(() => el.classList.remove('toast--visible'), 3000);
-}
-
-function setText(el, value) {
-  if (!el) return;
-  el.textContent = value == null ? '' : String(value);
-}
-
-function safeNumber(n, fallback = 0) {
-  if (typeof n === 'number' && Number.isFinite(n)) return n;
-  const parsed = Number(n);
-  return Number.isFinite(parsed) ? parsed : fallback;
+// ---------------------------------------------------------------------
+// 3. UI HELPERS
+// ---------------------------------------------------------------------
+function showToast(msg, type = 'success') {
+  if (!DOM.toast) return;
+  DOM.toast.textContent = msg;
+  DOM.toast.className = `toast toast--visible ${type === 'error' ? 'toast--error' : ''}`;
+  setTimeout(() => DOM.toast.classList.remove('toast--visible'), 3000);
 }
 
 function normalizePlanKey(rawPlan) {
@@ -218,56 +134,362 @@ function normalizePlanKey(rawPlan) {
   return 'free';
 }
 
-// ---------------------------------------------------------------------
-// 3. Nav Gating
-// ---------------------------------------------------------------------
+function getRandomColor() {
+  const colors = ['#FF3366', '#3ad4ff', '#00ffbf', '#fcd34d', '#b197fc'];
+  return colors[Math.floor(Math.random() * colors.length)];
+}
 
-const NAV_RULES = {
-  free: ['home', 'matches', 'swipe', 'creators', 'premium', 'settings'],
-  tier1: ['home', 'matches', 'swipe', 'creators', 'premium', 'settings'],
-  tier2: ['home', 'matches', 'shortlist', 'approved', 'swipe', 'creators', 'premium', 'settings'],
-  tier3: ['home', 'matches', 'shortlist', 'approved', 'confirmed', 'swipe', 'creators', 'premium', 'settings'],
-};
-
-function applyPlanNavGating() {
-  const key = normalizePlanKey(state.plan);
-  const allowed = new Set(NAV_RULES[key] || NAV_RULES.free);
-  
-  if (DOM.tabs) {
-    DOM.tabs.forEach((btn) => {
-      const target = btn.dataset.panel;
-      if (!target) return;
-      if (allowed.has(target)) {
-         btn.style.display = '';
-         btn.style.visibility = 'visible';
-         btn.classList.remove('hidden');
-      } else {
-         btn.style.setProperty('display', 'none', 'important');
-         btn.style.setProperty('visibility', 'hidden', 'important');
-         btn.classList.add('hidden');
-      }
-    });
-  }
-
-  if (DOM.tabPanels) {
-    DOM.tabPanels.forEach((panel) => {
-      const name = panel.dataset.panel;
-      if (!name) return;
-      if (!allowed.has(name)) {
-        panel.style.display = 'none';
-        panel.hidden = true;
-      } else if (state.activeTab === name) {
-        panel.style.display = '';
-        panel.hidden = false;
-      }
-    });
-  }
-
-  if (!allowed.has(state.activeTab)) setActiveTab('home');
+function updateSwipeStats(current, max) {
+    if(DOM.statsCountDisplay) DOM.statsCountDisplay.textContent = current;
+    if(DOM.statsRingCircle) {
+        // Circumference of circle r=40 is approx 251
+        const percent = current / max;
+        const offset = 251 - (251 * percent);
+        DOM.statsRingCircle.style.strokeDashoffset = offset;
+    }
 }
 
 // ---------------------------------------------------------------------
-// 4. Swipe Controller
+// 4. MAIN LOGIC: INITIALIZATION
+// ---------------------------------------------------------------------
+
+async function initApp() {
+  cacheDom();
+
+  // 1. Load User Data
+  await loadMe();
+
+  // 2. Initialize Swipe
+  SwipeController.init();
+
+  // 3. Populate Mock Data
+  populateMockContent();
+
+  // 4. Setup Event Listeners
+  setupEventListeners();
+
+  // 5. Initial Stats
+  updateSwipeStats(20, 50);
+}
+
+function setupEventListeners() {
+  // --- Navigation ---
+  DOM.tabs.forEach(tab => {
+    if (tab.dataset.panel) {
+        tab.addEventListener('click', () => {
+            setActiveTab(tab.dataset.panel);
+        });
+    }
+  });
+
+  // --- Logout ---
+  if (DOM.btnLogout) {
+    DOM.btnLogout.addEventListener('click', (e) => {
+      e.preventDefault();
+      clearSession();
+      sessionStorage.clear();
+      window.location.href = 'index.html'; // Adjust if needed
+    });
+  }
+
+  // --- Profile Editing ---
+  if (DOM.btnEditProfile) {
+    DOM.btnEditProfile.addEventListener('click', () => {
+      syncFormToState();
+      DOM.dlgProfile.showModal();
+    });
+  }
+  if (DOM.btnCloseProfile) DOM.btnCloseProfile.addEventListener('click', () => DOM.dlgProfile.close());
+
+  if (DOM.frmProfile) {
+    DOM.frmProfile.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await handleProfileSave();
+    });
+  }
+
+  // --- Password ---
+  if (DOM.btnChangePassword) DOM.btnChangePassword.addEventListener('click', () => DOM.dlgPassword.showModal());
+  if (DOM.btnCancelPassword) DOM.btnCancelPassword.addEventListener('click', () => DOM.dlgPassword.close());
+
+  // --- Applications ---
+  if (DOM.btnOpenCreatorApply) DOM.btnOpenCreatorApply.addEventListener('click', () => DOM.dlgCreatorApply.showModal());
+  if (DOM.btnCloseCreatorApply) DOM.btnCloseCreatorApply.addEventListener('click', () => DOM.dlgCreatorApply.close());
+  
+  // Premium Modal Logic
+  const openPremium = (e) => {
+      if(e) e.preventDefault();
+      if(DOM.dlgPremiumApply) DOM.dlgPremiumApply.showModal();
+  };
+
+  if (DOM.btnOpenPremiumApply) DOM.btnOpenPremiumApply.addEventListener('click', openPremium);
+  if (DOM.btnPremiumCancel) DOM.btnPremiumCancel.addEventListener('click', () => DOM.dlgPremiumApply.close());
+  if (DOM.btnSidebarSubscribe) DOM.btnSidebarSubscribe.addEventListener('click', openPremium);
+
+  // --- Swipe Actions (Main & Sidebar) ---
+  const handlePass = () => SwipeController.pass();
+  const handleLike = () => SwipeController.like();
+
+  if (DOM.btnSwipePass) DOM.btnSwipePass.addEventListener('click', handlePass);
+  if (DOM.btnSwipeLike) DOM.btnSwipeLike.addEventListener('click', handleLike);
+  if (DOM.btnRefreshSwipe) DOM.btnRefreshSwipe.addEventListener('click', () => SwipeController.init());
+
+  if (DOM.btnQuickPass) DOM.btnQuickPass.addEventListener('click', handlePass);
+  if (DOM.btnQuickLike) DOM.btnQuickLike.addEventListener('click', handleLike);
+  if (DOM.btnQuickPass2) DOM.btnQuickPass2.addEventListener('click', handlePass);
+  if (DOM.btnQuickLike2) DOM.btnQuickLike2.addEventListener('click', handleLike);
+}
+
+function setActiveTab(tabName) {
+  state.activeTab = tabName;
+
+  DOM.tabs.forEach(t => {
+    if (t.dataset.panel === tabName) t.classList.add('is-active');
+    else t.classList.remove('is-active');
+  });
+
+  DOM.panels.forEach(p => {
+    if (p.dataset.panel === tabName) {
+      p.hidden = false;
+      p.classList.add('is-active');
+    } else {
+      p.hidden = true;
+      p.classList.remove('is-active');
+    }
+  });
+}
+
+// ---------------------------------------------------------------------
+// 5. MOCK DATA POPULATION
+// ---------------------------------------------------------------------
+
+function populateMockContent() {
+  console.log("Populating mock data...");
+
+  // A. MATCHES GRID
+  const matches = [
+    { name: 'Sofia', age: 24, loc: 'Makati', img: 'assets/images/truematch-mark.png' },
+    { name: 'Chloe', age: 22, loc: 'BGC', img: 'assets/images/truematch-mark.png' },
+    { name: 'Liam', age: 26, loc: 'Ortigas', img: 'assets/images/truematch-mark.png' },
+    { name: 'Noah', age: 25, loc: 'QC', img: 'assets/images/truematch-mark.png' },
+    { name: 'Ava', age: 23, loc: 'Alabang', img: 'assets/images/truematch-mark.png' }
+  ];
+
+  if (DOM.matchesContainer) {
+    let html = '';
+    matches.forEach(m => {
+      html += `
+        <div class="match-card">
+          <img src="${m.img}" class="match-img" alt="${m.name}" style="background:${getRandomColor()}">
+          <div class="match-info">
+            <h3 style="margin:0">${m.name}, ${m.age}</h3>
+            <p class="muted tiny">${m.loc}</p>
+            <div class="match-actions" style="margin-top:10px;">
+              <button class="btn btn--sm btn--primary" style="width:100%">Chat</button>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+    if(matches.length > 0) DOM.matchesContainer.innerHTML = html;
+  }
+
+  // B. SHORTLIST (Inject into Shortlist Panel)
+  if (DOM.panelShortlistBody) {
+    // Check if we already populated it to avoid dupes
+    const existingGrid = DOM.panelShortlistBody.querySelector('.matches-grid');
+    if(!existingGrid) {
+        const shortlisted = [
+            { name: 'Isabella', age: 24, job: 'Model', loc: 'Rockwell' },
+            { name: 'Marcus', age: 29, job: 'CEO', loc: 'Forbes Park' }
+        ];
+        
+        let html = '<div class="matches-grid" style="margin-top:20px;">';
+        shortlisted.forEach(s => {
+          html += `
+            <div class="glass-card" style="border: 1px solid #ffd700; background: rgba(255, 215, 0, 0.05); text-align:center; padding:15px;">
+                <div style="width:50px; height:50px; border-radius:50%; background:#333; margin:0 auto 10px; border:2px solid #ffd700;"></div>
+                <h3 style="margin:0; color:#ffd700;">${s.name}</h3>
+                <p class="tiny muted">${s.job}</p>
+                <button class="btn btn--sm btn--ghost" style="width:100%; margin-top:10px; border-color:#ffd700; color:#ffd700;">Connect</button>
+            </div>
+          `;
+        });
+        html += '</div>';
+        DOM.panelShortlistBody.insertAdjacentHTML('beforeend', html);
+    }
+  }
+
+  // C. STORIES
+  if (DOM.storiesContainer) {
+    const stories = ['Bea', 'Kat', 'Pia', 'Coleen', 'Sam'];
+    let html = `
+        <div class="story-item action" onclick="document.querySelector('[data-panel=swipe]').click()">
+          <div class="story-ring ring-add"><i class="fa-solid fa-plus"></i></div>
+          <span class="story-name">Add</span>
+        </div>`;
+    stories.forEach(name => {
+      html += `
+        <div class="story-item">
+          <div class="story-ring">
+            <img class="story-img" src="assets/images/truematch-mark.png" style="background:${getRandomColor()}">
+          </div>
+          <span class="story-name">${name}</span>
+        </div>
+      `;
+    });
+    DOM.storiesContainer.innerHTML = html;
+  }
+}
+
+// ---------------------------------------------------------------------
+// 6. USER DATA LOADING
+// ---------------------------------------------------------------------
+
+async function loadMe() {
+  try {
+    let user, prefs;
+
+    if (DEV_MODE) {
+      user = getMockUser();
+      prefs = { city: 'Manila', ageMin: 21, ageMax: 35, ethnicity: 'any', lookingFor: ['women'] };
+    } else {
+      const data = await apiGet('/api/me');
+      if (!data || !data.ok || !data.user) {
+        // window.location.href = 'auth.html?mode=login'; 
+        console.warn("User not logged in or API failed.");
+        user = getMockUser(); // Fallback for stability
+      } else {
+          user = data.user;
+          prefs = data.prefs || user.preferences || {};
+      }
+    }
+
+    state.me = user;
+    state.prefs = prefs;
+    state.plan = normalizePlanKey(user.plan);
+
+    renderHome(user);
+    renderSettingsDisplay(user, prefs);
+    applyPlanNavGating();
+
+  } catch (err) {
+    console.error("Error loading user:", err);
+    showToast("Failed to load user data", "error");
+  }
+}
+
+function renderHome(user) {
+  if (DOM.homeWelcomeName) DOM.homeWelcomeName.textContent = user.name;
+  if (DOM.homePlanPill) DOM.homePlanPill.textContent = state.plan.toUpperCase();
+  
+  if (DOM.homePlanSummary) {
+    if (state.plan === 'tier3') DOM.homePlanSummary.textContent = "Concierge Service Active.";
+    else if (state.plan === 'tier2') DOM.homePlanSummary.textContent = "Elite Member Access.";
+    else DOM.homePlanSummary.textContent = "Upgrade for more daily swipes.";
+  }
+}
+
+function applyPlanNavGating() {
+  if (DEV_MODE) return; 
+
+  const rules = {
+    free: ['home', 'matches', 'swipe', 'creators', 'premium', 'settings'],
+    tier1: ['home', 'matches', 'swipe', 'creators', 'premium', 'settings'],
+    tier2: ['home', 'matches', 'shortlist', 'approved', 'swipe', 'creators', 'premium', 'settings'],
+    tier3: ['home', 'matches', 'shortlist', 'approved', 'confirmed', 'swipe', 'creators', 'premium', 'settings']
+  };
+
+  const allowed = rules[state.plan] || rules.free;
+
+  DOM.tabs.forEach(tab => {
+    const panel = tab.dataset.panel;
+    if (allowed.includes(panel)) {
+      tab.hidden = false;
+      tab.style.display = 'flex';
+    } else {
+      tab.hidden = true;
+      tab.style.display = 'none';
+    }
+  });
+}
+
+// ---------------------------------------------------------------------
+// 7. SETTINGS & PROFILE
+// ---------------------------------------------------------------------
+
+function renderSettingsDisplay(user, prefs) {
+  if (DOM.sNameDisplay) DOM.sNameDisplay.textContent = user.name;
+  if (DOM.sEmailDisplay) DOM.sEmailDisplay.textContent = user.email;
+  if (DOM.sAvatar && user.avatarUrl) DOM.sAvatar.src = user.avatarUrl;
+
+  if (DOM.dispCity) DOM.dispCity.textContent = user.city || '—';
+  if (DOM.dispAge) DOM.dispAge.textContent = prefs && prefs.ageMin ? `${prefs.ageMin} - ${prefs.ageMax}` : '—';
+  
+  if (prefs) {
+      const looking = Array.isArray(prefs.lookingFor) ? prefs.lookingFor.join(', ') : prefs.lookingFor;
+      if (DOM.dispLooking) DOM.dispLooking.textContent = looking || '—';
+  }
+}
+
+function syncFormToState() {
+  const { me, prefs } = state;
+  if (!me) return;
+
+  if (DOM.inpName) DOM.inpName.value = me.name || '';
+  if (DOM.inpEmail) DOM.inpEmail.value = me.email || '';
+  if (DOM.inpCity) DOM.inpCity.value = me.city || '';
+  if (DOM.inpUserAge) DOM.inpUserAge.value = me.age || '';
+
+  if (prefs) {
+    if (DOM.inpAgeMin) DOM.inpAgeMin.value = prefs.ageMin || 18;
+    if (DOM.inpAgeMax) DOM.inpAgeMax.value = prefs.ageMax || 50;
+    if (DOM.inpEthnicity) DOM.inpEthnicity.value = prefs.ethnicity || 'any';
+    if (DOM.inpLooking) DOM.inpLooking.value = Array.isArray(prefs.lookingFor) ? prefs.lookingFor[0] : (prefs.lookingFor || 'both');
+  }
+}
+
+async function handleProfileSave() {
+  // Safe extraction of values
+  const payload = {
+    name: DOM.inpName ? DOM.inpName.value : '',
+    email: DOM.inpEmail ? DOM.inpEmail.value : '',
+    city: DOM.inpCity ? DOM.inpCity.value : '',
+    age: DOM.inpUserAge ? parseInt(DOM.inpUserAge.value) : 18,
+    preferences: {
+      ageMin: DOM.inpAgeMin ? parseInt(DOM.inpAgeMin.value) : 18,
+      ageMax: DOM.inpAgeMax ? parseInt(DOM.inpAgeMax.value) : 50,
+      ethnicity: DOM.inpEthnicity ? DOM.inpEthnicity.value : 'any',
+      lookingFor: DOM.inpLooking ? [DOM.inpLooking.value] : ['both']
+    }
+  };
+
+  try {
+    let res;
+    if (DEV_MODE) {
+      res = { ok: true, user: { ...state.me, ...payload } }; 
+    } else {
+      res = await apiUpdateProfile(payload); 
+    }
+
+    if (res && res.ok) {
+      showToast('Profile updated successfully!');
+      state.me = { ...state.me, ...payload }; 
+      state.prefs = payload.preferences;
+      renderSettingsDisplay(state.me, state.prefs); 
+      renderHome(state.me);
+      DOM.dlgProfile.close();
+    } else {
+      showToast('Failed to update profile', 'error');
+    }
+  } catch (e) {
+    console.error(e);
+    showToast('An error occurred', 'error');
+  }
+}
+
+// ---------------------------------------------------------------------
+// 8. SWIPE CONTROLLER
 // ---------------------------------------------------------------------
 
 const SwipeController = (() => {
@@ -279,52 +501,37 @@ const SwipeController = (() => {
     await loadCandidates();
   }
 
-  async function loadCandidates(isRefresh = false) {
+  async function loadCandidates() {
     if (isLoading) return;
     isLoading = true;
-
+    
+    if (DOM.swipeStack) DOM.swipeStack.innerHTML = ''; 
     if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = true;
-    if (DOM.swipeStack) DOM.swipeStack.innerHTML = '<div class="loader-dot"></div><div class="loader-dot"></div><div class="loader-dot"></div>';
 
     try {
-      const c = await apiGet('/api/swipe/candidates');
-      
-      if (c.limitReached) {
-         profiles = [];
-         if(DOM.swipeStack) DOM.swipeStack.innerHTML = '';
-         if(DOM.swipeEmpty) {
-            DOM.swipeEmpty.hidden = false;
-            DOM.swipeEmpty.innerHTML = `
-              <div class="swipe-empty__icon">🛑</div>
-              <h3>Daily Limit Reached</h3>
-              <p class="muted">You reached your daily limit of swipes.</p>
-              <button class="btn btn--primary" onclick="window.location.href='tier.html?upgrade=1'">Upgrade to Unlimited</button>
-            `;
-            if(DOM.swipeControls) DOM.swipeControls.style.display = 'none';
-         }
-      } 
-      else if (c.candidates && c.candidates.length > 0) {
-        profiles = c.candidates;
+      let data;
+      if (DEV_MODE) {
+        // Mock Swipe Candidates
+        data = { candidates: [
+          { id: 1, name: 'Alice', age: 24, city: 'Makati', photoUrl: 'assets/images/truematch-mark.png' },
+          { id: 2, name: 'Bea', age: 22, city: 'BGC', photoUrl: 'assets/images/truematch-mark.png' },
+          { id: 3, name: 'Cathy', age: 25, city: 'Pasig', photoUrl: 'assets/images/truematch-mark.png' }
+        ]};
+      } else {
+        data = await apiGet('/api/swipe/candidates');
+      }
+
+      if (data && data.candidates && data.candidates.length > 0) {
+        profiles = data.candidates;
         currentIndex = 0;
         renderCards();
-      } 
-      else {
-        profiles = [];
-        if(DOM.swipeStack) DOM.swipeStack.innerHTML = '';
-        if(DOM.swipeEmpty) {
-           DOM.swipeEmpty.hidden = false;
-           DOM.swipeEmpty.innerHTML = `
-             <div class="swipe-empty__icon">✨</div>
-             <h3>That's everyone!</h3>
-             <p class="muted">Check back later for more profiles.</p>
-             <button class="btn btn--primary" onclick="location.reload()">Refresh Profiles</button>
-           `;
-           if(DOM.swipeControls) DOM.swipeControls.style.display = 'none';
-        }
+        if (DOM.swipeControls) DOM.swipeControls.style.display = 'flex';
+      } else {
+        if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
+        if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
       }
-    } catch (err) {
-      console.error(err);
-      if (DOM.swipeStack) DOM.swipeStack.innerHTML = '<p class="text-center text-danger">Error loading profiles.</p>';
+    } catch (e) {
+      console.error("Swipe Error", e);
     } finally {
       isLoading = false;
     }
@@ -334,512 +541,85 @@ const SwipeController = (() => {
     if (!DOM.swipeStack) return;
     DOM.swipeStack.innerHTML = '';
 
-    if (currentIndex >= profiles.length) {
-      if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
-      if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
-      return;
-    } else {
-      if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = true;
-      if (DOM.swipeControls) DOM.swipeControls.style.display = 'flex';
-    }
-
     const cardLimit = 2;
     const cardsToRender = profiles.slice(currentIndex, currentIndex + cardLimit).reverse();
 
     cardsToRender.forEach((p, idx) => {
-      const isTop = idx === cardsToRender.length - 1; 
+      const isTop = idx === cardsToRender.length - 1;
       const card = document.createElement('div');
       card.className = 'swipe-card';
       const img = p.photoUrl || 'assets/images/truematch-mark.png';
-      card.style.backgroundImage = `url('${img}')`;
       
-      if (!isTop) {
-        card.style.transform = 'scale(0.95) translateY(10px)';
-        card.style.opacity = '0.5';
-        card.style.zIndex = '1';
-      } else {
+      card.style.backgroundImage = `url('${img}')`;
+      card.style.backgroundColor = getRandomColor(); 
+      
+      if (isTop) {
         card.id = 'activeSwipeCard';
-        card.style.zIndex = '2';
+        card.style.zIndex = 10;
+        card.style.opacity = 1;
+        card.style.transform = 'scale(1)';
+      } else {
+        card.style.zIndex = 5;
+        card.style.opacity = 0.5;
+        card.style.transform = 'scale(0.95) translateY(10px)';
       }
 
       card.innerHTML = `
         <div class="swipe-card__info">
-          <h2>${p.name} <span>${p.age || ''}</span></h2>
-          <p>📍 ${p.city || ''}</p>
+           <h2>${p.name} <span>${p.age}</span></h2>
+           <p>📍 ${p.city}</p>
         </div>
       `;
       DOM.swipeStack.appendChild(card);
     });
   }
 
-  async function handleAction(action) {
+  async function handleAction(type) {
     if (currentIndex >= profiles.length) return;
-    const profile = profiles[currentIndex];
-    const card = document.getElementById('activeSwipeCard');
     
+    // Animate Main Card
+    const card = document.getElementById('activeSwipeCard');
     if (card) {
-      if (action === 'pass') card.classList.add('swipe-out-left');
-      else card.classList.add('swipe-out-right');
+      card.classList.add(type === 'like' ? 'swipe-out-right' : 'swipe-out-left');
     }
 
-    try {
-        // [FIX] USE apiPost INSTEAD OF apiGet
-        const res = await apiPost('/api/swipe/action', { targetId: profile.id, type: action });
-        
-        if (res.limitReached) {
-            showToast("Daily limit reached!");
-            profiles = [];
-            loadCandidates(); 
-            return;
-        }
+    // Animate Sidebar Teaser (Visual Feedback)
+    const teaser = document.querySelector('.teaser-profile');
+    if(teaser) {
+        teaser.style.transition = "transform 0.2s";
+        teaser.style.transform = type === 'like' ? "scale(1.05)" : "scale(0.95)";
+        setTimeout(()=> teaser.style.transform = "scale(1)", 200);
+    }
 
-        if(res && res.remaining != null) updateSwipesUI(res.remaining);
-        if (res && res.ok && res.match) showToast(`It's a Match with ${profile.name}!`);
-    } catch(e) { console.error('Swipe action failed', e); }
+    // Call API if not in dev mode
+    if (!DEV_MODE) {
+       apiPost('/api/swipe/action', { targetId: profiles[currentIndex].id, type });
+    }
+    
+    // Update Stats
+    let currentStats = parseInt(DOM.statsCountDisplay ? DOM.statsCountDisplay.textContent : "20");
+    if(currentStats > 0) updateSwipeStats(currentStats - 1, 50);
+
+    showToast(type === 'like' ? 'Liked!' : 'Passed');
 
     setTimeout(() => {
       currentIndex++;
-      renderCards();
-    }, 250); 
-  }
-
-  function updateSwipesUI(remaining) {
-      if(DOM.kpiRemaining) {
-          DOM.kpiRemaining.textContent = `${remaining} / 20`;
+      if (currentIndex >= profiles.length) {
+        if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
+        if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
+        if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
+      } else {
+        renderCards();
       }
+    }, 300);
   }
 
-  return { 
-    init, 
-    pass: () => handleAction('pass'), 
-    like: () => handleAction('like') 
+  return {
+    init,
+    like: () => handleAction('like'),
+    pass: () => handleAction('pass')
   };
 })();
-  
-// ---------------------------------------------------------------------
-// 5. Rendering
-// ---------------------------------------------------------------------
 
-function renderUserHeader(user) {
-  if (!user) return;
-  const name = user.name || user.email || 'Member';
-  const email = user.email || '';
-  const planKey = normalizePlanKey(state.plan);
-
-  setText(DOM.headerName, name);
-  setText(DOM.headerEmail, email);
-  if (DOM.headerAvatar && user.avatarUrl) DOM.headerAvatar.src = user.avatarUrl;
-
-  let label = 'Free plan', pillText = 'FREE PLAN', pillClass = 'pill-plan';
-  let summary = 'Use your daily swipes and keep preferences updated.';
-
-  if (planKey === 'tier1') {
-    label = 'Plus plan'; pillText = 'PLUS PLAN'; pillClass += ' pill-premium';
-    summary = 'Unlimited swipes and advanced filters active.';
-  } else if (planKey === 'tier2') {
-    label = 'Elite plan'; pillText = 'ELITE PLAN'; pillClass += ' pill-premium';
-    summary = 'Daily shortlist and Approved matches active.';
-  } else if (planKey === 'tier3') {
-    label = 'Concierge plan'; pillText = 'CONCIERGE PLAN'; pillClass += ' pill-premium';
-    summary = 'Concierge dating service active.';
-  }
-
-  setText(DOM.headerPlanBadge, label.toUpperCase());
-  setText(DOM.homeWelcomeName, name);
-  setText(DOM.homePlanPill, pillText);
-  setText(DOM.homePlanSummary, summary);
-  if(DOM.homePlanPill) DOM.homePlanPill.className = pillClass;
-}
-
-function renderUsage(u, planKey) {
-  const swipesRem = safeNumber(u.swipesRemaining, 20); 
-  const swipeLimit = safeNumber(u.swipesLimit, 20);
-  const shortlistCount = safeNumber(u.shortlistCount, 0); 
-  
-  if (DOM.kpiRemaining) {
-    if (planKey === 'free') {
-       DOM.kpiRemaining.textContent = `${swipesRem} / ${swipeLimit}`;
-    } else {
-       DOM.kpiRemaining.textContent = 'Unlimited';
-    }
-  }
-
-  const isEliteOrConcierge = (planKey === 'tier2' || planKey === 'tier3');
-  
-  if (DOM.kpiShortlistTotal) {
-    const card = DOM.kpiShortlistTotal.closest('.kpi-card') || DOM.kpiShortlistTotal.parentElement;
-    if (isEliteOrConcierge) {
-        if (card) card.style.display = ''; 
-        DOM.kpiShortlistTotal.textContent = shortlistCount > 0 ? `${shortlistCount} New` : 'Check back tomorrow';
-    } else {
-        if (card) card.style.display = 'none'; 
-    }
-  }
-
-  if (DOM.kpiDates) {
-     const card = DOM.kpiDates.closest('.kpi-card') || DOM.kpiDates.parentElement;
-     if (planKey === 'tier3') { 
-        if (card) card.style.display = '';
-     } else {
-        if (card) card.style.display = 'none';
-     }
-  }
-}
-
-function renderPlanStatus() {
-  const planKey = normalizePlanKey(state.plan);
-  let displayName = 'Free Plan';
-  if (planKey === 'tier1') displayName = 'Plus';
-  if (planKey === 'tier2') displayName = 'Elite';
-  if (planKey === 'tier3') displayName = 'Concierge';
-
-  if (DOM.homeAccountList) {
-    const isTopTier = planKey === 'tier3';
-    DOM.homeAccountList.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-        <span class="muted" style="font-size:13px;">Current Membership</span>
-        <span class="plan-chip plan-chip--${planKey}">${displayName}</span>
-      </div>
-      ${!isTopTier ? `
-        <button id="btnHomeUpgrade" class="btn btn--primary btn--wide" style="justify-content:center;">
-          Upgrade Plan
-        </button>
-      ` : `
-        <div style="text-align:center; padding:8px; background:rgba(255,255,255,0.05); border-radius:8px;">
-          <span style="font-size:12px; color:var(--ok);">You are on the highest tier.</span>
-        </div>
-      `}
-    `;
-    const btnUpgrade = document.getElementById('btnHomeUpgrade');
-    if (btnUpgrade) btnUpgrade.onclick = () => window.location.href = 'tier.html?upgrade=1';
-  }
-}
-
-function renderSettings(user, prefs) {
-  if (!user) return;
-  setText(DOM.sNameDisplay, user.name || 'Member');
-  setText(DOM.sEmailDisplay, user.email || '');
-  if (DOM.sAvatar && user.avatarUrl) DOM.sAvatar.src = user.avatarUrl;
-
-  const p = prefs || {};
-  setText(DOM.dispCity, p.city || 'Not set');
-  if (p.ageMin && p.ageMax) setText(DOM.dispAge, `${p.ageMin} – ${p.ageMax}`);
-  else setText(DOM.dispAge, 'Not set');
-  let eth = p.ethnicity || 'Any';
-  eth = eth.charAt(0).toUpperCase() + eth.slice(1);
-  setText(DOM.dispEthnicity, eth);
-  let looking = 'Not set';
-  if (Array.isArray(p.lookingFor) && p.lookingFor.length > 0) {
-    looking = p.lookingFor.map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(', ');
-  } else if (typeof p.lookingFor === 'string') {
-    looking = p.lookingFor;
-  }
-  setText(DOM.dispLooking, looking);
-}
-
-function renderCreatorsState(user) {
-  if (!user) return;
-  const status = user.creatorStatus || 'none';
-  const show = (el, visible) => { if (el) el.hidden = !visible; };
-
-  if (status === 'pending') {
-    show(DOM.creatorStateNone, false);
-    show(DOM.creatorStatePending, true);
-    show(DOM.creatorStateApproved, false);
-  } else if (status === 'approved') {
-    show(DOM.creatorStateNone, false);
-    show(DOM.creatorStatePending, false);
-    show(DOM.creatorStateApproved, true);
-  } else {
-    show(DOM.creatorStateNone, true);
-    show(DOM.creatorStatePending, false);
-    show(DOM.creatorStateApproved, false);
-  }
-
-  if (user.hasCreatorAccess) {
-    show(DOM.creatorsPaywall, false);
-    show(DOM.creatorsUnlocked, true);
-  } else {
-    show(DOM.creatorsPaywall, true);
-    show(DOM.creatorsUnlocked, false);
-  }
-}
-
-function renderPremiumState(user) {
-  if (!user) return;
-  const status = user.premiumStatus || 'none';
-  const show = (el, visible) => { if (el) el.hidden = !visible; };
-
-  if (status === 'pending') {
-    show(DOM.premiumStateNone, false);
-    show(DOM.premiumStatePending, true);
-    show(DOM.premiumStateApproved, false);
-  } else if (status === 'approved') {
-    show(DOM.premiumStateNone, false);
-    show(DOM.premiumStatePending, false);
-    show(DOM.premiumStateApproved, true);
-  } else {
-    show(DOM.premiumStateNone, true);
-    show(DOM.premiumStatePending, false);
-    show(DOM.premiumStateApproved, false);
-  }
-}
-
-async function loadAndRenderMatches() {
-  if (!DOM.matchesContainer) return;
-  let matches = [];
-  try {
-    const res = await apiGet('/api/matches');
-    if (res && res.ok && Array.isArray(res.matches)) matches = res.matches;
-  } catch (err) {}
-
-  if (matches.length === 0) {
-    DOM.matchesContainer.innerHTML = `
-       <div class="swipe-empty" style="grid-column: 1/-1;">
-         <div class="swipe-empty__icon">💞</div>
-         <h3>No matches yet</h3>
-         <p class="muted">Start swiping to find your match!</p>
-         <button class="btn btn--primary" onclick="document.querySelector('[data-panel=swipe]').click()">Go to Swipe</button>
-       </div>`;
-    return;
-  }
-  DOM.matchesContainer.innerHTML = matches.map(m => `
-    <div class="match-card">
-      <img src="${m.photoUrl || 'assets/images/truematch-mark.png'}" class="match-img" alt="${m.name}">
-      <div class="match-info">
-        <strong style="color:#fff; display:block;">${m.name}, ${m.age}</strong>
-        <div class="match-actions">
-          <button class="btn btn--sm btn--primary">Chat</button>
-          <button class="btn btn--sm btn--ghost">Profile</button>
-        </div>
-      </div>
-    </div>
-  `).join('');
-}
-
-// ---------------------------------------------------------------------
-// 6. Tabs
-// ---------------------------------------------------------------------
-
-function setActiveTab(panelName) {
-  state.activeTab = panelName;
-  const btns = document.querySelectorAll('.tab, .nav-btn, [data-panel]');
-  btns.forEach(btn => {
-    if(btn.dataset.panel === panelName) {
-      btn.classList.add('is-active', 'active');
-      btn.setAttribute('aria-selected', true);
-    } else {
-      btn.classList.remove('is-active', 'active');
-      btn.setAttribute('aria-selected', false);
-    }
-  });
-
-  if (DOM.tabPanels) {
-    DOM.tabPanels.forEach(p => {
-      const active = p.dataset.panel === panelName;
-      p.classList.toggle('is-active', active);
-      p.style.display = active ? '' : 'none';
-      p.hidden = !active;
-    });
-  }
-  if (panelName === 'swipe') SwipeController.init();
-}
-
-function handleTabClick(evt) {
-  const btn = evt.target.closest('[data-panel]');
-  if (!btn) return;
-  const panelName = btn.dataset.panel;
-  if (panelName) {
-      evt.preventDefault();
-      setActiveTab(panelName);
-      if (panelName === 'matches') loadAndRenderMatches();
-  }
-}
-
-// ---------------------------------------------------------------------
-// 7. Wiring Functions
-// ---------------------------------------------------------------------
-function openProfileModal() {
-  const user = state.me || {};
-  const prefs = state.prefs || {};
-  if (DOM.inpName) DOM.inpName.value = user.name || '';
-  if (DOM.inpEmail) DOM.inpEmail.value = user.email || '';
-  if (DOM.inpUserAge) DOM.inpUserAge.value = user.age || ''; 
-  if (DOM.inpCity) DOM.inpCity.value = user.city || prefs.city || '';
-  if (DOM.previewAvatar) DOM.previewAvatar.src = user.avatarUrl || 'assets/images/truematch-mark.png';
-  if (DOM.inpAgeMin) DOM.inpAgeMin.value = prefs.ageMin || 18;
-  if (DOM.inpAgeMax) DOM.inpAgeMax.value = prefs.ageMax || 40;
-  if (DOM.inpEthnicity) DOM.inpEthnicity.value = prefs.ethnicity || 'any';
-  if (DOM.inpLooking) DOM.inpLooking.value = (prefs.lookingFor && prefs.lookingFor[0]) || 'women';
-  if (DOM.dlgProfile) {
-    if (typeof DOM.dlgProfile.showModal === 'function') DOM.dlgProfile.showModal();
-    else DOM.dlgProfile.setAttribute('open', '');
-    document.documentElement.classList.add('modal-open');
-  }
-}
-function closeProfileModal() {
-  if (DOM.dlgProfile) {
-    if (typeof DOM.dlgProfile.close === 'function') DOM.dlgProfile.close();
-    else DOM.dlgProfile.removeAttribute('open');
-    document.documentElement.classList.remove('modal-open');
-  }
-}
-async function handleProfileSubmit(e) {
-  e.preventDefault(); showLoading();
-  let avatarDataUrl = null;
-  if (DOM.inpAvatarFile && DOM.inpAvatarFile.files[0]) {
-    const file = DOM.inpAvatarFile.files[0];
-    avatarDataUrl = await new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (ev) => resolve(ev.target.result);
-      reader.readAsDataURL(file);
-    });
-  }
-  const p1 = { name: DOM.inpName?.value.trim(), email: DOM.inpEmail?.value.trim(), age: parseInt(DOM.inpUserAge?.value), city: DOM.inpCity?.value.trim(), avatarDataUrl };
-  const p2 = { city: DOM.inpCity?.value.trim(), ageMin: parseInt(DOM.inpAgeMin?.value), ageMax: parseInt(DOM.inpAgeMax?.value), ethnicity: DOM.inpEthnicity?.value, lookingFor: [DOM.inpLooking?.value] };
-  try {
-    await Promise.all([apiUpdateProfile(p1), apiSavePrefs(p2)]);
-    await loadMe(); closeProfileModal(); showToast("Profile updated!");
-  } catch (err) { showError('Error saving.'); } finally { hideLoading(); }
-}
-function wireSettings() {
-  if (DOM.btnEditProfile) DOM.btnEditProfile.onclick = openProfileModal;
-  if (DOM.btnCloseProfile) DOM.btnCloseProfile.onclick = closeProfileModal;
-  if (DOM.btnCancelProfile) DOM.btnCancelProfile.onclick = closeProfileModal;
-  if (DOM.frmProfile) DOM.frmProfile.onsubmit = handleProfileSubmit;
-  if (DOM.btnChangePassword) DOM.btnChangePassword.onclick = () => { DOM.frmPassword.reset(); DOM.dlgPassword.showModal(); };
-  if (DOM.btnCancelPassword) DOM.btnCancelPassword.onclick = () => DOM.dlgPassword.close();
-  if (DOM.frmPassword) DOM.frmPassword.onsubmit = async (e) => {
-      e.preventDefault(); const fd = new FormData(DOM.frmPassword);
-      try { await apiUpdateProfile({ password: fd.get('newPassword') }); DOM.dlgPassword.close(); alert('Password updated.'); } catch { showError('Failed.'); }
-  };
-  if (DOM.btnLogoutPanel) DOM.btnLogoutPanel.addEventListener('click', () => DOM.logoutBtn?.click());
-}
-
-function wireCreators() {
-  if (DOM.btnOpenCreatorApply) DOM.btnOpenCreatorApply.onclick = () => DOM.dlgCreatorApply.showModal();
-  if (DOM.btnCloseCreatorApply) DOM.btnCloseCreatorApply.onclick = () => DOM.dlgCreatorApply.close();
-  if (DOM.frmCreatorApply) DOM.frmCreatorApply.onsubmit = async (e) => {
-      e.preventDefault(); showLoading();
-      const fd = new FormData(DOM.frmCreatorApply);
-      const payload = Object.fromEntries(fd.entries()); payload.price = Number(payload.price);
-      try { 
-        await fetch('/api/me/creator/apply', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
-        DOM.dlgCreatorApply.close(); state.me.creatorStatus='pending'; renderCreatorsState(state.me); alert('Applied!');
-      } catch { showError('Failed'); } finally { hideLoading(); }
-  };
-  if (DOM.btnSubscribeCreators) DOM.btnSubscribeCreators.onclick = async () => {
-      if(!confirm("Pay $9.99?")) return; showLoading();
-      try {
-        const r = await fetch('/api/coinbase/create-charge', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ planKey:'creator_access' }) });
-        const j = await r.json(); if(j.ok) location.href=j.url; else showError(j.message);
-      } catch { showError('Error'); } finally { hideLoading(); }
-  };
-} 
-
-function wirePremium() {
-  if (DOM.btnOpenPremiumApply) DOM.btnOpenPremiumApply.onclick = () => DOM.dlgPremiumApply.showModal();
-  if (DOM.btnPremiumCancel) DOM.btnPremiumCancel.onclick = () => DOM.dlgPremiumApply.close();
-  if (DOM.frmPremiumApply) DOM.frmPremiumApply.onsubmit = async (e) => {
-      e.preventDefault(); showLoading();
-      const fd = new FormData(DOM.frmPremiumApply);
-      try { 
-        await fetch('/api/me/premium/apply', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(Object.fromEntries(fd.entries())) });
-        DOM.dlgPremiumApply.close(); state.me.premiumStatus='pending'; renderPremiumState(state.me); alert('Applied!');
-      } catch { showError('Failed'); } finally { hideLoading(); }
-  };
-}
-
-function wireSwipe() {
-  if (DOM.btnSwipePass) DOM.btnSwipePass.addEventListener('click', (e) => { e.preventDefault(); SwipeController.pass(); });
-  if (DOM.btnSwipeLike) DOM.btnSwipeLike.addEventListener('click', (e) => { e.preventDefault(); SwipeController.like(); });
-  if (DOM.btnRefreshSwipe) DOM.btnRefreshSwipe.addEventListener('click', (e) => { e.preventDefault(); location.reload(); });
-  document.addEventListener('keydown', (e) => {
-    if (state.activeTab === 'swipe') {
-      if (e.key === 'ArrowLeft') SwipeController.pass();
-      if (e.key === 'ArrowRight') SwipeController.like();
-    }
-  });
-}
-
-// ---------------------------------------------------------------------
-// 8. Data loading
-// ---------------------------------------------------------------------
-
-async function loadMe() {
-  showLoading(); hideError();
-  try {
-    const data = await apiGet('/api/me');
-    if (!data || !data.ok || !data.user) { window.location.href = '/auth.html?mode=login'; return; }
-
-    const user = data.user;
-
-    // Respect the plan coming from the database.
-    // Only fall back to URL/localStorage if WALANG plan (legacy users).
-    let planCandidate = user.plan;
-
-    if (!planCandidate) {
-      const urlParams = new URLSearchParams(window.location.search);
-      const paramPlan = urlParams.get('plan') || urlParams.get('prePlan');
-      if (paramPlan) {
-        planCandidate = paramPlan;
-      } else {
-        planCandidate = getLocalPlan?.() || 'free';
-      }
-    }
-
-    state.me = user;
-    state.prefs = data.prefs || user.preferences || {};
-    state.plan = normalizePlanKey(planCandidate || 'free');
-
-    
-    if (typeof saveLocalUser === 'function') saveLocalUser({ ...user, plan: state.plan });
-
-    renderUserHeader(user);
-    renderPlanStatus();
-    renderSettings(user, state.prefs);
-    applyPlanNavGating(); 
-    renderCreatorsState(user);
-    renderPremiumState(user);
-
-    // [FIX] LOAD AND RENDER USAGE
-    const usageRes = await apiGet('/api/dashboard/usage');
-    if (usageRes && usageRes.ok) {
-       renderUsage(usageRes.usage, state.plan);
-    } else {
-       // Fallback defaults
-       renderUsage({ swipesRemaining: 20, swipesLimit: 20, shortlistCount: 0 }, state.plan);
-    }
-
-  } catch (err) {
-    console.error(err); showError('Failed to load dashboard.');
-  } finally {
-    hideLoading();
-  }
-}
-
-function showLoading() { if (DOM.loadingOverlay) DOM.loadingOverlay.classList.remove('hidden'); }
-function hideLoading() { if (DOM.loadingOverlay) DOM.loadingOverlay.classList.add('hidden'); }
-function showError(m) { if (DOM.errorBanner) { DOM.errorBanner.textContent = m; DOM.errorBanner.classList.remove('hidden'); } }
-function hideError() { if (DOM.errorBanner) DOM.errorBanner.classList.add('hidden'); }
-
-// ---------------------------------------------------------------------
-// 9. Init
-// ---------------------------------------------------------------------
-
-document.addEventListener('DOMContentLoaded', () => {
-  cacheDom();
-  document.body.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-panel]');
-      if (btn && !btn.classList.contains('panel')) handleTabClick(e);
-  });
-  if (DOM.logoutBtn) {
-    DOM.logoutBtn.addEventListener('click', async () => {
-       try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
-       try { localStorage.clear(); } catch {} 
-       window.location.href = '/index.html';
-    });
-  }
-  wireSettings(); wireCreators(); wirePremium(); wireSwipe();
-  loadMe(); 
-});
+// Start everything
+window.addEventListener('DOMContentLoaded', initApp);

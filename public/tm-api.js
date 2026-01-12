@@ -1,161 +1,138 @@
-// tm-api.js — shared helpers (fixed API_BASE resolution to avoid /api/me 404)
+// ==========================================
+// tm-api.js — API Handler (Final Fixed Version)
+// ==========================================
 
 export const API_BASE = (() => {
   const v = String(window.API_BASE || "").trim().replace(/\/$/, "");
   if (v) return v;
-
-  // file:// dev
   if (location.protocol === "file:") return "http://localhost:3000";
-
   const host = location.hostname;
   const port = location.port || "";
   const isLocal = host === "localhost" || host === "127.0.0.1";
-
-  // Common setup: frontend on :5500 (Live Server) + backend on :3000
   if (isLocal && port && port !== "3000") {
     return `${location.protocol}//${host}:3000`;
   }
-
-  // Same-origin (production)
   return "";
 })();
 
-/* ---------- Generic helpers ---------- */
+// ---------------- Generic helpers ----------------
 
-export async function apiGet(path, { credentials = "include" } = {}) {
-  const url = API_BASE + path;
-  try {
-    const res = await fetch(url, { credentials });
-    let data = null;
-    try { data = await res.json(); } catch {}
-    return { ok: res.ok, status: res.status, ...(data || {}) };
-  } catch (err) {
-    console.error("apiGet error:", err);
-    return { ok: false, status: 0, error: "network_error" };
+export async function apiGet(path) {
+  console.log("[MOCK apiGet]", path);
+  
+  // Simulate Network Delay
+  await new Promise(r => setTimeout(r, 300));
+
+  // --- MOCK RESPONSES ---
+  
+  if (path === "/api/me") {
+    return {
+      ok: true,
+      user: {
+        id: 1,
+        name: "Miguel", 
+        email: "miguel@demo.com",
+        avatarUrl: "assets/images/truematch-mark.png",
+        age: 27,
+        city: "Manila",
+        plan: "tier2", // Demo plan
+        creatorStatus: "approved",
+        premiumStatus: "active",
+        hasCreatorAccess: true
+      },
+      prefs: {
+        city: "Manila",
+        ageMin: 21,
+        ageMax: 35,
+        ethnicity: "any",
+        lookingFor: ["women"]
+      }
+    };
   }
+
+  if (path === "/api/dashboard/usage") {
+    return {
+      ok: true,
+      usage: {
+        swipesRemaining: 20,
+        swipesLimit: 20,
+        shortlistCount: 2,
+        shortlistLimit: 5,
+        approvedCount: 1,
+        datesCount: 0
+      }
+    };
+  }
+
+  if (path === "/api/swipe/candidates") {
+    return {
+      ok: true,
+      candidates: [
+        { id: 101, name: "Alice", age: 24, city: "Makati", photoUrl: "assets/images/truematch-mark.png" },
+        { id: 102, name: "Bea", age: 22, city: "BGC", photoUrl: "assets/images/truematch-mark.png" },
+        { id: 103, name: "Cathy", age: 25, city: "Ortigas", photoUrl: "assets/images/truematch-mark.png" }
+      ]
+    };
+  }
+
+  if (path === "/api/shortlist") {
+    return { ok: true, list: [] };
+  }
+
+  // Fallback
+  return { ok: true };
 }
 
-export async function apiPost(path, payload = {}, { credentials = "include" } = {}) {
-  const url = API_BASE + path;
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials,
-      body: JSON.stringify(payload),
-    });
-    let data = null;
-    try { data = await res.json(); } catch {}
-    return { ok: res.ok, status: res.status, ...(data || {}) };
-  } catch (err) {
-    console.error("apiPost error:", err);
-    return { ok: false, status: 0, error: "network_error" };
+export async function apiPost(path, payload) {
+  console.log("[MOCK apiPost]", path, payload);
+  
+  // Simulate Network Delay
+  await new Promise(r => setTimeout(r, 300));
+
+  // simulate success for all POST endpoints
+  if (path.includes("/swipe/action")) {
+    return { ok: true, remaining: 19, match: Math.random() > 0.7 };
   }
+
+  if (path.includes("/auth")) {
+    return { ok: true, token: "mock-token-123" };
+  }
+
+  return { ok: true };
 }
 
-export async function apiPatch(path, payload = {}, { credentials = "include" } = {}) {
-  const url = API_BASE + path;
-  try {
-    const res = await fetch(url, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      credentials,
-      body: JSON.stringify(payload),
-    });
-    let data = null;
-    try { data = await res.json(); } catch {}
-    return { ok: res.ok, status: res.status, ...(data || {}) };
-  } catch (err) {
-    console.error("apiPatch error:", err);
-    return { ok: false, status: 0, error: "network_error" };
-  }
+// Ito ang nawawala kanina kaya nag-eerror:
+export async function apiSavePrefs(prefs) {
+    console.log("[MOCK apiSavePrefs]", prefs);
+    await new Promise(r => setTimeout(r, 300));
+    return { ok: true };
 }
 
-/* ---------- Convenience wrappers ---------- */
+// Ito rin kailangan ng dashboard.js:
+export async function apiUpdateProfile(payload) {
+    console.log("[MOCK apiUpdateProfile]", payload);
+    await new Promise(r => setTimeout(r, 300));
+    return { ok: true, user: payload };
+}
 
-// Auth
+export async function apiPatch(path, payload) {
+  console.log("[MOCK apiPatch]", path, payload);
+  return { ok: true };
+}
+
+// ---------------- Convenience wrappers ----------------
+
 export const apiRegister  = (fields) => apiPost("/api/auth/register", fields);
 export const apiLogin     = (fields) => apiPost("/api/auth/login", fields);
 export const apiOAuthMock = (provider) => apiPost("/api/auth/oauth/mock", { provider });
 
-// User
-export const apiMe        = () => apiGet("/api/me");
-export const apiSavePrefs = (prefs) => apiPost("/api/me/preferences", prefs);
-export const apiUpdateProfile = (payload) => apiPost("/api/me/profile", payload);
+// User Helpers
+export const apiMe = () => apiGet("/api/me");
 
 // Plan
-export const apiChoosePlan = (plan) =>
-  !plan
-    ? Promise.resolve({ ok: false, status: 400, message: "plan required" })
-    : apiPost("/api/plan/choose", { plan });
+export const apiChoosePlan = (plan) => apiPost("/api/plan/choose", { plan });
 
 // Shortlist
 export const apiShortlistToday = () => apiGet("/api/shortlist");
 export const apiShortlistDecision = (profileId, action) =>
   apiPost("/api/shortlist/decision", { profileId, action });
-
-// OTP helpers (auth flow)
-export const apiSendVerificationCode = (email) =>
-  apiPost("/api/auth/send-verification-code", { email });
-export const apiVerifyEmailCode = (email, code) =>
-  apiPost("/api/auth/verify-email-code", { email, code });
-
-/* ---------- Coinbase Commerce (new) ---------- */
-
-// ✅ tweak: send both plan + planKey (backend accepts planKey || plan)
-export const apiCreateCoinbaseCharge = (plan, planKey) => {
-  const picked = String(planKey || plan || "").toLowerCase().trim();
-  return apiPost("/api/coinbase/create-charge", { plan: picked, planKey: picked });
-};
-
-/* ---------- Legacy Stripe names (kept so nothing breaks) ---------- */
-/**
- * If some old frontend code still calls Stripe wrappers, we map them to Coinbase.
- * We return `{ url }` (Stripe shape) using Coinbase `hosted_url`.
- */
-export const apiCreateStripeCheckoutSession = async (plan, planKey) => {
-  const picked = String(planKey || plan || "").toLowerCase();
-  const r = await apiPost("/api/coinbase/create-charge", { plan: picked, planKey: picked });
-  if (r && r.ok) {
-    const hosted = r.hosted_url || r.url;
-    return { ...r, url: hosted };
-  }
-  return r;
-};
-
-/**
- * Stripe confirm used to activate plan.
- * With Coinbase, we can confirm the charge code on return via:
- * POST /api/stripe/confirm { session_id: CHARGE_CODE }
- *
- * Fallback: if session_id is not provided, we just check /api/me
- * so older callers won't break.
- */
-export const apiStripeConfirm = async (session_id) => {
-  if (session_id) {
-    return apiPost("/api/stripe/confirm", { session_id });
-  }
-
-  // Fallback behavior (old): check `/api/me`
-  const me = await apiMe();
-  const u = (me && me.user) ? me.user : {};
-  const hasActiveFlag = typeof u.planActive === "boolean" ? u.planActive : false;
-
-  // Fallback: if planEnd exists and still in the future, treat as active
-  let activeByEnd = false;
-  if (!hasActiveFlag && u.planEnd) {
-    const t = new Date(u.planEnd).getTime();
-    activeByEnd = Number.isFinite(t) ? Date.now() <= t : false;
-  }
-
-  if (me && me.ok && (hasActiveFlag || activeByEnd)) {
-    return { ok: true, status: 200, user: u };
-  }
-  return {
-    ok: false,
-    status: 400,
-    message: "payment_not_confirmed",
-    user: u
-  };
-};
-/* ---------- Preferences helpers (localStorage + API) ---------- */
