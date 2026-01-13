@@ -1,7 +1,7 @@
 // tier.js — Choose plan (onboarding / upgrade)
 // Includes: Email Gate, Auth Gate (Anti-Flicker), Upgrade View, and Logout -> Landing Page
 
-import { apiMe, apiGet } from './tm-api.js';
+import * as TMAPI from './tm-api.js';
 import { getLocalPlan } from './tm-session.js';
 
 // ============================================================
@@ -27,7 +27,7 @@ async function __gateEmailVerified() {
     
     if (isDemoQS || isDemoLocal) return true;
 
-    const me = await apiGet('/api/me');
+    const me = await TMAPI.apiGet('/api/me');
     if (me?.user?.emailVerified) return true;
 
     if (localUser && localUser.emailVerified === true) return true;
@@ -135,31 +135,99 @@ function cleanURLParam(param) {
 // [FIXED] REQUIRE AUTH with Local Fallback
 // ==========================================
 async function requireAuth() {
+  const sp = getQS();
+  const isDemoQS = sp.get('demo') === '1';
+
+  // Check Local Storage FIRST
+  let localUser = null;
+  let isDemoLocal = false;
   try {
-    // Source of truth: server session
-    const j = await apiGet('/api/me');
+    const raw = localStorage.getItem('tm_user');
+    if (raw) {
+      localUser = JSON.parse(raw);
+      const em = String(localUser?.email || '').toLowerCase();
+      if (em.endsWith('.demo@truematch.app')) {
+        isDemoLocal = true;
+      }
+    }
+  } catch {}
 
-    if (j && j.ok && j.user && j.user.email) {
-      return j.user;
+  const isDemo = isDemoQS || isDemoLocal;
+  const isUpgrade = sp.get('upgrade') === '1';
+
+  cleanURLParam('session_id');
+
+  try {
+    // 1. Try contacting server
+    let j = await TMAPI.apiMe();
+
+    // [IMPORTANT FIX] Kung fail ang server pero may Local User, gamitin ang Local User.
+    if ((!j || j.ok === false || j.error) && localUser) {
+        console.warn('Backend unreachable, using Local Storage fallback.');
+        j = { ok: true, user: localUser };
     }
 
-    // Demo fallback only for localhost with ?demo=1
-    if (IS_DEMO) {
-      const localEmail = getUserEmailFromAnySource();
-      if (localEmail) return { email: localEmail, plan: 'free', emailVerified: true };
+    // 2. Kung wala talagang login -> Redirect
+    if (!j || j.ok === false || j.error) {
+      if (!isDemo) {
+        const ret = encodeURIComponent(location.pathname + location.search);
+        location.replace(`./auth.html?mode=signin&return=${ret}`);
+        return false;
+      }
     }
 
-    const next = encodeURIComponent(location.pathname + location.search);
-    window.location.replace(`/auth.html?mode=login&next=${next}`);
-    return null;
+    // 3. Check Email presence
+    const email = serverEmail(j);
+    if (!email && !isDemo) {
+      const ret = encodeURIComponent(location.pathname + location.search);
+      location.replace(`./auth.html?mode=signin&return=${ret}`);
+      return false;
+    }
+
+    // 4. Check User & Preferences (Anti-Flicker)
+    const user = j?.user || {};
+    // Update local storage para laging fresh
+    if(user && user.email) {
+        localStorage.setItem('tm_user', JSON.stringify(user));
+    }
+
+    // ============================================================
+    // [FIX 1 - DISABLED] PREFERENCES GATE
+    // ============================================================
+    /*
+    const prefsSaved = !!(user.prefsSaved || user.preferencesSaved || user.prefs || user.preferences || j.prefs);
+    if (!prefsSaved && !isUpgrade) {
+       // ... redirect code removed ...
+    }
+    */
+
+    // 5. Check Active Plan
+    const planActiveFromServer = serverPlanActive(j);
+    const hasPlan = isDemo ? (planActiveFromServer || !!getLocalPlan()) : planActiveFromServer;
+
+    // Prevent going back to dashboard if we are explicitly upgrading
+    if (hasPlan && !isUpgrade) {
+      location.replace('./dashboard.html');
+      return false;
+    }
+
+    if (sp.get('cancelled') === '1') {
+      const prePlan = sp.get('prePlan') || '';
+      const p = prePlan ? ` (${prePlan})` : '';
+      renderTierNotice('error', 'Payment canceled. Please choose a plan again' + p + '.');
+    }
+
+    return true;
   } catch (e) {
-    if (IS_DEMO) {
-      const localEmail = getUserEmailFromAnySource();
-      if (localEmail) return { email: localEmail, plan: 'free', emailVerified: true };
+    console.error(e);
+    // Safety net: Kung nag-crash ang code, check local storage bago i-kickout
+    if(localStorage.getItem('tm_user')){
+        return true; 
     }
-    const next = encodeURIComponent(location.pathname + location.search);
-    window.location.replace(`/auth.html?mode=login&next=${next}`);
-    return null;
+
+    const ret = encodeURIComponent(location.pathname + location.search);
+    location.replace(`./auth.html?mode=signin&return=${ret}`);
+    return false;
   }
 }
 
@@ -223,7 +291,7 @@ async function renderUpgradeView() {
   if (sp.get('upgrade') !== '1') return;
 
   try {
-    const j = await apiMe();
+    const j = await TMAPI.apiMe();
     
     // FALLBACK: Use local if api failed
     let current = 'free';

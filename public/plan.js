@@ -2,7 +2,7 @@
 // Uses the same layout as plan.html (pEmail, pTier, pStart, pEnd, pActive, pQuota).
 // Requires tm-loader.js to be included before this script in plan.html.
 
-import { apiGet } from './tm-api.js';
+import * as TMAPI from './tm-api.js';
 
 // Business mapping (display-only):
 //   No plan / expired      → "Free"
@@ -50,14 +50,7 @@ function hideLoader() {
 (async function initPlanPage() {
   showLoader();
   try {
-    const res = await apiGet('/api/me');
-
-    if (!res || !res.ok || !res.user || !res.user.email) {
-      const next = encodeURIComponent(location.pathname + location.search);
-      window.location.replace(`/auth.html?mode=login&next=${next}`);
-      return;
-    }
-
+    const res = await TMAPI.apiGet('/api/me');
     if (!res) {
       console.warn('[TM] /api/me returned empty response on plan page');
     }

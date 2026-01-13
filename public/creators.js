@@ -1,6 +1,6 @@
 // creators.js — Logic Updated for Icons & Dynamic Visuals + Animations
 
-import { apiGet, apiPost } from './tm-api.js';
+import * as TMAPI from './tm-api.js';
 
 const DOM = {
   denied: document.getElementById('access-denied'),
@@ -31,14 +31,8 @@ async function init() {
 
 async function checkAccess() {
   try {
-    const res = await apiGet('/api/me');
-    if (!res || !res.ok || !res.user || !res.user.email) {
-      const next = encodeURIComponent(location.pathname + location.search);
-      window.location.replace(`/auth.html?mode=login&next=${next}`);
-      return;
-    }
-
-    if (res.user.hasCreatorAccess) {
+    const res = await TMAPI.apiGet('/api/me');
+    if (res.ok && res.user && res.user.hasCreatorAccess) {
       // IF UNLOCKED:
       if (DOM.feed) DOM.feed.hidden = false;
       if (DOM.denied) DOM.denied.hidden = true;
@@ -139,7 +133,7 @@ async function processPayment() {
   DOM.btnPayConfirm.textContent = 'Processing...';
 
   try {
-    const res = await apiPost('/api/coinbase/create-charge', { planKey: 'creator_access' });
+    const res = await TMAPI.apiPost('/api/coinbase/create-charge', { planKey: 'creator_access' });
     if (res.ok && res.url) {
       window.location.href = res.url;
     } else {

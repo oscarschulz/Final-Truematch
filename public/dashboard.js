@@ -2,11 +2,10 @@
 // iTrueMatch Dashboard – Main Controller (Fixed: Consistent Chat History)
 // ---------------------------------------------------------------------
 
-import { getLocalPlan, saveLocalUser, clearSession } from './tm-session.js';
-import { apiGet, apiPost, apiUpdateProfile, apiSavePrefs } from './tm-api.js';
+import { getLocalPlan, saveLocalUser, clearAuth } from './tm-session.js';
+import * as TMAPI from './tm-api.js';
 
-const DEV_MODE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-  && new URLSearchParams(location.search).get('demo') === '1'; 
+const DEV_MODE = (location.hostname === '127.0.0.1' || location.hostname === 'localhost') || (new URLSearchParams(location.search).get('demo') === '1');
 const DAILY_SWIPE_LIMIT = 20; 
 
 function getMockUser() {
@@ -207,7 +206,7 @@ function setupEventListeners() {
   if (DOM.btnLogout) {
     DOM.btnLogout.addEventListener('click', (e) => {
       e.preventDefault();
-      clearSession();
+      clearAuth();
       sessionStorage.clear();
       window.location.href = 'index.html'; 
     });
@@ -476,11 +475,9 @@ async function loadMe() {
       user = getMockUser();
       prefs = { city: 'New York', ageMin: 21, ageMax: 35, ethnicity: 'any', lookingFor: ['women'] };
     } else {
-      const data = await apiGet('/api/me');
+      const data = await TMAPI.apiGet('/api/me');
       if (!data || !data.ok || !data.user) {
-        const next = encodeURIComponent(location.pathname + location.search);
-        window.location.replace(`/auth.html?mode=login&next=${next}`);
-        return;
+        user = getMockUser(); 
       } else {
           user = data.user;
           prefs = data.prefs || user.preferences || {};
@@ -501,12 +498,27 @@ async function loadMe() {
 }
 
 function renderHome(user) {
-  if (DOM.homeWelcomeName) DOM.homeWelcomeName.textContent = user.name;
-  if (DOM.homePlanPill) DOM.homePlanPill.textContent = state.plan.toUpperCase();
+  const safeName = (user && typeof user.name === 'string' && user.name.trim()) ? user.name.trim() : 'Member';
+  const firstName = safeName.split(/\s+/)[0];
+
+  // Greeting uses the name captured during signup
+  if (DOM.homeWelcomeName) DOM.homeWelcomeName.textContent = firstName;
+
+  // Plan pill label (avoid showing raw tier codes)
+  const planLabel =
+    state.plan === 'tier3' ? 'CONCIERGE' :
+    state.plan === 'tier2' ? 'ELITE' :
+    state.plan === 'tier1' ? 'PLUS' :
+    'MEMBER';
+
+  if (DOM.homePlanPill) DOM.homePlanPill.textContent = planLabel;
+
+  // Status line under the greeting
   if (DOM.homePlanSummary) {
-    if (state.plan === 'tier3') DOM.homePlanSummary.textContent = "Concierge Service Active.";
-    else if (state.plan === 'tier2') DOM.homePlanSummary.textContent = "Elite Member Access.";
-    else DOM.homePlanSummary.textContent = "Upgrade for more daily swipes.";
+    if (state.plan === 'tier3') DOM.homePlanSummary.textContent = "Concierge service active.";
+    else if (state.plan === 'tier2') DOM.homePlanSummary.textContent = "Elite access active.";
+    else if (state.plan === 'tier1') DOM.homePlanSummary.textContent = "Plus access active.";
+    else DOM.homePlanSummary.textContent = "Free plan active. Upgrade anytime.";
   }
 }
 
@@ -578,7 +590,7 @@ async function handleProfileSave() {
     if (DEV_MODE) {
       res = { ok: true, user: { ...state.me, ...payload } }; 
     } else {
-      res = await apiUpdateProfile(payload); 
+      res = await TMAPI.apiUpdateProfile(payload); 
     }
 
     if (res && res.ok) {
@@ -600,6 +612,13 @@ const SwipeController = (() => {
   let isLoading = false;
 
   async function init() {
+  // Safety: if tm-api.js is outdated/cached, fail gracefully instead of leaving placeholders.
+  if (!TMAPI || typeof TMAPI.apiGet !== 'function') {
+    console.error('tm-api.js is missing expected exports. Hard refresh (Ctrl+F5) after updating files.');
+    window.location.href = 'auth.html?mode=login';
+    return;
+  }
+
     await loadCandidates();
   }
 
@@ -619,7 +638,7 @@ const SwipeController = (() => {
           { id: 3, name: 'Cathy', age: 25, city: 'Chicago', photoUrl: 'assets/images/truematch-mark.png', tags: ['Art', 'Coffee', 'Dogs'] }
         ]};
       } else {
-        data = await apiGet('/api/swipe/candidates');
+        data = await TMAPI.apiGet('/api/swipe/candidates');
       }
 
       if (data && data.candidates && data.candidates.length > 0) {
@@ -697,7 +716,7 @@ const SwipeController = (() => {
 
     if (!DEV_MODE) {
        const apiType = (type === 'superlike') ? 'like' : type;
-       apiPost('/api/swipe/action', { targetId: profiles[currentIndex].id, type: apiType });
+       TMAPI.apiPost('/api/swipe/action', { targetId: profiles[currentIndex].id, type: apiType });
     }
     
     let currentStats = parseInt(DOM.statsCountDisplay ? DOM.statsCountDisplay.textContent : "20");
