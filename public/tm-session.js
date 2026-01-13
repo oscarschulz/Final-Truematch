@@ -36,8 +36,6 @@ export function saveLocalUser(u) {
 
   try {
     localStorage.setItem('tm_user', JSON.stringify(minimal));
-    // Reset any previous plan override to avoid leaking between sessions/users
-    localStorage.removeItem('tm_plan_override');
     if (u && u.plan) {
       localStorage.setItem('tm_plan_override', u.plan);
     }
@@ -178,4 +176,36 @@ export const clearSession = clearAuth;
 // Dagdag na rin natin ito dahil madalas hinahanap ng dashboard
 export function isAuthenticated() {
     return !!getCurrentUser();
+}
+
+// ---------------------------------------------------------------------------
+// Compatibility exports (used by dashboard.js / tier.js / plan.js)
+// ---------------------------------------------------------------------------
+
+export function getLocalPlan() {
+  return getEffectivePlan();
+}
+
+export function setLocalPlan(plan) {
+  setPlanOverride(plan);
+  return getEffectivePlan();
+}
+
+export function saveLocalUser(user) {
+  setCurrentUser(user);
+  return user;
+}
+
+// Optional bridge for non-module scripts
+if (typeof window !== 'undefined') {
+  window.TM_SESSION = window.TM_SESSION || {};
+  Object.assign(window.TM_SESSION, {
+    // existing exports
+    readJSON, writeJSON, removeKey,
+    getCurrentUser, setCurrentUser, clearCurrentUser,
+    getPlanOverride, setPlanOverride, clearPlanOverride,
+    getEffectivePlan, getAuthToken, isAuthed, logout, clearSession,
+    // compatibility exports
+    getLocalPlan, setLocalPlan, saveLocalUser,
+  });
 }
