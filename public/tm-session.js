@@ -1,142 +1,14 @@
-// tm-session.js — shared helpers for localStorage state
-// Safe gamitin from any front-end module (auth, preferences, tier, dashboard, pay).
+// tm-session.js
+// Shared local session helpers (ES module) + window bridge for non-module pages.
 
+export const USER_KEY = 'tm_user';
+export const PLAN_OVERRIDE_KEY = 'tm_plan_override';
 export const PREFS_KEY = 'tm_prefs';
 export const PREFS_MAP_KEY = 'tm_prefs_by_user';
 
-// -------- User helpers --------
-
-export function getCurrentUser() {
-  try {
-    return JSON.parse(localStorage.getItem('tm_user') || 'null');
-  } catch {
-    return null;
-  }
-}
-
-export function getCurrentUserEmail() {
-  try {
-    const u = getCurrentUser();
-    const email = u && u.email;
-    return email ? String(email).toLowerCase() : null;
-  } catch {
-    return null;
-  }
-}
-
-// Same spirit as saveLocalUser() sa auth.js
-export function saveLocalUser(u) {
-  const minimal = {
-    id:    u?.id    || 'local-demo',
-    email: u?.email || 'user@truematch.app',
-    name:  u?.name  || 'User',
-  };
-
-  if (u && u.plan) minimal.plan = u.plan;
-
-  try {
-    localStorage.setItem('tm_user', JSON.stringify(minimal));
-    if (u && u.plan) {
-      localStorage.setItem('tm_plan_override', u.plan);
-    }
-  } catch {
-    // ignore storage errors
-  }
-
-  return minimal;
-}
-
-// -------- Plan helpers (Tier 1/2/3) --------
-
-export function getLocalPlan() {
-  try {
-    return (
-      localStorage.getItem('tm_plan_override') ||
-      (JSON.parse(localStorage.getItem('tm_user') || '{}').plan || null)
-    );
-  } catch {
-    return null;
-  }
-}
-
-export function setLocalPlan(plan) {
-  if (!plan) return;
-
-  try {
-    localStorage.setItem('tm_plan_override', plan);
-
-    const raw = JSON.parse(localStorage.getItem('tm_user') || '{}');
-    raw.plan = plan;
-    localStorage.setItem('tm_user', JSON.stringify(raw));
-  } catch {
-    // ignore
-  }
-}
-
-export function clearPlanOverride() {
-  try {
-    localStorage.removeItem('tm_plan_override');
-  } catch {
-    // ignore
-  }
-}
-
-// -------- Preferences helpers --------
-
-export function getRawPrefsForCurrentUser() {
-  try {
-    const email = getCurrentUserEmail();
-    if (email) {
-      const rawMap = localStorage.getItem(PREFS_MAP_KEY);
-      if (rawMap) {
-        const map = JSON.parse(rawMap) || {};
-        if (map && typeof map === 'object' && map[email]) {
-          return map[email];
-        }
-      }
-    }
-
-    const legacy = localStorage.getItem(PREFS_KEY);
-    if (legacy) {
-      return JSON.parse(legacy) || null;
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-export function savePrefsForCurrentUser(prefs) {
-  try {
-    const email = getCurrentUserEmail();
-    if (email) {
-      let map = {};
-      const rawMap = localStorage.getItem(PREFS_MAP_KEY);
-      if (rawMap) {
-        try {
-          map = JSON.parse(rawMap) || {};
-        } catch {
-          map = {};
-        }
-      }
-      map[email] = prefs;
-      localStorage.setItem(PREFS_MAP_KEY, JSON.stringify(map));
-    }
-
-    // Legacy slot para sa ibang scripts (same as now)
-    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
-  } catch {
-    // ignore
-  }
-}
-
-export function hasLocalPrefs() {
-  return !!getRawPrefsForCurrentUser();
-}
-
-// -------- Generic JSON helpers + auth clear (used by dashboard) --------
-
+// --------------------
+// JSON helpers
+// --------------------
 export function readJSON(key, fallback = null) {
   try {
     const raw = localStorage.getItem(key);
@@ -154,34 +26,110 @@ export function writeJSON(key, value) {
   }
 }
 
-export function clearAuth() {
+export function removeKey(key) {
   try {
-    localStorage.removeItem('tm_user');
-    localStorage.removeItem('tm_plan_override');
-    localStorage.removeItem(PREFS_KEY);
-    localStorage.removeItem(PREFS_MAP_KEY);
+    localStorage.removeItem(key);
   } catch {
     // ignore
   }
 }
 
-// ==========================================
-// FIX PARA SA DASHBOARD ERROR
-// ==========================================
-
-// Ang dashboard.js ay naghahanap ng 'clearSession'
-// Kaya ituturo natin ito sa existing 'clearAuth' function mo.
-export const clearSession = clearAuth;
-
-// Dagdag na rin natin ito dahil madalas hinahanap ng dashboard
-export function isAuthenticated() {
-    return !!getCurrentUser();
+// --------------------
+// User helpers
+// --------------------
+export function getCurrentUser() {
+  return readJSON(USER_KEY, null);
 }
 
-// ---------------------------------------------------------------------------
-// Compatibility exports (used by dashboard.js / tier.js / plan.js)
-// ---------------------------------------------------------------------------
+export function setCurrentUser(user) {
+  const minimal = {
+    id: user?.id || 'local-demo',
+    email: user?.email || '',
+    name: user?.name || user?.displayName || user?.fullName || 'User',
+    plan: user?.plan || user?.tier || user?.subscription || null,
+  };
+  writeJSON(USER_KEY, minimal);
 
+  if (minimal.plan) {
+    writeJSON(PLAN_OVERRIDE_KEY, minimal.plan);
+  }
+  return minimal;
+}
+
+// Alias used by auth.js patterns
+export function saveLocalUser(user) {
+  return setCurrentUser(user);
+}
+
+export function clearCurrentUser() {
+  removeKey(USER_KEY);
+}
+
+export function getCurrentUserEmail() {
+  try {
+    const u = getCurrentUser();
+    const email = u?.email;
+    return email ? String(email).trim().toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+// --------------------
+// Plan helpers
+// --------------------
+export function getPlanOverride() {
+  try {
+    const v = localStorage.getItem(PLAN_OVERRIDE_KEY);
+    return v ? String(v).trim().toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setPlanOverride(plan) {
+  if (!plan) return null;
+  const v = String(plan).trim().toLowerCase();
+  try {
+    localStorage.setItem(PLAN_OVERRIDE_KEY, v);
+  } catch {}
+
+  // keep tm_user.plan in sync (nice-to-have)
+  try {
+    const raw = readJSON(USER_KEY, {}) || {};
+    raw.plan = v;
+    writeJSON(USER_KEY, raw);
+  } catch {}
+
+  return v;
+}
+
+export function clearPlanOverride() {
+  removeKey(PLAN_OVERRIDE_KEY);
+}
+
+export function normalizePlan(plan) {
+  const v = String(plan || '').trim().toLowerCase();
+  if (!v) return 'free';
+  if (v === 'basic') return 'free';
+  if (v === 'plus') return 'tier1';
+  if (v === 'elite') return 'tier2';
+  if (v === 'concierge') return 'tier3';
+  if (v === 'tier1' || v === 'tier2' || v === 'tier3' || v === 'free') return v;
+  return 'free';
+}
+
+export function getEffectivePlan() {
+  const override = getPlanOverride();
+  if (override) return normalizePlan(override);
+
+  const u = getCurrentUser();
+  if (u?.plan) return normalizePlan(u.plan);
+
+  return 'free';
+}
+
+// Compatibility exports expected by dashboard.js / tier.js
 export function getLocalPlan() {
   return getEffectivePlan();
 }
@@ -191,21 +139,88 @@ export function setLocalPlan(plan) {
   return getEffectivePlan();
 }
 
-export function saveLocalUser(user) {
-  setCurrentUser(user);
-  return user;
+// --------------------
+// Preferences helpers
+// --------------------
+export function getRawPrefsForCurrentUser() {
+  try {
+    const email = getCurrentUserEmail();
+    if (email) {
+      const map = readJSON(PREFS_MAP_KEY, {}) || {};
+      if (map && typeof map === 'object' && map[email]) return map[email];
+    }
+    return readJSON(PREFS_KEY, null);
+  } catch {
+    return null;
+  }
 }
 
+export function savePrefsForCurrentUser(prefs) {
+  try {
+    const email = getCurrentUserEmail();
+    if (email) {
+      const map = readJSON(PREFS_MAP_KEY, {}) || {};
+      map[email] = prefs;
+      writeJSON(PREFS_MAP_KEY, map);
+    }
+    // legacy slot (keep)
+    writeJSON(PREFS_KEY, prefs);
+  } catch {
+    // ignore
+  }
+}
+
+export function hasLocalPrefs() {
+  return !!getRawPrefsForCurrentUser();
+}
+
+// --------------------
+// Auth clear helpers (dashboard expects clearSession)
+// --------------------
+export function clearAuth() {
+  removeKey(USER_KEY);
+  removeKey(PLAN_OVERRIDE_KEY);
+  removeKey(PREFS_KEY);
+  removeKey(PREFS_MAP_KEY);
+}
+
+export const clearSession = clearAuth;
+
+export function isAuthenticated() {
+  const u = getCurrentUser();
+  return !!(u && u.email);
+}
+
+// --------------------
 // Optional bridge for non-module scripts
+// --------------------
 if (typeof window !== 'undefined') {
   window.TM_SESSION = window.TM_SESSION || {};
   Object.assign(window.TM_SESSION, {
-    // existing exports
-    readJSON, writeJSON, removeKey,
-    getCurrentUser, setCurrentUser, clearCurrentUser,
-    getPlanOverride, setPlanOverride, clearPlanOverride,
-    getEffectivePlan, getAuthToken, isAuthed, logout, clearSession,
-    // compatibility exports
-    getLocalPlan, setLocalPlan, saveLocalUser,
+    USER_KEY,
+    PLAN_OVERRIDE_KEY,
+    PREFS_KEY,
+    PREFS_MAP_KEY,
+    readJSON,
+    writeJSON,
+    removeKey,
+    getCurrentUser,
+    setCurrentUser,
+    saveLocalUser,
+    clearCurrentUser,
+    getCurrentUserEmail,
+    getPlanOverride,
+    setPlanOverride,
+    clearPlanOverride,
+    normalizePlan,
+    getEffectivePlan,
+    getLocalPlan,
+    setLocalPlan,
+    getRawPrefsForCurrentUser,
+    savePrefsForCurrentUser,
+    hasLocalPrefs,
+    clearAuth,
+    clearSession,
+    isAuthenticated,
   });
 }
