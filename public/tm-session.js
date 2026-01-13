@@ -36,6 +36,8 @@ export function saveLocalUser(u) {
 
   try {
     localStorage.setItem('tm_user', JSON.stringify(minimal));
+    // Reset any previous plan override to avoid leaking between sessions/users
+    localStorage.removeItem('tm_plan_override');
     if (u && u.plan) {
       localStorage.setItem('tm_plan_override', u.plan);
     }

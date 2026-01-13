@@ -1,6 +1,9 @@
 // ==========================================
-// tm-api.js — API Handler (Final Fixed Version)
+// tm-api.js — API Handler (Live + Optional Mock)
 // ==========================================
+// Goal: Use REAL backend by default (so new users stay on "free").
+// Mock responses are available only when explicitly enabled via ?mock=1
+// or window.TM_USE_MOCK_API = true.
 
 export const API_BASE = (() => {
   const v = String(window.API_BASE || "").trim().replace(/\/$/, "");
@@ -15,124 +18,150 @@ export const API_BASE = (() => {
   return "";
 })();
 
-// ---------------- Generic helpers ----------------
+const QS = new URLSearchParams(location.search);
+const USE_MOCK_API = QS.get("mock") === "1" || window.TM_USE_MOCK_API === true;
 
+// -------------------------
+// Low-level request helper
+// -------------------------
+async function requestJSON(path, { method = "GET", body = undefined } = {}) {
+  const url = `${API_BASE}${path}`;
+
+  const init = {
+    method,
+    credentials: "include",
+    headers: {},
+  };
+
+  if (body !== undefined) {
+    init.headers["Content-Type"] = "application/json";
+    init.body = JSON.stringify(body);
+  }
+
+  let res;
+  try {
+    res = await fetch(url, init);
+  } catch (e) {
+    // Network-level failure (server down, blocked, etc.)
+    return { ok: false, error: `Network error calling ${path}` };
+  }
+
+  const text = await res.text();
+  let data = {};
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      data = { ok: false, error: `Non-JSON response from ${path} (HTTP ${res.status})` };
+    }
+  }
+
+  // If backend didn't include ok, normalize it
+  if (typeof data.ok === "undefined") data.ok = res.ok;
+
+  // If HTTP error but payload says ok, force ok=false
+  if (!res.ok) data.ok = false;
+
+  // Attach HTTP status for debugging (non-breaking)
+  data.status = res.status;
+
+  return data;
+}
+
+// -------------------------
+// Public helpers (used by pages)
+// -------------------------
 export async function apiGet(path) {
-  console.log("[MOCK apiGet]", path);
-  
-  // Simulate Network Delay
-  await new Promise(r => setTimeout(r, 300));
-
-  // --- MOCK RESPONSES ---
-  
-  if (path === "/api/me") {
-    return {
-      ok: true,
-      user: {
-        id: 1,
-        name: "Miguel", 
-        email: "miguel@demo.com",
-        avatarUrl: "assets/images/truematch-mark.png",
-        age: 27,
-        city: "Manila",
-        plan: "tier2", // Demo plan
-        creatorStatus: "approved",
-        premiumStatus: "active",
-        hasCreatorAccess: true
-      },
-      prefs: {
-        city: "Manila",
-        ageMin: 21,
-        ageMax: 35,
-        ethnicity: "any",
-        lookingFor: ["women"]
-      }
-    };
-  }
-
-  if (path === "/api/dashboard/usage") {
-    return {
-      ok: true,
-      usage: {
-        swipesRemaining: 20,
-        swipesLimit: 20,
-        shortlistCount: 2,
-        shortlistLimit: 5,
-        approvedCount: 1,
-        datesCount: 0
-      }
-    };
-  }
-
-  if (path === "/api/swipe/candidates") {
-    return {
-      ok: true,
-      candidates: [
-        { id: 101, name: "Alice", age: 24, city: "Makati", photoUrl: "assets/images/truematch-mark.png" },
-        { id: 102, name: "Bea", age: 22, city: "BGC", photoUrl: "assets/images/truematch-mark.png" },
-        { id: 103, name: "Cathy", age: 25, city: "Ortigas", photoUrl: "assets/images/truematch-mark.png" }
-      ]
-    };
-  }
-
-  if (path === "/api/shortlist") {
-    return { ok: true, list: [] };
-  }
-
-  // Fallback
-  return { ok: true };
+  if (USE_MOCK_API) return getMockResponse(path, null);
+  return requestJSON(path, { method: "GET" });
 }
 
-export async function apiPost(path, payload) {
-  console.log("[MOCK apiPost]", path, payload);
-  
-  // Simulate Network Delay
-  await new Promise(r => setTimeout(r, 300));
-
-  // simulate success for all POST endpoints
-  if (path.includes("/swipe/action")) {
-    return { ok: true, remaining: 19, match: Math.random() > 0.7 };
-  }
-
-  if (path.includes("/auth")) {
-    return { ok: true, token: "mock-token-123" };
-  }
-
-  return { ok: true };
+export async function apiPost(path, body) {
+  if (USE_MOCK_API) return getMockResponse(path, body);
+  return requestJSON(path, { method: "POST", body });
 }
 
-// Ito ang nawawala kanina kaya nag-eerror:
-export async function apiSavePrefs(prefs) {
-    console.log("[MOCK apiSavePrefs]", prefs);
-    await new Promise(r => setTimeout(r, 300));
-    return { ok: true };
+// Convenience wrappers some pages expect
+export async function apiMe() {
+  return apiGet("/api/me");
 }
 
-// Ito rin kailangan ng dashboard.js:
-export async function apiUpdateProfile(payload) {
-    console.log("[MOCK apiUpdateProfile]", payload);
-    await new Promise(r => setTimeout(r, 300));
-    return { ok: true, user: payload };
+export async function apiPrefsGet() {
+  return apiGet("/api/prefs/get");
 }
 
-export async function apiPatch(path, payload) {
-  console.log("[MOCK apiPatch]", path, payload);
-  return { ok: true };
+export async function apiPrefsSave(prefs) {
+  return apiPost("/api/prefs/save", prefs);
 }
 
-// ---------------- Convenience wrappers ----------------
+export async function apiPlanUpdate(plan) {
+  // Backend: POST /plan/choose { plan }
+  // Some pages use /plan/choose (no /api prefix) so we keep it consistent.
+  return apiPost("/plan/choose", { plan });
+}
 
-export const apiRegister  = (fields) => apiPost("/api/auth/register", fields);
-export const apiLogin     = (fields) => apiPost("/api/auth/login", fields);
-export const apiOAuthMock = (provider) => apiPost("/api/auth/oauth/mock", { provider });
+// ==========================================
+// Mock Layer (ONLY when enabled)
+// ==========================================
 
-// User Helpers
-export const apiMe = () => apiGet("/api/me");
+export function getMockUser() {
+  return {
+    id: "u-demo",
+    email: "demo@itruematch.com",
+    name: "Demo User",
+    city: "Manila",
+    age: 27,
+    plan: "tier2", // demo default
+    planActive: true,
+  };
+}
 
-// Plan
-export const apiChoosePlan = (plan) => apiPost("/api/plan/choose", { plan });
+function getMockResponse(path, body) {
+  console.log("[MOCK api]", path, body || "");
 
-// Shortlist
-export const apiShortlistToday = () => apiGet("/api/shortlist");
-export const apiShortlistDecision = (profileId, action) =>
-  apiPost("/api/shortlist/decision", { profileId, action });
+  // Simulate network delay for realism
+  const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const user = getMockUser();
+
+  const P = String(path || "");
+  const respond = async () => {
+    await delay(200);
+
+    if (P === "/api/me") return { ok: true, user };
+    if (P === "/api/prefs/get") return { ok: true, prefs: getMockPrefs() };
+    if (P === "/api/prefs/save") return { ok: true, saved: true };
+    if (P === "/api/creators") return { ok: true, creators: getMockCreators() };
+    if (P === "/api/shortlist/get") return { ok: true, shortlist: [] };
+    if (P === "/api/shortlist/add") return { ok: true };
+    if (P === "/api/shortlist/remove") return { ok: true };
+
+    // Plan choose
+    if (P === "/plan/choose") return { ok: true, plan: body?.plan || "free" };
+
+    return { ok: false, error: `Mock: Unknown path ${P}` };
+  };
+
+  return respond();
+}
+
+function getMockPrefs() {
+  return {
+    yourAge: 27,
+    yourCity: "Manila",
+    preferredCity: "Marbella",
+    ageMin: 25,
+    ageMax: 35,
+    ethnicity: "Any",
+    lookingFor: "Women",
+    verified: true,
+  };
+}
+
+function getMockCreators() {
+  return [
+    { id: "c1", name: "Aly", city: "Manila", age: 24, bio: "Lifestyle & travel." },
+    { id: "c2", name: "Mia", city: "Cebu", age: 26, bio: "Fitness & wellness." },
+    { id: "c3", name: "Lena", city: "Davao", age: 25, bio: "Art & music." },
+  ];
+}
