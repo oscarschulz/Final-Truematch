@@ -23,9 +23,13 @@ function cacheDom() {
   DOM.tabs = document.querySelectorAll('.nav-btn');
   DOM.panels = document.querySelectorAll('.panel[data-panel]');
   DOM.btnLogout = document.getElementById('btn-logout');
-  DOM.homeWelcomeName = document.getElementById('homeWelcomeName');
-  DOM.homePlanPill = document.getElementById('homePlanPill');
-  DOM.homePlanSummary = document.getElementById('homePlanSummary');
+  // NOTE: keep backward-compat if IDs change. Current dashboard.html uses:
+  //  - #welcomeName
+  //  - #planPill
+  //  - #planName
+  DOM.homeWelcomeName = document.getElementById('welcomeName') || document.getElementById('homeWelcomeName');
+  DOM.homePlanPill = document.getElementById('planPill') || document.getElementById('homePlanPill');
+  DOM.homePlanSummary = document.getElementById('planName') || document.getElementById('homePlanSummary');
   DOM.storiesContainer = document.getElementById('storiesContainer');
   DOM.admirerContainer = document.getElementById('admirerContainer');
   DOM.admirerCount = document.getElementById('admirerCount');
@@ -485,8 +489,6 @@ async function loadMe() {
     }
 
     state.me = user;
-    // Keep local session cache in sync for other pages
-    if (state.me) { try { saveLocalUser(state.me); } catch (e) {} }
     state.prefs = prefs;
     state.plan = normalizePlanKey(user.plan);
 
@@ -500,7 +502,16 @@ async function loadMe() {
 }
 
 function renderHome(user) {
-  if (DOM.homeWelcomeName) DOM.homeWelcomeName.textContent = (user && (user.name || user.displayName || user.fullName)) || 'Member';
+  if (DOM.homeWelcomeName) {
+    const displayName =
+      user?.name ||
+      user?.displayName ||
+      user?.fullName ||
+      user?.firstName ||
+      user?.username ||
+      '';
+    DOM.homeWelcomeName.textContent = displayName.trim() || 'Member';
+  }
   if (DOM.homePlanPill) DOM.homePlanPill.textContent = state.plan.toUpperCase();
   if (DOM.homePlanSummary) {
     if (state.plan === 'tier3') DOM.homePlanSummary.textContent = "Concierge Service Active.";
