@@ -93,6 +93,7 @@ html, body { margin: 0; padding: 0; background: transparent !important; color: v
 .badge-pill.bg-gold { background: linear-gradient(45deg, #FFD700, #C08218); color: #000; }
 
 .active-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; padding: 10px 0; }
+.active-grid .active-empty { grid-column: 1 / -1; padding: 12px 2px; text-align: center; }
 .active-item { position: relative; cursor: pointer; transition: 0.2s; }
 .active-item:hover { transform: scale(1.1); }
 .active-img { width: 100%; aspect-ratio: 1; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255,255,255,0.1); }

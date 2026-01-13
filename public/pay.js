@@ -76,6 +76,9 @@ function setAdvancedOnboardingFlag(email, plan){
 async function handlePostUpgradeRedirect(targetPlan, confirmPayload){
   try{
     const me = await fetchMe();
+    const sp = qs();
+    const onboarding = sp.get('onboarding') === '1';
+    const prefsSaved = serverPrefsSaved(me);
     const user = me?.user || {};
     const email = user.email || null;
     const newPlan = normalizePlan(user.plan || confirmPayload?.plan || targetPlan || 'tier1');
@@ -85,15 +88,16 @@ async function handlePostUpgradeRedirect(targetPlan, confirmPayload){
       // store new canonical plan
       setPrevPlanForEmail(email, newPlan);
     }
-
-    if (prevPlan === 'free' && newPlan !== 'free'){
+    // Only send user back to Preferences if they are in onboarding OR they haven't saved prefs yet.
+    // Upgrades initiated from the dashboard should return to the dashboard after payment.
+    if (prevPlan === 'free' && newPlan !== 'free' && (onboarding || !prefsSaved)) {
       setAdvancedOnboardingFlag(email, newPlan);
       const qp = new URLSearchParams();
       qp.set('onboarding', 'advanced');
       qp.set('from', 'upgrade');
       qp.set('plan', newPlan);
       location.replace(`/preferences.html?${qp.toString()}`);
-    }else{
+    } else {
       location.replace('/dashboard.html');
     }
   }catch(err){

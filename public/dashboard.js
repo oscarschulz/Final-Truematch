@@ -242,8 +242,17 @@ function setupEventListeners() {
   if (DOM.btnCloseCreatorApply) DOM.btnCloseCreatorApply.addEventListener('click', () => DOM.dlgCreatorApply.close());
   
   const openPremium = (e) => {
-      if(e) e.preventDefault();
-      if(DOM.dlgPremiumApply) DOM.dlgPremiumApply.showModal();
+      // Sidebar "Upgrade Now" should route to the upgrade flow (tier selector)
+      if (e && e.currentTarget && e.currentTarget.id === 'btnSidebarSubscribe') {
+          window.location.href = './tier.html?upgrade=1';
+          return;
+      }
+
+      if (e) {
+          e.preventDefault();
+          e.stopPropagation();
+      }
+      if (DOM.dlgPremiumApply) DOM.dlgPremiumApply.showModal();
   };
   if (DOM.btnOpenPremiumApply) DOM.btnOpenPremiumApply.addEventListener('click', openPremium);
   if (DOM.btnPremiumCancel) DOM.btnPremiumCancel.addEventListener('click', () => DOM.dlgPremiumApply.close());
@@ -496,7 +505,7 @@ function renderHomeEmptyStates() {
   if (DOM.activeNearbyContainer) {
     const hasActive = DOM.activeNearbyContainer.querySelector('.active-item');
     if (!hasActive) {
-      DOM.activeNearbyContainer.innerHTML = "<div class='tiny muted' style='padding:12px 2px;'>No active users nearby yet.</div>";
+      DOM.activeNearbyContainer.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
     }
   }
 
