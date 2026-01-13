@@ -1,3 +1,8 @@
+
+function forceLogin() {
+  const ret = encodeURIComponent(location.pathname + location.search + location.hash);
+  location.replace(`/auth.html?mode=login&return=${ret}`);
+}
 // plan-select.js — pre-auth plan selection step
 (() => {
   // Safety check para lang talaga sa plan-select page tumakbo

@@ -240,6 +240,45 @@
     location.replace(`/preferences.html${merged.toString() ? `?${merged.toString()}` : ""}`);
   }
 
+  function isSignupMode() {
+    const mode = (getParam("mode") || "login").toLowerCase();
+    return mode === "signup" || mode === "register";
+  }
+
+  function sanitizeReturnUrl(returnRaw) {
+    if (!returnRaw) return null;
+    const raw = String(returnRaw).trim();
+    if (!raw) return null;
+
+    // Block external URLs / schemes
+    if (/^(https?:)?\/\//i.test(raw)) return null;
+    if (/^javascript:/i.test(raw)) return null;
+
+    try {
+      const u = new URL(raw, window.location.origin);
+      if (u.origin !== window.location.origin) return null;
+
+      // Allow only local HTML pages
+      if (!u.pathname.endsWith(".html")) return null;
+
+      // Prevent loops back into auth
+      if (u.pathname.endsWith("/auth.html")) return null;
+
+      return `${u.pathname}${u.search}${u.hash}`;
+    } catch {
+      return null;
+    }
+  }
+
+  function gotoReturnOrPreferences(extraQuery) {
+    const safe = sanitizeReturnUrl(getParam("return"));
+    if (safe && !isSignupMode()) {
+      location.replace(safe);
+      return;
+    }
+    gotoPreferences(extraQuery);
+  }
+
   function setActiveTab(mode) {
     const wantLogin = String(mode).toLowerCase() !== "signup";
     const flipCard = $("#authFlipCard");
@@ -375,7 +414,7 @@
           safeDialogClose(dlg);
           const extra = new URLSearchParams(location.search);
           extra.delete("verify");
-          gotoPreferences(extra.toString());
+          gotoReturnOrPreferences(extra.toString());
         } catch { if (msg) msg.textContent = "Verification failed."; }
         try { tmHideLoader(); } catch {}
       });
@@ -419,7 +458,7 @@
       await ensureVerifiedBeforeContinue(email, sendOut);
       return;
     }
-    gotoPreferences();
+    gotoReturnOrPreferences();
   }
 
   whenReady(() => {

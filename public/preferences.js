@@ -14,6 +14,166 @@
   let PREFS_ONBOARDING_MODE = null;
   let PREFS_FROM_PARAM = null;
 
+  // ---- Profile (age, city, avatar) helpers ----
+  let AVATAR_DATA_URL_FOR_UPLOAD = '';
+  let EXISTING_AVATAR_URL = '';
+  let AVATAR_HANDLERS_ATTACHED = false;
+
+  function setAvatarPreview(src) {
+    const img = qs('#avatarPreviewImg');
+    const ph = qs('#avatarPlaceholder');
+    if (!img) return;
+
+    if (src) {
+      img.src = src;
+      img.style.display = 'block';
+      if (ph) ph.style.display = 'none';
+    } else {
+      img.removeAttribute('src');
+      img.style.display = 'none';
+      if (ph) ph.style.display = 'flex';
+    }
+  }
+
+  function setAvatarFileName(name) {
+    const el = qs('#avatarFileName');
+    if (!el) return;
+    el.textContent = name || 'No file chosen';
+  }
+
+  function isProfileComplete(user) {
+    if (!user) return false;
+    const ageOk = Number(user.age) >= 18;
+    const cityOk = (user.city || '').toString().trim().length > 1;
+    const avatarOk = !!(user.avatarUrl || user.avatar);
+    return ageOk && cityOk && avatarOk;
+  }
+
+  async function fileToOptimizedSquareDataUrl(file, opts = {}) {
+    const maxSize = Number(opts.maxSize || 768);
+    const quality = Number(opts.quality || 0.82);
+
+    if (!file) throw new Error('No file selected');
+
+    const maxBytes = 3 * 1024 * 1024; // 3MB (raw file)
+    if (file.size > maxBytes) {
+      throw new Error('Please choose an image under 3MB.');
+    }
+
+    const dataUrl = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result || ''));
+      r.onerror = () => reject(new Error('Failed to read file.'));
+      r.readAsDataURL(file);
+    });
+
+    // Create an Image to draw onto a canvas
+    const img = await new Promise((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = () => reject(new Error('Invalid image file.'));
+      im.src = dataUrl;
+    });
+
+    // Square crop
+    const side = Math.min(img.width, img.height);
+    const sx = Math.floor((img.width - side) / 2);
+    const sy = Math.floor((img.height - side) / 2);
+
+    const target = Math.min(maxSize, side);
+    const canvas = document.createElement('canvas');
+    canvas.width = target;
+    canvas.height = target;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas not supported.');
+    ctx.drawImage(img, sx, sy, side, side, 0, 0, target, target);
+
+    // Prefer JPEG for smaller size
+    const out = canvas.toDataURL('image/jpeg', quality);
+    return out;
+  }
+
+  function getProfileValues() {
+    const ageInput = qs('input[name="profileAge"]');
+    const cityInput = qs('input[name="profileCity"]');
+    const fileInput = qs('#avatarFile');
+
+    const age = ageInput ? Number(ageInput.value) : NaN;
+    const city = cityInput ? cityInput.value.trim() : '';
+
+    const file = fileInput && fileInput.files ? fileInput.files[0] : null;
+
+    return { age, city, file };
+  }
+
+  function validateProfileValues(profile, ctx = {}) {
+    const requireAll = !!ctx.requireAll;
+
+    if (!profile) return false;
+
+    const age = Number(profile.age);
+    if (!Number.isFinite(age) || age < 18 || age > 80) {
+      toast('Please enter a valid age between 18 and 80.', 'error');
+      return false;
+    }
+
+    if (!profile.city || profile.city.length < 2) {
+      toast('Please enter your city.', 'error');
+      return false;
+    }
+
+    const hasNewFile = !!profile.file;
+    const hasExisting = !!EXISTING_AVATAR_URL;
+
+    if (requireAll && !hasNewFile && !hasExisting) {
+      toast('Please upload a profile picture.', 'error');
+      return false;
+    }
+
+    return true;
+  }
+
+  function attachAvatarHandlers() {
+    if (AVATAR_HANDLERS_ATTACHED) return;
+    const fileInput = qs('#avatarFile');
+    if (!fileInput) return;
+    AVATAR_HANDLERS_ATTACHED = true;
+
+    // If user already has avatar, the file is not strictly required on re-visit
+    if (EXISTING_AVATAR_URL) {
+      try { fileInput.removeAttribute('required'); } catch {}
+    }
+
+    fileInput.addEventListener('change', async () => {
+      const f = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+      if (!f) {
+        AVATAR_DATA_URL_FOR_UPLOAD = '';
+        setAvatarPreview(EXISTING_AVATAR_URL || '');
+        setAvatarFileName('');
+        return;
+      }
+
+      setAvatarFileName(f.name);
+
+      try {
+        AVATAR_DATA_URL_FOR_UPLOAD = await fileToOptimizedSquareDataUrl(f, {
+          maxSize: 768,
+          quality: 0.82
+        });
+        setAvatarPreview(AVATAR_DATA_URL_FOR_UPLOAD);
+      } catch (err) {
+        AVATAR_DATA_URL_FOR_UPLOAD = '';
+        setAvatarPreview(EXISTING_AVATAR_URL || '');
+        setAvatarFileName('');
+        toast(err.message || 'Could not process image.', 'error');
+        // Reset input to force re-pick
+        try { fileInput.value = ''; } catch {}
+      }
+    });
+  }
+
+
   function readAdvancedOnboardingMap() {
     try {
       const raw = localStorage.getItem(ADV_ONBOARD_LS_KEY);
@@ -132,10 +292,28 @@
       return json;
     }
 
-    return {
+    
+    async function saveProfile(profile) {
+      const url = API_BASE ? `${API_BASE}/api/me/profile` : '/api/me/profile';
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(profile || {})
+      });
+
+      const json = await res.json().catch(() => null);
+      if (!json || typeof json !== 'object') {
+        return { ok: res.ok, status: res.status };
+      }
+      return json;
+    }
+
+return {
       getMe,
       getPreferences,
-      savePreferences
+      savePreferences,
+      saveProfile
     };
   }
 
@@ -524,6 +702,21 @@ if (prefs.intent && qs('select[name="intent"]')) {
           SESSION?.setCurrentUser?.(mergedUser);
           localStorage.setItem('tm_user', JSON.stringify(mergedUser));
 
+          // Prefill profile fields (age/city/avatar)
+          try {
+            const pAge = qs('#profileAge');
+            const pCity = qs('#profileCity');
+            if (pAge && userFromApi && userFromApi.age) pAge.value = String(userFromApi.age);
+            if (pCity && userFromApi && userFromApi.city) pCity.value = String(userFromApi.city);
+
+            EXISTING_AVATAR_URL = String(userFromApi.avatarUrl || userFromApi.avatar || '');
+            setAvatarPreview(EXISTING_AVATAR_URL);
+            setAvatarFileName('');
+            attachAvatarHandlers();
+          } catch (e) {
+            console.warn('[prefs] profile prefill failed', e);
+          }
+
           // Update advanced section based on the latest plan from backend
           const userPlan =
             userFromApi.plan ||
@@ -540,9 +733,16 @@ if (prefs.intent && qs('select[name="intent"]')) {
           serverPrefs = await getApiPrefs(api);
 
           if (onboarding && serverPrefs) {
-            console.log(
-              '[prefs] onboarding + server prefs already exist → go dashboard'
-            );
+            const profileOk = isProfileComplete(userFromApi);
+            if (profileOk) {
+              console.log(
+                '[prefs] onboarding + server prefs + profile complete → go dashboard'
+              );
+            } else {
+              console.log('[prefs] onboarding but profile incomplete → stay on prefs');
+            }
+
+            if (profileOk) {
             const qsStr = buildTierQS({
               step: 'prefs-existing',
               dest: 'dashboard'
@@ -552,6 +752,7 @@ if (prefs.intent && qs('select[name="intent"]')) {
             );
             hideLoader();
             return;
+            }
           }
 
           if (serverPrefs) {
@@ -571,10 +772,35 @@ if (prefs.intent && qs('select[name="intent"]')) {
         );
         const localPrefs = getStoredPrefs();
         if (localPrefs) fillFormFromPrefs(localPrefs);
+
+        // Prefill profile from local user store
+        try {
+          const u = getLocalUserFromSessionOrStorage();
+          const pAge = qs('#profileAge');
+          const pCity = qs('#profileCity');
+          if (pAge && u && u.age) pAge.value = String(u.age);
+          if (pCity && u && u.city) pCity.value = String(u.city);
+          EXISTING_AVATAR_URL = String((u && u.avatarUrl) || '');
+          setAvatarPreview(EXISTING_AVATAR_URL);
+          setAvatarFileName('');
+          attachAvatarHandlers();
+        } catch {}
+
       }
     } finally {
       hideLoader();
     }
+
+    try {
+      // Ensure avatar UI is wired even if profile prefill did not run
+      if (!EXISTING_AVATAR_URL) {
+        const u = getLocalUserFromSessionOrStorage();
+        EXISTING_AVATAR_URL = String((u && u.avatarUrl) || '');
+        setAvatarPreview(EXISTING_AVATAR_URL);
+        setAvatarFileName('');
+      }
+      attachAvatarHandlers();
+    } catch {}
 
     attachFormHandler({
       api,
@@ -595,8 +821,27 @@ if (prefs.intent && qs('select[name="intent"]')) {
 
     form.addEventListener('submit', async (evt) => {
       evt.preventDefault();
+
       const prefs = getFormValues();
       if (!validateFormValues(prefs)) return;
+
+      const profile = getProfileValues();
+      const requireAll = PREFS_ONBOARDING_MODE === '1';
+      if (!validateProfileValues(profile, { requireAll })) return;
+
+      // If the user picked a file but it has not been processed yet, process now.
+      if (profile.file && !AVATAR_DATA_URL_FOR_UPLOAD) {
+        try {
+          AVATAR_DATA_URL_FOR_UPLOAD = await fileToOptimizedSquareDataUrl(profile.file, {
+            maxSize: 768,
+            quality: 0.82
+          });
+          setAvatarPreview(AVATAR_DATA_URL_FOR_UPLOAD);
+        } catch (err) {
+          toast(err.message || 'Could not process image.', 'error');
+          return;
+        }
+      }
 
       const user = getLocalUserFromSessionOrStorage() || localUser;
 
@@ -604,6 +849,38 @@ if (prefs.intent && qs('select[name="intent"]')) {
 
       try {
         if (isLiveMode) {
+          // 1) Save required profile fields first (age, city, avatar)
+          const profilePayload = {
+            age: profile.age,
+            city: profile.city,
+            requireProfileCompletion: requireAll
+          };
+          if (AVATAR_DATA_URL_FOR_UPLOAD) {
+            profilePayload.avatarDataUrl = AVATAR_DATA_URL_FOR_UPLOAD;
+          }
+
+          const profRes = await api.saveProfile(profilePayload);
+
+          if (!profRes || !profRes.ok) {
+            console.warn('[prefs] saveProfile returned non-ok', profRes);
+            toast(
+              profRes && profRes.message
+                ? profRes.message
+                : 'Could not save your profile. Please try again.',
+              'error'
+            );
+            return;
+          }
+
+          const baseUser = (profRes && profRes.user) || user || {};
+          EXISTING_AVATAR_URL = String(
+            (baseUser && (baseUser.avatarUrl || baseUser.avatar)) || EXISTING_AVATAR_URL || ''
+          );
+          setAvatarPreview(EXISTING_AVATAR_URL);
+          setAvatarFileName('');
+          AVATAR_DATA_URL_FOR_UPLOAD = '';
+
+          // 2) Save preferences
           const res = await api.savePreferences(prefs);
 
           if (!res || !res.ok) {
@@ -617,32 +894,40 @@ if (prefs.intent && qs('select[name="intent"]')) {
             return;
           }
 
-          if (user && user.email) {
-            saveStoredPrefsForUser(user.email, prefs);
+          if (baseUser && baseUser.email) {
+            saveStoredPrefsForUser(baseUser.email, prefs);
           }
 
-          const mergedUser = mergeUserWithPrefs(user, prefs);
+          const mergedUser = mergeUserWithPrefs(baseUser, prefs);
           SESSION?.setCurrentUser?.(mergedUser);
           localStorage.setItem('tm_user', JSON.stringify(mergedUser));
         } else {
+          // Demo/local mode: store to localStorage only
           saveLocalPrefs(prefs);
-          if (user && user.email) {
-            saveStoredPrefsForUser(user.email, prefs);
+
+          const updatedUser = { ...(user || {}) };
+          if (Number.isFinite(Number(profile.age))) updatedUser.age = Number(profile.age);
+          if (profile.city) updatedUser.city = profile.city;
+
+          if (AVATAR_DATA_URL_FOR_UPLOAD) {
+            updatedUser.avatarUrl = AVATAR_DATA_URL_FOR_UPLOAD;
+            EXISTING_AVATAR_URL = AVATAR_DATA_URL_FOR_UPLOAD;
+            AVATAR_DATA_URL_FOR_UPLOAD = '';
           }
-          const updatedUser = mergeUserWithPrefs(user, prefs);
-          SESSION?.setCurrentUser?.(updatedUser);
-          localStorage.setItem(
-            'tm_user',
-            JSON.stringify(updatedUser)
-          );
+
+          if (updatedUser && updatedUser.email) {
+            saveStoredPrefsForUser(updatedUser.email, prefs);
+          }
+
+          const mergedUser = mergeUserWithPrefs(updatedUser, prefs);
+          SESSION?.setCurrentUser?.(mergedUser);
+          localStorage.setItem('tm_user', JSON.stringify(mergedUser));
         }
 
-        if (
-          PREFS_ONBOARDING_MODE === 'advanced' ||
-          PREFS_FROM_PARAM === 'upgrade'
-        ) {
-          if (user && user.email) {
-            markAdvancedOnboardingDone(user.email);
+        if (PREFS_ONBOARDING_MODE === 'advanced' || PREFS_FROM_PARAM === 'upgrade') {
+          const u = getLocalUserFromSessionOrStorage() || user;
+          if (u && u.email) {
+            markAdvancedOnboardingDone(u.email);
           }
         }
 
@@ -650,18 +935,10 @@ if (prefs.intent && qs('select[name="intent"]')) {
           step: 'prefs-saved',
           dest: 'dashboard'
         });
-        window.location.replace(
-          `/dashboard.html${qsStr ? `?${qsStr}` : ''}`
-        );
+        window.location.replace(`/dashboard.html${qsStr ? `?${qsStr}` : ''}`);
       } catch (submitErr) {
-        console.error(
-          '[prefs] unexpected submit error',
-          submitErr
-        );
-        toast(
-          'Something went wrong while saving. Please try again.',
-          'error'
-        );
+        console.error('[prefs] unexpected submit error', submitErr);
+        toast('Something went wrong while saving. Please try again.', 'error');
       } finally {
         hideLoader();
       }

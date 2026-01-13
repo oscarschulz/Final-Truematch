@@ -12,14 +12,13 @@
 
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="auth.css">
-  <link rel="stylesheet" href="preferences.css">
+  <link rel="stylesheet" href="preferences.css?v=6">
   <link rel="stylesheet" href="responsive.css">
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 
 <body class="tm-dark">
-
   <canvas id="tm-bg-canvas" aria-hidden="true"></canvas>
 
   <nav class="auth-top-nav">
@@ -27,7 +26,7 @@
       <img src="assets/images/truematch-mark.png" alt="Logo" />
       <span>iTRUEMATCH</span>
     </a>
-    
+
     <div class="nav-actions">
       <a href="auth.html?mode=login" class="nav-login-link">LOG IN</a>
       <a href="auth.html?mode=signup" class="nav-back-btn">
@@ -41,14 +40,19 @@
 
   <div class="split-layout">
     <div class="unified-card pref-card-override">
-      
+
+      <!-- LEFT: Timeline -->
       <div class="auth-visual-side pref-visual-side">
         <div class="timeline-wrapper">
           <h2 class="timeline-title">Setup Profile</h2>
-          
+
           <div class="timeline-track">
-            <div class="track-line" style="bottom: 40px;"></div> <div class="timeline-node done">
-              <div class="node-circle">✓</div>
+            <div class="track-line" style="bottom: 40px;"></div>
+
+            <div class="timeline-node done">
+              <div class="node-circle" aria-hidden="true">
+                <span class="node-icon">✓</span>
+              </div>
               <div class="node-text">
                 <h3>Account</h3>
                 <p>Credentials secure</p>
@@ -56,29 +60,68 @@
             </div>
 
             <div class="timeline-node active">
-              <div class="node-circle">2</div>
+              <div class="node-circle" aria-hidden="true">
+                <span class="node-icon">2</span>
+              </div>
               <div class="node-text">
                 <h3>Preferences</h3>
                 <p>Find your type</p>
               </div>
             </div>
+
           </div>
         </div>
       </div>
 
+      <!-- RIGHT: Form -->
       <div class="auth-form-side pref-form-side">
         <div class="form-scroll-container">
-          
+
           <div class="auth-header" style="margin-top: 20px;">
             <h1>Set your preferences</h1>
             <p>City, age range, and ethnicity.</p>
           </div>
 
           <form id="preferencesForm" autocomplete="on">
-            
-            <div class="input-group">
+
+            <!-- Your profile (required) -->
+            <div class="profile-section stagger-0">
+              <h3 class="section-label">Your profile</h3>
+
+              <div class="input-row stagger-2">
+                <div class="pref-group">
+                  <label class="static-label" for="profileAge">Your age</label>
+                  <input class="text-input" type="number" id="profileAge" name="profileAge" min="18" max="80" required placeholder="e.g. 27" inputmode="numeric" />
+                </div>
+
+                <div class="pref-group">
+                  <label class="static-label" for="profileCity">Your city</label>
+                  <input class="text-input" type="text" id="profileCity" name="profileCity" required placeholder="e.g. Manila" autocomplete="address-level2" />
+                </div>
+              </div>
+
+              <div class="avatar-upload">
+                <label class="static-label">Profile picture</label>
+
+                <div class="avatar-row">
+                  <div class="avatar-preview" id="avatarPreview" aria-hidden="true">
+                    <img id="avatarPreviewImg" alt="Profile picture preview" />
+                    <div class="avatar-placeholder" id="avatarPlaceholder">Upload</div>
+                  </div>
+
+                  <div class="avatar-actions">
+                    <input type="file" id="avatarFile" name="avatarFile" accept="image/*" />
+                    <label class="btn btn-secondary avatar-btn" for="avatarFile" id="avatarBtn">Choose photo</label>
+                    <div class="file-name" id="avatarFileName">No file chosen</div>
+                    <div class="hint">JPG/PNG. We&apos;ll auto-crop and compress.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="input-group stagger-1">
               <input type="text" id="city" name="city" required placeholder=" " />
-              <label for="city">City (e.g. Marbella)</label>
+              <label for="city">Preferred city (e.g. Marbella)</label>
             </div>
 
             <div class="input-row">
@@ -90,10 +133,10 @@
                   <input type="number" id="ageMax" name="ageMax" placeholder="80" value="35" min="18" max="80" required inputmode="numeric">
                 </div>
               </div>
-              
+
               <div class="pref-group">
-                 <label class="static-label">Ethnicity</label>
-                 <div class="select-wrapper">
+                <label class="static-label">Ethnicity</label>
+                <div class="select-wrapper">
                   <select id="ethnicity" name="ethnicity" required>
                     <option value="" disabled selected>Choose one</option>
                     <option value="african">African</option>
@@ -104,11 +147,11 @@
                     <option value="mixed">Mixed</option>
                     <option value="other">Other</option>
                   </select>
-                 </div>
+                </div>
               </div>
             </div>
 
-            <div class="pref-group">
+            <div class="pref-group stagger-3">
               <label class="static-label">Looking for</label>
               <div class="radio-cards">
                 <label class="radio-card">
@@ -123,46 +166,43 @@
             </div>
 
             <section id="advancedPrefsSection" class="advanced-section hidden" style="display:none;">
-              
               <div class="lock-overlay">
                 <span class="lock-icon">🔒</span>
                 <span>Advanced Filters (VIP)</span>
               </div>
 
               <div class="advanced-content">
-                  <h3 class="section-label">Advanced filters</h3>
-                  
-                  <div class="pref-group">
-                    <div class="select-wrapper">
-                      <select id="intent" name="intent">
-                        <option value="">No preference</option>
-                        <option value="long-term">Long-term relationship</option>
-                        <option value="short-term">Short-term / casual</option>
-                        <option value="open">Open to see what happens</option>
-                      </select>
-                    </div>
-                  </div>
+                <h3 class="section-label">Advanced filters</h3>
 
-                  <div class="pref-group">
-                    <textarea id="dealbreakers" name="dealbreakers" rows="3" placeholder="Habits, values or lifestyles you absolutely cannot accept."></textarea>
+                <div class="pref-group">
+                  <div class="select-wrapper">
+                    <select id="intent" name="intent">
+                      <option value="">No preference</option>
+                      <option value="long-term">Long-term relationship</option>
+                      <option value="short-term">Short-term / casual</option>
+                      <option value="open">Open to see what happens</option>
+                    </select>
                   </div>
+                </div>
 
-                  <div class="pref-field">
-                    <p class="static-label" style="margin-bottom:10px;">Shared values you care about</p>
-                    <div class="tags-group">
-                      <label><input type="checkbox" name="sharedValues" value="family"> Family-focused</label>
-                      <label><input type="checkbox" name="sharedValues" value="career"> Career & ambition</label>
-                      <label><input type="checkbox" name="sharedValues" value="faith"> Faith / spirituality</label>
-                      <label><input type="checkbox" name="sharedValues" value="fitness"> Health & fitness</label>
-                      <label><input type="checkbox" name="sharedValues" value="travel"> Travel & experiences</label>
-                    </div>
+                <div class="pref-group">
+                  <textarea id="dealbreakers" name="dealbreakers" rows="3" placeholder="Habits, values or lifestyles you absolutely cannot accept."></textarea>
+                </div>
+
+                <div class="pref-field">
+                  <p class="static-label" style="margin-bottom:10px;">Shared values you care about</p>
+                  <div class="tags-group">
+                    <label><input type="checkbox" name="sharedValues" value="family"> Family-focused</label>
+                    <label><input type="checkbox" name="sharedValues" value="career"> Career & ambition</label>
+                    <label><input type="checkbox" name="sharedValues" value="faith"> Faith / spirituality</label>
+                    <label><input type="checkbox" name="sharedValues" value="fitness"> Health & fitness</label>
+                    <label><input type="checkbox" name="sharedValues" value="travel"> Travel & experiences</label>
                   </div>
+                </div>
               </div>
             </section>
 
-            <button class="btn btn-primary" type="submit">
-              Save & Continue
-            </button>
+            <button class="btn btn-primary" type="submit">Save & Continue</button>
             <div style="height: 30px;"></div>
           </form>
 
@@ -207,8 +247,8 @@
           if (mouse.active) {
             const dx = p.x - mouse.x; const dy = p.y - mouse.y; const dist2 = dx * dx + dy * dy;
             if (dist2 < 48400 && dist2 > 0.001) {
-               const dist = Math.sqrt(dist2); const force = (1 - dist / 220) * 0.035;
-               p.vx += (dx / dist) * force; p.vy += (dy / dist) * force;
+              const dist = Math.sqrt(dist2); const force = (1 - dist / 220) * 0.035;
+              p.vx += (dx / dist) * force; p.vy += (dy / dist) * force;
             }
           }
           p.vx *= 0.985; p.vy *= 0.985;
@@ -238,6 +278,6 @@
   </script>
 
   <script src="tm-loader.js"></script>
-  <script type="module" src="preferences.js"></script>
+  <script type="module" src="preferences.js?v=3"></script>
 </body>
 </html>

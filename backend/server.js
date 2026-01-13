@@ -534,6 +534,8 @@ let admin;
 let firestore;
 let usersCollection;
 let hasFirebase = false;
+let storageBucket;
+let hasStorage = false;
 
 try {
   admin = require('firebase-admin');
@@ -548,13 +550,32 @@ try {
     serviceAccount = require('./firebase-service-account.json');
   }
 
+  const storageBucketName =
+    process.env.FIREBASE_STORAGE_BUCKET ||
+    (serviceAccount && serviceAccount.project_id
+      ? `${serviceAccount.project_id}.appspot.com`
+      : undefined);
+
   admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
+    credential: admin.credential.cert(serviceAccount),
+    ...(storageBucketName ? { storageBucket: storageBucketName } : {})
   });
 
   firestore = admin.firestore();
   usersCollection = firestore.collection('users');
   hasFirebase = true;
+
+  // Firebase Storage (for profile pictures)
+  try {
+    // Ensure storage module is registered (no-op if already)
+    try { require('firebase-admin/storage'); } catch {}
+    storageBucket = admin.storage().bucket();
+    hasStorage = true;
+    console.log(`✅ Firebase Storage enabled — bucket: ${storageBucket.name}`);
+  } catch (e) {
+    hasStorage = false;
+    console.warn('⚠️ Firebase Storage not configured. Avatar uploads will fail unless FIREBASE_STORAGE_BUCKET is set and Storage is enabled.');
+  }
 
   console.log('✅ Firebase initialized — using Firestore as database');
 } catch (err) {
@@ -661,6 +682,70 @@ async function updateUserByEmail(email, fields) {
   await usersCollection.doc(existing.id).update(fields);
   return { ...existing, ...fields };
 }
+
+
+async function uploadAvatarDataUrlToStorage(email, avatarDataUrl, prevAvatarPath) {
+  if (!hasFirebase || !admin) {
+    throw new Error('firebase not configured');
+  }
+  if (!hasStorage || !storageBucket) {
+    throw new Error('storage not configured');
+  }
+
+  const raw = String(avatarDataUrl || '');
+  const m = raw.match(/^data:(image\/[^;]+);base64,(.+)$/);
+  if (!m) {
+    throw new Error('invalid avatar data');
+  }
+
+  const mime = m[1];
+  const b64 = m[2];
+  const buf = Buffer.from(b64, 'base64');
+
+  // Safety: ~4MB decoded max (since request limit is 5mb)
+  const maxBytes = 4 * 1024 * 1024;
+  if (buf.length > maxBytes) {
+    throw new Error('avatar too large');
+  }
+
+  // Best-effort cleanup of previous file
+  if (prevAvatarPath) {
+    try {
+      await storageBucket.file(prevAvatarPath).delete({ ignoreNotFound: true });
+    } catch {}
+  }
+
+  const crypto = require('crypto');
+  const token = (crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex'));
+
+  const safeEmail = String(email || 'user')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '_');
+
+  const ext =
+    mime === 'image/png' ? 'png' :
+    (mime === 'image/webp' ? 'webp' : 'jpg');
+
+  const filePath = `avatars/${safeEmail}/${Date.now()}.${ext}`;
+  const file = storageBucket.file(filePath);
+
+  await file.save(buf, {
+    resumable: false,
+    contentType: mime,
+    metadata: {
+      metadata: {
+        firebaseStorageDownloadTokens: token
+      }
+    }
+  });
+
+  // Firebase-style download URL (works with download tokens)
+  const encoded = encodeURIComponent(filePath);
+  const url = `https://firebasestorage.googleapis.com/v0/b/${storageBucket.name}/o/${encoded}?alt=media&token=${token}`;
+
+  return { url, path: filePath };
+}
+
 
 // ---------- Shortlist & dates helpers (plan-based serving) ----------
 async function loadShortlistState(email) {
@@ -1461,7 +1546,7 @@ app.post('/api/me/profile', async (req, res) => {
     }
 
     // 1. Kunin LAHAT ng data galing sa request
-    let { name, email, password, avatarDataUrl, age, city } = req.body || {};
+    let { name, email, password, avatarDataUrl, avatarUrl, age, city, requireProfileCompletion } = req.body || {};
 
     // Basic sanitization
     name = (name || '').toString().trim();
@@ -1469,6 +1554,8 @@ app.post('/api/me/profile', async (req, res) => {
     city = (city || '').toString().trim();
     age = age ? Number(age) : null;
     avatarDataUrl = (avatarDataUrl || '').toString();
+    avatarUrl = (avatarUrl || '').toString();
+    requireProfileCompletion = !!requireProfileCompletion;
 
     // Validate Email
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -1483,7 +1570,79 @@ app.post('/api/me/profile', async (req, res) => {
     if (email) fields.email = email;
     if (age) fields.age = age;
     if (city) fields.city = city;
-    if (avatarDataUrl) fields.avatarUrl = avatarDataUrl;
+    // Avatar upload: prefer Firebase Storage
+    let newAvatarUrl = '';
+    let newAvatarPath = '';
+
+    // Fetch existing user doc (for existing avatar path/url) when Firebase is ON
+    let existingDoc = null;
+    if (hasFirebase && usersCollection) {
+      try {
+        existingDoc = await findUserByEmail(oldEmail);
+      } catch {}
+    }
+
+    const existingAvatarUrl =
+      (existingDoc && existingDoc.avatarUrl) ||
+      (DB.user && DB.user.avatarUrl) ||
+      '';
+
+    const existingAvatarPath =
+      (existingDoc && existingDoc.avatarPath) ||
+      (DB.user && DB.user.avatarPath) ||
+      '';
+
+    // Onboarding validation (required fields)
+    if (requireProfileCompletion) {
+      if (!age || !Number.isFinite(age) || age < 18 || age > 80) {
+        return res.status(400).json({ ok: false, message: 'invalid age' });
+      }
+      if (!city || city.trim().length < 2) {
+        return res.status(400).json({ ok: false, message: 'invalid city' });
+      }
+      const hasAvatarAlready = !!existingAvatarUrl;
+      const hasNewAvatar = !!avatarDataUrl;
+      if (!hasAvatarAlready && !hasNewAvatar) {
+        return res.status(400).json({ ok: false, message: 'profile picture required' });
+      }
+    }
+
+    if (avatarDataUrl) {
+      if (hasFirebase) {
+        // Firebase mode: store file in Firebase Storage
+        try {
+          const up = await uploadAvatarDataUrlToStorage(
+            (email || oldEmail),
+            avatarDataUrl,
+            existingAvatarPath
+          );
+          newAvatarUrl = up.url;
+          newAvatarPath = up.path;
+          fields.avatarUrl = newAvatarUrl;
+          fields.avatarPath = newAvatarPath;
+          fields.avatarUpdatedAt = new Date().toISOString();
+        } catch (e) {
+          console.error('avatar upload failed:', e);
+          return res.status(500).json({
+            ok: false,
+            message:
+              e && e.message === 'storage not configured'
+                ? 'Firebase Storage not configured. Set FIREBASE_STORAGE_BUCKET and enable Storage.'
+                : 'Failed to upload profile picture.'
+          });
+        }
+      } else {
+        // Demo mode: store data URL directly
+        fields.avatarUrl = avatarDataUrl;
+      }
+    } else if (avatarUrl) {
+      // Accept direct avatarUrl updates (optional)
+      fields.avatarUrl = avatarUrl;
+    }
+    // (store download URL in Firestore)
+    // If avatarDataUrl is provided, we upload it; otherwise we keep existing avatarUrl.
+    // Note: For onboarding completion, avatar must exist (new upload or existing).
+
 
     // Handle Password Update (Only if provided)
     if (password && password.trim().length > 0) {

@@ -5,7 +5,7 @@
 import { getLocalPlan, saveLocalUser, clearSession } from './tm-session.js';
 import { apiGet, apiPost, apiUpdateProfile, apiSavePrefs } from './tm-api.js';
 
-const DEV_MODE = true; 
+const DEV_MODE = (new URLSearchParams(location.search).get('mock') === '1'); 
 const DAILY_SWIPE_LIMIT = 20; 
 
 function getMockUser() {
