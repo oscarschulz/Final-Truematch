@@ -436,7 +436,40 @@
       await ensureVerifiedBeforeContinue(email, sendOut);
       return;
     }
-    gotoPreferences();
+
+    // One-time onboarding: only send users to preferences if they have not saved prefs yet.
+    // After onboarding, future logins should go straight to dashboard (or an allowed return URL).
+    const nextUrl = getSafeNextUrl();
+    const prefsSaved = !!(
+      me.user.prefsSaved ||
+      me.prefs ||
+      me.user.preferences ||
+      me.user.prefs
+    );
+
+    if (!prefsSaved) {
+      const usp = new URLSearchParams();
+      usp.set('onboarding', '1');
+      usp.set('return', nextUrl || 'dashboard.html');
+
+      // Preserve any helpful context for onboarding.
+      try {
+        const src = new URLSearchParams(location.search);
+        for (const k of ['plan','within','from']) {
+          const v = src.get(k);
+          if (v) usp.set(k, v);
+        }
+      } catch {}
+
+      window.location.href = `preferences.html?${usp.toString()}`;
+      return;
+    }
+
+    if (nextUrl) {
+      window.location.href = nextUrl;
+    } else {
+      window.location.href = 'dashboard.html';
+    }
   }
 
   whenReady(() => {

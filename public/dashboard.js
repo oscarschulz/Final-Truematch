@@ -5,7 +5,7 @@
 import { getLocalPlan, saveLocalUser, clearSession } from './tm-session.js';
 import { apiGet, apiPost, apiUpdateProfile, apiSavePrefs } from './tm-api.js';
 
-const DEV_MODE = (new URLSearchParams(window.location.search).get('demo') === '1'); 
+const DEV_MODE = true; 
 const DAILY_SWIPE_LIMIT = 20; 
 
 function getMockUser() {
@@ -17,22 +17,13 @@ function getMockUser() {
 }
 
 const state = { me: null, prefs: null, plan: 'free', activeTab: 'home', isLoading: false };
-
-// Read the last known user from localStorage (saved on login/signup)
-function safeGetLocalUser() {
-  try {
-    return JSON.parse(localStorage.getItem('tm_user') || 'null');
-  } catch (_) {
-    return null;
-  }
-}
-
 const DOM = {};
 
 function cacheDom() {
   DOM.tabs = document.querySelectorAll('.nav-btn');
   DOM.panels = document.querySelectorAll('.panel[data-panel]');
   DOM.btnLogout = document.getElementById('btn-logout');
+  DOM.btnLogoutMobile = document.getElementById('btn-logout-mobile');
   // NOTE: keep backward-compat if IDs change. Current dashboard.html uses:
   //  - #welcomeName
   //  - #planPill
@@ -148,8 +139,7 @@ async function initApp() {
   cacheDom();
   await loadMe();
   SwipeController.init();
-  if (DEV_MODE) populateMockContent();
-  else renderHomeEmptyStates();
+  populateMockContent();
   setupEventListeners();
   updateSwipeStats(DAILY_SWIPE_LIMIT, DAILY_SWIPE_LIMIT); 
 }
@@ -218,14 +208,15 @@ function setupEventListeners() {
       DOM.btnCloseChat.addEventListener('click', () => DOM.dlgChat.close());
   }
 
-  if (DOM.btnLogout) {
-    DOM.btnLogout.addEventListener('click', (e) => {
-      e.preventDefault();
-      clearSession();
-      sessionStorage.clear();
-      window.location.href = 'index.html'; 
-    });
-  }
+  const doLogout = (e) => {
+    if (e) e.preventDefault();
+    clearSession();
+    sessionStorage.clear();
+    window.location.href = 'index.html';
+  };
+
+  if (DOM.btnLogout) DOM.btnLogout.addEventListener('click', doLogout);
+  if (DOM.btnLogoutMobile) DOM.btnLogoutMobile.addEventListener('click', doLogout);
 
   if (DOM.btnEditProfile) {
     DOM.btnEditProfile.addEventListener('click', () => {
@@ -242,17 +233,8 @@ function setupEventListeners() {
   if (DOM.btnCloseCreatorApply) DOM.btnCloseCreatorApply.addEventListener('click', () => DOM.dlgCreatorApply.close());
   
   const openPremium = (e) => {
-      // Sidebar "Upgrade Now" should route to the upgrade flow (tier selector)
-      if (e && e.currentTarget && e.currentTarget.id === 'btnSidebarSubscribe') {
-          window.location.href = './tier.html?upgrade=1';
-          return;
-      }
-
-      if (e) {
-          e.preventDefault();
-          e.stopPropagation();
-      }
-      if (DOM.dlgPremiumApply) DOM.dlgPremiumApply.showModal();
+      if(e) e.preventDefault();
+      if(DOM.dlgPremiumApply) DOM.dlgPremiumApply.showModal();
   };
   if (DOM.btnOpenPremiumApply) DOM.btnOpenPremiumApply.addEventListener('click', openPremium);
   if (DOM.btnPremiumCancel) DOM.btnPremiumCancel.addEventListener('click', () => DOM.dlgPremiumApply.close());
@@ -491,33 +473,6 @@ function populateMockContent() {
   }
 }
 
-function renderHomeEmptyStates() {
-  // If backend endpoints are not wired yet, keep the dashboard honest: show empty states.
-  if (DOM.admirerCount) DOM.admirerCount.textContent = '0 New';
-
-  if (DOM.admirerContainer) {
-    const hasRows = DOM.admirerContainer.querySelector('.admirer-row');
-    if (!hasRows) {
-      DOM.admirerContainer.innerHTML = "<div class='tiny muted' style='padding:12px 2px;'>No likes yet. When someone likes you, they’ll appear here.</div>";
-    }
-  }
-
-  if (DOM.activeNearbyContainer) {
-    const hasActive = DOM.activeNearbyContainer.querySelector('.active-item');
-    if (!hasActive) {
-      DOM.activeNearbyContainer.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
-    }
-  }
-
-  if (DOM.storiesContainer) {
-    // Keep the tray minimal (no fake names)
-    const hasStories = DOM.storiesContainer.querySelector('.story-item');
-    if (!hasStories) {
-      DOM.storiesContainer.innerHTML = "<div class='story-item action'><div class='story-ring ring-add'><i class='fa-solid fa-plus'></i></div><span class='story-name'>Add</span></div>";
-    }
-  }
-}
-
 async function loadMe() {
   try {
     let user, prefs;
@@ -527,26 +482,11 @@ async function loadMe() {
       prefs = { city: 'New York', ageMin: 21, ageMax: 35, ethnicity: 'any', lookingFor: ['women'] };
     } else {
       const data = await apiGet('/api/me');
-      const local = safeGetLocalUser();
-
       if (!data || !data.ok || !data.user) {
-        // No active session (or backend not reachable)
-        if (local && (local.email || local.name)) {
-          user = local;
-          prefs = {};
-        } else {
-          window.location.href = 'auth.html?mode=login';
-          return;
-        }
+        user = getMockUser(); 
       } else {
-        user = data.user;
-        prefs = data.prefs || user.preferences || {};
-
-        // Fill any missing identity fields from local cache (prevents 'Member' fallback)
-        if (local) {
-          if (!user.name && local.name) user.name = local.name;
-          if (!user.email && local.email) user.email = local.email;
-        }
+          user = data.user;
+          prefs = data.prefs || user.preferences || {};
       }
     }
 
@@ -571,7 +511,6 @@ function renderHome(user) {
       user?.fullName ||
       user?.firstName ||
       user?.username ||
-      safeGetLocalUser()?.name ||
       '';
     DOM.homeWelcomeName.textContent = displayName.trim() || 'Member';
   }
