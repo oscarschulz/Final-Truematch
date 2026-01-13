@@ -72,6 +72,49 @@ app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 
 app.use(cookieParser());
+// =========================
+// Public vs protected HTML gating (Variant B)
+// =========================
+const PUBLIC_HTML = new Set(['/', '/index.html', '/auth.html', '/plan-select.html']);
+const PROTECTED_HTML = new Set([
+  '/dashboard.html',
+  '/preferences.html',
+  '/tier.html',
+  '/pay.html',
+  '/plan.html',
+  '/creators.html',
+  '/premium-society.html',
+]);
+
+function hasSessionCookie(req) {
+  try {
+    const v = req.cookies && req.cookies.tm_email;
+    if (!v) return false;
+    const email = String(v).trim().toLowerCase();
+    return email.includes('@') && email.length <= 320;
+  } catch (e) {
+    return false;
+  }
+}
+
+app.use((req, res, next) => {
+  if (req.method !== 'GET') return next();
+  const p = req.path;
+
+  if (PUBLIC_HTML.has(p)) return next();
+  if (!PROTECTED_HTML.has(p)) return next();
+
+  if (hasSessionCookie(req)) return next();
+
+  const nextPath = encodeURIComponent(p + (req.url.includes('?') ? ('?' + req.url.split('?')[1]) : ''));
+  return res.redirect(`/auth.html?mode=login&next=${nextPath}`);
+});
+
+// Serve frontend and assets (after gating)
+app.use(express.static(path.join(__dirname, '../public')));
+app.use('/public', express.static(path.join(__dirname, '../public')));
+
+
 // static files
 
 // ---------------- In-memory "DB" (demo + cache) ----------------

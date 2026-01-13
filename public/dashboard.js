@@ -5,7 +5,8 @@
 import { getLocalPlan, saveLocalUser, clearSession } from './tm-session.js';
 import { apiGet, apiPost, apiUpdateProfile, apiSavePrefs } from './tm-api.js';
 
-const DEV_MODE = (new URLSearchParams(location.search).get('mock') === '1'); 
+const DEV_MODE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+  && new URLSearchParams(location.search).get('demo') === '1'; 
 const DAILY_SWIPE_LIMIT = 20; 
 
 function getMockUser() {
@@ -477,7 +478,9 @@ async function loadMe() {
     } else {
       const data = await apiGet('/api/me');
       if (!data || !data.ok || !data.user) {
-        user = getMockUser(); 
+        const next = encodeURIComponent(location.pathname + location.search);
+        window.location.replace(`/auth.html?mode=login&next=${next}`);
+        return;
       } else {
           user = data.user;
           prefs = data.prefs || user.preferences || {};

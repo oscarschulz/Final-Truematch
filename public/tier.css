@@ -1,0 +1,111 @@
+/* tier.css — compact card height + hover effects
+   Ensure this file is loaded AFTER the inline <style> inside tier.html.
+*/
+
+/* 1) Reduce overall vertical stretch so cards don't become tall */
+.pricing-grid {
+  max-width: 1060px !important;
+  gap: 0.9rem !important;
+  height: auto !important;
+  max-height: none !important;
+  align-items: start !important;
+}
+
+/* 2) Make each card "content height" (no forced 100% height / space-between) */
+.price-card {
+  height: auto !important;
+  min-height: 0 !important;
+  align-self: start !important;
+  justify-content: flex-start !important;
+  padding: 1.05rem 0.95rem !important;
+  border-radius: 16px !important;
+
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, filter 180ms ease;
+}
+
+/* 3) Tighten inner spacing */
+.price__tag {
+  padding: 3px 10px !important;
+  font-size: 0.70rem !important;
+  margin-bottom: 0.6rem !important;
+}
+
+.price {
+  font-size: 1.65rem !important;
+  margin-bottom: 0.45rem !important;
+}
+
+.price__desc {
+  font-size: 0.80rem !important;
+  margin-bottom: 0.8rem !important;
+  min-height: 0 !important;
+}
+
+.price__list {
+  margin: 0.65rem 0 0.95rem !important;
+}
+
+.price__list li {
+  font-size: 0.78rem !important;
+  margin-bottom: 0.45rem !important;
+}
+
+/* Button sits closer (no huge "push to bottom") */
+.btn-select {
+  margin-top: 0.85rem !important;
+  padding: 0.72rem 0.85rem !important;
+  font-size: 0.80rem !important;
+  border-radius: 999px !important;
+}
+
+/* 4) Hover / focus effects (clean + tier-colored glow) */
+.price-card:hover {
+  transform: translateY(-8px) scale(1.01);
+  filter: brightness(1.07);
+}
+
+.price-card:focus-within {
+  transform: translateY(-6px) scale(1.01);
+  filter: brightness(1.06);
+}
+
+.price-card[data-tier="free"]:hover,
+.price-card[data-tier="free"]:focus-within {
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.55), 0 0 22px rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.22) !important;
+}
+
+.price-card[data-tier="plus"]:hover,
+.price-card[data-tier="plus"]:focus-within {
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.55), 0 0 28px rgba(100, 233, 238, 0.22);
+  border-color: rgba(100, 233, 238, 0.45) !important;
+}
+
+.price-card[data-tier="elite"]:hover,
+.price-card[data-tier="elite"]:focus-within {
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.55), 0 0 28px rgba(152, 85, 220, 0.22);
+  border-color: rgba(152, 85, 220, 0.45) !important;
+}
+
+.price-card[data-tier="concierge"]:hover,
+.price-card[data-tier="concierge"]:focus-within {
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.55), 0 0 28px rgba(255, 215, 0, 0.22);
+  border-color: rgba(255, 215, 0, 0.55) !important;
+}
+
+/* Optional: reduce card width a touch on smaller screens */
+@media (max-width: 1200px) {
+  .pricing-grid {
+    max-width: 980px !important;
+  }
+}
+
+@media (max-width: 1024px) {
+  .pricing-grid {
+    max-width: 920px !important;
+    gap: 0.8rem !important;
+  }
+  .price-card {
+    padding: 1.0rem 0.9rem !important;
+  }
+}

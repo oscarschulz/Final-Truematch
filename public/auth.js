@@ -26,7 +26,21 @@
     else u.searchParams.set(k, String(v));
     history.replaceState({}, "", u.toString());
   }
+  function getSafeNextUrl() {
+    const raw = getParam('next') || getParam('return');
+    if (!raw) return null;
 
+    let next;
+    try { next = decodeURIComponent(raw); } catch (e) { next = raw; }
+
+    const lowered = (next || '').trim().toLowerCase();
+    if (!next) return null;
+    if (lowered.startsWith('http://') || lowered.startsWith('https://') || lowered.startsWith('javascript:')) return null;
+    if (next.startsWith('//')) return null;
+
+    if (next.startsWith('/')) return next;
+    return '/' + next.replace(/^(\.\/)+/, '').replace(/^\/+/, '');
+  }
   const whenReady = (fn) => {
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", fn, { once: true });
@@ -230,53 +244,17 @@
     return q;
   }
 
-  function gotoPreferences(extraQuery) {
-    const current = new URLSearchParams(location.search);
-    const q = new URLSearchParams();
-    if (current.get("demo")) q.set("demo", current.get("demo"));
-    if (current.get("prePlan")) q.set("prePlan", current.get("prePlan"));
-    const merged = mergeExtraParams(q.toString(), extraQuery);
-    merged.set("onboarding", "1");
-    location.replace(`/preferences.html${merged.toString() ? `?${merged.toString()}` : ""}`);
-  }
-
-  function isSignupMode() {
-    const mode = (getParam("mode") || "login").toLowerCase();
-    return mode === "signup" || mode === "register";
-  }
-
-  function sanitizeReturnUrl(returnRaw) {
-    if (!returnRaw) return null;
-    const raw = String(returnRaw).trim();
-    if (!raw) return null;
-
-    // Block external URLs / schemes
-    if (/^(https?:)?\/\//i.test(raw)) return null;
-    if (/^javascript:/i.test(raw)) return null;
-
-    try {
-      const u = new URL(raw, window.location.origin);
-      if (u.origin !== window.location.origin) return null;
-
-      // Allow only local HTML pages
-      if (!u.pathname.endsWith(".html")) return null;
-
-      // Prevent loops back into auth
-      if (u.pathname.endsWith("/auth.html")) return null;
-
-      return `${u.pathname}${u.search}${u.hash}`;
-    } catch {
-      return null;
-    }
-  }
-
-  function gotoReturnOrPreferences(extraQuery) {
-    const safe = sanitizeReturnUrl(getParam("return"));
-    if (safe && !isSignupMode()) {
-      location.replace(safe);
+    function gotoPreferences(extraQuery) {
+    const nextUrl = getSafeNextUrl();
+    if (nextUrl) {
+      if (extraQuery && !nextUrl.includes('?')) {
+        window.location.replace(nextUrl + (extraQuery.startsWith('?') ? extraQuery : ('?' + extraQuery)));
+      } else {
+        window.location.replace(nextUrl);
+      }
       return;
     }
-    gotoPreferences(extraQuery);
+    window.location.replace('/preferences.html' + (extraQuery || ''));
   }
 
   function setActiveTab(mode) {
@@ -414,7 +392,7 @@
           safeDialogClose(dlg);
           const extra = new URLSearchParams(location.search);
           extra.delete("verify");
-          gotoReturnOrPreferences(extra.toString());
+          gotoPreferences(extra.toString());
         } catch { if (msg) msg.textContent = "Verification failed."; }
         try { tmHideLoader(); } catch {}
       });
@@ -458,7 +436,7 @@
       await ensureVerifiedBeforeContinue(email, sendOut);
       return;
     }
-    gotoReturnOrPreferences();
+    gotoPreferences();
   }
 
   whenReady(() => {

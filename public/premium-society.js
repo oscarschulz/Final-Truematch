@@ -208,8 +208,9 @@ async function refreshStatus() {
     const res = await apiGet('/api/me');
     if(DOM.globalLoader) DOM.globalLoader.hidden = true;
 
-    if (!res?.ok) {
-      setSidebarAccess('locked');
+    if (!res || !res.ok || !res.user || !res.user.email) {
+      const next = encodeURIComponent(location.pathname + location.search);
+      window.location.replace(`/auth.html?mode=login&next=${next}`);
       return;
     }
 

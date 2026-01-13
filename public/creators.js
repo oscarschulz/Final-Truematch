@@ -32,7 +32,13 @@ async function init() {
 async function checkAccess() {
   try {
     const res = await apiGet('/api/me');
-    if (res.ok && res.user && res.user.hasCreatorAccess) {
+    if (!res || !res.ok || !res.user || !res.user.email) {
+      const next = encodeURIComponent(location.pathname + location.search);
+      window.location.replace(`/auth.html?mode=login&next=${next}`);
+      return;
+    }
+
+    if (res.user.hasCreatorAccess) {
       // IF UNLOCKED:
       if (DOM.feed) DOM.feed.hidden = false;
       if (DOM.denied) DOM.denied.hidden = true;

@@ -660,9 +660,8 @@ if (prefs.intent && qs('select[name="intent"]')) {
     const api = ensureApiClient();
     let localUser = getLocalUserFromSessionOrStorage();
 
-    if (!localUser) {
-      localUser = ensureDemoOrLocalUser();
-    }
+    // Do NOT auto-create demo users here.
+    // If there is no valid session/user, the redirect-to-auth logic below will handle it.
 
     try {
       const userFromSession = getLocalUserFromSessionOrStorage();

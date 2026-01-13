@@ -198,12 +198,6 @@
     })();
   </script>
   
-  <script type="module">
-  import { requireAuthOrRedirect } from './tm-guard.js';
-  const me = await requireAuthOrRedirect({ returnTo: window.location.pathname + window.location.search });
-  if (me) {
-    await import('./dashboard.js');
-  }
-</script>
+  <script type="module" src="dashboard.js"></script>
 </body>
 </html>

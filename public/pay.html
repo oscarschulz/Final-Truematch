@@ -500,12 +500,6 @@
   })();
   </script>
 
-  <script type="module">
-  import { requireAuthOrRedirect } from './tm-guard.js';
-  const me = await requireAuthOrRedirect({ returnTo: window.location.pathname + window.location.search });
-  if (me) {
-    await import('./pay.js');
-  }
-</script>
+  <script src="/pay.js" type="module"></script>
 </body>
 </html>

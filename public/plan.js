@@ -51,6 +51,13 @@ function hideLoader() {
   showLoader();
   try {
     const res = await apiGet('/api/me');
+
+    if (!res || !res.ok || !res.user || !res.user.email) {
+      const next = encodeURIComponent(location.pathname + location.search);
+      window.location.replace(`/auth.html?mode=login&next=${next}`);
+      return;
+    }
+
     if (!res) {
       console.warn('[TM] /api/me returned empty response on plan page');
     }

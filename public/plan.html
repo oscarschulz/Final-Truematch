@@ -494,12 +494,6 @@
   </script>
 
   <script src="./tm-loader.js"></script>
-  <script type="module">
-  import { requireAuthOrRedirect } from './tm-guard.js';
-  const me = await requireAuthOrRedirect({ returnTo: window.location.pathname + window.location.search });
-  if (me) {
-    await import('./plan.js');
-  }
-</script>
+  <script type="module" src="plan.js"></script>
 </body>
 </html>
