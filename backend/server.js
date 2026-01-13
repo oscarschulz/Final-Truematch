@@ -356,37 +356,50 @@ function setAnonState() {
 }
 
 // Attach session user to this request (so /api/me and other routes read the right user)
-app.use((req, _res, next) => {
+app.use(async (req, res, next) => {
   const email = getSessionEmail(req);
   if (!email) {
     setAnonState();
     return next();
   }
-  // hydrate from cache (per-email); never carry plan/prefs from previous user
-  if (DB.users[email]) {
-    DB.user = { ...DB.users[email] };
-  } else {
-    DB.user = {
-      id: 'demo-1',
-      email,
-      name: '',
-      city: '—',
-      plan: null,
-      planStart: null,
-      planEnd: null,
-      avatarUrl: '',
-      prefsSaved: false,
-      planActive: false,
-      emailVerified: false
-    };
+
+  let user = DB.users[email] || null;
+
+  // If we don't have the user in the in-memory cache but Firebase is configured,
+  // fetch the account from Firestore so the dashboard can still resolve name/plan
+  // after server restarts / redeploys.
+  if (!user && typeof hasFirebase !== 'undefined' && hasFirebase && typeof findUserByEmail === 'function') {
+    try {
+      const found = await findUserByEmail(email);
+      if (found) {
+        user = found;
+        DB.users[email] = found;
+      }
+    } catch (e) {
+      console.log('[Session] Firestore lookup failed:', e?.message || e);
+    }
   }
+
+  // Invalid cookie or missing account -> clear session and treat as signed out.
+  if (!user) {
+    try { clearSession(res); } catch (_) {}
+    setAnonState();
+    return next();
+  }
+
+  // hydrate from cache (per-email); never carry plan/prefs from previous user
+  DB.user = { ...user };
 
   // load per-email prefs map (not the global DB.prefs)
   if (Object.prototype.hasOwnProperty.call(DB.prefsByEmail, email)) {
     DB.prefs = DB.prefsByEmail[email];
+  } else if (DB.user && DB.user.prefs) {
+    DB.prefs = DB.user.prefs;
+    DB.prefsByEmail[email] = DB.user.prefs;
   } else {
     DB.prefs = null;
   }
+
   return next();
 });
 // ============================================================
