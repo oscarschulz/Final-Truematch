@@ -6,16 +6,25 @@
   <title>iTrueMatch — Dashboard</title>
   <link rel="icon" href="assets/images/truematch-mark.png" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
   <link rel="stylesheet" href="dashboard.css" />
+  <link rel="stylesheet" href="responsive.css" />
+  
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 
 <body class="tm-dark">
   
+  <div id="app-loader">
+      <img src="assets/images/truematch-mark.png" class="loader-logo" alt="Loading...">
+      <div class="loader-text">iTrueMatch</div>
+  </div>
+
   <canvas id="tm-bg-canvas"></canvas>
 
-  <div class="layout">
+  <div class="layout" id="mainLayout">
     
-    <aside class="sidebar">
+    <aside class="sidebar animate-enter delay-1" id="mainSidebar">
       <div>
         <a class="brand" href="dashboard.html">
           <img src="assets/images/truematch-mark.png" class="brand__logo" alt="Logo" />
@@ -23,16 +32,12 @@
         </a>
         <nav class="nav-links" id="tabbar">
           <button class="nav-btn is-active" data-panel="home"><i class="fa-solid fa-house"></i> <span>Home</span></button>
-          <button class="nav-btn" data-panel="swipe">
-            <i class="fa-solid fa-layer-group"></i> <span>Swipe</span>
-            <span class="nav-badge">12</span>
-          </button>
+          <button class="nav-btn" data-panel="swipe"><i class="fa-solid fa-layer-group"></i> <span>Swipe</span></button>
           <button class="nav-btn" data-panel="matches"><i class="fa-solid fa-comments"></i> <span>Matches</span></button>
           <button class="nav-btn" data-panel="shortlist"><i class="fa-solid fa-list-check"></i> <span>Shortlist</span></button>
           <button class="nav-btn" data-panel="creators"><i class="fa-solid fa-fire"></i> <span>Creators</span></button>
           <button class="nav-btn" data-panel="premium"><i class="fa-solid fa-gem"></i> <span>Premium</span></button>
           <button class="nav-btn" data-panel="settings"><i class="fa-solid fa-gear"></i> <span>Settings</span></button>
-          <!-- Mobile-only logout (desktop keeps the footer logout) -->
           <button class="nav-btn logout-btn-mobile" id="btn-logout-mobile" title="Logout">
             <i class="fa-solid fa-right-from-bracket"></i> <span>Logout</span>
           </button>
@@ -43,25 +48,21 @@
       </div>
     </aside>
 
-    <main class="main-feed">
+    <main class="main-feed animate-enter delay-2">
       
       <section class="panel is-active" data-panel="home" id="panel-home">
         <div class="home-top-bar glass-card">
           <div class="greeting-box">
             <h2 style="margin:0; font-size:1.4rem;">Hello, <span id="homeWelcomeName" style="color:#00aff0;">Member</span> 👋</h2>
-            <p class="tiny muted" id="homePlanSummary" style="margin:0;">Status loading...</p>
+            <p class="tiny muted" id="homePlanSummary" style="margin:0;">Loading status...</p>
           </div>
           <div class="notif-icon-box" id="btnNotifToggle">
              <i class="fa-solid fa-bell"></i>
-             <span class="notif-dot"></span>
+             <span class="notif-dot" id="notifDot" style="display:none;"></span>
              <div class="notif-dropdown" id="notifDropdown">
                 <div class="notif-header">Notifications</div>
-                <div class="notif-list">
-                    <div class="notif-item unread">
-                        <div class="notif-icon"><i class="fa-solid fa-heart"></i></div>
-                        <div class="notif-text"><strong>Jessica</strong> liked you.<br><span class="tiny">2m ago</span></div>
+                <div class="notif-list" id="notifList">
                     </div>
-                </div>
                 <div class="notif-footer">Mark all read</div>
              </div>
           </div>
@@ -86,13 +87,13 @@
             <h3>That's everyone!</h3>
             <button class="btn btn--primary" id="btnRefreshSwipe">Refresh</button>
           </div>
-          <div class="swipe-stack" id="swipeStack"></div>
+          <div class="swipe-stack" id="swipeStack">
+              </div>
           <div class="swipe-controls" id="swipeControls">
             <button id="btnSwipePass" class="btn-round btn-round--pass"><i class="fa-solid fa-xmark"></i></button>
             <button id="btnSwipeSuper" class="btn-round btn-round--super"><i class="fa-solid fa-star"></i></button>
             <button id="btnSwipeLike" class="btn-round btn-round--like"><i class="fa-solid fa-heart"></i></button>
           </div>
-          <p class="tiny muted" style="margin-top:15px; opacity:0.6;">Use <i class="fa-solid fa-arrow-left"></i> <i class="fa-solid fa-arrow-right"></i> keys</p>
         </div>
       </section>
 
@@ -101,28 +102,86 @@
         <div style="padding: 10px 0;">
             <input type="text" class="tm-input" placeholder="Search matches..." style="background:rgba(255,255,255,0.05); border-radius:99px; padding-left:20px;">
         </div>
-
         <h3 class="section-title" style="margin-top:10px;">New Matches <span class="badge-pill bg-gold" id="newMatchCount">0</span></h3>
         <div class="stories-rail-container" style="margin-bottom: 20px;">
             <div class="stories-scroll left-align" id="newMatchesRail"></div>
         </div>
-
         <h3 class="section-title">Messages</h3>
-        <div id="matchesContainer" class="matches-grid"></div>
+        <div id="matchesContainer" class="matches-grid">
+             </div>
       </section>
 
-      <section class="panel" data-panel="shortlist" id="panel-shortlist"><div class="feed-header">Shortlist</div></section>
-      <section class="panel" data-panel="creators"><div class="feed-header">Creators</div><div class="glass-card"><div id="creatorStateNone"><h3>Become a Creator</h3><p class="muted">Share content and earn.</p><button class="btn btn--primary" id="btnOpenCreatorApply">Apply Now</button></div></div></section>
-      <section class="panel" data-panel="premium"><div class="feed-header">Premium</div><div class="glass-card" style="text-align:center; padding:30px;"><i class="fa-solid fa-gem" style="font-size:3rem; color:#64E9EE; margin-bottom:15px;"></i><h3>Premium Society</h3><div id="premiumStateNone"><button class="btn btn--primary" id="btnOpenPremiumApplyMain">Apply for Access</button></div></div></section>
-      <section class="panel" data-panel="settings"><div class="feed-header">Settings</div><div class="glass-card"><div class="settings-header"><div class="settings-avatar"><img id="sAvatar" src="assets/images/truematch-mark.png" alt="Avatar"></div><div class="settings-text-col"><h3 id="sNameDisplay">Member</h3><p id="sEmailDisplay" class="muted tiny">...</p></div><button id="btnEditProfile" class="btn btn--ghost btn--sm">Edit</button></div><div class="settings-grid"><div class="settings-row"><span class="muted">City</span><span id="dispCity">-</span></div><div class="settings-row"><span class="muted">Age</span><span id="dispAge">-</span></div><div class="settings-row"><span class="muted">Looking For</span><span id="dispLooking">-</span></div></div><div style="margin-top:20px;"><button id="btnChangePassword" class="btn btn--ghost btn--sm">Password</button></div></div></section>
+      <section class="panel" data-panel="shortlist" id="panel-shortlist">
+          <div class="feed-header">Shortlist</div>
+      </section>
+
+      <section class="panel" data-panel="creators" id="panel-creators">
+          <div class="feed-header">Creators</div>
+      </section>
+
+      <section class="panel" data-panel="premium" id="panel-premium">
+          <div class="feed-header">Premium</div>
+      </section>
+
+      <section class="panel" data-panel="settings" id="panel-settings">
+          <div class="feed-header">Settings</div>
+          <div class="glass-card">
+              <div class="settings-header">
+                  <div class="settings-avatar"><img id="sAvatar" src="assets/images/truematch-mark.png" alt="Avatar"></div>
+                  <div class="settings-text-col">
+                      <h3 id="sNameDisplay">Member</h3>
+                      <p id="sEmailDisplay" class="muted tiny">...</p>
+                  </div>
+                  <button id="btnEditProfile" class="btn btn--ghost btn--sm">Edit</button>
+              </div>
+
+              <div class="settings-group">
+                  <h4>Profile Info</h4>
+                  <div class="settings-list">
+                      <div class="settings-item">
+                          <span class="settings-label"><i class="fa-solid fa-location-dot"></i> City</span>
+                          <span class="settings-value" id="dispCity">-</span>
+                      </div>
+                      <div class="settings-item">
+                          <span class="settings-label"><i class="fa-solid fa-calendar"></i> Age</span>
+                          <span class="settings-value" id="dispAge">-</span>
+                      </div>
+                  </div>
+              </div>
+              
+              <div class="settings-group">
+                  <h4>Discovery</h4>
+                  <div class="settings-list">
+                      <div class="settings-item">
+                          <span class="settings-label"><i class="fa-solid fa-heart"></i> Looking For</span>
+                          <span class="settings-value" id="dispLooking">-</span>
+                      </div>
+                      <div class="settings-item">
+                          <span class="settings-label"><i class="fa-solid fa-map-pin"></i> Distance</span>
+                          <span class="settings-value">50 km</span>
+                      </div>
+                  </div>
+              </div>
+
+              <div class="settings-group">
+                  <h4>Account</h4>
+                  <div class="settings-list">
+                      <div class="settings-item" style="cursor:pointer;" id="btnChangePassword">
+                          <span class="settings-label"><i class="fa-solid fa-lock"></i> Password</span>
+                          <span class="settings-value"><i class="fa-solid fa-chevron-right"></i></span>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      </section>
     </main>
 
-    <aside class="right-sidebar">
+    <aside class="right-sidebar animate-enter delay-3">
       <div class="search-box"><i class="fa-solid fa-magnifying-glass"></i> Search...</div>
       <div class="glass-card stats-widget">
         <div class="home-card-header"><h3 style="margin:0;">Swipes Left</h3></div>
         <div data-kpi="remaining" style="text-align:center; padding: 15px 0;">
-          <div class="progress-ring"><svg width="100" height="100"><circle class="bg" cx="50" cy="50" r="40"></circle><circle class="fg" id="statsRingCircle" cx="50" cy="50" r="40" style="stroke-dasharray: 251; stroke-dashoffset: 0;"></circle></svg><div class="progress-text"><h2 id="statsCountDisplay" style="font-size:1.8rem; margin:0;">20</h2></div></div>
+          <div class="progress-ring"><svg width="100" height="100"><circle class="bg" cx="50" cy="50" r="40"></circle><circle class="fg" id="statsRingCircle" cx="50" cy="50" r="40" style="stroke-dasharray: 251; stroke-dashoffset: 0;"></circle></svg><div class="progress-text"><h2 id="statsCountDisplay" style="font-size:1.8rem; margin:0;">-</h2></div></div>
           <p class="tiny muted" style="margin-top:8px;">Resets Daily</p>
         </div>
       </div>
@@ -137,9 +196,18 @@
       </div>
     </aside>
   </div>
+  
+  <button id="mobileNavToggle" class="mobile-nav-toggle"><i class="fa-solid fa-bars"></i></button>
+  <button id="mobileMomentsToggle" class="mobile-moments-toggle"><i class="fa-solid fa-bolt"></i></button>
+
+  <div id="momentsPopup" class="moments-popup">
+      <h3>Recent Moments</h3>
+      <div class="stories-scroll left-align" id="mobileStoriesContainer">
+          </div>
+  </div>
 
   <dialog id="dlgProfile" class="tm-dialog">
-    <form method="dialog" id="frmProfile" class="tm-form"><div class="dialog__header"><h3>Edit Profile</h3></div><div class="dialog__body"><input type="text" id="inpName" class="tm-input" placeholder="Name"><input type="number" id="inpUserAge" class="tm-input" placeholder="Age"><input type="text" id="inpCity" class="tm-input" placeholder="City"><input type="email" id="inpEmail" class="tm-input" placeholder="Email"><label class="muted tiny">Preferences</label><div style="display:flex; gap:10px;"><input type="number" id="inpAgeMin" class="tm-input" placeholder="Min Age"><input type="number" id="inpAgeMax" class="tm-input" placeholder="Max Age"></div><select id="inpLooking" class="tm-input"><option value="women">Women</option><option value="men">Men</option><option value="both">Both</option></select><input type="text" id="inpEthnicity" class="tm-input" placeholder="Ethnicity Pref" hidden><input type="file" id="inpAvatarFile" hidden></div><div class="dialog__footer"><button type="button" id="btnCancelProfile" class="btn btn--ghost">Cancel</button><button type="submit" class="btn btn--primary">Save</button></div></form>
+    <form method="dialog" id="frmProfile" class="tm-form"><div class="dialog__header"><h3>Edit Profile</h3></div><div class="dialog__body"><input type="text" id="inpName" class="tm-input" placeholder="Name"><input type="number" id="inpUserAge" class="tm-input" placeholder="Age"><input type="text" id="inpCity" class="tm-input" placeholder="City"><input type="email" id="inpEmail" class="tm-input" placeholder="Email"><label class="muted tiny">Preferences</label><div style="display:flex; gap:10px;"><input type="number" id="inpAgeMin" class="tm-input" placeholder="Min Age"><input type="number" id="inpAgeMax" class="tm-input" placeholder="Max Age"></div><select id="inpLooking" class="tm-input"><option value="women">Women</option><option value="men">Men</option><option value="both">Both</option></select><input type="file" id="inpAvatarFile" hidden></div><div class="dialog__footer"><button type="button" id="btnCancelProfile" class="btn btn--ghost">Cancel</button><button type="submit" class="btn btn--primary">Save</button></div></form>
   </dialog>
 
   <dialog id="dlgPassword" class="tm-dialog">
@@ -147,9 +215,9 @@
   </dialog>
 
   <dialog id="dlgPremiumApply" class="tm-dialog premium-dialog">
-    <div class="premium-header-bg"><i class="fa-solid fa-gem premium-icon-large"></i><h2>iTrueMatch <span class="text-gold">GOLD</span></h2><p>Unlock the ultimate experience.</p></div>
+    <div class="premium-header-bg"><i class="fa-solid fa-gem premium-icon-large" style="font-size:2rem; margin-bottom:5px; animation:float 3s infinite;"></i><h2>iTrueMatch <span style="color:#FFF;">GOLD</span></h2><p>Unlock the ultimate experience.</p></div>
     <div class="premium-benefits-list"><div class="p-benefit"><i class="fa-solid fa-check"></i> Unlimited Swipes</div><div class="p-benefit"><i class="fa-solid fa-check"></i> See Who Liked You</div><div class="p-benefit"><i class="fa-solid fa-check"></i> Priority Matching</div></div>
-    <form method="dialog" id="frmPremiumApply" class="tm-form" style="padding: 0 20px 20px;"><div class="dialog__body" style="padding: 10px 0;"><label class="tiny muted" style="display:block; margin-bottom:5px;">APPLICATION FORM</label><input type="text" name="fullName" class="tm-input input-gold" placeholder="Full Name"><input type="text" name="occupation" class="tm-input input-gold" placeholder="Occupation"><textarea name="finance" class="tm-input input-gold" placeholder="Annual Income Source"></textarea></div><div class="dialog__footer" style="border:none; padding-top:0;"><button type="button" id="btnPremiumCancel" class="btn btn--ghost">Cancel</button><button type="submit" class="btn btn--gold" style="flex:1;">Submit Application</button></div></form>
+    <form method="dialog" id="frmPremiumApply" class="tm-form" style="padding: 0 20px 20px;"><div class="dialog__body" style="padding: 5px 0;"><label class="tiny muted" style="margin-top:10px;">APPLICATION FORM</label><input type="text" name="fullName" class="tm-input input-gold" placeholder="Full Name"><input type="text" name="occupation" class="tm-input input-gold" placeholder="Occupation"><textarea name="finance" class="tm-input input-gold" placeholder="Annual Income Source" style="height:80px; resize:none;"></textarea></div><div class="dialog__footer" style="border:none; padding-top:10px;"><button type="button" id="btnPremiumCancel" class="btn btn--ghost">Cancel</button><button type="submit" class="btn btn--gold" style="flex:1;">Submit Application</button></div></form>
   </dialog>
 
   <dialog id="dlgCreatorApply" class="tm-dialog">
@@ -178,18 +246,13 @@
             </div>
             <button id="btnCloseChat" class="btn btn--sm btn--ghost" style="border:none; font-size:1.2rem;"><i class="fa-solid fa-xmark"></i></button>
         </div>
-        
-        <div id="chatBody" style="flex:1; padding:20px; overflow-y:auto; display:flex; flex-direction:column; gap:15px;">
-            </div>
-
+        <div id="chatBody" style="flex:1; padding:20px; overflow-y:auto; display:flex; flex-direction:column; gap:15px;"></div>
         <div style="padding:15px; background:rgba(0,0,0,0.5); border-top:1px solid rgba(255,255,255,0.1); display:flex; gap:10px;">
             <input type="text" class="tm-input" placeholder="Type a message..." style="border-radius:99px;">
             <button class="btn btn--primary" style="border-radius:50%; width:45px; padding:0;"><i class="fa-solid fa-paper-plane"></i></button>
         </div>
     </div>
   </dialog>
-
-  <div id="tm-toast" class="toast">Action successful</div>
 
   <script>
     (() => {
@@ -202,6 +265,7 @@
     })();
   </script>
   
-  <script type="module" src="dashboard.js"></script>
+  <script src="dashboard.js" type="module"></script>
+
 </body>
 </html>

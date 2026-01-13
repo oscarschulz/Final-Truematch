@@ -1,203 +1,146 @@
 /* =========================================
-   RESPONSIVE.CSS - FINAL LAPTOP & TABLET FIX
+   RESPONSIVE.CSS - FINAL (Green Moments Button & Fixed Sidebar)
    ========================================= */
 
+/* GLOBAL */
+html { -webkit-overflow-scrolling: touch; }
+
 /* ---------------------------------------------------------
-   1. LAPTOP COMPACT MODE (1025px - 1366px)
-   Target: 13" Laptops & 1280x800 Resolutions
-   Fix: Siksikin ang Right Sidebar para walang scroll
---------------------------------------------------------- */
-@media screen and (max-width: 1366px) {
+   1. DESKTOP / LAPTOP (769px pataas)
+   --------------------------------------------------------- */
+@media screen and (min-width: 769px) {
+  .container { max-width: 100%; padding: 0 10px; }
+  .layout { grid-template-columns: 200px 1fr 250px; }
   
-  /* Container adjustment */
-  .container { max-width: 95vw; padding: 0 15px; }
+  /* Show Sidebars */
+  .right-sidebar { display: flex !important; padding: 15px; gap: 10px; }
+  .sidebar { display: flex !important; position: static; width: auto; height: 100%; background: #000; border-right: 1px solid rgba(255,255,255,0.15); box-shadow: none; padding: 12px 20px; z-index: 200; opacity: 1; transform: none; pointer-events: auto; }
   
-  /* --- COMPACT RIGHT SIDEBAR WIDGETS --- */
-  .right-sidebar {
-    padding: 15px; 
-    gap: 10px; /* Mas dikit ang mga cards */
-  }
+  /* Desktop: Show Footer Logout */
+  .sidebar-footer { display: flex; }
 
-  /* Liitan ang Padding ng Cards sa Kanan */
-  .right-sidebar .glass-card, 
-  .right-sidebar .premium-card {
-    padding: 15px;
-    margin-bottom: 10px;
-  }
-
-  /* Liitan ang Progress Ring (Swipes Left) */
-  .progress-ring svg { width: 80px; height: 80px; }
-  .progress-ring circle { stroke-width: 6; }
-  .stats-widget h3 { font-size: 1rem; margin-bottom: 5px; }
-  .stats-widget .progress-text h2 { font-size: 1.4rem; }
-
-  /* Liitan ang Active Nearby Grid */
-  .active-grid {
-    gap: 8px;
-    grid-template-columns: repeat(4, 1fr); /* 4 cols para tipid sa height */
-  }
-  .home-card-header h3 { font-size: 0.9rem; }
-
-  /* Liitan ang Premium Card */
-  .premium-content { padding: 15px; }
-  .premium-content i { font-size: 1.5rem; margin-bottom: 5px; }
-  .premium-content h3 { font-size: 1rem; }
-  .premium-content p { font-size: 0.75rem; margin-bottom: 10px; }
-  .premium-content .btn { padding: 8px; font-size: 0.8rem; }
-
-  /* Main Feed Adjustments */
-  .match-card { min-height: auto; }
-  .story-ring { width: 45px; height: 45px; } /* Liitan onti stories */
+  /* Desktop: Hide Mobile Elements */
+  .mobile-nav-toggle, .mobile-moments-toggle { display: none !important; }
+  .logout-btn-mobile { display: none !important; } 
+  
+  /* Reset Nav Links */
+  .nav-links { display: flex !important; flex-direction: column; gap: 6px; }
+  .nav-btn { display: flex; flex-direction: row; width: 100%; aspect-ratio: auto; padding: 12px 16px; background: transparent; border-radius: 99px; font-size: 18px; color: #e7e9ea; border: none; }
+  .nav-btn:hover { background: rgba(255, 255, 255, 0.1); }
+  .nav-btn.is-active { background: rgba(0, 175, 240, 0.15) !important; color: #00aff0; border: none; box-shadow: none; }
+  .nav-btn span { display: inline !important; font-size: 18px; margin-top: 0; font-weight: normal; margin-left: 10px; }
+  .brand { display: flex; }
+  
+  .moments-popup { display: none !important; }
 }
 
 /* ---------------------------------------------------------
-   2. TABLET MODE (769px - 1280px)
-   Scenario: Left Sidebar -> Bottom Nav | Right Sidebar -> Visible
---------------------------------------------------------- */
-@media screen and (max-width: 1280px) {
-  
-  /* Baguhin ang Grid: Alisin ang Left Column, Panatilihin ang Right */
-  .layout {
-    display: grid;
-    /* Column 1: Feed (Auto), Column 2: Right Sidebar (280px fixed) */
-    grid-template-columns: 1fr 280px; 
-    height: 100%;
-    overflow: hidden;
-  }
-
-  /* 1. LEFT SIDEBAR -> BOTTOM NAVIGATION */
-  .sidebar {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    top: auto;
-    height: 65px; /* Height ng bottom bar */
-    width: 100%;
-    flex-direction: row; /* Horizontal layout */
-    border-right: none;
-    border-top: 1px solid rgba(255,255,255,0.15);
-    z-index: 2000;
-    padding: 0;
-    background: rgba(0, 0, 0, 0.95); /* Opaque black para mabasa */
-    backdrop-filter: blur(10px);
-    overflow: visible;
-  }
-
-  /* Tago ang Logo at Footer sa Tablet/Mobile view */
-  .brand, .sidebar-footer { display: none; }
-
-  /* Navigation Links: Centered & Evenly Spaced */
-  .nav-links {
-    flex-direction: row;
-    width: 100%;
-    justify-content: center; /* CENTER ALIGN */
-    align-items: center;
-    gap: 30px; /* Space between icons */
-    height: 100%;
-  }
-
-  /* Icon Styling for Bottom Nav */
-  .nav-btn {
-    padding: 10px;
-    border-radius: 50%; /* Gawing bilog effect */
-    font-size: 22px;
-    justify-content: center;
-    width: 50px;
-    height: 50px;
-  }
-  
-  /* Hide Text Labels on Bottom Nav */
-  .nav-btn span { display: none; }
-  
-  /* Move badge to top-right of icon */
-  .nav-badge {
-    top: 5px;
-    right: 5px;
-    width: 16px; height: 16px;
-    font-size: 9px;
-    padding: 0;
-  }
-
-  /* 2. MAIN FEED Adjustments */
-  .main-feed {
-    grid-column: 1; /* Nasa kaliwa */
-    border-right: 1px solid rgba(255,255,255,0.1);
-    margin-bottom: 65px; /* Space para sa bottom nav */
-    padding-bottom: 20px;
-  }
-
-  /* 3. RIGHT SIDEBAR - FORCE VISIBLE */
-  .right-sidebar {
-    display: flex !important; /* Siguraduhing nakalitaw */
-    grid-column: 2; /* Nasa kanan */
-    padding: 15px;
-    background: #000;
-    z-index: 100;
-    margin-bottom: 65px; /* Space din para sa bottom nav */
-  }
-}
-
-/* ---------------------------------------------------------
-   3. MOBILE VIEW (768px and below)
-   Target: Phones (iPhone, Samsung, etc.)
-   Scenario: Right Sidebar -> Hidden | 1 Column Layout
---------------------------------------------------------- */
+   2. MOBILE VIEW (768px PABABA)
+   --------------------------------------------------------- */
 @media screen and (max-width: 768px) {
   
-  /* Balik sa Single Column */
-  .layout {
+  html, body { overflow-y: auto !important; height: auto !important; position: static; }
+  .layout { display: block; overflow-x: hidden; }
+  .right-sidebar { display: none !important; }
+  .main-feed { grid-column: 1 / -1; width: 100%; border: none; padding: 0; margin-bottom: 80px; }
+
+  /* Hide Desktop Moments */
+  #panel-home > div:last-child { display: none !important; }
+
+  /* Mobile: Show In-Menu Logout */
+  .logout-btn-mobile { display: flex !important; }
+  .sidebar-footer { display: none !important; }
+
+  /* --- LEFT MENU BUTTON --- */
+  .mobile-nav-toggle {
+    display: flex; align-items: center; justify-content: center;
+    position: fixed; bottom: 25px; left: 25px;
+    width: 55px; height: 55px;
+    border-radius: 50%;
+    background: var(--brand-color); color: #fff;
+    font-size: 24px; border: none;
+    box-shadow: 0 10px 30px rgba(0, 175, 240, 0.6);
+    z-index: 10001; cursor: pointer; transition: transform 0.2s;
+  }
+  .mobile-nav-toggle:active { transform: scale(0.9); }
+
+  /* --- RIGHT MOMENTS BUTTON (GREEN ACTIVE COLOR) --- */
+  .mobile-moments-toggle {
+    display: flex; align-items: center; justify-content: center;
+    position: fixed; bottom: 25px; right: 25px;
+    width: 55px; height: 55px;
+    border-radius: 50%;
+    background: #000;
+    
+    /* UPDATED: NEON GREEN COLORS (#00ff88) */
+    border: 2px solid #00ff88; 
+    box-shadow: 0 0 20px rgba(0, 255, 136, 0.4); 
+    
+    z-index: 10001; cursor: pointer; transition: transform 0.2s;
+  }
+  
+  .mobile-moments-toggle i { 
+    font-size: 24px; 
+    color: #00ff88; /* Green Icon */
+    text-shadow: 0 0 10px rgba(0, 255, 136, 0.6);
+  }
+  
+  .mobile-moments-toggle:active { transform: scale(0.9); }
+
+  /* --- LEFT MENU POPUP (GRID) --- */
+  .sidebar {
+    position: fixed; bottom: 95px; left: 15px; right: 15px;
+    width: auto; height: auto;
+    background: rgba(15, 20, 30, 0.98); backdrop-filter: blur(30px);
+    border: 1px solid rgba(255,255,255,0.2); border-radius: 24px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.9);
+    padding: 20px 15px; z-index: 10000;
+    
+    /* FIXED: Hide initially & kill animation from HTML */
     display: block;
-    grid-template-columns: 1fr;
-  }
-
-  /* Hide Right Sidebar sa Mobile kasi masikip na */
-  .right-sidebar {
-    display: none !important; 
-  }
-
-  .main-feed {
-    grid-column: 1 / -1;
-    border: none;
-  }
-
-  /* Bottom Nav Centering (Reinforce) */
-  .nav-links {
-    gap: 0; /* Remove gap, use space-evenly */
-    justify-content: space-evenly;
-    width: 100%;
+    visibility: hidden;
+    animation: none !important;
+    
+    opacity: 0; transform: translateY(20px) scale(0.95); pointer-events: none;
+    transform-origin: bottom left; transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
   
-  .nav-btn {
-    font-size: 20px;
-    width: auto;
-    height: auto;
-    border-radius: 0;
+  .sidebar.is-open { 
+    visibility: visible;
+    opacity: 1; 
+    transform: translateY(0) scale(1); 
+    pointer-events: auto; 
   }
 
-  /* Auth / Unified Card Mobile */
-  .unified-card { 
-    max-width: 100%; 
-    border-radius: 0; 
-    border: none; 
-    background: transparent;
-    box-shadow: none;
+  .brand { display: none !important; }
+  .nav-links { display: grid !important; grid-template-columns: repeat(4, 1fr); gap: 15px 10px; margin: 0; width: 100%; }
+  .nav-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; aspect-ratio: 1; padding: 8px 4px; background: rgba(255,255,255,0.05); border-radius: 16px; border: 1px solid transparent; color: var(--text-muted); font-size: 24px; transition: 0.1s; }
+  .nav-btn.is-active { background: rgba(0, 175, 240, 0.2) !important; color: #fff; border: 1px solid rgba(0, 175, 240, 0.5); }
+  .nav-btn span { display: block !important; font-size: 10px; font-weight: 600; margin-top: 5px; text-transform: capitalize; text-align: center; }
+  .nav-btn i { width: auto; margin: 0; }
+  .nav-badge { top: 4px; right: 4px; width: 16px; height: 16px; font-size: 9px; border: 2px solid #1a1a20; }
+
+  /* --- RIGHT MOMENTS POPUP --- */
+  .moments-popup {
+    position: fixed; bottom: 95px; right: 15px; left: auto;
+    width: auto; min-width: 200px;
+    background: rgba(15, 20, 30, 0.98); backdrop-filter: blur(30px);
+    border: 1px solid rgba(255,255,255,0.2); border-radius: 24px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.9);
+    padding: 15px; z-index: 10000;
+    opacity: 0; transform: translateY(20px) scale(0.95); pointer-events: none;
+    transform-origin: bottom right; transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    display: flex; flex-direction: column; align-items: center;
   }
-  .auth-visual-side { display: none; }
-  .auth-form-side { padding: 10px 5px; background: transparent; }
+  .moments-popup.is-open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+  .moments-popup h3 { margin: 0 0 12px; font-size: 0.8rem; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; }
   
-  .input-group input { font-size: 16px; padding: 12px; }
-  .btn-primary { padding: 12px; font-size: 0.9rem; }
-  
-  /* Compact Pricing for Mobile */
-  .pricing-grid { grid-template-columns: 1fr; gap: 1rem; }
-  .price-card { padding: 1.5rem; min-height: auto; }
+  .home-top-bar { padding: 15px; }
+  .feed-header { position: sticky; top: 0; z-index: 4000; padding-top: max(12px, env(safe-area-inset-top)); }
 }
 
-/* ---------------------------------------------------------
-   4. SUPER SMALL SCREENS (iPhone SE, Fold)
---------------------------------------------------------- */
+/* SMALL MOBILE */
 @media screen and (max-width: 380px) {
-  .nav-btn { font-size: 18px; }
-  .home-top-bar h2 { font-size: 1.1rem; }
+  .nav-links { grid-template-columns: repeat(3, 1fr); }
+  .nav-btn { font-size: 20px; }
 }

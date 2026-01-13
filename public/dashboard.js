@@ -5,7 +5,8 @@
 import { getLocalPlan, saveLocalUser, clearSession } from './tm-session.js';
 import { apiGet, apiPost, apiUpdateProfile, apiSavePrefs } from './tm-api.js';
 
-const DEV_MODE = (new URLSearchParams(window.location.search).get('demo') === '1'); 
+//const DEV_MODE = (new URLSearchParams(window.location.search).get('demo') === '1');
+ const DEV_MODE = false;
 const DAILY_SWIPE_LIMIT = 20; 
 
 function getMockUser() {
@@ -802,3 +803,131 @@ const SwipeController = (() => {
 })();
 
 window.addEventListener('DOMContentLoaded', initApp);
+/* ============================================================
+   UI CONTROLS & FRONTEND LOGIC
+   (Added to support Mobile Menu, Tabs, and Modals)
+   ============================================================ */
+
+document.addEventListener('DOMContentLoaded', () => {
+    console.log("🎨 UI Logic Initialized");
+
+    // 1. UNIVERSAL MODAL FIX (Click Outside to Close)
+    document.querySelectorAll('dialog').forEach(dialog => {
+        dialog.addEventListener('click', (e) => {
+            const rect = dialog.getBoundingClientRect();
+            const isInDialog = (rect.top <= e.clientY && e.clientY <= rect.top + rect.height &&
+              rect.left <= e.clientX && e.clientX <= rect.left + rect.width);
+            if (!isInDialog) dialog.close();
+        });
+        // Close buttons inside dialogs
+        const closeBtns = dialog.querySelectorAll('.btn--ghost, .btn-close, button[id*="Cancel"]');
+        closeBtns.forEach(btn => btn.addEventListener('click', (e) => {
+            e.preventDefault(); dialog.close();
+        }));
+    });
+
+    // 2. TABS / PANEL SWITCHING (Home, Swipe, Matches, etc.)
+    const panels = document.querySelectorAll('.panel');
+    const sidebar = document.getElementById('mainSidebar');
+    const menuBtn = document.getElementById('mobileNavToggle');
+    
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            // Skip logout buttons (backend handles this)
+            if(btn.id === 'btn-logout' || btn.classList.contains('logout-btn-mobile')) return;
+
+            e.preventDefault();
+            const target = btn.dataset.panel;
+            if(!target) return;
+
+            // Update Tab Style
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('is-active'));
+            btn.classList.add('is-active');
+
+            // Show Target Panel
+            panels.forEach(p => {
+                if(p.dataset.panel === target) {
+                    p.hidden = false;
+                    p.classList.add('is-active');
+                    p.style.display = 'block';
+                } else {
+                    p.hidden = true;
+                    p.classList.remove('is-active');
+                    p.style.display = 'none';
+                }
+            });
+
+            // Scroll to top
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            // Auto-close Mobile Menu upon selection
+            if(sidebar && sidebar.classList.contains('is-open')) {
+                sidebar.classList.remove('is-open');
+                if(menuBtn) menuBtn.querySelector('i').className = 'fa-solid fa-bars';
+            }
+        });
+    });
+
+    // 3. MOBILE MENU TOGGLES (Hamburger & Moments)
+    const momentsBtn = document.getElementById('mobileMomentsToggle');
+    const momentsPopup = document.getElementById('momentsPopup');
+
+    // Hamburger Menu Logic
+    if(menuBtn && sidebar) {
+        menuBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // Close Moments if open
+            if(momentsPopup) momentsPopup.classList.remove('is-open'); 
+            if(momentsBtn) momentsBtn.querySelector('i').className = 'fa-solid fa-bolt';
+            
+            // Toggle Sidebar
+            sidebar.classList.toggle('is-open');
+            
+            // Toggle Icon Animation
+            const icon = menuBtn.querySelector('i');
+            icon.className = sidebar.classList.contains('is-open') ? 'fa-solid fa-xmark' : 'fa-solid fa-bars';
+        });
+    }
+
+    // Moments Button Logic
+    if(momentsBtn && momentsPopup) {
+        momentsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // Close Sidebar if open
+            if(sidebar) sidebar.classList.remove('is-open'); 
+            if(menuBtn) menuBtn.querySelector('i').className = 'fa-solid fa-bars';
+
+            // Toggle Moments Popup
+            momentsPopup.classList.toggle('is-open');
+            
+            // Toggle Icon Animation
+            const icon = momentsBtn.querySelector('i');
+            icon.className = momentsPopup.classList.contains('is-open') ? 'fa-solid fa-xmark' : 'fa-solid fa-bolt';
+        });
+    }
+
+    // Close when clicking outside (Global listener)
+    document.addEventListener('click', (e) => {
+        // Close Sidebar
+        if(sidebar && !sidebar.contains(e.target) && !menuBtn.contains(e.target)) {
+            sidebar.classList.remove('is-open');
+            if(menuBtn) menuBtn.querySelector('i').className = 'fa-solid fa-bars';
+        }
+        // Close Moments
+        if(momentsPopup && !momentsPopup.contains(e.target) && !momentsBtn.contains(e.target)) {
+            momentsPopup.classList.remove('is-open');
+            if(momentsBtn) momentsBtn.querySelector('i').className = 'fa-solid fa-bolt';
+        }
+    });
+
+    // 4. REMOVE LOADER (Backup if backend fetch is slow)
+    setTimeout(() => {
+        const loader = document.getElementById('app-loader');
+        const layout = document.getElementById('mainLayout');
+        if(loader) {
+            loader.style.opacity = '0';
+            setTimeout(() => loader.remove(), 500);
+        }
+        if(layout) layout.style.opacity = '1';
+    }, 1500); // 1.5 seconds fail-safe
+});
