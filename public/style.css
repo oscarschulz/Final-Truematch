@@ -1,6 +1,6 @@
 /* ===========================
    iTRUEMATCH – FINAL STYLE SHEET
-   Fixed: Compact Cards for 1280x800 (Smaller Padding/Fonts)
+   Fixed: Wide Header (Desktop), Compact Cards (Laptop), Swipeable (Mobile)
    =========================== */
 
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap');
@@ -43,7 +43,7 @@ body::before{
 section { min-height: 100vh; padding: 4rem 0; display: flex; flex-direction: column; justify-content: center; position: relative; }
 
 /* =========================================================================
-   HEADER & NAVIGATION
+   HEADER & NAVIGATION (UPDATED: WIDE DESKTOP)
    ========================================================================= */
 .site-header{
   position: fixed; top: 0; left: 0; width: 100%; z-index: 1000;
@@ -54,15 +54,18 @@ section { min-height: 100vh; padding: 4rem 0; display: flex; flex-direction: col
   display: flex; 
   align-items: center; 
   justify-content: space-between; 
-  max-width: 1200px; 
+  
+  /* FIXED: WIDE LAYOUT (Dulo-dulo) for Desktop */
+  max-width: 100%; 
   width: 100%;
-  margin: 0 auto; 
-  padding: 1rem 2rem; 
+  margin: 0; 
+  padding: 1rem 3rem; /* Wide padding */
+  
   position: relative;
   z-index: 1001;
 }
 
-/* BRAND LOGO */
+/* BRAND LOGO (Left Dulo) */
 .brand{ 
   display:flex !important; 
   align-items:center; 
@@ -78,15 +81,16 @@ section { min-height: 100vh; padding: 4rem 0; display: flex; flex-direction: col
 .brand__name{ font-weight:800; letter-spacing:.24px; white-space:nowrap; font-size:1.3rem; text-transform: none; }
 .brand:hover{ transform: translateY(-1px) scale(1.03); }
 
-/* DESKTOP MENU - ABSOLUTE CENTER */
+/* DESKTOP MENU - ABSOLUTE CENTER (Gitna) */
 .nav__menu{ 
   display:flex; align-items:center; gap: 2.5rem; 
+  /* Centers the links regardless of side element widths */
   position: absolute; left: 50%; transform: translateX(-50%);
 }
 .nav__menu a{ color: var(--text); text-decoration:none; padding:.5rem .7rem; font-weight: 600; font-size: 0.95rem; text-transform: uppercase; transition: color .2s ease; }
 .nav__menu a:hover{ color: var(--primary); background: transparent; }
 
-/* NAV ACTIONS (Buttons) */
+/* NAV ACTIONS (Right Dulo) */
 .nav__actions{ display:flex; align-items:center; gap:.65rem; z-index: 1001; }
 
 .btn{ display:inline-flex; align-items:center; justify-content:center; padding: 10px 24px; border-radius: 50px; font-weight: 600; border:1px solid transparent; background: transparent; color: var(--text); text-decoration:none; transition: transform .2s ease, color .2s ease; cursor:pointer; }
