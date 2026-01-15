@@ -11,15 +11,19 @@
   <link rel="stylesheet" href="font.css" />
   <link rel="stylesheet" href="animations.css" />
   <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="optin.mobile.css" />
   <link rel="stylesheet" href="fomo.css" />
+  <link rel="stylesheet" href="optin.mobile.css" />
 
   <style>
-/* Minimal extras to make the opt-in form look native without touching your main CSS */
+    /* BASE STYLES (Desktop/Default) */
     .optin-note { margin-top: .7rem; }
     .optin-form { display: grid; gap: .8rem; margin-top: 1rem; }
     .optin-form .row { display: grid; gap: .8rem; grid-template-columns: 1fr; }
-    @media (min-width: 820px) { .optin-form .row { grid-template-columns: 1fr 1fr; } }
+    
+    @media (min-width: 820px) { 
+        .optin-form .row { grid-template-columns: 1fr 1fr; } 
+    }
+
     .optin-form input, .optin-form select, .optin-form textarea {
       width: 100%;
       padding: .9rem 1rem;
@@ -43,54 +47,16 @@
       background: rgba(100,233,238,.08);
     }
     .tiny-link { text-decoration: underline; }
-  
-  /* Hide carousel nav buttons by default (shown by mobile CSS only) */
 
-
-/* Mobile-only UI tweaks */
-@media (max-width: 768px){
-  /* Reduce hero-to-next-section gap by letting hero size to content */
-  html.tm-home .hero{
-    min-height: unset !important;
-    height: auto !important;
-    padding-bottom: 22px !important;
-  }
-  html.tm-home .scroll-indicator{ display: none !important; }
-
-  /* Tighten spacing above How it works */
-  html.tm-home #how-it-works{
-    padding-top: 6px !important;
-    margin-top: -14px !important;
-  }
-
-  /* Ensure carousel nav buttons are visible on mobile */
-  html.tm-home .tm-carousel__btn{
-    display: grid !important;
-    opacity: 1 !important;
-    pointer-events: auto !important;
-  }
-
-  /* Center + slightly widen the opt-in form, and increase border thickness */
-  html.tm-home #apply .pricing-grid{
-    display: grid !important;
-    place-items: center !important;
-  }
-  html.tm-home #apply .optin-form-card{
-    width: min(92vw, 430px) !important;
-    margin-inline: auto !important;
-    border-width: 2px !important;
-  }
-
-  /* Add safe horizontal breathing room for carousel slides */
-  html.tm-home .tm-carousel__track{
-    padding-left: 16px !important;
-    padding-right: 16px !important;
-    scroll-padding-left: 16px !important;
-    scroll-padding-right: 16px !important;
-  }
-}
-
-</style>
+    /* Hamburger Menu Styles */
+    .nav__bar {
+        display: block; width: 25px; height: 2px; margin: 6px auto;
+        transition: all 0.3s ease-in-out; background-color: white;
+    }
+    .nav__toggle.active .nav__bar:nth-child(2) { opacity: 0; }
+    .nav__toggle.active .nav__bar:nth-child(1) { transform: translateY(8px) rotate(45deg); }
+    .nav__toggle.active .nav__bar:nth-child(3) { transform: translateY(-8px) rotate(-45deg); }
+  </style>
 </head>
 
 <body id="top">
@@ -98,25 +64,27 @@
 
   <header class="site-header">
     <div class="container nav">
-      <a href="#top" class="brand" aria-label="TrueMatch opt-in top">
+      <a href="#top" class="brand" aria-label="TrueMatch opt-in top" style="z-index: 1002;">
         <img src="assets/images/truematch-mark.png" alt="TrueMatch" class="brand__logo" />
         <span class="brand__name">TrueMatch</span>
       </a>
 
-      <button class="nav__toggle" aria-label="Toggle menu" aria-expanded="false">
+      <button class="nav__toggle" id="mobile-menu-btn" aria-label="Toggle menu" aria-expanded="false">
         <span class="nav__bar"></span>
         <span class="nav__bar"></span>
         <span class="nav__bar"></span>
       </button>
 
       <div class="nav__dropdown" id="navDropdown" aria-label="Mobile menu">
-        <a href="#how-it-works">How It Works</a>
-        <a href="#privacy">Privacy</a>
-        <a href="#apply">Opt-In</a>
-        <a href="#faq">FAQ</a>
-        <div style="height:.6rem"></div>
-        <a class="btn" href="#top">Back to Top</a>
-        <a class="btn primary" href="#apply">Opt-In Now</a>
+        <a href="#how-it-works" class="mobile-link">How It Works</a>
+        <a href="#privacy" class="mobile-link">Privacy</a>
+        <a href="#apply" class="mobile-link">Opt-In</a>
+        <a href="#faq" class="mobile-link">FAQ</a>
+        
+        <div class="menu-footer">
+            <a class="btn mobile-link" href="#top">Back to Top</a>
+            <a class="btn primary mobile-link" href="#apply">Opt-In Now</a>
+        </div>
       </div>
 
       <nav class="nav__menu" aria-label="Primary">
@@ -524,7 +492,6 @@
     </div>
   </div>
 
-  <!-- Background canvas (same as your homepage) -->
   <script>
   (() => {
     const canvas = document.getElementById('tm-bg-canvas');
@@ -689,13 +656,62 @@
   <script src="script.js"></script>
   <script defer src="optin.mobile.carousel.js"></script>
   <script src="fomo.js"></script>
-<script>
-    // Scroll CTA
+  
+  <script>
+    // 1. MENU TOGGLE (FIXED LOGIC)
+    const toggleBtn = document.getElementById('mobile-menu-btn');
+    const navDropdown = document.getElementById('navDropdown');
+    const mobileLinks = document.querySelectorAll('.mobile-link');
+
+    if (toggleBtn && navDropdown) {
+        toggleBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Stop click from propagating
+            const isOpen = navDropdown.classList.contains('open');
+            if (isOpen) {
+                closeMenu();
+            } else {
+                openMenu();
+            }
+        });
+
+        // Close when clicking any link
+        mobileLinks.forEach(link => {
+            link.addEventListener('click', closeMenu);
+        });
+
+        // Close when clicking outside
+        document.addEventListener('click', (e) => {
+            if (navDropdown.classList.contains('open') && 
+                !navDropdown.contains(e.target) && 
+                !toggleBtn.contains(e.target)) {
+                closeMenu();
+            }
+        });
+    }
+
+    function openMenu() {
+        navDropdown.classList.add('open');
+        toggleBtn.classList.add('active'); // CSS animation for X
+        toggleBtn.setAttribute('aria-expanded', 'true');
+        document.body.style.overflow = 'hidden'; // Lock scroll
+    }
+
+    function closeMenu() {
+        navDropdown.classList.remove('open');
+        toggleBtn.classList.remove('active');
+        toggleBtn.setAttribute('aria-expanded', 'false');
+        document.body.style.overflow = ''; // Unlock scroll
+    }
+
+    // 2. SCROLL CTA
     document.getElementById('btnOptIn')?.addEventListener('click', () => {
       document.getElementById('apply')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
 
-    // Submit to backend (/api/optin) and show success message
+    // 3. YEAR
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    // 4. SUBMIT FORM
     document.getElementById('optinForm')?.addEventListener('submit', async (e) => {
       e.preventDefault();
 
@@ -703,9 +719,6 @@
       const btn = form.querySelector('button[type="submit"]');
       const success = document.getElementById('optinSuccess');
 
-      // Support both:
-      // - Served by TrueMatch backend (same origin)
-      // - Opened via VS Code Live Server (port 5500) while backend runs at 3000
       const isLiveServer = (location.hostname === '127.0.0.1' || location.hostname === 'localhost') && String(location.port) === '5500';
       const apiBase = isLiveServer ? 'http://localhost:3000' : '';
 
@@ -717,7 +730,6 @@
       const note = document.getElementById('note')?.value || '';
       const updates = !!document.getElementById('updates')?.checked;
 
-      // Optional tracking params from the URL (e.g., ?src=ig_dm&ref=@somepage)
       const params = new URLSearchParams(location.search);
       const source = [params.get('src'), params.get('ref')].filter(Boolean).join('|');
 
@@ -748,8 +760,7 @@
       }
     });
 
-    // Safety: prevent placeholder links (#) from being routed elsewhere by global scripts
-    // This keeps optin.html self-contained without affecting real anchors like #privacy, #apply, etc.
+    // Safety
     document.addEventListener('click', (e) => {
       const a = e.target.closest && e.target.closest('a');
       if (!a) return;
@@ -759,65 +770,63 @@
         e.stopImmediatePropagation();
       }
     }, true);
-  </script>
 
-  <script>
-  (function () {
-    const mq = window.matchMedia("(max-width: 768px)");
+    // Carousel Init
+    (function () {
+        // === FIXED: Now activates on 1024px (Tablets) and below ===
+        const mq = window.matchMedia("(max-width: 1024px)");
 
-    function setupCarousel(root) {
-      if (!root || root.dataset.carouselReady === "1") return;
-      const track = root.querySelector(".steps-wrapper, .bento-grid");
-      const prev = root.querySelector(".tm-carousel__btn.prev");
-      const next = root.querySelector(".tm-carousel__btn.next");
-      if (!track || !prev || !next) return;
+        function setupCarousel(root) {
+        if (!root || root.dataset.carouselReady === "1") return;
+        const track = root.querySelector(".steps-wrapper, .bento-grid");
+        const prev = root.querySelector(".tm-carousel__btn.prev");
+        const next = root.querySelector(".tm-carousel__btn.next");
+        if (!track || !prev || !next) return;
 
-      root.dataset.carouselReady = "1";
+        root.dataset.carouselReady = "1";
 
-      function step() {
-        return track.clientWidth || 320;
-      }
+        function step() {
+            return track.clientWidth || 320;
+        }
 
-      function update() {
-        const max = Math.max(0, track.scrollWidth - track.clientWidth - 1);
-        prev.disabled = track.scrollLeft <= 0;
-        next.disabled = track.scrollLeft >= max;
-      }
+        function update() {
+            const max = Math.max(0, track.scrollWidth - track.clientWidth - 1);
+            prev.disabled = track.scrollLeft <= 0;
+            next.disabled = track.scrollLeft >= max;
+        }
 
-      prev.addEventListener("click", () => {
-        track.scrollBy({ left: -step(), behavior: "smooth" });
-      });
+        prev.addEventListener("click", () => {
+            track.scrollBy({ left: -step(), behavior: "smooth" });
+        });
 
-      next.addEventListener("click", () => {
-        track.scrollBy({ left: step(), behavior: "smooth" });
-      });
+        next.addEventListener("click", () => {
+            track.scrollBy({ left: step(), behavior: "smooth" });
+        });
 
-      let raf = 0;
-      track.addEventListener("scroll", () => {
-        if (raf) cancelAnimationFrame(raf);
-        raf = requestAnimationFrame(update);
-      });
+        let raf = 0;
+        track.addEventListener("scroll", () => {
+            if (raf) cancelAnimationFrame(raf);
+            raf = requestAnimationFrame(update);
+        });
 
-      window.addEventListener("resize", () => requestAnimationFrame(update));
+        window.addEventListener("resize", () => requestAnimationFrame(update));
 
-      // Initial state
-      update();
-    }
+        // Initial state
+        update();
+        }
 
-    function init() {
-      if (!mq.matches) return;
-      document
-        .querySelectorAll("html.tm-home .tm-carousel")
-        .forEach(setupCarousel);
-    }
+        function init() {
+        if (!mq.matches) return;
+        document
+            .querySelectorAll("html.tm-home .tm-carousel")
+            .forEach(setupCarousel);
+        }
 
-    init();
+        init();
 
-    // Re-init when crossing breakpoint (Safari fallback included)
-    if (mq.addEventListener) mq.addEventListener("change", init);
-    else if (mq.addListener) mq.addListener(init);
-  })();
+        if (mq.addEventListener) mq.addEventListener("change", init);
+        else if (mq.addListener) mq.addListener(init);
+    })();
   </script>
 </body>
-
 </html>

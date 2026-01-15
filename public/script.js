@@ -396,6 +396,19 @@
     
     // Initialize Scroll Animations
     initScrollReveal();
+
+    // ------------------------
+    // [ADDED] Loader Removal Logic
+    // ------------------------
+    window.addEventListener('load', () => {
+        const loader = document.getElementById('app-loader');
+        if (loader) {
+            setTimeout(() => {
+                loader.style.opacity = '0';
+                setTimeout(() => loader.remove(), 500);
+            }, 500);
+        }
+    });
   }
 
   if (document.readyState === "loading") {

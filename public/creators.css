@@ -17,7 +17,7 @@ body {
   color: var(--text);
   font-family: 'Montserrat', sans-serif;
   height: 100vh;
-  overflow: hidden;
+  overflow: hidden; /* Desktop default */
 }
 
 #tm-bg-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 0; pointer-events: none; }
@@ -287,91 +287,80 @@ body {
 
 
 /* ==========================================================================
-   RESPONSIVE FIX FOR LAPTOPS (1280x800 & 1366x768)
-   Ensures layout fits without scrollbars on main body
+   RESPONSIVE FIXES
    ========================================================================== */
 
-@media screen and (max-width: 1400px), screen and (max-height: 850px) {
+/* 1. SMALL DESKTOPS (1400px down to 1025px) */
+@media screen and (max-width: 1400px) and (min-width: 1025px), screen and (max-height: 850px) {
+  .split-layout { padding-top: 70px; padding-bottom: 20px; }
+  .unified-card { height: 95%; max-height: 650px; border-radius: 20px; }
+  .auth-top-nav { padding: 15px 30px; }
+  .visual-side { padding-top: 60px; }
+  .feed-title-overlay { height: 60px; font-size: 0.9rem; }
+  .notif-item { min-height: 60px; padding: 10px; }
+  .icon-box { width: 35px; height: 35px; font-size: 0.9rem; }
+  .text-box p { font-size: 0.75rem; }
+  .form-side { padding: 25px; }
+  .header-text h1 { font-size: 1.6rem; }
+  .lock-visual { width: 80px; height: 80px; font-size: 30px; margin: 15px auto; }
+  .btn-row { margin-top: 15px; gap: 10px; }
+  .btn { padding: 10px; font-size: 0.8rem; }
+}
+
+/* 2. TABLET PORTRAIT & MOBILE (1024px and below) */
+@media (max-width: 1024px) {
+  body { overflow-y: auto; } /* Enable scroll */
   
-  /* Compact the Main Layout Padding */
+  .auth-top-nav { padding: 20px; }
+  .nav-brand { font-size: 1.3rem; }
+
+  /* CENTERED STACK LAYOUT */
   .split-layout {
-    padding-top: 70px; /* Reduced from 100px */
-    padding-bottom: 20px;
+    padding: 100px 20px 40px; /* More top padding to clear nav */
+    display: flex;
+    justify-content: center;
+    align-items: center; /* VERTICAL CENTER */
+    min-height: 100vh;
+    height: auto; /* Dynamic height */
   }
 
-  /* Shrink the Main Card */
   .unified-card {
-    height: 95%; /* Adjust height dynamically */
-    max-height: 650px; /* Force a max height for small laptops */
-    border-radius: 20px;
+    flex-direction: column; /* STACK CONTENT */
+    height: auto; 
+    max-width: 850px; /* INCREASED: Bigger card for tablets */
+    width: 90%;
+    margin: 0 auto;
+    max-height: none; /* No height limit */
   }
 
-  /* Compact Navbar */
-  .auth-top-nav {
-    padding: 15px 30px;
-  }
-  .nav-brand {
-    font-size: 1.2rem;
-  }
-  .nav-brand img {
-    width: 32px;
-  }
+  /* HIDE VISUAL SIDE ON TABLET/MOBILE */
+  .visual-side { display: none; }
 
-  /* Left Side: Adjust Title & Spacing */
-  .visual-side {
-    padding-top: 60px; /* Pull content up */
-  }
-  .feed-title-overlay {
-    height: 60px;
-    font-size: 0.9rem;
-  }
-  
-  /* Notifications */
-  .notif-item {
-    min-height: 60px;
-    padding: 10px;
-  }
-  .icon-box {
-    width: 35px; height: 35px; font-size: 0.9rem;
-  }
-  .text-box p {
-    font-size: 0.75rem;
-  }
-
-  /* Right Side: Fonts & Buttons */
   .form-side {
-    padding: 25px;
+    width: 100%;
+    padding: 40px 30px;
+    background: radial-gradient(circle at top, rgba(100, 233, 238, 0.05), transparent 70%);
   }
-  .header-text h1 {
-    font-size: 1.6rem;
-  }
-  .header-text p {
-    font-size: 0.85rem;
-    margin-top: 5px;
-  }
+
+  .header-text h1 { font-size: 1.8rem; }
+  .lock-visual { width: 90px; height: 90px; font-size: 35px; }
+}
+
+/* 3. SMALL MOBILE (Phones under 480px) */
+@media (max-width: 480px) {
+  .split-layout { padding: 90px 16px 30px; }
+  .unified-card { border-radius: 24px; }
+  .form-side { padding: 30px 20px; }
+
+  .header-text h1 { font-size: 1.5rem; }
+  .header-text p { font-size: 0.85rem; }
+
+  .info-label { font-size: 0.85rem; }
+  .info-value { font-size: 0.9rem; }
+
+  .btn { padding: 12px; font-size: 0.85rem; }
   
-  .lock-visual {
-    width: 80px; height: 80px;
-    font-size: 30px;
-    margin: 15px auto;
-  }
-
-  .info-grid {
-    margin: 10px 0;
-  }
-  .info-row {
-    padding: 10px 0;
-  }
-  .info-label, .info-value {
-    font-size: 0.8rem;
-  }
-
-  .btn-row {
-    margin-top: 15px;
-    gap: 10px;
-  }
-  .btn {
-    padding: 10px;
-    font-size: 0.8rem;
-  }
+  /* Feed Adjustments */
+  .story-ring { width: 50px; height: 50px; }
+  .post-card { padding: 15px; }
 }

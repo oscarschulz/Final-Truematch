@@ -11,10 +11,22 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
   <style>
-    /* === 1. SAFETY RESET === */
+    /* === 1. SAFETY RESET & NUCLEAR FIXES === */
     *, *::before, *::after {
-      box-sizing: border-box;
+      box-sizing: border-box !important;
+    }
+
+    html, body {
+      margin: 0; padding: 0;
+      background-color: var(--bg) !important;
+      color: var(--text);
+      font-family: 'Montserrat', sans-serif;
+      min-height: 100vh;
+      width: 100% !important;
+      overflow-x: hidden !important; /* Kill horizontal scroll */
     }
 
     :root {
@@ -26,15 +38,44 @@
       --glass-border: rgba(100, 233, 238, 0.3);
     }
 
-    body {
-      margin: 0; padding: 0;
-      background-color: var(--bg) !important;
-      color: var(--text);
-      font-family: 'Montserrat', sans-serif;
-      min-height: 100vh;
-      overflow-x: hidden;
-      overflow-y: auto; /* Always allow scrolling */
+    /* === LOADER STYLES (Added from Landing Page) === */
+    #app-loader {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: #000;
+        z-index: 99999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        transition: opacity 0.5s ease-out;
     }
+
+    .loader-logo {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        animation: pulseLogo 2s infinite;
+    }
+
+    .loader-text {
+        margin-top: 15px;
+        font-family: 'Montserrat', sans-serif;
+        font-weight: 700;
+        letter-spacing: 1px;
+        font-size: 1.2rem;
+        color: #fff;
+    }
+
+    @keyframes pulseLogo {
+        0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(100, 233, 238, 0.7); }
+        70% { transform: scale(1.1); box-shadow: 0 0 0 20px rgba(100, 233, 238, 0); }
+        100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(100, 233, 238, 0); }
+    }
+    /* ============================================== */
 
     /* === 2. BACKGROUND CANVAS === */
     #tm-bg-canvas { 
@@ -54,7 +95,6 @@
       display: flex; align-items: center; gap: 12px;
       text-decoration: none; color: #fff;
       font-weight: 800; font-size: 1.5rem; letter-spacing: 1px;
-      /* UPDATED: Allow mixed case for iTRUEMATCH */
       text-transform: none;
     }
     .nav-brand img { width: 40px; height: auto; }
@@ -67,11 +107,8 @@
       color: #fff; text-decoration: none; 
       font-size: 0.8rem; font-weight: 700;
       letter-spacing: 1px; 
-      
-      /* Fixed Compatibility */
       -webkit-backdrop-filter: blur(10px);
       backdrop-filter: blur(10px); 
-      
       transition: all 0.3s ease; text-transform: uppercase;
     }
     .nav-back-btn:hover { 
@@ -79,18 +116,16 @@
       border-color: #64E9EE; color: #64E9EE;
     }
 
-    /* === 4. MAIN LAYOUT === */
+    /* === 4. MAIN LAYOUT (Centered & Flex) === */
     .split-layout {
       position: relative;
       z-index: 5;
       width: 100%;
       min-height: 100vh;
       display: flex;
-      justify-content: center;
-      padding-top: 120px; 
-      padding-bottom: 50px;
-      padding-left: 20px; 
-      padding-right: 20px;
+      justify-content: center; /* Horizontal Center */
+      align-items: center;     /* Vertical Center */
+      padding: 80px 20px 50px 20px;
     }
 
     .unified-card {
@@ -100,19 +135,13 @@
       max-width: 1000px;
       min-height: 600px;
       height: auto;
-      
       background: var(--card-bg);
-      
-      /* Fixed Compatibility */
       -webkit-backdrop-filter: blur(30px);
       backdrop-filter: blur(30px);
-      
       border: 1px solid var(--glass-border);
       border-radius: 40px;
-      
       box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); 
       overflow: hidden;
-      
       animation: breatheBorder 4s infinite alternate;
     }
 
@@ -132,7 +161,7 @@
       min-height: 400px;
     }
 
-    /* CARD ANIMATION (Playful Spin) */
+    /* CARD ANIMATION */
     .membership-card-ui {
       width: 280px; height: 420px;
       background: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%);
@@ -179,11 +208,7 @@
     .header-text h1 { 
       font-size: 2rem; font-weight: 800; margin: 0; 
       background: linear-gradient(to right, #fff, var(--primary));
-      
-      /* FIXED: Added standard background-clip */
-      background-clip: text;
-      -webkit-background-clip: text; 
-      
+      background-clip: text; -webkit-background-clip: text; 
       -webkit-text-fill-color: transparent;
       text-transform: uppercase; letter-spacing: 1px;
     }
@@ -224,7 +249,7 @@
     .quota-bar-bg { width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 10px; overflow: hidden; }
     .quota-bar-fill { height: 100%; width: 0%; background: var(--primary); transition: width 0.6s ease; }
 
-    /* === BUTTONS (FIXED: NO COLOR SHIFT) === */
+    /* === BUTTONS === */
     .btn-row { display: flex; gap: 15px; margin-top: 30px; }
     
     .btn {
@@ -233,33 +258,19 @@
       cursor: pointer; transition: transform 0.2s ease, box-shadow 0.2s ease; border: 1px solid transparent;
     }
     
-    /* PRIMARY BUTTON (UPGRADE) */
     .btn-primary { 
-      background-color: #64E9EE; /* Fixed Cyan */
-      color: #000; /* Fixed Black Text */
-      border: 1px solid #64E9EE;
+      background-color: #64E9EE; color: #000; border: 1px solid #64E9EE;
     }
-    
-    /* HOVER STATE: No color change, just border glow and movement */
     .btn-primary:hover { 
-      background-color: #64E9EE !important; /* FORCE CYAN */
-      color: #000 !important; /* FORCE BLACK TEXT */
-      transform: translateY(-2px);
-      box-shadow: 0 0 15px rgba(100, 233, 238, 0.6); /* Cyan Glow Border only */
-      filter: none !important; /* Disable any brightness filters */
+      background-color: #64E9EE !important; color: #000 !important;
+      transform: translateY(-2px); box-shadow: 0 0 15px rgba(100, 233, 238, 0.6); filter: none !important;
     }
     
-    /* SECONDARY BUTTON (BACK) */
     .btn-ghost { 
-      background: transparent; 
-      border-color: rgba(255,255,255,0.3); 
-      color: var(--muted); 
+      background: transparent; border-color: rgba(255,255,255,0.3); color: var(--muted); 
     }
-    
     .btn-ghost:hover { 
-      border-color: #fff; 
-      color: #fff; 
-      transform: translateY(-1px);
+      border-color: #fff; color: #fff; transform: translateY(-1px);
     }
 
     /* Footer */
@@ -271,70 +282,93 @@
     .card-footer a:hover { color: var(--primary); }
 
     /* ==========================================================================
-       RESPONSIVE FIX FOR LAPTOPS (1280x800 & 1366x768)
-       Ensures layout fits without scrollbars on main body
+       RESPONSIVE LOGIC (APPLYING FIXES HERE)
        ========================================================================== */
-    @media screen and (max-width: 1400px), screen and (max-height: 850px) {
-      .auth-top-nav {
-        padding: 15px 30px;
-      }
-      .nav-brand { font-size: 1.2rem; }
-      .nav-brand img { width: 32px; }
 
-      .split-layout {
-        padding-top: 80px; /* Reduced top padding */
-        padding-bottom: 20px;
-      }
-
-      .unified-card {
-        height: auto;
-        min-height: 500px;
-        max-width: 900px;
-      }
-
-      /* Scale down Visual Side (Card Animation) */
-      .visual-side {
-        flex: 0 0 35%; /* Make it narrower */
-      }
-      
-      .membership-card-ui {
-        transform: scale(0.85); /* Shrink the visual card */
-      }
-
-      /* Adjust Form Side */
-      .form-side {
-        padding: 30px;
-      }
-
+    /* 1. LAPTOP & TABLET LANDSCAPE (1400px down to 1025px) */
+    @media screen and (max-width: 1400px) and (min-width: 1025px) {
+      .auth-top-nav { padding: 15px 30px; }
+      .split-layout { padding-top: 80px; padding-bottom: 20px; }
+      .unified-card { min-height: 500px; max-width: 900px; }
+      .visual-side { flex: 0 0 35%; }
+      .membership-card-ui { transform: scale(0.85); }
+      .form-side { padding: 30px; }
       .header-text h1 { font-size: 1.6rem; }
-      .header-text p { font-size: 0.85rem; margin-top: 5px; }
-
-      .info-grid { margin: 20px 0; }
-      .info-row { padding: 10px 0; }
-      .info-label, .info-value { font-size: 0.85rem; }
-
-      #pTier, #pActive {
-        padding: 3px 10px; font-size: 0.75rem;
-      }
-
-      .quota-container { margin: 15px 0; }
-      
-      .btn-row { margin-top: 20px; gap: 10px; }
-      .btn { padding: 10px; font-size: 0.8rem; }
     }
 
-    /* Mobile (Frozen/Existing) */
-    @media (max-width: 900px) {
-      .split-layout { padding: 100px 20px 40px; display: block; }
-      .unified-card { flex-direction: column; height: auto; max-width: 500px; margin: 0 auto; }
-      .visual-side { display: none; }
+    /* 2. TABLET & MOBILE (1024px and below) - THE FIX AREA */
+    @media (max-width: 1024px) {
+      .auth-top-nav { padding: 20px; }
+      .nav-brand { font-size: 1.3rem; }
+      
+      .split-layout { 
+        padding: 80px 20px 40px; 
+        display: flex; 
+        justify-content: center;
+        align-items: center; 
+      }
+
+      .unified-card { 
+        flex-direction: column;
+        height: auto; 
+        
+        /* EXPANDED WIDTH FOR TABLET */
+        width: 100% !important;
+        max-width: 800px !important; /* Wider than before (was 600px) */
+        
+        margin: 0 auto; 
+      }
+
+      .visual-side { display: none; } /* Hide visual on tablet/mobile to save space */
       .form-side { padding: 40px 30px; }
-      .btn-row { flex-direction: column; }
+      
+      .btn-row { flex-direction: column; gap: 12px; }
+      .info-row { padding: 14px 0; }
+    }
+
+    /* 3. MOBILE PHONES (768px and below) - MAXIMIZE SPACE */
+    @media (max-width: 768px) {
+        .split-layout {
+            padding-inline: 10px; /* Sagad sa gilid */
+        }
+        
+        .unified-card {
+            width: 100% !important;
+            max-width: 100% !important; /* FULL WIDTH */
+            border-radius: 24px;
+        }
+        
+        .form-side {
+            padding: 30px 20px;
+        }
+    }
+
+    /* 4. SMALL MOBILE (Phones under 480px) */
+    @media (max-width: 480px) {
+      .nav-brand span { font-size: 1.1rem; }
+      .nav-brand img { width: 30px; }
+      
+      .split-layout { 
+        padding-top: 70px;
+      }
+      
+      .header-text h1 { font-size: 1.5rem; }
+      .header-text p { font-size: 0.85rem; }
+      
+      .info-label { font-size: 0.85rem; }
+      .info-value { font-size: 0.9rem; }
+      
+      .btn { padding: 12px; font-size: 0.85rem; }
     }
   </style>
 </head>
 
 <body class="tm-dark">
+  <div id="app-loader">
+      <img src="assets/images/truematch-mark.png" class="loader-logo" alt="Loading...">
+      <div class="loader-text">iTRUEMATCH</div>
+  </div>
+
   <canvas id="tm-bg-canvas" aria-hidden="true"></canvas>
 
   <nav class="auth-top-nav">
@@ -483,6 +517,16 @@
     document.addEventListener('DOMContentLoaded', () => {
       const qText = document.getElementById('pQuota');
       const qBar = document.getElementById('visualQuotaFill');
+      
+      // LOADER REMOVAL LOGIC
+      const loader = document.getElementById('app-loader');
+      if (loader) {
+          setTimeout(() => {
+              loader.style.opacity = '0';
+              setTimeout(() => loader.remove(), 500);
+          }, 500); // 2 Seconds forced delay
+      }
+
       if(qText && qBar) {
         new MutationObserver(() => {
           const txt = qText.innerText || "";

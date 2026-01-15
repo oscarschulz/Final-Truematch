@@ -2,12 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=1200"> <title>iTRUEMATCH — Secure Checkout</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>iTRUEMATCH — Secure Checkout</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
   <script src="./tm-loader.js"></script>
 
   <style>
@@ -23,6 +26,45 @@
       --glass-border: rgba(100, 233, 238, 0.3);
     }
 
+    /* === LOADER STYLES (Added) === */
+    #app-loader {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: #000;
+        z-index: 99999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        transition: opacity 0.5s ease-out;
+    }
+
+    .loader-logo {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        animation: pulseLogo 2s infinite;
+    }
+
+    .loader-text {
+        margin-top: 15px;
+        font-family: 'Montserrat', sans-serif;
+        font-weight: 700;
+        letter-spacing: 1px;
+        font-size: 1.2rem;
+        color: #fff;
+    }
+
+    @keyframes pulseLogo {
+        0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(100, 233, 238, 0.7); }
+        70% { transform: scale(1.1); box-shadow: 0 0 0 20px rgba(100, 233, 238, 0); }
+        100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(100, 233, 238, 0); }
+    }
+    /* ============================= */
+
     *, *::before, *::after {
       box-sizing: border-box;
     }
@@ -32,12 +74,12 @@
       background: #02040a !important;
       color: var(--text);
       font-family: 'Montserrat', sans-serif;
-      height: 100vh;
+      min-height: 100vh;
       width: 100%;
-      overflow: hidden; /* No scrollbars for pure desktop feel */
+      overflow-x: hidden; 
+      overflow-y: auto; 
       display: flex;
       flex-direction: column;
-      min-width: 1100px; /* Force minimum desktop width */
     }
 
     #tm-bg-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 0; pointer-events: none; }
@@ -69,7 +111,6 @@
       text-decoration: none; color: #fff;
       font-weight: 800; font-size: 1.5rem; letter-spacing: 1px;
       pointer-events: auto; 
-      /* FIXED: Remove uppercase to allow 'iTRUEMATCH' casing */
       text-transform: none; 
     }
     .nav-brand img { width: 40px; height: auto; }
@@ -105,12 +146,13 @@
     .split-layout {
       display: flex;
       width: 100%;
-      height: 100%;
+      min-height: 100vh;
       position: relative;
       z-index: 1;
       align-items: center;
       justify-content: center;
       padding-top: 60px; /* Space for header */
+      padding-bottom: 40px;
     }
 
     .unified-card {
@@ -118,8 +160,11 @@
       flex-direction: row; /* FORCE ROW */
       width: 100%;
       max-width: 1100px;
-      min-width: 1000px; /* Force minimum width to prevent squashing */
-      height: 700px;
+      min-width: 1000px; 
+      
+      /* REVERTED TO ORIGINAL HEIGHT */
+      height: 700px; 
+      
       background: rgba(13, 20, 35, 0.85);
       backdrop-filter: blur(30px);
       border: 1px solid rgba(100, 233, 238, 0.3);
@@ -253,7 +298,12 @@
     .feature-icon { color: var(--primary); font-weight: 800; filter: drop-shadow(0 0 5px rgba(100, 233, 238, 0.5)); }
 
     /* Action Buttons */
-    .action-group { display: flex; flex-direction: column; gap: 12px; width: 100%; margin-top: auto; }
+    .action-group { 
+      display: flex; flex-direction: column; gap: 12px; width: 100%; 
+      margin-top: auto; 
+      /* FIXED: Lift buttons up from the footer */
+      margin-bottom: 30px; 
+    }
     
     .btn { width: 100%; padding: 14px; border-radius: 50px; font-size: 0.95rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; transition: all 0.3s; display: flex; justify-content: center; align-items: center; text-decoration: none; border: 1px solid transparent; font-family: 'Montserrat', sans-serif; gap: 10px; }
     
@@ -275,63 +325,96 @@
     .simple-footer a:hover { color: var(--primary); }
 
     /* ==========================================================================
-       RESPONSIVE FIX FOR LAPTOPS (1280x800 & 1366x768)
-       Ensures no scrolling, perfect fit without breaking Desktop (1920x1080)
+       RESPONSIVE LOGIC
        ========================================================================== */
-    @media screen and (max-width: 1400px), screen and (max-height: 850px) {
-      .auth-top-nav {
-        padding: 15px 30px; /* Slimmer navbar */
-      }
+    
+    /* 1. SMALL DESKTOPS (1400px down to 1025px) */
+    @media screen and (max-width: 1400px) and (min-width: 1025px), screen and (max-height: 850px) {
+      .auth-top-nav { padding: 15px 30px; }
+      .split-layout { padding-top: 60px; }
       
-      .split-layout {
-        padding-top: 60px; /* Pull content up */
-      }
-
-      .unified-card {
-        height: 580px; /* Reduced fixed height to fit 800px screens */
-        max-width: 950px;
-        min-width: 900px;
-      }
-
-      /* Scale down Visual Side (Cards) */
-      .cards-container {
-        transform: scale(0.8); /* Make floating cards smaller */
-      }
-
-      /* Adjust Right Side (Form) Spacing */
-      .form-side {
-        padding: 25px 35px;
-      }
-
+      /* REVERTED TO ORIGINAL LAPTOP HEIGHT */
+      .unified-card { height: 580px; max-width: 950px; min-width: 900px; }
+      
+      .cards-container { transform: scale(0.8); }
+      .form-side { padding: 25px 35px; }
       .card-title { font-size: 1.5rem; margin-bottom: 5px; }
-      .card-subtitle { font-size: 0.85rem; margin-bottom: 10px; }
-      
-      .notice-box {
-        margin-bottom: 15px;
-        padding: 8px 12px;
-        font-size: 0.75rem;
-      }
-
-      .plan-summary {
-        padding: 15px 20px;
-        margin-bottom: 15px;
-      }
+      .notice-box { margin-bottom: 15px; padding: 8px 12px; font-size: 0.75rem; }
+      .plan-summary { padding: 15px 20px; margin-bottom: 15px; }
       .plan-summary::after { bottom: 60px; }
-
       .plan-price { font-size: 1.8rem; }
-      .total-row { margin-top: 15px; }
-
-      .action-group { gap: 10px; }
-      .btn { padding: 12px; font-size: 0.85rem; }
       
+      /* Reduced margin for laptop */
+      .action-group { gap: 10px; margin-bottom: 20px; }
+      
+      .btn { padding: 12px; font-size: 0.85rem; }
       .wallet-badges { margin-top: 10px; }
       .badge-icon { height: 22px; }
+    }
+
+    /* 2. TABLET PORTRAIT & MOBILE (1024px and below) */
+    @media (max-width: 1024px) {
+      .auth-top-nav { padding: 20px; }
+      .nav-brand { font-size: 1.3rem; }
+      .nav-btn span { display: none; } /* Hide text on small screens, keep icon */
+      .nav-btn { padding: 10px; }
+
+      /* CENTERED STACK LAYOUT */
+      .split-layout { 
+        padding: 80px 20px 40px; 
+        display: flex; 
+        justify-content: center;
+        align-items: center; 
+        min-height: 100vh;
+      }
+
+      .unified-card { 
+        flex-direction: column; /* Stacked */
+        height: auto; /* Grow with content */
+        max-width: 600px; 
+        min-width: 0;
+        margin: 0 auto; 
+      }
+
+      /* HIDE 3D VISUAL ON MOBILE/TABLET TO SAVE SPACE */
+      .visual-side { display: none; }
+
+      .form-side { width: 100%; padding: 40px 30px; }
+      
+      .plan-price { font-size: 2rem; }
+      .card-title { font-size: 1.6rem; }
+      
+      .action-group { margin-bottom: 0; } /* Reset bottom margin on mobile */
+
+      /* FOOTER FIX FOR MOBILE */
+      .simple-footer {
+        position: relative !important;
+        bottom: auto !important;
+        margin-top: 40px !important; 
+        padding: 0;
+      }
+    }
+
+    /* 3. SMALL MOBILE (Phones under 480px) */
+    @media (max-width: 480px) {
+      .split-layout { padding: 70px 16px 30px; }
+      .unified-card { border-radius: 24px; }
+      .form-side { padding: 30px 20px; }
+      .card-title { font-size: 1.5rem; }
+      .plan-price { font-size: 1.8rem; }
+      .btn { padding: 12px; font-size: 0.85rem; }
+      .wallet-badges { gap: 10px; flex-wrap: wrap; }
     }
 
   </style>
 </head>
 
 <body class="tm-dark">
+  <div id="app-loader">
+      <img src="assets/images/truematch-mark.png" class="loader-logo" alt="Loading...">
+      <div class="loader-text">iTRUEMATCH</div>
+  </div>
+
   <canvas id="tm-bg-canvas" aria-hidden="true"></canvas>
 
   <nav class="auth-top-nav">
@@ -501,5 +584,17 @@
   </script>
 
   <script src="/pay.js" type="module"></script>
+  
+  <script>
+    window.addEventListener('load', () => {
+        const loader = document.getElementById('app-loader');
+        if (loader) {
+            setTimeout(() => {
+                loader.style.opacity = '0';
+                setTimeout(() => loader.remove(), 500);
+            }, 500); // 0.5 Seconds Delay
+        }
+    });
+  </script>
 </body>
 </html>
