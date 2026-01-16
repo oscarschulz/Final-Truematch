@@ -103,43 +103,6 @@ html.tm-home .steps-wrapper, html.tm-home .bento-grid { scrollbar-width: none !i
 
 /* --- 3. MOBILE PHONES (768px pababa) --- */
 @media (max-width: 768px) {
-
-  /*
-    MOBILE GAP FIX
-    Some base/desktop CSS often forces sections to full screen (e.g., 100vh).
-    That creates large empty gaps when content is short. Force sections to
-    size to their content on smaller screens.
-  */
-  html.tm-home main > section,
-  html.tm-home section {
-    min-height: auto !important;
-    height: auto !important;
-  }
-
-  /* Reduce title + wrapper spacing */
-  html.tm-home .section__title,
-  html.tm-home .section-title {
-    margin-top: 0 !important;
-    margin-bottom: 14px !important;
-  }
-
-  html.tm-home .steps-wrapper,
-  html.tm-home .privacy-wrapper,
-  html.tm-home .pricing-wrapper,
-  html.tm-home .faq-wrapper,
-  html.tm-home .join-wrap {
-    margin-top: 12px !important;
-    margin-bottom: 0 !important;
-  }
-
-  /* If a carousel is used, prevent any fixed heights from creating blank space */
-  html.tm-home .tm-carousel,
-  html.tm-home .tm-carousel__viewport,
-  html.tm-home .tm-carousel__track,
-  html.tm-home .tm-carousel__slide {
-    min-height: 0 !important;
-    height: auto !important;
-  }
   html.tm-home { font-size: 15px; --tm-pad-x: 20px; }
   html.tm-home .container { padding-inline: var(--tm-pad-x); }
   html.tm-home section { padding-top: 48px !important; padding-bottom: 48px !important; }
@@ -257,51 +220,6 @@ html.tm-home .steps-wrapper, html.tm-home .bento-grid { scrollbar-width: none !i
 
 /* --- 4. SMALL MOBILES (480px pababa) --- */
 @media (max-width: 480px) {
-  /* Tighter section spacing on small phones */
-  html.tm-home main > section,
-  html.tm-home section {
-    padding-top: 28px !important;
-    padding-bottom: 28px !important;
-    min-height: 0 !important;
-    height: auto !important;
-  }
-
-  /* Reduce the hero's vertical footprint on mobile */
-  html.tm-home .hero {
-    min-height: 0 !important;
-    height: auto !important;
-    padding-top: calc(64px + env(safe-area-inset-top)) !important;
-    padding-bottom: 22px !important;
-  }
-
-  /* Tighten common section title spacing (new markup uses section__title) */
-  html.tm-home .section__title,
-  html.tm-home .section-title {
-    margin: 0 0 12px !important;
-  }
-
-  /* Tighten wrappers so the next section sits closer */
-  html.tm-home .steps-wrapper,
-  html.tm-home .privacy-wrapper,
-  html.tm-home .pricing-wrapper,
-  html.tm-home .faq-wrapper,
-  html.tm-home .join-wrap {
-    margin-top: 10px !important;
-    margin-bottom: 0 !important;
-  }
-
-  /* If the newer tm-carousel markup is used, keep it compact too */
-  html.tm-home .tm-carousel {
-    margin-top: 10px !important;
-    margin-bottom: 0 !important;
-  }
-  html.tm-home .tm-carousel__viewport,
-  html.tm-home .tm-carousel__track,
-  html.tm-home .tm-carousel__slide {
-    min-height: 0 !important;
-    height: auto !important;
-  }
-
   html.tm-home .container { padding-inline: 16px; }
   html.tm-home .brand__name { display: block; font-size: 14px; }
   
