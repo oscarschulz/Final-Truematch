@@ -1,341 +1,778 @@
 <!DOCTYPE html>
 <html lang="en" class="tm-home">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TrueMatch — Featured Profile Opt-in</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>TrueMatch — Featured Profile Opt-In</title>
 
+  <link rel="icon" href="assets/images/truematch-mark.png" />
+  <link rel="apple-touch-icon" href="assets/images/truematch-mark.png" />
+
+  <link rel="stylesheet" href="font.css" />
+  <link rel="stylesheet" href="animations.css" />
   <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="optin.css" />
+  <link rel="stylesheet" href="optin.mobile.css" />
   <link rel="stylesheet" href="fomo.css" />
 
-  <script src="tm-loader.js" defer></script>
-
   <style>
-    /* Opt-in form success UI */
-    .optin-form { display: grid; gap: 14px; }
-    .optin-form .row { display: grid; gap: 8px; }
-    .optin-form label { font-size: 12px; opacity: 0.9; }
-    .optin-form input,
-    .optin-form select,
-    .optin-form textarea {
+    /* Minimal extras to make the opt-in form look native without touching your main CSS */
+    .optin-note { margin-top: .7rem; }
+    .optin-form { display: grid; gap: .8rem; margin-top: 1rem; }
+    .optin-form .row { display: grid; gap: .8rem; grid-template-columns: 1fr; }
+    @media (min-width: 820px) { .optin-form .row { grid-template-columns: 1fr 1fr; } }
+    .optin-form input, .optin-form select, .optin-form textarea {
       width: 100%;
-      padding: 12px 12px;
-      border-radius: 12px;
-      border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(0,0,0,0.35);
+      padding: .9rem 1rem;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.25);
       color: #fff;
       outline: none;
     }
     .optin-form textarea { min-height: 110px; resize: vertical; }
-
+    .optin-form label { font-size: .9rem; }
+    .optin-form .checks { display: grid; gap: .55rem; }
+    .optin-form .checks label { display: flex; gap: .55rem; align-items: flex-start; }
+    .optin-form .checks input { width: 18px; height: 18px; margin-top: 2px; }
     .optin-success {
       display: none;
-      margin-top: 16px;
-      padding: 14px 14px;
+      margin-top: 1rem;
+      padding: 1rem;
       border-radius: 16px;
-      border: 1px solid rgba(59, 255, 232, 0.25);
-      background: rgba(10, 255, 220, 0.08);
+      border: 1px solid rgba(100,233,238,.25);
+      background: rgba(100,233,238,.08);
     }
-    .optin-success h3 { margin: 0 0 6px; font-size: 16px; }
-    .optin-success p { margin: 0; font-size: 13px; opacity: 0.9; }
-
-    /* Mobile-only UI tweaks */
-    @media (max-width: 768px){
-      /* Reduce hero-to-next-section gap by letting hero size to content */
-      html.tm-home .hero{
-        min-height: unset !important;
-        height: auto !important;
-        padding-bottom: 22px !important;
-      }
-      html.tm-home .scroll-indicator{ display: none !important; }
-
-      /* Tighten spacing above How it works */
-      html.tm-home #how-it-works{
-        padding-top: 6px !important;
-        margin-top: -14px !important;
-      }
-
-      /* Ensure carousel nav buttons are visible on mobile */
-      html.tm-home .tm-carousel__btn{
-        display: grid !important;
-        opacity: 1 !important;
-        pointer-events: auto !important;
-      }
-
-      /* Center + slightly widen the opt-in form, and increase border thickness */
-      html.tm-home #apply .pricing-grid{
-        display: grid !important;
-        place-items: center !important;
-      }
-      html.tm-home #apply .optin-form-card{
-        width: min(92vw, 430px) !important;
-        margin-inline: auto !important;
-        border-width: 2px !important;
-      }
-
-      /* Add safe horizontal breathing room for carousel slides */
-      html.tm-home .tm-carousel__track{
-        padding-left: 16px !important;
-        padding-right: 16px !important;
-        scroll-padding-left: 16px !important;
-        scroll-padding-right: 16px !important;
-      }
-    }
-  </style>
+    .tiny-link { text-decoration: underline; }
+  
+  /* Hide carousel nav buttons by default (shown by mobile CSS only) */
+  html.tm-home .tm-carousel__btn{display:none;}
+</style>
 </head>
 
-<body>
+<body id="top">
+  <canvas id="tm-bg-canvas" aria-hidden="true"></canvas>
+
   <header class="site-header">
-    <div class="container header-inner">
-      <a class="brand" href="index.html">
-        <span class="brand-mark">M</span>
-        <span class="brand-name">TrueMatch</span>
+    <div class="container nav">
+      <a href="#top" class="brand" aria-label="TrueMatch opt-in top">
+        <img src="assets/images/truematch-mark.png" alt="TrueMatch" class="brand__logo" />
+        <span class="brand__name">TrueMatch</span>
       </a>
 
-      <button class="menu-btn" id="menuBtn" aria-label="Open menu">
-        <span></span><span></span><span></span>
+      <button class="nav__toggle" aria-label="Toggle menu" aria-expanded="false">
+        <span class="nav__bar"></span>
+        <span class="nav__bar"></span>
+        <span class="nav__bar"></span>
       </button>
 
-      <nav class="site-nav" id="siteNav">
+      <div class="nav__dropdown" id="navDropdown" aria-label="Mobile menu">
+        <a href="#how-it-works">How It Works</a>
+        <a href="#privacy">Privacy</a>
+        <a href="#apply">Opt-In</a>
+        <a href="#faq">FAQ</a>
+        <div style="height:.6rem"></div>
+        <a class="btn" href="#top">Back to Top</a>
+        <a class="btn primary" href="#apply">Opt-In Now</a>
+      </div>
+
+      <nav class="nav__menu" aria-label="Primary">
         <a href="#how-it-works">How it works</a>
         <a href="#privacy">Privacy</a>
-        <a href="#apply" class="btn btn--primary">Opt-in</a>
+        <a href="#apply">Opt-In</a>
+        <a href="#faq">FAQ</a>
       </nav>
+
+      <div class="nav__actions">
+        <a class="btn" href="#top">Top</a>
+        <a class="btn primary" href="#apply">Opt-In Now</a>
+      </div>
     </div>
   </header>
 
   <main>
-    <!-- HERO -->
-    <section class="hero hero--home">
-      <div class="container hero-inner">
-        <div class="hero__copy">
-          <h1 class="hero__title">Featured profile, free.</h1>
-          <p class="hero__subtitle">
-            Get seen by verified members on higher tiers. You only share what you want.
-          </p>
+    <section class="hero">
+      <div class="container hero-container">
+        <div class="hero__grid reveal-trigger">
+          <div class="hero__copy reveal-left">
+            <div class="pill">Opt-in • Privacy-first • You stay in control</div>
 
-          <div class="hero__cta">
-            <a href="#apply" class="btn btn--primary">Opt-in now</a>
-            <a href="#privacy" class="btn btn--ghost">Privacy first</a>
+            <h1>Be Featured on <span class="highlight">TrueMatch</span></h1>
+
+            <p>
+              If you received this link, someone thought you could be a great match for our verified members.
+              Opt in to allow your <strong>public Instagram profile link</strong> and <strong>profile photo</strong>
+              to appear in curated recommendations.
+            </p>
+
+            <p class="muted tiny optin-note">
+              We never ask for your Instagram password. Not affiliated with Instagram/Meta.
+            </p>
+
+            <div class="hero__cta">
+              <button class="btn primary hero-btn" type="button" id="btnOptIn">Opt-In Now</button>
+              <a class="btn hero-btn" href="#privacy">What members see</a>
+            </div>
+
+            <div class="hero__social-proof">
+              <div class="avatars">
+                <div class="avatar c1"></div>
+                <div class="avatar c2"></div>
+                <div class="avatar c3"></div>
+              </div>
+              <span class="proof-text">Seen by <strong>Verified Members</strong> on higher tiers</span>
+            </div>
           </div>
 
-          <div class="hero__trust">
-            <div class="pill">IG link + profile photo only</div>
-            <div class="pill">Opt out anytime</div>
+          <div class="hero__media reveal-right">
+            <div class="hero__img-wrapper floating">
+              <img
+                src="assets/images/truematch-hero-logo.png"
+                alt="TrueMatch"
+                class="hero__logo"
+                loading="eager"
+                decoding="async"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <a href="#how-it-works" class="scroll-indicator">
+        <span>Scroll to Explore</span>
+        <div class="mouse"><div class="wheel"></div></div>
+        <div class="scroll-arrow"></div>
+      </a>
+    </section>
+
+    <section id="how-it-works">
+      <div class="container">
+        <h2 class="section__title">How it works</h2>
+
+        <div class="tm-carousel tm-carousel--steps">
+          <button class="tm-carousel__btn prev" type="button" aria-label="Previous"></button>
+
+          <div class="steps-wrapper reveal-trigger">
+          <div class="step-card reveal-left">
+            <div class="step-number">01</div>
+            <h3>Submit your opt-in</h3>
+            <p class="muted">
+              Share your IG handle and a few basics so we can list you correctly (city, age range).
+            </p>
+          </div>
+
+          <div class="step-card reveal-up reveal-delay-100">
+            <div class="step-number">02</div>
+            <h3>Quick review</h3>
+            <p class="muted">
+              We confirm the handle and ensure the listing stays clean, respectful, and consent-based.
+            </p>
+          </div>
+
+          <div class="step-card reveal-right reveal-delay-200">
+            <div class="step-number">03</div>
+            <h3>Get featured</h3>
+            <p class="muted">
+              Your IG link + profile photo can be recommended to higher-tier members who match your vibe.
+            </p>
           </div>
         </div>
 
-        <div class="hero__image">
-          <div class="phone-mock">
-            <div class="phone-top"></div>
-            <div class="phone-screen">
-              <div class="mini-card">
-                <div class="mini-title">What members see</div>
-                <div class="mini-row">
-                  <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-                </div>
-                <div class="mini-caption">Seen by <b>Verified Members</b> on higher tiers</div>
+          <button class="tm-carousel__btn next" type="button" aria-label="Next"></button>
+        </div>
+      </div>
+    </section>
+
+    <section id="privacy">
+      <div class="container">
+        <h2 class="section__title">Privacy & control</h2>
+
+        <div class="tm-carousel tm-carousel--privacy">
+          <button class="tm-carousel__btn prev" type="button" aria-label="Previous"></button>
+
+          <div class="bento-grid reveal-trigger">
+          <div class="bento-card wide reveal-down">
+            <div class="bento-content">
+              <div class="bento-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M12 2l8 4v6c0 5-3.5 9.4-8 10-4.5-.6-8-5-8-10V6l8-4z" />
+                  <path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <div>
+                <h3>What members see (by default)</h3>
+                <p class="muted">
+                  Only your <strong>Instagram profile link</strong> and <strong>profile photo</strong>.
+                  Nothing else unless you explicitly add it.
+                </p>
               </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      <div class="scroll-indicator">
-        <span></span>
-      </div>
-    </section>
-
-    <!-- HOW IT WORKS -->
-    <section id="how-it-works">
-      <div class="container">
-        <h2 class="section-title">How it works</h2>
-
-        <div class="tm-carousel" data-carousel-root="how">
-          <button class="tm-carousel__btn prev" type="button" aria-label="Previous"></button>
-
-          <div class="steps-wrapper tm-carousel__track" data-carousel="how">
-            <div class="step-card">
-              <div class="step-num">01</div>
-              <h3>Submit</h3>
-              <p>Add your IG handle and email. Optional details help matches.</p>
+          <div class="bento-card reveal-left reveal-delay-100">
+            <div class="bento-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M12 1v22" />
+                <path d="M5 7h14M5 17h14" />
+              </svg>
             </div>
+            <h3>You stay in control</h3>
+            <p class="muted">Opt out anytime. We’ll remove your listing upon request.</p>
+          </div>
 
-            <div class="step-card">
-              <div class="step-num">02</div>
-              <h3>Get reviewed</h3>
-              <p>We validate the handle + basic profile photo visibility.</p>
+          <div class="bento-card reveal-right reveal-delay-100">
+            <div class="bento-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M4 12h16" />
+                <path d="M12 4v16" />
+              </svg>
             </div>
+            <h3>No password ever</h3>
+            <p class="muted">We do not ask for IG passwords, OTPs, or private account access.</p>
+          </div>
 
-            <div class="step-card">
-              <div class="step-num">03</div>
-              <h3>Get featured</h3>
-              <p>Your IG link + profile photo can be recommended to higher-tier members.</p>
+          <div class="bento-card wide reveal-up reveal-delay-200">
+            <div class="bento-content">
+              <div class="bento-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M20 7l-8 8-4-4" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M4 19h16" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <div>
+                <h3>We don’t message on your behalf</h3>
+                <p class="muted">
+                  TrueMatch simply recommends. If someone likes your profile, they decide on their own whether to approach you on Instagram.
+                </p>
+              </div>
             </div>
           </div>
+
+        </div>
 
           <button class="tm-carousel__btn next" type="button" aria-label="Next"></button>
         </div>
       </div>
     </section>
 
-    <!-- PRIVACY -->
-    <section id="privacy">
-      <div class="container">
-        <h2 class="section-title">Privacy &amp; control</h2>
-
-        <div class="tm-carousel" data-carousel-root="privacy">
-          <button class="tm-carousel__btn prev" type="button" aria-label="Previous"></button>
-
-          <!-- FIX: add tm-carousel__track so the JS hooks this carousel -->
-          <div class="bento-grid tm-carousel__track" data-carousel="privacy">
-            <div class="bento-card">
-              <div class="bento-icon">🛡️</div>
-              <h3>What members see (by default)</h3>
-              <p>Only your Instagram profile link and profile photo. Nothing else unless you explicitly add it.</p>
-            </div>
-
-            <div class="bento-card">
-              <div class="bento-icon">⏸️</div>
-              <h3>You stay in control</h3>
-              <p>Opt out anytime. We’ll remove your listing upon request.</p>
-            </div>
-
-            <div class="bento-card">
-              <div class="bento-icon">🔒</div>
-              <h3>No password ever</h3>
-              <p>We don’t ask for IG passwords. Just a handle and consent.</p>
-            </div>
-          </div>
-
-          <button class="tm-carousel__btn next" type="button" aria-label="Next"></button>
-        </div>
-      </div>
-    </section>
-
-    <!-- APPLY -->
     <section id="apply">
       <div class="container">
-        <h2 class="section-title">Opt-in form</h2>
+        <h2 class="section__title">Opt-In form</h2>
 
-        <div class="pricing-grid">
-          <!-- FIX: add optin-form-card class for mobile centering + thicker border -->
-          <div class="price-card concierge reveal-up optin-form-card" style="grid-column: 1 / -1;">
-            <div class="price-badge">FEATURED PROFILE</div>
-            <div class="price-title">
-              <span class="price-main">Free</span>
-              <span class="price-sub">/apply</span>
-            </div>
-            <p class="price-desc">
+        <div class="pricing-grid reveal-trigger">
+          <div class="price-card concierge reveal-up" style="grid-column: 1 / -1;">
+            <span class="price__tag">Featured Profile</span>
+            <div class="price__value">Free <small>/apply</small></div>
+            <p class="muted tiny">
               Submit this form to consent to being featured (IG link + profile photo only).
             </p>
 
-            <form class="optin-form" id="optinForm">
+            <form id="optinForm" class="optin-form">
               <div class="row">
-                <label for="igHandle">Instagram handle*</label>
-                <input id="igHandle" name="igHandle" type="text" placeholder="@yourhandle" required />
+                <div>
+                  <label for="igHandle" class="muted tiny">Instagram handle *</label>
+                  <input id="igHandle" name="igHandle" placeholder="@yourhandle" required />
+                </div>
+                <div>
+                  <label for="email" class="muted tiny">Email *</label>
+                  <input id="email" name="email" type="email" placeholder="you@email.com" required />
+                </div>
               </div>
 
               <div class="row">
-                <label for="email">Email*</label>
-                <input id="email" name="email" type="email" placeholder="you@email.com" required />
+                <div>
+                  <label for="city" class="muted tiny">City (optional)</label>
+                  <input id="city" name="city" placeholder="e.g., Miami" />
+                </div>
+                <div>
+                  <label for="ageRange" class="muted tiny">Age range (optional)</label>
+                  <select id="ageRange" name="ageRange">
+                    <option value="">Prefer not to say</option>
+                    <option>18–20</option>
+                    <option>21–24</option>
+                    <option>25–29</option>
+                    <option>30–34</option>
+                    <option>35+</option>
+                  </select>
+                </div>
               </div>
 
-              <div class="row">
-                <label for="city">City (optional)</label>
-                <input id="city" name="city" type="text" placeholder="e.g., Miami" />
-              </div>
-
-              <div class="row">
-                <label for="ageRange">Age range (optional)</label>
-                <select id="ageRange" name="ageRange">
-                  <option value="">Prefer not to say</option>
-                  <option>18–24</option>
-                  <option>25–34</option>
-                  <option>35–44</option>
-                  <option>45+</option>
-                </select>
-              </div>
-
-              <div class="row">
-                <label for="openTo">What are you open to? (optional)</label>
-                <select id="openTo" name="openTo">
+              <div>
+                <label for="intent" class="muted tiny">What are you open to? (optional)</label>
+                <select id="intent" name="intent">
                   <option value="">Select one</option>
                   <option>Dating</option>
-                  <option>Friends</option>
-                  <option>Networking</option>
-                  <option>Open-minded</option>
+                  <option>Serious relationship</option>
+                  <option>Friends first</option>
+                  <option>Not sure yet</option>
                 </select>
               </div>
 
-              <div class="row">
-                <label for="notes">Anything you want us to know? (optional)</label>
-                <textarea id="notes" name="notes" placeholder="Optional: preferred age range, vibe, boundaries, etc."></textarea>
+              <div>
+                <label for="note" class="muted tiny">Anything you want us to know? (optional)</label>
+                <textarea id="note" name="note" placeholder="Optional: preferred age range, vibe, boundaries, etc."></textarea>
               </div>
 
-              <button class="btn btn--primary" type="submit">Submit opt-in</button>
+              <div class="checks">
+                <label>
+                  <input type="checkbox" id="ageConfirm" required />
+                  <span class="muted tiny">I confirm I am 18+.</span>
+                </label>
 
-              <div class="optin-success" id="optinSuccess">
-                <h3>Submitted.</h3>
-                <p>We’ll review it and feature your profile when approved.</p>
+                <label>
+                  <input type="checkbox" id="consent" required />
+                  <span class="muted tiny">
+                    I consent to TrueMatch featuring my public IG <strong>link</strong> and <strong>profile photo</strong> to higher-tier members.
+                    I understand I can request removal anytime.
+                  </span>
+                </label>
+
+                <label>
+                  <input type="checkbox" id="updates" />
+                  <span class="muted tiny">Optional: Send me updates about TrueMatch.</span>
+                </label>
+
+                <p class="muted tiny">
+                  By submitting, you agree to our <a class="tiny-link" href="#">Terms</a> and <a class="tiny-link" href="#">Privacy Policy</a>.
+                </p>
               </div>
+
+              <button type="submit" class="btn primary price-btn">Submit Opt-In</button>
+
+              <div id="optinSuccess" class="optin-success">
+                <p class="muted" style="margin:0;">
+                  Submitted. Thank you. If approved, your listing will be added soon.
+                  For removal requests, reply to the email confirmation (or contact support).
+                </p>
+              </div>
+
+              <p class="muted tiny" style="margin-top:.9rem;">
+                Support: <a class="tiny-link" href="mailto:support@truematch.example">support@truematch.example</a>
+              </p>
             </form>
           </div>
         </div>
+
       </div>
     </section>
 
-    <!-- FAQ -->
-    <section id="faq">
+    <section id="faq" class="faq">
       <div class="container">
-        <h2 class="section-title">FAQ</h2>
+        <h2 class="section__title">FAQ</h2>
 
-        <div class="faq-grid">
-          <div class="faq-item">
-            <h3>Is this really free?</h3>
-            <p>Yes. It’s a free opt-in to be included as a featured profile.</p>
-          </div>
-          <div class="faq-item">
-            <h3>Can I remove myself later?</h3>
-            <p>Yes. Opt out anytime and we remove your listing upon request.</p>
-          </div>
-          <div class="faq-item">
-            <h3>Do you need my Instagram password?</h3>
-            <p>No. Never. Only your handle and consent.</p>
-          </div>
+        <div class="faq-wrapper reveal-trigger">
+          <details class="faq-card reveal-up">
+            <summary>
+              Why did I receive this link?
+              <span class="faq-icon">+</span>
+            </summary>
+            <div class="faq-content">
+              <p class="muted">
+                You likely appeared in someone’s network or a public list where your profile fits what our verified members look for.
+                This page is strictly opt-in—nothing is listed without consent.
+              </p>
+            </div>
+          </details>
+
+          <details class="faq-card reveal-up reveal-delay-100">
+            <summary>
+              What exactly will be shown?
+              <span class="faq-icon">+</span>
+            </summary>
+            <div class="faq-content">
+              <p class="muted">
+                Only your Instagram profile link and your profile photo. City/age range are optional if you choose to provide them.
+              </p>
+            </div>
+          </details>
+
+          <details class="faq-card reveal-up reveal-delay-200">
+            <summary>
+              Do you message people on my behalf?
+              <span class="faq-icon">+</span>
+            </summary>
+            <div class="faq-content">
+              <p class="muted">
+                No. TrueMatch only recommends. If someone likes your profile, they decide on their own whether to reach out to you.
+              </p>
+            </div>
+          </details>
+
+          <details class="faq-card reveal-up reveal-delay-300">
+            <summary>
+              How do I get removed?
+              <span class="faq-icon">+</span>
+            </summary>
+            <div class="faq-content">
+              <p class="muted">
+                Email support with your IG handle and we’ll remove your listing. Removal requests are honored.
+              </p>
+            </div>
+          </details>
         </div>
       </div>
     </section>
 
-    <footer class="site-footer">
-      <div class="container">
-        <div class="footer-inner">
-          <div class="footer-brand">TrueMatch</div>
-          <div class="footer-links">
-            <a href="#how-it-works">How it works</a>
-            <a href="#privacy">Privacy</a>
-            <a href="#apply">Opt-in</a>
-          </div>
-        </div>
-      </div>
-    </footer>
   </main>
 
+  <footer class="site-footer">
+    <div class="footer-watermark">TRUEMATCH</div>
+
+    <div class="container">
+      <div class="footer-middle-content">
+
+        <div class="footer-left-section">
+          <div class="footer-split-brand">
+            <img src="assets/images/truematch-mark.png" alt="TrueMatch" class="brand__logo" />
+            <span>TrueMatch</span>
+          </div>
+
+          <div class="footer-socials">
+            <a href="#" aria-label="X">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+            </a>
+            <a href="#" aria-label="Instagram">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
+            </a>
+            <a href="#" aria-label="Facebook">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
+            </a>
+          </div>
+
+          <div class="footer-legal">
+            <a href="#">Privacy Policy</a>
+            <a href="#">Terms of Service</a>
+            <a href="#">Cookie Policy</a>
+          </div>
+        </div>
+
+        <div class="footer-newsletter-card">
+          <h3>Want to join as a member instead?</h3>
+          <p class="muted tiny">Create a profile and get curated shortlists.</p>
+          <div class="footer-form">
+            <a class="btn primary small-btn" href="auth.html?mode=signup">Sign Up</a>
+            <a class="btn small-btn" href="#how-it-works">Learn more</a>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="footer-bottom-copyright">
+        <p class="muted tiny">© <span id="year"></span> TrueMatch Inc. All rights reserved.</p>
+      </div>
+    </div>
+  </footer>
+
+  <div id="tm-fomo" class="fomo-container" aria-hidden="true">
+    <div class="fomo-avatar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+      </svg>
+    </div>
+    <div class="fomo-details">
+      <p class="fomo-text"></p>
+      <span class="fomo-time">Just now</span>
+    </div>
+    <div class="fomo-verified">
+      <svg viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Background canvas (same as your homepage) -->
+  <script>
+  (() => {
+    const canvas = document.getElementById('tm-bg-canvas');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d', { alpha: true });
+    if (!ctx) return;
+
+    const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    const mouse = { x: 0, y: 0, active: false };
+    const particles = [];
+    let cw = 0, ch = 0, dpr = 1, raf = null;
+
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+    function pickCount() {
+      const area = window.innerWidth * window.innerHeight;
+      return clamp(Math.floor(area / 22000) + 28, 38, 90);
+    }
+
+    function resize() {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      cw = window.innerWidth;
+      ch = window.innerHeight;
+
+      canvas.width = Math.floor(cw * dpr);
+      canvas.height = Math.floor(ch * dpr);
+      canvas.style.width = cw + 'px';
+      canvas.style.height = ch + 'px';
+
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      init();
+      draw(true);
+    }
+
+    function init() {
+      particles.length = 0;
+      const count = pickCount();
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x: Math.random() * cw,
+          y: Math.random() * ch,
+          vx: (Math.random() - 0.5) * 0.35,
+          vy: (Math.random() - 0.5) * 0.35,
+          r: 1 + Math.random() * 1.3
+        });
+      }
+    }
+
+    function step() {
+      for (const p of particles) {
+        p.x += p.vx;
+        p.y += p.vy;
+        if (p.x < 0 || p.x > cw) p.vx *= -1;
+        if (p.y < 0 || p.y > ch) p.vy *= -1;
+        p.x = clamp(p.x, 0, cw);
+        p.y = clamp(p.y, 0, ch);
+
+        if (mouse.active) {
+          const dx = p.x - mouse.x;
+          const dy = p.y - mouse.y;
+          const dist2 = dx * dx + dy * dy;
+          const influence = 220;
+          if (dist2 < influence * influence && dist2 > 0.001) {
+            const dist = Math.sqrt(dist2);
+            const force = (1 - dist / influence) * 0.035;
+            p.vx += (dx / dist) * force;
+            p.vy += (dy / dist) * force;
+          }
+        }
+        p.vx *= 0.985;
+        p.vy *= 0.985;
+      }
+    }
+
+    function draw(isStatic = false) {
+      ctx.clearRect(0, 0, cw, ch);
+      ctx.globalCompositeOperation = 'lighter';
+      const maxDist = 150;
+      const maxDist2 = maxDist * maxDist;
+
+      for (let i = 0; i < particles.length; i++) {
+        const a = particles[i];
+        for (let j = i + 1; j < particles.length; j++) {
+          const b = particles[j];
+          const dx = a.x - b.x;
+          const dy = a.y - b.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 <= maxDist2) {
+            const t = 1 - (Math.sqrt(d2) / maxDist);
+            const alpha = t * 0.12;
+            ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+          }
+        }
+      }
+
+      if (mouse.active) {
+        const md = 210;
+        const md2 = md * md;
+        for (const p of particles) {
+          const dx = p.x - mouse.x;
+          const dy = p.y - mouse.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < md2) {
+            const t = 1 - (Math.sqrt(d2) / md);
+            const alpha = t * 0.18;
+            ctx.strokeStyle = `rgba(100,233,238,${alpha})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(mouse.x, mouse.y);
+            ctx.stroke();
+          }
+        }
+      }
+
+      for (const p of particles) {
+        ctx.fillStyle = `rgba(255,255,255,0.55)`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.globalCompositeOperation = 'source-over';
+      if (!reduceMotion && !isStatic) step();
+    }
+
+    function loop() { draw(false); raf = requestAnimationFrame(loop); }
+
+    function onMove(e) {
+      const x = (e.touches ? e.touches[0].clientX : e.clientX);
+      const y = (e.touches ? e.touches[0].clientY : e.clientY);
+      mouse.x = x;
+      mouse.y = y;
+      mouse.active = true;
+    }
+    function onLeave() { mouse.active = false; }
+
+    window.addEventListener('resize', () => {
+      cancelAnimationFrame(raf); raf = null; resize(); if (!reduceMotion) loop();
+    }, { passive: true });
+
+    window.addEventListener('mousemove', onMove, { passive: true });
+    window.addEventListener('touchstart', onMove, { passive: true });
+    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('mouseleave', onLeave, { passive: true });
+    window.addEventListener('touchend', onLeave, { passive: true });
+
+    resize();
+    if (!reduceMotion) loop();
+  })();
+  </script>
+
+  <script src="./tm-loader.js"></script>
   <script src="script.js"></script>
-  <script defer src="optin.js"></script>
   <script src="fomo.js"></script>
+<script>
+    // Scroll CTA
+    document.getElementById('btnOptIn')?.addEventListener('click', () => {
+      document.getElementById('apply')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    // Submit to backend (/api/optin) and show success message
+    document.getElementById('optinForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const form = e.target;
+      const btn = form.querySelector('button[type="submit"]');
+      const success = document.getElementById('optinSuccess');
+
+      // Support both:
+      // - Served by TrueMatch backend (same origin)
+      // - Opened via VS Code Live Server (port 5500) while backend runs at 3000
+      const isLiveServer = (location.hostname === '127.0.0.1' || location.hostname === 'localhost') && String(location.port) === '5500';
+      const apiBase = isLiveServer ? 'http://localhost:3000' : '';
+
+      const igHandle = document.getElementById('igHandle')?.value || '';
+      const email = document.getElementById('email')?.value || '';
+      const city = document.getElementById('city')?.value || '';
+      const ageRange = document.getElementById('ageRange')?.value || '';
+      const intent = document.getElementById('intent')?.value || '';
+      const note = document.getElementById('note')?.value || '';
+      const updates = !!document.getElementById('updates')?.checked;
+
+      // Optional tracking params from the URL (e.g., ?src=ig_dm&ref=@somepage)
+      const params = new URLSearchParams(location.search);
+      const source = [params.get('src'), params.get('ref')].filter(Boolean).join('|');
+
+      try {
+        btn?.setAttribute('disabled', 'disabled');
+
+        const resp = await fetch(`${apiBase}/api/optin`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ igHandle, email, city, ageRange, intent, note, updates, source })
+        });
+
+        const data = await resp.json().catch(() => ({}));
+
+        if (!resp.ok || !data.ok) {
+          const msg = data?.message || 'Submit failed. Please try again.';
+          alert(msg);
+          btn?.removeAttribute('disabled');
+          return;
+        }
+
+        if (success) success.style.display = 'block';
+        form.reset();
+      } catch (err) {
+        console.error(err);
+        alert('Submit failed. Please try again.');
+        btn?.removeAttribute('disabled');
+      }
+    });
+
+    // Safety: prevent placeholder links (#) from being routed elsewhere by global scripts
+    // This keeps optin.html self-contained without affecting real anchors like #privacy, #apply, etc.
+    document.addEventListener('click', (e) => {
+      const a = e.target.closest && e.target.closest('a');
+      if (!a) return;
+      const href = a.getAttribute('href');
+      if (href === '#') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    }, true);
+  </script>
 
   <script>
-    // Basic form submission demo UI
-    const form = document.getElementById('optinForm');
-    const success = document.getElementById('optinSuccess');
-    if (form) {
-      form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        success.style.display = 'block';
+  (function () {
+    const mq = window.matchMedia("(max-width: 768px)");
+
+    function setupCarousel(root) {
+      if (!root || root.dataset.carouselReady === "1") return;
+      const track = root.querySelector(".steps-wrapper, .bento-grid");
+      const prev = root.querySelector(".tm-carousel__btn.prev");
+      const next = root.querySelector(".tm-carousel__btn.next");
+      if (!track || !prev || !next) return;
+
+      root.dataset.carouselReady = "1";
+
+      function step() {
+        return track.clientWidth || 320;
+      }
+
+      function update() {
+        const max = Math.max(0, track.scrollWidth - track.clientWidth - 1);
+        prev.disabled = track.scrollLeft <= 0;
+        next.disabled = track.scrollLeft >= max;
+      }
+
+      prev.addEventListener("click", () => {
+        track.scrollBy({ left: -step(), behavior: "smooth" });
       });
+
+      next.addEventListener("click", () => {
+        track.scrollBy({ left: step(), behavior: "smooth" });
+      });
+
+      let raf = 0;
+      track.addEventListener("scroll", () => {
+        if (raf) cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(update);
+      });
+
+      window.addEventListener("resize", () => requestAnimationFrame(update));
+
+      // Initial state
+      update();
     }
+
+    function init() {
+      if (!mq.matches) return;
+      document
+        .querySelectorAll("html.tm-home .tm-carousel")
+        .forEach(setupCarousel);
+    }
+
+    init();
+
+    // Re-init when crossing breakpoint (Safari fallback included)
+    if (mq.addEventListener) mq.addEventListener("change", init);
+    else if (mq.addListener) mq.addListener(init);
+  })();
   </script>
 </body>
+
 </html>
