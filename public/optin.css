@@ -151,7 +151,7 @@ html.tm-home .steps-wrapper, html.tm-home .bento-grid { scrollbar-width: none !i
   html.tm-home .tm-carousel__btn { display: grid !important; opacity: 1 !important; pointer-events: auto !important; }
 
   /* === ICONS: FIXED TOP LEFT === */
-  html.tm-home .step-number,
+  html.tm-home .step-number,  
   html.tm-home .bento-icon {
     display: flex !important;
     justify-content: flex-start !important; /* Icon Left */
