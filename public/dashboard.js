@@ -5,8 +5,8 @@
 import { getLocalPlan, saveLocalUser, clearSession } from './tm-session.js';
 import { apiGet, apiPost, apiUpdateProfile, apiSavePrefs } from './tm-api.js';
 
-// SAFETY: Set this to FALSE before deploying to production.
-const DEV_MODE = false; 
+// Production mode: disable all mock/demo UI population.
+const DEV_MODE = false;
 
 const DAILY_SWIPE_LIMIT = 20; 
 
@@ -61,9 +61,19 @@ function cacheDom() {
   
   DOM.dlgStory = document.getElementById('dlgStory');
   DOM.storyMainImg = document.getElementById('storyMainImg');
+  DOM.storyMainVideo = document.getElementById('storyMainVideo');
   DOM.storyUserImg = document.getElementById('storyUserImg');
   DOM.storyUserName = document.getElementById('storyUserName');
   DOM.btnCloseStory = document.getElementById('btnCloseStory');
+  DOM.storyProgressFill = document.getElementById('storyProgressFill');
+
+  // Recent Moments (mobile)
+  DOM.mobileMomentsToggle = document.getElementById('mobileMomentsToggle');
+  DOM.momentsPopup = document.getElementById('momentsPopup');
+  DOM.mobileStoriesContainer = document.getElementById('mobileStoriesContainer');
+
+  // Hidden input for Moment uploads
+  DOM.momentFileInput = document.getElementById('momentFileInput');
   
   DOM.sAvatar = document.getElementById('sAvatar');
   DOM.sNameDisplay = document.getElementById('sNameDisplay');
@@ -170,8 +180,12 @@ async function initApp() {
   
   SwipeController.init();
   
-  if (DEV_MODE) populateMockContent();
-  else renderHomeEmptyStates();
+  if (DEV_MODE) {
+    populateMockContent();
+  } else {
+    renderHomeEmptyStates();
+    await MomentsController.init();
+  }
   
   setupEventListeners();
   setupMobileMenu();
@@ -216,16 +230,10 @@ function setupEventListeners() {
       });
   }
 
-  // 3. Stories Click
-  const handleStoryClick = (e) => {
-      const item = e.target.closest('.story-item');
-      if (item && !item.classList.contains('action')) {
-          const name = item.dataset.name;
-          const imgColor = item.querySelector('.story-img').style.backgroundColor;
-          openStoryModal(name, imgColor);
-      }
-  };
+  // 3. Recent Moments (Stories) Click
+  const handleStoryClick = (e) => MomentsController.handleStoryClick(e);
   if (DOM.storiesContainer) DOM.storiesContainer.addEventListener('click', handleStoryClick);
+  if (DOM.mobileStoriesContainer) DOM.mobileStoriesContainer.addEventListener('click', handleStoryClick);
 
   // 4. Matches & Chat Click
   const handleMatchClick = (e) => {
@@ -253,7 +261,7 @@ function setupEventListeners() {
   if (DOM.newMatchesRail) DOM.newMatchesRail.addEventListener('click', handleMatchClick);
 
   // 5. Modals Close
-  if (DOM.btnCloseStory && DOM.dlgStory) DOM.btnCloseStory.addEventListener('click', () => DOM.dlgStory.close());
+  if (DOM.btnCloseStory && DOM.dlgStory) DOM.btnCloseStory.addEventListener('click', () => MomentsController.closeStory());
   if (DOM.btnCloseChat && DOM.dlgChat) DOM.btnCloseChat.addEventListener('click', () => DOM.dlgChat.close());
 
   // 6. Logout
@@ -489,6 +497,352 @@ function openStoryModal(name, color) {
         DOM.dlgStory.showModal();
     }
 }
+
+// ---------------------------------------------------------------------
+// RECENT MOMENTS (STORIES) – LIVE MODE
+// - One bubble per user (Option A)
+// - Sequential playback per user
+// - Upload supports photo/video only (no music)
+// ---------------------------------------------------------------------
+
+const MomentsController = (() => {
+  let momentsByOwner = new Map();
+  let activeOwnerId = null;
+  let activeList = [];
+  let activeIndex = 0;
+  let timer = null;
+
+  const IMG_DURATION_MS = 5500;
+  const MAX_UPLOAD_BYTES = 7 * 1024 * 1024; // 7MB base file (before base64 overhead)
+
+  function stopPlayback() {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    if (DOM.storyMainVideo) {
+      try {
+        DOM.storyMainVideo.pause();
+        DOM.storyMainVideo.currentTime = 0;
+      } catch {}
+      DOM.storyMainVideo.onended = null;
+    }
+    if (DOM.storyProgressFill) {
+      DOM.storyProgressFill.style.transition = 'none';
+      DOM.storyProgressFill.style.width = '0%';
+    }
+  }
+
+  function timeAgo(ms) {
+    const now = Date.now();
+    const d = Math.max(0, now - ms);
+    const sec = Math.floor(d / 1000);
+    if (sec < 60) return `${sec}s ago`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const day = Math.floor(hr / 24);
+    return `${day}d ago`;
+  }
+
+  function groupMoments(moments = []) {
+    const map = new Map();
+    moments
+      .filter(m => m && m.ownerId)
+      .sort((a, b) => (a.createdAtMs || 0) - (b.createdAtMs || 0))
+      .forEach(m => {
+        const key = m.ownerId;
+        if (!map.has(key)) {
+          map.set(key, {
+            ownerId: key,
+            ownerName: m.ownerName || 'User',
+            ownerAvatarUrl: m.ownerAvatarUrl || 'assets/images/truematch-mark.png',
+            moments: []
+          });
+        }
+        map.get(key).moments.push(m);
+      });
+    momentsByOwner = map;
+  }
+
+  function buildStoryItemHTML({ ownerId, ownerName, ownerAvatarUrl, thumbUrl, hasVideo }) {
+    const safeName = ownerName || 'User';
+    const avatar = ownerAvatarUrl || 'assets/images/truematch-mark.png';
+    const thumb = thumbUrl || avatar;
+    const playBadge = hasVideo
+      ? `<div style="position:absolute; bottom:6px; right:6px; width:18px; height:18px; border-radius:9px; background:rgba(0,0,0,.55); color:#fff; display:flex; align-items:center; justify-content:center; font-size:10px;">▶</div>`
+      : '';
+
+    return `
+      <div class="story-item" data-owner-id="${ownerId}">
+        <div class="story-ring" style="border: 2px solid #ffd700; padding:2px; position:relative;">
+          <img class="story-img" src="${thumb}" alt="${safeName}" style="background:transparent">
+          ${playBadge}
+        </div>
+        <span class="story-name">${safeName}</span>
+      </div>
+    `;
+  }
+
+  function render(container) {
+    if (!container) return;
+
+    let html = `
+      <div class="story-item action" data-action="add-moment">
+        <div class="story-ring ring-add" style="border:2px solid rgba(255,255,255,.25); padding:2px;">
+          <div class="story-img" style="display:flex; align-items:center; justify-content:center; font-size:22px;">+</div>
+        </div>
+        <span class="story-name">Add</span>
+      </div>
+    `;
+
+    const owners = Array.from(momentsByOwner.values())
+      // latest activity first
+      .sort((a, b) => {
+        const al = a.moments[a.moments.length - 1];
+        const bl = b.moments[b.moments.length - 1];
+        return (bl?.createdAtMs || 0) - (al?.createdAtMs || 0);
+      });
+
+    owners.forEach(o => {
+      const last = o.moments[o.moments.length - 1];
+      const hasVideo = !!last?.mediaType && String(last.mediaType).startsWith('video/');
+      // For video moments, use the user's avatar as thumbnail to avoid broken <img src="video">.
+      const thumbUrl = hasVideo ? (o.ownerAvatarUrl || 'assets/images/truematch-mark.png') : (last?.mediaUrl || o.ownerAvatarUrl);
+      html += buildStoryItemHTML({
+        ownerId: o.ownerId,
+        ownerName: o.ownerName,
+        ownerAvatarUrl: o.ownerAvatarUrl,
+        thumbUrl,
+        hasVideo
+      });
+    });
+
+    container.innerHTML = html;
+  }
+
+  async function refresh() {
+    try {
+      // Scope moments to matches + self (no global feed)
+      const resp = await apiGet('/api/moments/list?scope=matches');
+      if (resp && resp.ok && Array.isArray(resp.moments)) {
+        groupMoments(resp.moments);
+      } else {
+        groupMoments([]);
+      }
+    } catch {
+      groupMoments([]);
+    }
+    render(DOM.storiesContainer);
+    render(DOM.mobileStoriesContainer);
+  }
+
+  function startProgress(durationMs) {
+    if (!DOM.storyProgressFill) return;
+    DOM.storyProgressFill.style.transition = 'none';
+    DOM.storyProgressFill.style.width = '0%';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        DOM.storyProgressFill.style.transition = `width ${durationMs}ms linear`;
+        DOM.storyProgressFill.style.width = '100%';
+      });
+    });
+  }
+
+  function setHeader(owner, moment) {
+    if (DOM.storyUserName) DOM.storyUserName.textContent = owner?.ownerName || 'User';
+    if (DOM.storyUserImg) {
+      DOM.storyUserImg.src = owner?.ownerAvatarUrl || 'assets/images/truematch-mark.png';
+      DOM.storyUserImg.style.backgroundColor = '#111';
+    }
+    // Update the small time label if present
+    const t = DOM.dlgStory ? DOM.dlgStory.querySelector('.story-header-overlay .time') : null;
+    if (t && moment?.createdAtMs) t.textContent = timeAgo(moment.createdAtMs);
+  }
+
+  function showMoment(owner, moment) {
+    if (!moment) return;
+    stopPlayback();
+    setHeader(owner, moment);
+
+    const isVideo = !!moment.mediaType && String(moment.mediaType).startsWith('video/');
+    const url = moment.mediaUrl;
+
+    if (isVideo && DOM.storyMainVideo) {
+      if (DOM.storyMainImg) DOM.storyMainImg.style.display = 'none';
+      DOM.storyMainVideo.style.display = 'block';
+      DOM.storyMainVideo.src = url;
+      DOM.storyMainVideo.muted = true;
+      DOM.storyMainVideo.playsInline = true;
+
+      // When metadata loads, start progress for the actual duration (capped).
+      const onLoaded = () => {
+        const dur = Number.isFinite(DOM.storyMainVideo.duration) ? DOM.storyMainVideo.duration * 1000 : 8000;
+        const capped = Math.max(4000, Math.min(dur, 20000));
+        startProgress(capped);
+        // Attempt autoplay; if blocked, user can tap to continue.
+        DOM.storyMainVideo.play().catch(() => {});
+      };
+      DOM.storyMainVideo.onloadedmetadata = onLoaded;
+      DOM.storyMainVideo.onended = () => next();
+    } else {
+      if (DOM.storyMainVideo) {
+        DOM.storyMainVideo.style.display = 'none';
+        DOM.storyMainVideo.src = '';
+      }
+      if (DOM.storyMainImg) {
+        DOM.storyMainImg.style.display = 'block';
+        DOM.storyMainImg.src = url || 'assets/images/truematch-mark.png';
+        DOM.storyMainImg.style.backgroundColor = '#111';
+      }
+      startProgress(IMG_DURATION_MS);
+      timer = setTimeout(() => next(), IMG_DURATION_MS);
+    }
+  }
+
+  function openOwnerStories(ownerId) {
+    const owner = momentsByOwner.get(ownerId);
+    if (!owner || !owner.moments || owner.moments.length === 0) return;
+
+    activeOwnerId = ownerId;
+    activeList = owner.moments.slice();
+    activeIndex = 0;
+
+    if (DOM.dlgStory) {
+      DOM.dlgStory.showModal();
+    }
+
+    showMoment(owner, activeList[activeIndex]);
+
+    // Tap zones: left = prev, right = next
+    const storyView = DOM.dlgStory ? DOM.dlgStory.querySelector('.story-view') : null;
+    if (storyView && !storyView._momentsBound) {
+      storyView._momentsBound = true;
+      storyView.addEventListener('click', (e) => {
+        // Ignore clicks on the close button area handled elsewhere
+        const rect = storyView.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        if (x < rect.width * 0.33) prev();
+        else next();
+      });
+    }
+  }
+
+  function next() {
+    if (!activeOwnerId) return;
+    const owner = momentsByOwner.get(activeOwnerId);
+    if (!owner) return;
+    activeIndex += 1;
+    if (activeIndex >= activeList.length) {
+      closeStory();
+      return;
+    }
+    showMoment(owner, activeList[activeIndex]);
+  }
+
+  function prev() {
+    if (!activeOwnerId) return;
+    const owner = momentsByOwner.get(activeOwnerId);
+    if (!owner) return;
+    activeIndex -= 1;
+    if (activeIndex < 0) activeIndex = 0;
+    showMoment(owner, activeList[activeIndex]);
+  }
+
+  async function uploadFile(file) {
+    if (!file) return;
+    const type = String(file.type || '');
+    if (!(type.startsWith('image/') || type.startsWith('video/'))) {
+      showToast('Photo or video only for Moments.', 'error');
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      showToast('File too large. Use a smaller photo/video (max ~7MB).', 'error');
+      return;
+    }
+
+    const dataUrl = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result || ''));
+      r.onerror = () => reject(new Error('read failed'));
+      r.readAsDataURL(file);
+    });
+
+    try {
+      showToast('Uploading moment...');
+      const resp = await apiPost('/api/moments/create', {
+        mediaDataUrl: dataUrl,
+        mediaType: type
+      });
+      if (resp && resp.ok) {
+        showToast('Moment posted.');
+        await refresh();
+      } else {
+        showToast(resp?.error || 'Upload failed.', 'error');
+      }
+    } catch {
+      showToast('Upload failed.', 'error');
+    }
+  }
+
+  function pickAndUpload() {
+    if (!DOM.momentFileInput) {
+      showToast('Upload input missing.', 'error');
+      return;
+    }
+    DOM.momentFileInput.click();
+  }
+
+  function handleStoryClick(e) {
+    const item = e.target.closest('.story-item');
+    if (!item) return;
+
+    if (item.classList.contains('action') || item.dataset.action === 'add-moment') {
+      pickAndUpload();
+      return;
+    }
+
+    const ownerId = item.dataset.ownerId;
+    if (!ownerId) return;
+    openOwnerStories(ownerId);
+  }
+
+  function closeStory() {
+    stopPlayback();
+    activeOwnerId = null;
+    activeList = [];
+    activeIndex = 0;
+    if (DOM.dlgStory && DOM.dlgStory.open) DOM.dlgStory.close();
+  }
+
+  async function init() {
+    // Bind file input once
+    if (DOM.momentFileInput && !DOM.momentFileInput._momentsBound) {
+      DOM.momentFileInput._momentsBound = true;
+      DOM.momentFileInput.addEventListener('change', async (e) => {
+        const file = e.target.files && e.target.files[0];
+        // Reset value so selecting same file again triggers change
+        e.target.value = '';
+        await uploadFile(file);
+      });
+    }
+
+    // Ensure closing the dialog stops timers
+    if (DOM.dlgStory && !DOM.dlgStory._momentsBound) {
+      DOM.dlgStory._momentsBound = true;
+      DOM.dlgStory.addEventListener('close', () => stopPlayback());
+    }
+
+    await refresh();
+  }
+
+  return {
+    init,
+    handleStoryClick,
+    closeStory
+  };
+})();
 
 
 // ---------------------------------------------------------------------
@@ -912,7 +1266,7 @@ function renderHome(user) {
 function applyPlanNavGating() {
   if (DEV_MODE) return; 
   const rules = {
-    // Premium tab should be hidden for Free users, but visible for paid tiers.
+    // Premium tab should be hidden for Free users, shown for paid tiers
     free: ['home', 'matches', 'swipe', 'creators', 'settings'],
     tier1: ['home', 'matches', 'swipe', 'creators', 'premium', 'settings'],
     tier2: ['home', 'matches', 'shortlist', 'approved', 'swipe', 'creators', 'premium', 'settings'],
@@ -922,6 +1276,12 @@ function applyPlanNavGating() {
 
   DOM.tabs.forEach(tab => {
     const panel = tab.dataset.panel;
+    // Non-panel buttons (e.g., Logout) must never be plan-gated.
+    if (!panel) {
+      tab.hidden = false;
+      tab.style.display = 'flex';
+      return;
+    }
     if (allowed.includes(panel)) {
       tab.hidden = false;
       tab.style.display = 'flex';

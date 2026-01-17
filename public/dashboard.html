@@ -227,12 +227,18 @@
   <dialog id="dlgStory" class="tm-dialog" style="padding:0; overflow:hidden; background: #000; border: 1px solid #333; max-width: 380px; height: 70vh; border-radius: 20px;">
     <div class="story-view" style="position:relative; width:100%; height:100%; display:flex; flex-direction:column;">
       <div class="story-header-overlay" style="position:absolute; top:0; left:0; right:0; padding:15px; z-index:10; background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);">
-         <div class="story-progress-bar" style="height:3px; background:rgba(255,255,255,0.3); border-radius:3px; margin-bottom:10px; overflow:hidden;"><div class="fill" style="width:100%; height:100%; background:#fff;"></div></div>
+         <div class="story-progress-bar" style="height:3px; background:rgba(255,255,255,0.3); border-radius:3px; margin-bottom:10px; overflow:hidden;"><div id="storyProgressFill" class="fill" style="width:0%; height:100%; background:#fff;"></div></div>
          <div class="story-user" style="display:flex; align-items:center; gap:10px;"><img id="storyUserImg" src="" style="width:35px; height:35px; border-radius:50%; border:2px solid #00aff0; object-fit:cover;"><div style="flex:1;"><h4 id="storyUserName" style="margin:0; font-size:0.95rem; color:#fff;">Name</h4><span class="time" style="font-size:0.75rem; color:#ddd;">2h ago</span></div><button id="btnCloseStory" style="background:transparent; border:none; color:#fff; font-size:1.5rem; cursor:pointer;"><i class="fa-solid fa-xmark"></i></button></div>
       </div>
-      <img id="storyMainImg" src="" style="width:100%; height:100%; object-fit:cover;">
+      <div style="position:relative; width:100%; height:100%; flex:1;">
+        <img id="storyMainImg" src="" style="width:100%; height:100%; object-fit:cover; display:none;">
+        <video id="storyMainVideo" playsinline muted style="width:100%; height:100%; object-fit:cover; display:none;"></video>
+      </div>
     </div>
   </dialog>
+
+  <!-- Hidden file input for Recent Moments uploads (photo/video only) -->
+  <input id="momentFileInput" type="file" accept="image/*,video/*" style="display:none;" />
 
   <dialog id="dlgChat" class="tm-dialog" style="max-width: 450px; height: 600px; padding:0; overflow:hidden;">
     <div style="display:flex; flex-direction:column; height:100%;">

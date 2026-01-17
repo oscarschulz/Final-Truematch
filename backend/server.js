@@ -60,7 +60,9 @@ app.use(cors(corsOptions));
 
 // body parsers (before routes)
 app.use(express.json({
-  limit: '5mb',
+  // Increased to support small photo/video "Recent Moments" uploads (base64 payload)
+  // Note: client & server still enforce stricter per-upload limits.
+  limit: '15mb',
   verify: (req, res, buf) => {
     // Keep raw body for Coinbase Commerce webhook signature verification
     if (req.originalUrl && req.originalUrl.startsWith('/api/coinbase/webhook')) {
@@ -68,7 +70,7 @@ app.use(express.json({
     }
   }
 }));
-app.use(express.urlencoded({ extended: true, limit: '5mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 
 app.use(cookieParser());
@@ -148,7 +150,12 @@ const DB = {
   approvedState: {},
   messages: {},
   messageUsage: {},
-  emailVerify: {}
+  emailVerify: {},
+
+  // Recent Moments (Stories)
+  // Stored as an array of moment objects. When Firebase is enabled, moments are stored in Firestore
+  // and media may be stored in Firebase Storage; otherwise we use local disk JSON persistence.
+  moments: []
 };
 const SERVER_SWIPE_COUNTS = {}; 
 const STRICT_DAILY_LIMIT = 20;
@@ -156,6 +163,7 @@ const STRICT_DAILY_LIMIT = 20;
 // NOTE: In real production, you should rely on Firestore. This file fallback is mainly for local/demo.
 // It makes DB.prefsByEmail survive server restarts (so prefs persist after logout / new device tests).
 const PREFS_STORE_PATH = process.env.PREFS_STORE_PATH || path.join(__dirname, '_prefs_store.json');
+const MOMENTS_STORE_PATH = process.env.MOMENTS_STORE_PATH || path.join(__dirname, '_moments_store.json');
 
 function loadPrefsStore() {
   try {
@@ -167,6 +175,29 @@ function loadPrefsStore() {
     }
   } catch (e) {
     // swallow; fallback is still in-memory
+  }
+}
+
+function loadMomentsStore() {
+  try {
+    if (!fs.existsSync(MOMENTS_STORE_PATH)) {
+      DB.moments = [];
+      return;
+    }
+    const raw = fs.readFileSync(MOMENTS_STORE_PATH, 'utf8');
+    const parsed = JSON.parse(raw || '[]');
+    DB.moments = Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.warn('Failed to load moments store:', e?.message || e);
+    DB.moments = [];
+  }
+}
+
+function saveMomentsStore() {
+  try {
+    fs.writeFileSync(MOMENTS_STORE_PATH, JSON.stringify(DB.moments || [], null, 2), 'utf8');
+  } catch (e) {
+    console.warn('Failed to save moments store:', e?.message || e);
   }
 }
 
@@ -646,6 +677,7 @@ if (!hasFirebase) {
   loadPrefsStore();
   loadUsersStore();
   loadSwipesStore();
+  loadMomentsStore();
 } // <--- IMPORTANTE: Load users & swipes on boot
 
 
@@ -673,6 +705,45 @@ function toMillis(v) {
   }
 
   return NaN;
+}
+
+// ---------------- Recent Moments (Stories) helpers ----------------
+function momentOwnerIdFromEmail(email) {
+  try {
+    const e = String(email || '').trim().toLowerCase();
+    return crypto.createHash('sha256').update(e).digest('hex').slice(0, 16);
+  } catch {
+    return String(email || '').slice(0, 16);
+  }
+}
+
+function parseBase64DataUrl(input) {
+  const raw = String(input || '');
+  const m = raw.match(/^data:([^;]+);base64,(.+)$/);
+  if (!m) return null;
+  return { mime: m[1], b64: m[2] };
+}
+
+function mimeToExt(mime) {
+  const m = String(mime || '').toLowerCase();
+  if (m === 'image/jpeg' || m === 'image/jpg') return 'jpg';
+  if (m === 'image/png') return 'png';
+  if (m === 'image/webp') return 'webp';
+  if (m === 'image/gif') return 'gif';
+  if (m === 'video/mp4') return 'mp4';
+  if (m === 'video/webm') return 'webm';
+  if (m === 'video/quicktime') return 'mov';
+  return '';
+}
+
+function cleanupExpiredMoments() {
+  try {
+    const now = Date.now();
+    const before = Array.isArray(DB.moments) ? DB.moments.length : 0;
+    DB.moments = (Array.isArray(DB.moments) ? DB.moments : []).filter(m => (m && Number(m.expiresAtMs) > now));
+    const after = DB.moments.length;
+    if (!hasFirebase && before !== after) saveMomentsStore();
+  } catch {}
 }
 
 // [UPDATED] Helper: Anong data ang makikita ng frontend
@@ -1473,6 +1544,215 @@ app.get('/api/me', (req, res) => {
   } catch (err) {
     console.error('error in /api/me:', err);
     return res.status(500).json({ ok: false, user: null, message: 'internal error' });
+  }
+});
+
+// ---------------- Recent Moments (Stories) -------------------
+// A "moment" is a short-lived media post (photo/video) that expires after 24 hours.
+// We scope the feed by default to: {self + matches}. Use ?scope=all only for debugging.
+
+app.get('/api/moments/list', async (req, res) => {
+  try {
+    const now = Date.now();
+
+    const scope = String((req.query || {}).scope || 'matches').toLowerCase();
+    const email = getSessionEmail(req);
+    let allowedEmails = null;
+    if (scope !== 'all') {
+      if (!email) {
+        return res.json({ ok: true, moments: [] });
+      }
+      const matchEmails = (DB.matches && DB.matches[email]) ? DB.matches[email] : [];
+      allowedEmails = new Set([email, ...matchEmails.map(e => String(e || '').toLowerCase())]);
+    }
+
+    if (hasFirebase && firestore) {
+      // Query by expiry (inequality requires ordering by same field)
+      const snap = await firestore
+        .collection('moments')
+        .where('expiresAtMs', '>', now)
+        .orderBy('expiresAtMs', 'desc')
+        .limit(120)
+        .get();
+
+      const out = [];
+      for (const d of snap.docs) {
+        const v = d.data() || {};
+
+        const ownerEmail = String(v.ownerEmail || '').toLowerCase();
+        if (allowedEmails && !allowedEmails.has(ownerEmail)) continue;
+
+        // If stored in Storage, regenerate a fresh signed URL on each request
+        let mediaUrl = v.mediaUrl || '';
+        if (v.storagePath && hasStorage && storageBucket) {
+          try {
+            const file = storageBucket.file(String(v.storagePath));
+            const [signedUrl] = await file.getSignedUrl({
+              action: 'read',
+              expires: new Date(Date.now() + 1000 * 60 * 60 * 48) // 48h
+            });
+            mediaUrl = signedUrl;
+          } catch (e) {
+            // Keep fallback mediaUrl
+          }
+        }
+
+        out.push({
+          id: d.id,
+          ownerId: v.ownerId || momentOwnerIdFromEmail(v.ownerEmail || ''),
+          ownerName: v.ownerName || '',
+          ownerAvatarUrl: v.ownerAvatarUrl || '',
+          mediaUrl,
+          mediaType: v.mediaType || '',
+          caption: v.caption || '',
+          createdAtMs: Number(v.createdAtMs) || now,
+          expiresAtMs: Number(v.expiresAtMs) || (now + 1000 * 60 * 60 * 24)
+        });
+      }
+
+      return res.json({ ok: true, moments: out });
+    }
+
+    // Non-Firebase fallback
+    cleanupExpiredMoments();
+    const all = Array.isArray(DB.moments) ? DB.moments : [];
+    const moments = all
+      .filter(m => m && Number(m.expiresAtMs) > now)
+      .filter(m => {
+        if (!allowedEmails) return true;
+        const oe = String(m.ownerEmail || '').toLowerCase();
+        return oe && allowedEmails.has(oe);
+      })
+      .sort((a, b) => Number(b.createdAtMs) - Number(a.createdAtMs))
+      .slice(0, 120)
+      .map(m => ({
+        id: m.id,
+        ownerId: m.ownerId,
+        ownerName: m.ownerName,
+        ownerAvatarUrl: m.ownerAvatarUrl || '',
+        mediaUrl: m.mediaUrl,
+        mediaType: m.mediaType,
+        caption: m.caption || '',
+        createdAtMs: Number(m.createdAtMs) || now,
+        expiresAtMs: Number(m.expiresAtMs) || (now + 1000 * 60 * 60 * 24)
+      }));
+
+    return res.json({ ok: true, moments });
+  } catch (e) {
+    console.error('moments/list error:', e);
+    return res.status(500).json({ ok: false, moments: [] });
+  }
+});
+
+app.post('/api/moments/create', async (req, res) => {
+  try {
+    const email = getSessionEmail(req);
+    if (!email) return res.status(401).json({ ok: false, message: 'not logged in' });
+
+    const body = req.body || {};
+    const dataUrl = body.mediaDataUrl;
+    const caption = (body.caption || '').toString().slice(0, 180);
+
+    const parsed = parseBase64DataUrl(dataUrl);
+    if (!parsed || !parsed.mime || !parsed.b64) {
+      return res.status(400).json({ ok: false, message: 'invalid media payload' });
+    }
+
+    const mime = parsed.mime;
+    if (!/^image\//.test(mime) && !/^video\//.test(mime)) {
+      return res.status(400).json({ ok: false, message: 'unsupported media type' });
+    }
+
+    const ext = mimeToExt(mime);
+    if (!ext) {
+      return res.status(400).json({ ok: false, message: 'unsupported file extension' });
+    }
+
+    const buf = Buffer.from(parsed.b64, 'base64');
+    const MAX_BYTES = 10 * 1024 * 1024; // 10MB hard limit
+    if (!buf || !buf.length) {
+      return res.status(400).json({ ok: false, message: 'empty media' });
+    }
+    if (buf.length > MAX_BYTES) {
+      return res.status(413).json({ ok: false, message: 'media too large (max 10MB)' });
+    }
+
+    const now = Date.now();
+    const id = `m_${now}_${Math.random().toString(16).slice(2, 10)}`;
+    const owner = DB.users[email] || DB.user || {};
+    const ownerName = owner.name || '';
+    const ownerAvatarUrl = owner.avatarUrl || '';
+    const ownerId = momentOwnerIdFromEmail(email);
+
+    const moment = {
+      id,
+      ownerId,
+      ownerEmail: email,
+      ownerName,
+      ownerAvatarUrl,
+      mediaUrl: '',
+      storagePath: '',
+      mediaType: mime,
+      caption,
+      createdAtMs: now,
+      expiresAtMs: now + 1000 * 60 * 60 * 24
+    };
+
+    // Prefer Firebase Storage when available.
+    if (hasFirebase && hasStorage && storageBucket) {
+      const safeEmail = email.replace(/[^a-z0-9@._-]/gi, '_');
+      const storagePath = `moments/${safeEmail}/${id}.${ext}`;
+      const file = storageBucket.file(storagePath);
+      await file.save(buf, {
+        contentType: mime,
+        resumable: false,
+        metadata: { cacheControl: 'private, max-age=3600' }
+      });
+
+      moment.storagePath = storagePath;
+
+      // We store a placeholder; list endpoint will generate a fresh signed URL.
+      moment.mediaUrl = '';
+
+      try {
+        await firestore.collection('moments').doc(id).set({
+          ownerId,
+          ownerEmail: email,
+          ownerName,
+          ownerAvatarUrl,
+          storagePath,
+          mediaUrl: '',
+          mediaType: mime,
+          caption,
+          createdAtMs: moment.createdAtMs,
+          expiresAtMs: moment.expiresAtMs
+        });
+      } catch (e) {
+        console.warn('Failed to store moment metadata in Firestore:', e?.message || e);
+      }
+
+      return res.json({ ok: true, moment: { id, ownerId, ownerName, ownerAvatarUrl, mediaType: mime, createdAtMs: moment.createdAtMs, expiresAtMs: moment.expiresAtMs } });
+    }
+
+    // Fallback: save file to local public/uploads/moments
+    const uploadDir = path.join(__dirname, '..', 'public', 'uploads', 'moments');
+    try { fs.mkdirSync(uploadDir, { recursive: true }); } catch {}
+
+    const filename = `${id}.${ext}`;
+    const filePath = path.join(uploadDir, filename);
+    fs.writeFileSync(filePath, buf);
+
+    moment.mediaUrl = `/uploads/moments/${filename}`;
+
+    DB.moments = Array.isArray(DB.moments) ? DB.moments : [];
+    DB.moments.push(moment);
+    cleanupExpiredMoments();
+    if (!hasFirebase) saveMomentsStore();
+
+    return res.json({ ok: true, moment: { id, ownerId, ownerName, ownerAvatarUrl, mediaUrl: moment.mediaUrl, mediaType: mime, createdAtMs: moment.createdAtMs, expiresAtMs: moment.expiresAtMs } });
+  } catch (e) {
+    console.error('moments/create error:', e);
+    return res.status(500).json({ ok: false, message: 'server error' });
   }
 });
 
