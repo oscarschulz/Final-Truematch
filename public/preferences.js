@@ -638,6 +638,87 @@ if (prefs.intent && qs('select[name="intent"]')) {
     }
   }
 
+  // ---- Top nav (Login / Logout + Back/Dashboard) ----
+  function sanitizeReturnUrl(raw) {
+    const val = (raw || '').toString().trim();
+    if (!val) return '';
+    // Block absolute URLs / protocol-relative / javascript:
+    if (/^https?:\/\//i.test(val) || val.startsWith('//') || /^javascript:/i.test(val)) return '';
+
+    let out = val;
+    try { out = decodeURIComponent(out); } catch {}
+
+    // Allow same-origin relative paths only
+    out = out.replace(/^\/+/, '');
+
+    // Only allow html pages (with optional query/hash)
+    if (!/\.html($|[?#])/i.test(out)) return '';
+
+    return out;
+  }
+
+  function getReturnDestination(params) {
+    if (!params) return 'dashboard.html';
+    const cand =
+      params.get('return') ||
+      params.get('ret') ||
+      params.get('redirect') ||
+      params.get('next') ||
+      '';
+
+    return sanitizeReturnUrl(cand) || 'dashboard.html';
+  }
+
+  async function performLogout() {
+    // Attempt to clear cookie-based session on backend (non-fatal if it fails)
+    try {
+      const url = API_BASE ? `${API_BASE}/api/auth/logout` : '/api/auth/logout';
+      await fetch(url, { method: 'POST', credentials: 'include' });
+    } catch (err) {
+      console.warn('[prefs] logout request failed', err);
+    }
+
+    try { SESSION?.clearAuth?.(); } catch {}
+    try { SESSION?.clearSession?.(); } catch {}
+
+    try { localStorage.removeItem('tm_user'); } catch {}
+    try { sessionStorage.clear(); } catch {}
+
+    // Always send user back to home/landing
+    window.location.href = 'index.html';
+  }
+
+  function syncTopNav(user, params) {
+    const loginLink = document.querySelector('.nav-login-link');
+    const backLink = document.querySelector('.nav-back-btn');
+    if (!loginLink || !backLink) return;
+
+    const isAuthed = !!(user && user.email);
+
+    const span = backLink.querySelector('span');
+
+    if (isAuthed) {
+      loginLink.textContent = 'LOG OUT';
+      loginLink.setAttribute('href', '#');
+      loginLink.onclick = (e) => {
+        e.preventDefault();
+        performLogout();
+      };
+
+      if (span) span.textContent = 'DASHBOARD';
+      backLink.setAttribute('href', getReturnDestination(params));
+    } else {
+      loginLink.textContent = 'LOG IN';
+      loginLink.setAttribute('href', 'auth.html?mode=signin&return=/preferences.html');
+      loginLink.onclick = null;
+
+      if (span) span.textContent = 'BACK';
+      // Safe fallback: go home
+      backLink.setAttribute('href', 'index.html');
+    }
+  }
+
+
   async function initPreferencesPage() {
     showLoader();
 
@@ -660,6 +741,9 @@ if (prefs.intent && qs('select[name="intent"]')) {
     const api = ensureApiClient();
     let localUser = getLocalUserFromSessionOrStorage();
 
+    // Sync top nav immediately (LOG OUT for authed users)
+    try { syncTopNav(localUser, params); } catch {}
+
     // Do NOT auto-create demo users here.
     // If there is no valid session/user, the redirect-to-auth logic below will handle it.
 
@@ -669,6 +753,7 @@ if (prefs.intent && qs('select[name="intent"]')) {
 
       if (!user || !user.email) {
         console.warn('[prefs] No local user/email, redirecting to auth');
+        try { syncTopNav(null, params); } catch {}
         window.location.replace(
           '/auth.html?mode=signin&return=/preferences.html'
         );
@@ -697,6 +782,9 @@ if (prefs.intent && qs('select[name="intent"]')) {
           const mergedUser = Object.assign({}, localUser, userFromApi, {
             prefsSaved: !!serverPrefs
           });
+
+          // Keep top nav in sync with authenticated state
+          try { syncTopNav(mergedUser, params); } catch {}
 
           SESSION?.setCurrentUser?.(mergedUser);
           localStorage.setItem('tm_user', JSON.stringify(mergedUser));
@@ -775,6 +863,7 @@ if (prefs.intent && qs('select[name="intent"]')) {
         // Prefill profile from local user store
         try {
           const u = getLocalUserFromSessionOrStorage();
+          try { syncTopNav(u, params); } catch {}
           const pAge = qs('#profileAge');
           const pCity = qs('#profileCity');
           if (pAge && u && u.age) pAge.value = String(u.age);
