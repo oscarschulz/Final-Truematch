@@ -1,233 +1,470 @@
-/* =========================================================
-   TrueMatch — optin.html RESPONSIVE STYLESHEET
-   File: optin.mobile.css
-   (FIXED: Icons Top-Left + ALL Text Vertically Centered)
-   ========================================================= */
+/* TrueMatch — optin.html RESPONSIVE STYLESHEET
+ * File: optin.mobile.css
+ *
+ * NOTE:
+ * - Mobile-first overrides for optin.html
+ * - Keeps desktop styles from style.css, only tweaks layout on tablets/phones
+ */
 
-/* --- 0. UNIVERSAL FIXES --- */
-html, body {
-  overflow-x: hidden !important;
-  width: 100%;
-  position: relative;
-  margin: 0;
-  padding: 0;
+/* ------------------------- */
+/*  Global mobile variables  */
+/* ------------------------- */
+:root {
+  --tm-optin-max-width: 1120px;
+  --tm-optin-pad-x: 20px;
 }
 
-*, *::before, *::after {
-  box-sizing: border-box;
+/* Base container tweaks (desktop + down) */
+html.tm-home .container {
+  max-width: var(--tm-optin-max-width);
+  margin-inline: auto;
 }
 
-/* NUCLEAR SCROLLBAR HIDE */
-html.tm-home .steps-wrapper::-webkit-scrollbar,
-html.tm-home .bento-grid::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; background: transparent !important; }
-html.tm-home .steps-wrapper, html.tm-home .bento-grid { scrollbar-width: none !important; -ms-overflow-style: none !important; border: none !important; box-shadow: none !important; }
-
-/* --- 1. LAPTOP & SMALL DESKTOP (1280px pababa) --- */
-@media (max-width: 1280px) {
-  html.tm-home { font-size: 13.5px; }
-  html.tm-home .scroll-indicator { display: none !important; }
-  html.tm-home .container { max-width: 960px; margin-inline: auto; }
-  html.tm-home .site-header .container, html.tm-home .hero .container { width: 100%; max-width: 100%; padding-inline: 40px; }
-  html.tm-home .hero__grid { gap: 40px; }
-  html.tm-home main > section { padding-top: 3.5rem !important; padding-bottom: 3.5rem !important; }
-  html.tm-home .step-card, html.tm-home .bento-card { padding: 1.5rem !important; }
+/* Make sections breathe less vertically on smaller devices */
+html.tm-home main > section {
+  scroll-margin-top: 80px;
 }
 
-/* --- 2. TABLET LAYOUT (1024px pababa) --- */
+/* ------------------------- */
+/*   Base hero adjustments   */
+/* ------------------------- */
+html.tm-home .hero {
+  padding-top: 96px;
+  padding-bottom: 48px;
+}
+
+/* Keep hero content tighter */
+html.tm-home .hero__content {
+  max-width: 640px;
+}
+
+/* ------------------------- */
+/*   CAROUSEL BASE STYLES    */
+/* ------------------------- */
+
+/* Track: enable horizontal scrolling on mobile, but keep default desktop grid */
+html.tm-home .tm-carousel__track {
+  scroll-snap-type: none;
+}
+
+/* Cards in carousels */
+html.tm-home .step-card,
+html.tm-home .bento-card {
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+}
+
+/* Base for nav buttons – visual style only (display controlled later) */
+html.tm-home .tm-carousel__btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid rgba(154, 252, 255, 0.4);
+  background: radial-gradient(circle at top left, rgba(154, 252, 255, 0.22), rgba(0, 0, 0, 0.9));
+  box-shadow: 0 0 24px rgba(154, 252, 255, 0.35);
+  backdrop-filter: blur(10px);
+  color: #9afcff;
+  font-size: 18px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.18s ease-out, box-shadow 0.18s ease-out, opacity 0.16s ease-out;
+}
+
+/* hidden state */
+html.tm-home .tm-carousel__btn[disabled] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ------------------------- */
+/*   ≤ 1024px (TABLET DOWN)  */
+/* ------------------------- */
 @media (max-width: 1024px) {
-  html.tm-home .container, html.tm-home .site-header .container, html.tm-home .hero .container { padding-inline: 32px; }
-  
-  html.tm-home .hero__grid { grid-template-columns: 1fr !important; text-align: center; gap: 30px; margin-top: 2rem; }
-  html.tm-home .hero__copy { display: flex; flex-direction: column; align-items: center; margin-inline: auto; max-width: 600px; }
-  html.tm-home .hero__cta { justify-content: center; display: flex; gap: 15px; flex-wrap: wrap; }
-  html.tm-home .hero__media { display: flex; justify-content: center; width: 100%; }
-  html.tm-home .hero__img-wrapper { width: 100%; max-width: 450px; margin-inline: auto; }
-
-  html.tm-home .nav { display: flex; justify-content: space-between !important; align-items: center; width: 100%; }
-  html.tm-home .nav__toggle { display: inline-flex; z-index: 1001; position: relative; }
-  html.tm-home .nav__menu, html.tm-home .nav__actions { display: none; }
-
-  /* Sidebar Logic */
-  html.tm-home .nav__dropdown {
-    display: flex !important; flex-direction: column; gap: 1.2rem; position: fixed; top: 0; right: 0; width: 280px; max-width: 80vw; height: 100vh; height: 100dvh;
-    background: rgba(10, 10, 10, 0.98); border-left: 1px solid rgba(255,255,255,0.1); box-shadow: -10px 0 30px rgba(0,0,0,0.5); z-index: 1000;
-    padding: 90px 24px 40px 24px; transform: translateX(100%); visibility: hidden; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.3s;
+  html.tm-home body {
+    overflow-x: hidden;
   }
-  html.tm-home .nav__dropdown.open { transform: translateX(0); visibility: visible; }
-  html.tm-home .nav__dropdown a { font-size: 1.1rem; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.08); color: #fff; text-decoration: none; opacity: 0; transform: translateX(10px); transition: opacity 0.3s ease, transform 0.3s ease; }
-  html.tm-home .nav__dropdown.open a { opacity: 1; transform: translateX(0); transition-delay: 0.1s; }
-  html.tm-home .nav__dropdown .menu-footer { margin-top: auto; display: grid; gap: 12px; width: 100%; opacity: 0; transition: opacity 0.3s ease; }
-  html.tm-home .nav__dropdown.open .menu-footer { opacity: 1; transition-delay: 0.2s; }
-  html.tm-home .nav__dropdown .btn { width: 100%; justify-content: center; padding: 14px; font-size: .95rem; }
 
-  /* Footer & Form Centering */
-  html.tm-home .footer-middle-content { grid-template-columns: 1fr !important; text-align: center; gap: 3rem; }
-  html.tm-home .footer-left-section { display: flex; flex-direction: column; align-items: center; }
-  html.tm-home .footer-newsletter-card { margin-inline: auto; width: 100%; max-width: 500px; }
-
-  html.tm-home .pricing-grid {
-    display: flex !important; flex-direction: column; align-items: center !important; justify-content: center !important;
-    width: 100% !important; max-width: 600px !important; 
-    margin-left: auto !important; margin-right: auto !important; 
-    margin-top: 1rem !important; margin-bottom: 2rem !important; 
-    padding: 20px !important; 
+  html.tm-home main {
+    padding-bottom: 64px;
   }
-  html.tm-home .optin-form-card { width: 100% !important; margin: 0 !important; }
 
-  /* TABLET: Steps = Carousel, Privacy = Still Grid */
-  html.tm-home .steps-wrapper {
+  html.tm-home header.tm-header {
+    padding-inline: 16px;
+  }
+
+  html.tm-home .nav__links {
+    gap: 12px;
+  }
+
+  html.tm-home .nav__cta {
+    padding-inline: 18px;
+  }
+
+  html.tm-home .hero {
+    padding-top: calc(56px + env(safe-area-inset-top));
+    padding-bottom: 32px;
+  }
+
+  html.tm-home .hero .container {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  html.tm-home .hero__grid {
+    grid-template-columns: minmax(0, 1.3fr);
+  }
+
+  html.tm-home .hero__eyebrow {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+  }
+
+  html.tm-home .hero__heading {
+    font-size: clamp(28px, 5vw, 36px);
+    line-height: 1.1;
+  }
+
+  html.tm-home .hero__sub {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  html.tm-home .hero__cta-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  html.tm-home .hero__cta-row .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  html.tm-home .hero__badge-row {
+    justify-content: center;
+  }
+
+  /* Global section padding on tablet down */
+  html.tm-home main > section {
+    padding-inline: var(--tm-optin-pad-x);
+    padding-block: 40px;
+  }
+
+  html.tm-home .section-heading {
+    text-align: left;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  html.tm-home .section-heading__eyebrow {
+    font-size: 11px;
+  }
+
+  html.tm-home .section-heading__title {
+    font-size: 22px;
+  }
+
+  html.tm-home .section-heading__kicker {
+    font-size: 13px;
+  }
+
+  /* "What members see" section */
+  html.tm-home #what-members-see {
+    padding-top: 32px;
+    padding-bottom: 32px;
+  }
+
+  html.tm-home #what-members-see .section-heading__title {
+    font-size: 18px;
+  }
+
+  /* ------------------------- */
+  /*   HORIZONTAL CAROUSELS    */
+  /* ------------------------- */
+
+  /* Tracks (How it works + Privacy & control): full-width, no peeking */
+  html.tm-home .steps-wrapper,
+  html.tm-home .bento-grid {
+    margin-top: 24px;
     display: flex !important;
+    flex-wrap: nowrap;
+    gap: 0 !important;                 /* no horizontal gap to avoid peeking */
+    padding: 0 !important;             /* rely on container padding instead */
+    margin-inline: 0 !important;       /* remove any side offset */
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
     scroll-snap-type: x mandatory;
-    gap: 16px;
-    padding-bottom: 20px;
-    padding-left: 0;
-    grid-template-columns: none !important; 
+    scroll-padding-inline: 0;
     align-items: stretch;
   }
-  html.tm-home .step-card {
-    min-width: 300px;
-    flex: 0 0 auto;
+
+  /* Each card = full viewport width of the content area */
+  html.tm-home .step-card,
+  html.tm-home .bento-card {
+    flex: 0 0 100%;
+    max-width: 100%;
+    min-width: 100%;
     scroll-snap-align: center;
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: center !important;
-    justify-content: center !important;
-    text-align: center !important;
-    width: auto !important;
-    margin: 0 !important;
   }
-  
-  html.tm-home .tm-carousel__btn { display: grid !important; }
+
+  /* Visual inset effect (approx 96%) but still 1 card visible, no peek */
+  html.tm-home .tm-carousel__track .step-card,
+  html.tm-home .tm-carousel__track .bento-card {
+    transform: scale(0.96);
+    transform-origin: center center;
+  }
+
+  /* Improve inner padding on cards for mobile */
+  html.tm-home .step-card {
+    padding: 24px 20px;
+  }
+
+  html.tm-home .bento-card {
+    padding: 24px 20px;
+  }
+
+  /* Opt-in form – center the card */
+  html.tm-home .optin-form-grid {
+    display: flex;
+    justify-content: center;
+  }
+
+  html.tm-home .optin-form-card {
+    max-width: 480px;
+    width: 100%;
+  }
+
+  /* Make sure no nav buttons show on tablet down */
+  html.tm-home .tm-carousel__btn {
+    display: none !important;
+  }
 }
 
-/* --- 3. MOBILE PHONES (768px pababa) --- */
+/* ------------------------- */
+/*   ≤ 768px (MOBILE LAND.)  */
+/* ------------------------- */
 @media (max-width: 768px) {
-  html.tm-home { font-size: 15px; --tm-pad-x: 20px; }
-  html.tm-home .container { padding-inline: var(--tm-pad-x); }
-  html.tm-home section { padding-top: 48px !important; padding-bottom: 48px !important; }
-  html.tm-home .hero { height: auto !important; min-height: unset !important; padding-top: calc(80px + env(safe-area-inset-top)) !important; }
-  html.tm-home .hero__grid { gap: 24px; }
-  html.tm-home .hero h1 { line-height: 1.1; margin-bottom: 1rem; }
-  html.tm-home .hero__cta { display: grid; grid-template-columns: 1fr; gap: 10px; width: 100%; }
+  html.tm-home main {
+    padding-top: 64px;
+  }
 
-  /* === FORCE CAROUSEL === */
-  html.tm-home .steps-wrapper, 
+  html.tm-home .hero__flex {
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  html.tm-home .hero__heading {
+    font-size: 26px;
+  }
+
+  html.tm-home .hero__sub {
+    font-size: 13px;
+  }
+
+  html.tm-home .hero__supporting {
+    font-size: 12px;
+  }
+
+  html.tm-home .hero__badge-row {
+    margin-top: 16px;
+  }
+
+  html.tm-home #what-members-see {
+    padding-top: 32px;
+    padding-bottom: 24px;
+  }
+
+  html.tm-home #what-members-see .section-heading {
+    gap: 4px;
+  }
+
+  html.tm-home #what-members-see .section-heading__eyebrow {
+    font-size: 10px;
+  }
+
+  html.tm-home #what-members-see .section-heading__title {
+    font-size: 17px;
+  }
+
+  /* Section spacing tweaks */
+  html.tm-home #how-it-works.section {
+    padding-top: 28px;
+  }
+
+  html.tm-home #privacy-control.section {
+    padding-top: 28px;
+  }
+
+  /* Ensure tracks still behave as true carousels, but no peeking */
+  html.tm-home .steps-wrapper,
   html.tm-home .bento-grid {
+    gap: 0 !important;
+    padding: 0 !important;
+    scroll-padding-inline: 0;
+  }
+
+  html.tm-home .step-card,
+  html.tm-home .bento-card {
+    flex: 0 0 100%;
+    max-width: 100%;
+    min-width: 100%;
+  }
+
+  /* Hide nav buttons on mobile */
+  html.tm-home .tm-carousel__btn {
+    display: none !important;
+  }
+
+  /* FAQ + footer readability */
+  html.tm-home .faq-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  html.tm-home .faq-card__question {
+    font-size: 14px;
+  }
+
+  html.tm-home .faq-card__body {
+    font-size: 13px;
+  }
+
+  html.tm-home .footer__grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+}
+
+/* ------------------------- */
+/*   ≤ 480px (MOBILE NARROW) */
+/* ------------------------- */
+@media (max-width: 480px) {
+  html.tm-home body {
+    font-size: 14px;
+  }
+
+  /* Global page width – konting side padding sa buong page
+     (remove double padding: section = 0, container = 16px) */
+  html.tm-home main > section {
+    padding-inline: 0;
+  }
+
+  html.tm-home .container {
+    padding-inline: 16px;
+  }
+
+  /* Hero spacing: bawas gap sa taas */
+  html.tm-home .hero {
+    padding-top: calc(48px + env(safe-area-inset-top)) !important;
+    padding-bottom: 28px;
+  }
+
+  html.tm-home .hero__badge-row {
+    justify-content: flex-start;
+  }
+
+  html.tm-home .hero__badges {
+    justify-content: flex-start;
+  }
+
+  /* “What members see” section */
+  html.tm-home #what-members-see {
+    padding-top: 24px;
+    padding-bottom: 24px;
+  }
+
+  html.tm-home #what-members-see .section-heading {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  html.tm-home #what-members-see .section-heading__title {
+    font-size: 16px;
+  }
+
+  /* Carousels: no extra padding or gap so cards center properly */
+  html.tm-home .steps-wrapper,
+  html.tm-home .bento-grid {
+    gap: 0 !important;
+    padding-inline: 0 !important;
+    scroll-padding-inline: 0;
+  }
+
+  html.tm-home .step-card,
+  html.tm-home .bento-card {
+    flex: 0 0 100%;
+    max-width: 100%;
+    min-width: 100%;
+  }
+
+  /* Make sure nav buttons never show on narrow mobile */
+  html.tm-home .tm-carousel__btn {
+    display: none !important;
+  }
+
+  /* FAQ body line-height */
+  html.tm-home .faq-card__body p {
+    line-height: 1.5;
+  }
+}
+
+/* Final safety: hide carousel buttons everywhere on tm-home */
+html.tm-home .tm-carousel__btn {
+  display: none !important;
+}
+/* === Extra mobile fixes (Jan 16 2026) === */
+
+/* Force Privacy & control to behave as a true 1-card carousel on mobile */
+@media (max-width: 1024px) {
+  html.tm-home #privacy .tm-carousel__track.bento-grid {
     display: flex !important;
     flex-wrap: nowrap !important;
-    flex-direction: row !important;
     overflow-x: auto !important;
+    overflow-y: hidden !important;
     scroll-snap-type: x mandatory;
-    gap: 16px !important;
-    padding: 20px 20px 24px 20px !important; 
-    grid-template-columns: none !important; 
-    grid-template-rows: none !important;
-    grid-auto-flow: unset !important;
-    align-items: stretch;
+    -webkit-overflow-scrolling: touch;
+    gap: 0 !important;
+    padding-inline: 0 !important;
   }
 
-  /* === CARD WIDTH & RESET === */
-  html.tm-home .step-card, 
-  html.tm-home .bento-card { 
-    flex: 0 0 85% !important;
-    min-width: 85% !important;
-    width: 85% !important;
-    max-width: 85% !important;
-    grid-column: unset !important;
-    grid-row: unset !important;
-    margin: 0 !important;
-    scroll-snap-align: center; 
-    
-    /* Layout Logic */
-    display: flex !important;
-    flex-direction: column !important;
-    justify-content: flex-start !important; /* Start content at TOP */
-    align-items: center !important; 
-    text-align: center !important;
-    padding: 2rem 1.5rem !important; 
+  html.tm-home #privacy .tm-carousel__track.bento-grid .bento-card {
+    flex: 0 0 calc(100% - 32px) !important;
+    min-width: calc(100% - 32px) !important;
+    max-width: calc(100% - 32px) !important;
+    margin: 0 16px !important;
+    scroll-snap-align: center;
   }
-  
-  html.tm-home .tm-carousel__btn { display: grid !important; opacity: 1 !important; pointer-events: auto !important; }
+}
 
-  /* === ICONS: FIXED TOP LEFT === */
-  html.tm-home .step-number,
-  html.tm-home .bento-icon {
-    display: flex !important;
-    justify-content: flex-start !important; /* Icon Left */
-    margin-right: auto !important; 
-    margin-left: 0 !important; 
-    margin-bottom: 0 !important; /* Remove bottom margin to let text control spacing */
-    width: 100% !important;
-    flex-shrink: 0; /* Prevent icon from squishing */
-  }
-
-  /* === TEXT: VERTICAL CENTERING MAGIC === */
-  
-  /* 1. For Standard Cards (Card 2 & 3 - direct children) */
-  /* Logic: Push H3 down, Push P up = Vertical Center */
-  html.tm-home .bento-card > h3 {
-    margin-top: auto !important; 
-    margin-bottom: .5rem !important;
-    width: 100%;
-    text-align: center;
-  }
-  html.tm-home .bento-card > p {
-    margin-bottom: auto !important;
-    width: 100%;
-    text-align: center;
-  }
-
-  /* 2. For Wide Cards (Card 1 & 4 - nested in .bento-content) */
-  html.tm-home .bento-content {
-    display: flex !important;
-    flex-direction: column !important;
-    width: 100%;
-    height: 100%;
-  }
-  
-  /* Fix Icon inside Wide Cards */
-  html.tm-home .bento-content .bento-icon {
-    align-self: flex-start !important; 
-  }
-
-  /* Fix Text Group inside Wide Cards */
-  html.tm-home .bento-content > div:not(.bento-icon) {
+/* Center the Opt-In form card under the "Opt-In form" section on mobile */
+@media (max-width: 1024px) {
+  html.tm-home #apply .pricing-grid {
     display: flex !important;
     flex-direction: column !important;
     align-items: center !important;
-    text-align: center !important;
-    width: 100%;
-    flex-grow: 1; /* Fill remaining space */
-    justify-content: center; /* Center text vertically */
+    justify-content: flex-start !important;
+    margin-inline: 0 !important;
   }
 
-  /* Ensure How-It-Works cards text is also centered/standardized */
-  html.tm-home .step-card h3 { margin-top: auto !important; margin-bottom: 0.5rem !important; }
-  html.tm-home .step-card p { margin-bottom: auto !important; }
-
-
-  /* --- FORM ADJUSTMENTS --- */
-  html.tm-home #apply .container { padding-inline: 10px !important; max-width: 100% !important; }
-  html.tm-home .pricing-grid { margin-left: 0 !important; margin-right: 0 !important; width: 100% !important; max-width: 100% !important; padding: 20px 0px !important; }
-  html.tm-home .optin-form-card { width: 100% !important; max-width: none !important; margin-inline: auto !important; }
-  html.tm-home .optin-form .row { grid-template-columns: 1fr !important; }
-  html.tm-home .optin-form input, html.tm-home .optin-form select, html.tm-home .optin-form textarea { font-size: 16px !important; }
-  
-  html.tm-home .optin-form .checks label { display: flex; align-items: flex-start; gap: 12px; }
-  html.tm-home .optin-form .checks input[type="checkbox"] { width: 20px !important; min-width: 20px !important; height: 20px !important; min-height: 20px !important; flex-shrink: 0 !important; flex-grow: 0 !important; margin-top: 2px !important; cursor: pointer; }
+  html.tm-home #apply .pricing-grid .price-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-inline: 0 !important;
+  }
 }
+/* === Extra mobile fixes (Jan 16 2026) === */
 
-/* --- 4. SMALL MOBILES (480px pababa) --- */
-@media (max-width: 480px) {
-  html.tm-home .container { padding-inline: 16px; }
-  html.tm-home .brand__name { display: block; font-size: 14px; }
-  
-  html.tm-home .tm-carousel .step-card, 
-  html.tm-home .tm-carousel .bento-card { 
-    flex: 0 0 90% !important;
-    min-width: 90% !important;
-    width: 90% !important;
-    max-width: 90% !important;
+/* Force Privacy & control to behave as a true 1-card carousel on mobile */
+@media (max-width: 1024px) {
+  html.tm-home #privacy .tm-carousel__track.bento-grid {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    gap: 0 !important;
+    padding-inline: 0 !important;
   }
 }
