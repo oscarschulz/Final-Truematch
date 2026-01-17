@@ -687,217 +687,147 @@ if (prefs.intent && qs('select[name="intent"]')) {
     // Always send user back to home/landing
     window.location.href = 'index.html';
   }
-
   function syncTopNav(user, params) {
-    const loginLink = document.querySelector('.nav-login-link');
-    const backLink = document.querySelector('.nav-back-btn');
-    if (!loginLink || !backLink) return;
+    const logoutLink = document.querySelector('.nav-logout-link') || document.querySelector('.nav-login-link');
+    if (!logoutLink) return;
 
     const isAuthed = !!(user && user.email);
 
-    const span = backLink.querySelector('span');
-
     if (isAuthed) {
-      loginLink.textContent = 'LOG OUT';
-      loginLink.setAttribute('href', '#');
-      loginLink.onclick = (e) => {
+      logoutLink.textContent = 'LOG OUT';
+      logoutLink.setAttribute('href', '#');
+      logoutLink.onclick = (e) => {
         e.preventDefault();
         performLogout();
       };
-
-      if (span) span.textContent = 'DASHBOARD';
-      backLink.setAttribute('href', getReturnDestination(params));
     } else {
-      loginLink.textContent = 'LOG IN';
-      loginLink.setAttribute('href', 'auth.html?mode=signin&return=/preferences.html');
-      loginLink.onclick = null;
-
-      if (span) span.textContent = 'BACK';
-      // Safe fallback: go home
-      backLink.setAttribute('href', 'index.html');
+      // Preferences should normally be protected; fall back to login link.
+      logoutLink.textContent = 'LOG IN';
+      const next = sanitizeReturnUrl('/preferences.html');
+      logoutLink.setAttribute('href', `auth.html?mode=signin&return=${encodeURIComponent(next)}`);
+      logoutLink.onclick = null;
     }
-  }
 
+    // Hide any legacy back/dashboard button if it still exists in the DOM
+    const back = document.querySelector('.nav-back-btn');
+    if (back) back.style.display = 'none';
+  }
 
   async function initPreferencesPage() {
     showLoader();
 
     const url = new URL(window.location.href);
     const params = url.searchParams;
-    const onboardingParam = (params.get('onboarding') || '')
-      .toString()
-      .toLowerCase();
+
+    const onboardingParam = (params.get('onboarding') || '').toString().toLowerCase();
     const onboarding = onboardingParam === '1';
     PREFS_ONBOARDING_MODE = onboardingParam;
     PREFS_FROM_PARAM = (params.get('from') || '').toString().toLowerCase();
 
-    // Keep initial plan from URL only as a fallback,
-    // but do NOT toggle advanced section here anymore.
-    const initialPlan =
-      params.get('plan') ||
-      params.get('prePlan') ||
-      '';
+    const initialPlan = params.get('plan') || params.get('prePlan') || '';
 
     const api = ensureApiClient();
     let localUser = getLocalUserFromSessionOrStorage();
+    let serverPrefs = null;
 
-    // Sync top nav immediately (LOG OUT for authed users)
-    try { syncTopNav(localUser, params); } catch {}
-
-    // Do NOT auto-create demo users here.
-    // If there is no valid session/user, the redirect-to-auth logic below will handle it.
+    // Helper: try /api/me twice (fixes first-load race conditions after sign-in)
+    async function getMeWithRetry() {
+      let last = null;
+      for (let i = 0; i < 2; i++) {
+        last = await getApiMe(api);
+        if (last && last.ok && last.user && last.user.email) return last;
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      return last;
+    }
 
     try {
-      const userFromSession = getLocalUserFromSessionOrStorage();
-      const user = userFromSession || localUser;
+      const me = await getMeWithRetry();
+      const userFromApi = (me && me.ok && me.user && me.user.email) ? me.user : null;
 
-      if (!user || !user.email) {
-        console.warn('[prefs] No local user/email, redirecting to auth');
-        try { syncTopNav(null, params); } catch {}
-        window.location.replace(
-          '/auth.html?mode=signin&return=/preferences.html'
-        );
-        hideLoader();
+      if (userFromApi) {
+        const prefsFromUser = userFromApi.preferences || userFromApi.prefs || null;
+        const prefsFromRoot = (me && (me.preferences || me.prefs)) || null;
+        serverPrefs = prefsFromUser || prefsFromRoot || null;
+
+        const mergedUser = Object.assign({}, localUser || {}, userFromApi, {
+          prefsSaved: !!serverPrefs
+        });
+
+        localUser = mergedUser;
+
+        try {
+          SESSION?.setCurrentUser?.(mergedUser);
+          localStorage.setItem('tm_user', JSON.stringify(mergedUser));
+        } catch {
+          // ignore storage errors
+        }
+
+        // Update top nav based on real auth state
+        try { syncTopNav(mergedUser, params); } catch {}
+
+      } else {
+        // No server session yet. Fall back to local user, otherwise force login.
+        if (!localUser || !localUser.email) {
+          console.warn('[prefs] No server session and no local user, redirecting to auth');
+          try { syncTopNav(null, params); } catch {}
+          window.location.replace('/auth.html?mode=signin&return=/preferences.html');
+          return;
+        }
+        try { syncTopNav(localUser, params); } catch {}
+      }
+
+      // Determine plan for advanced section (server first, else local, else URL, else free)
+      const resolvedPlan = (localUser && (localUser.plan || localUser.planKey)) || initialPlan || 'free';
+      toggleAdvancedSection(resolvedPlan);
+
+      // Prefill profile fields
+      try {
+        const pAge = qs('#profileAge');
+        const pCity = qs('#profileCity');
+        if (pAge && localUser && localUser.age) pAge.value = String(localUser.age);
+        if (pCity && localUser && localUser.city) pCity.value = String(localUser.city);
+
+        EXISTING_AVATAR_URL = String((localUser && (localUser.avatarUrl || localUser.avatar)) || EXISTING_AVATAR_URL || '');
+        setAvatarPreview(EXISTING_AVATAR_URL);
+        setAvatarFileName('');
+      } catch {
+        // ignore
+      }
+
+      // Persist server prefs to local storage if available
+      if (serverPrefs && localUser && localUser.email) {
+        saveStoredPrefsForUser(localUser.email, serverPrefs);
+      }
+
+      // Onboarding shortcut: if server prefs exist + profile complete, go straight to dashboard
+      if (onboarding && serverPrefs && isProfileComplete(localUser)) {
+        const qsStr = buildTierQS({ step: 'prefs-existing', dest: 'dashboard' });
+        window.location.replace(`/dashboard.html${qsStr ? `?${qsStr}` : ''}`);
         return;
       }
 
-      let serverPrefs = null;
-
-      try {
-        const me = await getApiMe(api);
-
-        if (me && me.user) {
-          const userFromApi = me.user;
-          const prefsFromUser =
-            userFromApi.preferences ||
-            userFromApi.prefs ||
-            null;
-          const prefsFromRoot =
-            me.preferences || me.prefs || null;
-
-          if (prefsFromUser || prefsFromRoot) {
-            serverPrefs = prefsFromUser || prefsFromRoot;
-          }
-
-          const mergedUser = Object.assign({}, localUser, userFromApi, {
-            prefsSaved: !!serverPrefs
-          });
-
-          // Keep top nav in sync with authenticated state
-          try { syncTopNav(mergedUser, params); } catch {}
-
-          SESSION?.setCurrentUser?.(mergedUser);
-          localStorage.setItem('tm_user', JSON.stringify(mergedUser));
-
-          // Prefill profile fields (age/city/avatar)
-          try {
-            const pAge = qs('#profileAge');
-            const pCity = qs('#profileCity');
-            if (pAge && userFromApi && userFromApi.age) pAge.value = String(userFromApi.age);
-            if (pCity && userFromApi && userFromApi.city) pCity.value = String(userFromApi.city);
-
-            EXISTING_AVATAR_URL = String(userFromApi.avatarUrl || userFromApi.avatar || '');
-            setAvatarPreview(EXISTING_AVATAR_URL);
-            setAvatarFileName('');
-            attachAvatarHandlers();
-          } catch (e) {
-            console.warn('[prefs] profile prefill failed', e);
-          }
-
-          // Update advanced section based on the latest plan from backend
-          const userPlan =
-            userFromApi.plan ||
-            userFromApi.planKey ||
-            initialPlan ||
-            '';
-          toggleAdvancedSection(userPlan || 'free');
-
-          if (serverPrefs) {
-            saveStoredPrefsForUser(mergedUser.email, serverPrefs);
-          }
-
-          // Optionally re-read prefs via api.getPreferences
-          serverPrefs = await getApiPrefs(api);
-
-          if (onboarding && serverPrefs) {
-            const profileOk = isProfileComplete(userFromApi);
-            if (profileOk) {
-              console.log(
-                '[prefs] onboarding + server prefs + profile complete → go dashboard'
-              );
-            } else {
-              console.log('[prefs] onboarding but profile incomplete → stay on prefs');
-            }
-
-            if (profileOk) {
-            const qsStr = buildTierQS({
-              step: 'prefs-existing',
-              dest: 'dashboard'
-            });
-            window.location.replace(
-              `/dashboard.html${qsStr ? `?${qsStr}` : ''}`
-            );
-            hideLoader();
-            return;
-            }
-          }
-
-          if (serverPrefs) {
-            fillFormFromPrefs(serverPrefs);
-          } else {
-            const localPrefs = getStoredPrefs();
-            if (localPrefs) fillFormFromPrefs(localPrefs);
-          }
-        } else {
-          const localPrefs = getStoredPrefs();
-          if (localPrefs) fillFormFromPrefs(localPrefs);
-        }
-      } catch (loadErr) {
-        console.warn(
-          '[prefs] non-fatal init load error, falling back to local prefs',
-          loadErr
-        );
-        const localPrefs = getStoredPrefs();
-        if (localPrefs) fillFormFromPrefs(localPrefs);
-
-        // Prefill profile from local user store
-        try {
-          const u = getLocalUserFromSessionOrStorage();
-          try { syncTopNav(u, params); } catch {}
-          const pAge = qs('#profileAge');
-          const pCity = qs('#profileCity');
-          if (pAge && u && u.age) pAge.value = String(u.age);
-          if (pCity && u && u.city) pCity.value = String(u.city);
-          EXISTING_AVATAR_URL = String((u && u.avatarUrl) || '');
-          setAvatarPreview(EXISTING_AVATAR_URL);
-          setAvatarFileName('');
-          attachAvatarHandlers();
-        } catch {}
-
+      // Fill form from server prefs when available, otherwise local prefs
+      const localPrefs = getStoredPrefs();
+      if (serverPrefs) {
+        fillFormFromPrefs(serverPrefs);
+      } else if (localPrefs) {
+        fillFormFromPrefs(localPrefs);
       }
+
     } finally {
       hideLoader();
     }
 
     try {
-      // Ensure avatar UI is wired even if profile prefill did not run
-      if (!EXISTING_AVATAR_URL) {
-        const u = getLocalUserFromSessionOrStorage();
-        EXISTING_AVATAR_URL = String((u && u.avatarUrl) || '');
-        setAvatarPreview(EXISTING_AVATAR_URL);
-        setAvatarFileName('');
-      }
       attachAvatarHandlers();
     } catch {}
 
-    attachFormHandler({
-      api,
-      localUser,
-      mode: 'live'
-    });
+    attachFormHandler({ api, localUser, mode: 'live' });
   }
 
   function attachFormHandler(ctx) {
+
     const form = qs('#preferencesForm');
     if (!form) return;
 
