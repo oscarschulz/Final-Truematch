@@ -6,7 +6,7 @@ import { getLocalPlan, saveLocalUser, clearSession } from './tm-session.js';
 import { apiGet, apiPost, apiUpdateProfile, apiSavePrefs } from './tm-api.js';
 
 // SAFETY: Set this to FALSE before deploying to production.
-const DEV_MODE = true; 
+const DEV_MODE = false; 
 
 const DAILY_SWIPE_LIMIT = 20; 
 
