@@ -912,7 +912,8 @@ function renderHome(user) {
 function applyPlanNavGating() {
   if (DEV_MODE) return; 
   const rules = {
-    free: ['home', 'matches', 'swipe', 'creators', 'premium', 'settings'],
+    // Premium tab should be hidden for Free users, but visible for paid tiers.
+    free: ['home', 'matches', 'swipe', 'creators', 'settings'],
     tier1: ['home', 'matches', 'swipe', 'creators', 'premium', 'settings'],
     tier2: ['home', 'matches', 'shortlist', 'approved', 'swipe', 'creators', 'premium', 'settings'],
     tier3: ['home', 'matches', 'shortlist', 'approved', 'confirmed', 'swipe', 'creators', 'premium', 'settings']
