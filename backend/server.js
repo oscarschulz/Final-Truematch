@@ -25,8 +25,30 @@ try {
 // ---------------- Basic server setup ----------------
 const app = express();
 
-// serve frontend (public folder) — server.js is inside /backend
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// =========================
+// Frontend public folder resolver
+// =========================
+// In your project, server.js may live either in the repo root OR inside a /backend folder.
+// A common reason for "Cannot GET /preferences.html" is serving the wrong public folder path
+// in production (Railway/Linux is case-sensitive & directory-sensitive).
+function resolvePublicDir() {
+  const candidates = [
+    path.join(__dirname, '..', 'public'),
+    path.join(__dirname, '.', 'public'),
+    path.join(process.cwd(), 'public')
+  ];
+
+  for (const c of candidates) {
+    try {
+      if (fs.existsSync(c)) return c;
+    } catch (e) {}
+  }
+  // fallback (still returns something predictable)
+  return candidates[0];
+}
+
+const PUBLIC_DIR = resolvePublicDir();
+
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -113,8 +135,8 @@ app.use((req, res, next) => {
 });
 
 // Serve frontend and assets (after gating)
-app.use(express.static(path.join(__dirname, '../public')));
-app.use('/public', express.static(path.join(__dirname, '../public')));
+app.use(express.static(PUBLIC_DIR));
+app.use('/public', express.static(PUBLIC_DIR));
 
 
 // static files
@@ -1944,12 +1966,46 @@ app.post('/api/me/profile', async (req, res) => {
     }
 
     if (avatarDataUrl) {
-      if (hasFirebase) {
-        // Firebase mode: store file in Firebase Storage
+      // Validate avatar data URL format early (must be base64 image)
+      const av = String(avatarDataUrl || '');
+      const m = av.match(/^data:(image\/[^;]+);base64,(.+)$/);
+      if (!m) {
+        return res.status(400).json({ ok: false, message: 'invalid avatar data' });
+      }
+
+      // Inline fallback (Firestore-safe) — keeps onboarding flow working even if Storage is not enabled.
+      // Firestore doc max is ~1MB; keep avatar payload comfortably below that.
+      const inlineMaxBytes = 450 * 1024; // ~450KB decoded (Firestore-safe)
+      let inlineBufSize = 0;
+      try {
+        inlineBufSize = Buffer.from(m[2], 'base64').length;
+      } catch {
+        return res.status(400).json({ ok: false, message: 'invalid avatar data' });
+      }
+
+      const canInline = inlineBufSize > 0 && inlineBufSize <= inlineMaxBytes;
+      const canUseStorage = !!(hasFirebase && hasStorage && storageBucket);
+
+      const setInlineAvatar = () => {
+        if (!canInline) {
+          return res.status(413).json({
+            ok: false,
+            message: 'Profile picture too large. Please choose a smaller image.'
+          });
+        }
+        fields.avatarUrl = av;
+        // Clear any old storage path so we don't keep stale references
+        fields.avatarPath = '';
+        fields.avatarUpdatedAt = new Date().toISOString();
+        return null;
+      };
+
+      if (canUseStorage) {
+        // Firebase mode: prefer Firebase Storage
         try {
           const up = await uploadAvatarDataUrlToStorage(
             (email || oldEmail),
-            avatarDataUrl,
+            av,
             existingAvatarPath
           );
           newAvatarUrl = up.url;
@@ -1958,19 +2014,20 @@ app.post('/api/me/profile', async (req, res) => {
           fields.avatarPath = newAvatarPath;
           fields.avatarUpdatedAt = new Date().toISOString();
         } catch (e) {
-          console.error('avatar upload failed:', e);
-          return res.status(500).json({
-            ok: false,
-            message:
-              e && e.message === 'storage not configured'
-                ? 'Firebase Storage not configured. Set FIREBASE_STORAGE_BUCKET and enable Storage.'
-                : 'Failed to upload profile picture.'
-          });
+          // Fallback to inline data URL so the user can complete onboarding.
+          console.warn('[Avatar] Storage upload failed; falling back to inline avatarUrl. Reason:', e && e.message ? e.message : e);
+          const resp = setInlineAvatar();
+          if (resp) return resp;
         }
       } else {
-        // Demo mode: store data URL directly
-        fields.avatarUrl = avatarDataUrl;
+        // No Storage configured (or running in demo) — store data URL directly
+        if (hasFirebase && !canUseStorage) {
+          console.warn('[Avatar] Firebase is ON but Storage is not configured. Using inline avatarUrl fallback.');
+        }
+        const resp = setInlineAvatar();
+        if (resp) return resp;
       }
+
     } else if (avatarUrl) {
       // Accept direct avatarUrl updates (optional)
       fields.avatarUrl = avatarUrl;
