@@ -60,6 +60,24 @@ function safeGetLocalUser() {
 
 const DOM = {};
 
+// Avatar full-size viewer (used in Settings > Edit)
+function openAvatarLightbox(src) {
+  if (!DOM.avatarLightbox || !DOM.avatarLightboxImg) return;
+  DOM.avatarLightboxImg.src = src || 'assets/images/truematch-mark.png';
+  DOM.avatarLightbox.removeAttribute('hidden');
+  // Prevent background scroll while the viewer is open
+  document.documentElement.style.overflow = 'hidden';
+  document.body.style.overflow = 'hidden';
+}
+
+function closeAvatarLightbox() {
+  if (!DOM.avatarLightbox || !DOM.avatarLightboxImg) return;
+  DOM.avatarLightbox.setAttribute('hidden', '');
+  DOM.avatarLightboxImg.src = '';
+  document.documentElement.style.overflow = '';
+  document.body.style.overflow = '';
+}
+
 function cacheDom() {
   DOM.tabs = document.querySelectorAll('.nav-btn');
   DOM.panels = document.querySelectorAll('.panel[data-panel]');
@@ -124,12 +142,18 @@ function cacheDom() {
   DOM.btnCloseProfile = document.getElementById('btnCloseProfile');
 
   // Profile + preferences modal controls
+  DOM.btnAvatarZoom = document.getElementById('btnAvatarZoom');
   DOM.dlgAvatarPreview = document.getElementById('dlgAvatarPreview');
   DOM.btnPickAvatar = document.getElementById('btnPickAvatar');
   DOM.inpAvatarFile = document.getElementById('inpAvatarFile');
   DOM.avatarFilename = document.getElementById('avatarFilename');
   DOM.advancedPrefsSection = document.getElementById('advancedPrefsSection');
   DOM.advLockNote = document.getElementById('advLockNote');
+
+  // Avatar full-size viewer (lightbox)
+  DOM.avatarLightbox = document.getElementById('avatarLightbox');
+  DOM.avatarLightboxImg = document.getElementById('avatarLightboxImg');
+  DOM.btnCloseAvatarLightbox = document.getElementById('btnCloseAvatarLightbox');
   
   DOM.dlgPassword = document.getElementById('dlgPassword');
   DOM.frmPassword = document.getElementById('frmPassword');
@@ -139,11 +163,11 @@ function cacheDom() {
   DOM.inpName = document.getElementById('inpName');
   DOM.inpEmail = document.getElementById('inpEmail');
   DOM.inpCity = document.getElementById('inpCity');
-  DOM.inpUserAge = document.getElementById('inpUserAge');
+  DOM.inpUserAge = document.getElementById('inpAge') || document.getElementById('inpUserAge');
   DOM.inpPrefCity = document.getElementById('inpPrefCity');
   DOM.inpAgeMin = document.getElementById('inpAgeMin');
   DOM.inpAgeMax = document.getElementById('inpAgeMax');
-  DOM.inpLooking = document.getElementById('inpLooking');
+  DOM.inpLooking = document.getElementById('inpLookingFor') || document.getElementById('inpLooking');
   DOM.inpEthnicity = document.getElementById('inpEthnicity');
   DOM.inpIntent = document.getElementById('inpIntent');
   DOM.inpDealbreakers = document.getElementById('inpDealbreakers');
@@ -341,8 +365,21 @@ function setupEventListeners() {
       DOM.inpAvatarFile.click();
     });
   }
-  if (DOM.dlgAvatarPreview && DOM.inpAvatarFile) {
-    DOM.dlgAvatarPreview.addEventListener('click', () => DOM.inpAvatarFile.click());
+  // Clicking the avatar preview shows full size (file selection stays on "Change photo")
+  const avatarZoomTarget = DOM.btnAvatarZoom || DOM.dlgAvatarPreview;
+  if (avatarZoomTarget && DOM.dlgAvatarPreview) {
+    avatarZoomTarget.addEventListener('click', (e) => {
+      e.preventDefault();
+      openAvatarLightbox(DOM.dlgAvatarPreview.src);
+    });
+  }
+
+  // Lightbox close controls
+  if (DOM.btnCloseAvatarLightbox) DOM.btnCloseAvatarLightbox.addEventListener('click', closeAvatarLightbox);
+  if (DOM.avatarLightbox) {
+    DOM.avatarLightbox.addEventListener('click', (e) => {
+      if (e.target === DOM.avatarLightbox) closeAvatarLightbox();
+    });
   }
   if (DOM.inpAvatarFile) {
     DOM.inpAvatarFile.addEventListener('change', async () => {

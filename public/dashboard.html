@@ -241,7 +241,9 @@
 
       <div class="modal-grid">
         <div class="modal-avatar">
-          <img id="dlgAvatarPreview" class="modal-avatar-img" src="assets/images/truematch-mark.png" alt="Profile photo preview" />
+          <button id="btnAvatarZoom" class="avatar-thumb" type="button" aria-label="View full size photo">
+            <img id="dlgAvatarPreview" class="modal-avatar-img" src="assets/images/truematch-mark.png" alt="Profile photo preview" />
+          </button>
           <div class="modal-avatar-actions">
             <input id="inpAvatarFile" type="file" accept="image/*" hidden />
             <button id="btnPickAvatar" type="button" class="btn btn--ghost btn--sm">Change photo</button>
@@ -433,6 +435,14 @@
         </div>
     </div>
   </dialog>
+
+  <!-- Avatar full-size viewer (used inside Settings > Edit modal) -->
+  <div id="avatarLightbox" class="avatar-lightbox" hidden>
+    <button id="btnCloseAvatarLightbox" class="avatar-lightbox-close" type="button" aria-label="Close photo">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
+    <img id="avatarLightboxImg" src="" alt="Profile photo full view" />
+  </div>
 
   <script>
     (() => {
