@@ -27,6 +27,32 @@ body { overflow: hidden !important; }
   pointer-events:auto;
 }
 
+
+.nav-logout-link{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:10px 20px;
+  border-radius:50px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  color:#fff;
+  text-decoration:none;
+  font-size:0.8rem;
+  font-weight:700;
+  letter-spacing:1px;
+  white-space:nowrap;
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+  pointer-events:auto;
+}
+.nav-logout-link:hover{
+  background: rgba(100,233,238,0.1);
+  border-color:#64E9EE;
+  color:#64E9EE;
+  box-shadow: 0 0 20px rgba(100,233,238,0.2);
+  transform: translateY(-2px);
+}
 .nav-login-link{
   color:#94a3b8;
   text-decoration:none;

@@ -38,12 +38,27 @@ function resolvePublicDir() {
     path.join(process.cwd(), 'public')
   ];
 
+  const mustHave = ['preferences.html', 'dashboard.html', 'index.html'];
+
+  // Prefer a directory that actually contains the key HTML files.
+  for (const c of candidates) {
+    try {
+      if (!fs.existsSync(c)) continue;
+      const hasKey = mustHave.some(f => {
+        try { return fs.existsSync(path.join(c, f)); } catch { return false; }
+      });
+      if (hasKey) return c;
+    } catch (e) {}
+  }
+
+  // Fallback: first existing directory
   for (const c of candidates) {
     try {
       if (fs.existsSync(c)) return c;
     } catch (e) {}
   }
-  // fallback (still returns something predictable)
+
+  // Last resort
   return candidates[0];
 }
 
