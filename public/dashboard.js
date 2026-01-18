@@ -108,7 +108,8 @@ function cacheDom() {
   DOM.sNameDisplay = document.getElementById('sNameDisplay');
   DOM.sEmailDisplay = document.getElementById('sEmailDisplay');
   // Settings display (should mirror Preferences page fields)
-  DOM.dispCity = document.getElementById('dispCity'); // profile city
+  DOM.dispCity = document.getElementById('dispCity');
+    DOM.dispAge = document.getElementById('dispAge'); // profile city
   DOM.dispPrefCity = document.getElementById('dispPrefCity');
   DOM.dispAgeRange = document.getElementById('dispAgeRange');
   DOM.dispEthnicity = document.getElementById('dispEthnicity');
@@ -1432,7 +1433,9 @@ function renderSettingsDisplay(user, prefs) {
   // Profile fields (matches Preferences "Your profile")
   if (DOM.dispCity) DOM.dispCity.textContent = user?.city || '—';
 
-  // Preferences fields (matches Preferences page)
+  
+  if (DOM.dispAge) DOM.dispAge.textContent = user?.age ? String(user.age) : '—';
+// Preferences fields (matches Preferences page)
   const prefCity = prefs?.city || '';
   const ageMin = Number.isFinite(prefs?.ageMin) ? prefs.ageMin : (prefs?.ageMin ? parseInt(prefs.ageMin, 10) : null);
   const ageMax = Number.isFinite(prefs?.ageMax) ? prefs.ageMax : (prefs?.ageMax ? parseInt(prefs.ageMax, 10) : null);

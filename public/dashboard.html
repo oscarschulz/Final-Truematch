@@ -169,6 +169,19 @@
                           <span class="settings-label"><i class="fa-solid fa-heart"></i> Looking for</span>
                           <span class="settings-value" id="dispLooking">-</span>
                       </div>
+                      <div class="settings-item">
+                          <span class="settings-label"><i class="fa-solid fa-bullseye"></i> Intent</span>
+                          <span class="settings-value" id="dispIntent">-</span>
+                      </div>
+                      <div class="settings-item">
+                          <span class="settings-label"><i class="fa-solid fa-people-group"></i> Shared values</span>
+                          <span class="settings-value" id="dispSharedValues">-</span>
+                      </div>
+                      <div class="settings-item">
+                          <span class="settings-label"><i class="fa-solid fa-ban"></i> Dealbreakers</span>
+                          <span class="settings-value" id="dispDealbreakers">-</span>
+                      </div>
+
                   </div>
               </div>
 
@@ -216,23 +229,23 @@
           </div>
   </div>
 
-  
-  <dialog id="dlgProfile" class="modal">
-    <form method="dialog" id="frmProfile" class="modal-body">
+  <dialog id="dlgProfile" class="tm-dialog profile-dialog">
+    <form id="frmProfile" method="dialog" class="modal-body">
       <div class="modal-head">
         <div>
           <div class="modal-title">Edit profile & preferences</div>
           <div class="modal-sub">These are the same fields you filled on Preferences. Saving here updates your database immediately.</div>
         </div>
-        <button type="button" class="btn small ghost" id="btnCloseProfile">Close</button>
+        <button id="btnCloseProfile" class="btn btn--ghost btn--sm" type="button">Close</button>
       </div>
 
       <div class="modal-grid">
         <div class="modal-avatar">
-          <img id="dlgAvatarPreview" class="modal-avatar-img" alt="Profile photo" />
+          <img id="dlgAvatarPreview" class="modal-avatar-img" src="assets/images/truematch-mark.png" alt="Profile photo preview" />
           <div class="modal-avatar-actions">
-            <button type="button" class="btn small" id="btnPickAvatar">Change photo</button>
             <input id="inpAvatarFile" type="file" accept="image/*" hidden />
+            <button id="btnPickAvatar" type="button" class="btn btn--ghost btn--sm">Change photo</button>
+            <div class="file-name" id="avatarFilename">No file chosen</div>
             <div class="hint">JPG/PNG. Auto-crop + compress.</div>
           </div>
         </div>
@@ -240,23 +253,25 @@
         <div class="modal-fields">
           <div class="field-row">
             <label class="field">
-              <span>Name</span>
+              <span>Your name</span>
               <input id="inpName" type="text" placeholder="Your name" />
             </label>
+
             <label class="field">
               <span>Email</span>
-              <input id="inpEmail" type="email" placeholder="you@email.com" readonly />
+              <input id="inpEmail" type="email" readonly />
             </label>
           </div>
 
           <div class="field-row">
             <label class="field">
               <span>Your city</span>
-              <input id="inpCity" type="text" placeholder="e.g. Makati" />
+              <input id="inpCity" type="text" placeholder="e.g., Makati" />
             </label>
+
             <label class="field">
               <span>Your age</span>
-              <input id="inpUserAge" type="number" min="18" max="100" placeholder="e.g. 27" />
+              <input id="inpAge" type="number" min="18" max="99" placeholder="e.g., 25" />
             </label>
           </div>
 
@@ -265,14 +280,14 @@
           <div class="field-row">
             <label class="field">
               <span>Preferred city</span>
-              <input id="inpPrefCity" type="text" placeholder="e.g. Marbella" />
+              <input id="inpPrefCity" type="text" placeholder="e.g., Manila" />
             </label>
+
             <label class="field">
               <span>Looking for</span>
-              <select id="inpLooking">
+              <select id="inpLookingFor">
                 <option value="women">Women</option>
                 <option value="men">Men</option>
-                <option value="everyone">Everyone</option>
               </select>
             </label>
           </div>
@@ -282,35 +297,74 @@
               <span>Age range (min)</span>
               <input id="inpAgeMin" type="number" min="18" max="99" />
             </label>
+
             <label class="field">
               <span>Age range (max)</span>
               <input id="inpAgeMax" type="number" min="18" max="99" />
             </label>
           </div>
 
-          <div class="field-row">
+          <label class="field">
+            <span>Ethnicity</span>
+            <select id="inpEthnicity">
+              <option value="">Any</option>
+              <option value="african">African</option>
+              <option value="asian">Asian</option>
+              <option value="caucasian">Caucasian</option>
+              <option value="hispanic">Hispanic/Latino</option>
+              <option value="middle-eastern">Middle Eastern</option>
+              <option value="mixed">Mixed</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+
+          <section id="advancedPrefsSection" class="advanced-section">
+            <div id="advLockNote" class="adv-lock" hidden>
+              <i class="fa-solid fa-lock"></i>
+              <span>Advanced filters are VIP-only. Upgrade to unlock editing.</span>
+            </div>
+
+            <h4 class="adv-title">Advanced filters</h4>
+
+            <div class="field-row">
+              <label class="field">
+                <span>Intent</span>
+                <select id="inpIntent">
+                  <option value="">Any</option>
+                  <option value="serious">Serious relationship</option>
+                  <option value="casual">Casual</option>
+                  <option value="friends">Friends</option>
+                  <option value="not-sure">Not sure yet</option>
+                </select>
+              </label>
+
+              <div class="field">
+                <span>Shared values</span>
+                <div id="inpSharedValues" class="checks">
+                  <label class="check"><input type="checkbox" name="sharedValues" value="family" /> Family</label>
+                  <label class="check"><input type="checkbox" name="sharedValues" value="career" /> Career</label>
+                  <label class="check"><input type="checkbox" name="sharedValues" value="faith" /> Faith</label>
+                  <label class="check"><input type="checkbox" name="sharedValues" value="fitness" /> Fitness</label>
+                  <label class="check"><input type="checkbox" name="sharedValues" value="travel" /> Travel</label>
+                </div>
+                <div class="checks-note">Pick what matters most to you.</div>
+              </div>
+            </div>
+
             <label class="field">
-              <span>Ethnicity</span>
-              <select id="inpEthnicity">
-                <option value="">Any</option>
-                <option value="asian">Asian</option>
-                <option value="black">Black</option>
-                <option value="latina">Latina</option>
-                <option value="middle_eastern">Middle Eastern</option>
-                <option value="white">White</option>
-                <option value="other">Other</option>
-              </select>
+              <span>Dealbreakers</span>
+              <textarea id="inpDealbreakers" placeholder="Example: smoking, long distance, etc."></textarea>
             </label>
-            <div></div>
-          </div>
+          </section>
 
           <div class="modal-actions">
-            <button type="submit" class="btn" id="btnSaveProfile">Save changes</button>
+            <button id="btnSaveProfile" class="btn btn--primary" type="submit">Save changes</button>
           </div>
         </div>
       </div>
     </form>
   </dialog>
+
 
   <dialog id="dlgPassword" class="tm-dialog">
     <form id="frmPassword" class="tm-form">
