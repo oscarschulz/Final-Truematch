@@ -307,6 +307,7 @@ dialog::backdrop { background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-in
 
 .dialog__body { padding: 24px; max-height: 70vh; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; }
 .dialog__body label.tiny { font-size: 0.75rem; font-weight: 700; color: var(--text-muted); letter-spacing: 1px; margin-top: 10px; display: block; }
+.dialog__body .hint { font-size: 0.85rem; color: var(--text-muted); line-height: 1.4; margin-top: -4px; }
 .dialog__header { padding: 16px 24px; border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.02); }
 .dialog__footer { padding: 16px 24px; border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: flex-end; gap: 10px; background: rgba(255,255,255,0.02); }
 
@@ -383,6 +384,80 @@ dialog::backdrop { background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-in
 .settings-label { display: flex; align-items: center; gap: 10px; font-size: 0.95rem; color: #ddd; }
 .settings-label i { color: #888; width: 20px; text-align: center; }
 .settings-value { color: #fff; font-weight: 600; font-size: 0.9rem; }
+
+
+/* SETTINGS EDIT DIALOG EXTRAS */
+#dlgProfile .dlg-form { display: flex; flex-direction: column; gap: 12px; }
+#dlgProfile .field { display: flex; flex-direction: column; gap: 6px; }
+#dlgProfile .field span { font-size: 0.85rem; color: rgba(255,255,255,0.75); }
+#dlgProfile input, #dlgProfile select {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: #fff;
+    border-radius: 12px;
+    padding: 10px 12px;
+    outline: none;
+}
+#dlgProfile input[readonly] { opacity: 0.75; }
+#dlgProfile select option { background: #111; color: #fff; }
+#dlgProfile .pref-rows { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 640px) { #dlgProfile .pref-rows { grid-template-columns: 1fr; } }
+
+#dlgProfile .avatar-edit { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+#dlgProfile .avatar-edit img {
+    width: 72px; height: 72px; border-radius: 50%; object-fit: cover;
+    border: 1px solid rgba(255,255,255,0.14);
+    cursor: pointer;
+}
+#dlgProfile .avatar-edit .meta { display: flex; flex-direction: column; gap: 8px; }
+
+/* ADVANCED PREFS (Matches Preferences page fields) */
+#dlgProfile textarea {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: #fff;
+    border-radius: 12px;
+    padding: 10px 12px;
+    outline: none;
+    resize: vertical;
+    min-height: 74px;
+}
+
+#dlgProfile .advanced-prefs {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+}
+
+#dlgProfile .adv-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+#dlgProfile .adv-title { font-weight: 800; font-size: 0.95rem; }
+#dlgProfile .adv-note { font-size: 0.85rem; color: rgba(255,255,255,0.75); }
+
+#dlgProfile .checkbox-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+@media (max-width: 520px) { #dlgProfile .checkbox-grid { grid-template-columns: 1fr; } }
+
+#dlgProfile .chk {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    cursor: pointer;
+    user-select: none;
+}
+
+#dlgProfile .chk input { width: 16px; height: 16px; }
+#dlgProfile .advanced-prefs.is-locked { opacity: 0.75; }
 
 /* ENTRANCE ANIMATION & LOADER */
 #app-loader { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 9999; display: flex; align-items: center; justify-content: center; flex-direction: column; transition: opacity 0.5s ease-out; }

@@ -71,5 +71,9 @@ export async function apiSavePrefs(prefs) {
   return apiPost('/api/me/preferences', prefs);
 }
 
+export async function apiChangePassword(currentPassword, newPassword) {
+  return apiPost('/api/me/password', { currentPassword, newPassword });
+}
+
 // Backwards-compatible alias (older bundles may import apiSave)
 export const apiSave = apiSavePrefs;

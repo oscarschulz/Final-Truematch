@@ -2,13 +2,42 @@
 // iTrueMatch Dashboard – Main Controller (FINAL: UI WIDTHS & BG FIXED)
 // ---------------------------------------------------------------------
 
-import { getLocalPlan, saveLocalUser, clearSession } from './tm-session.js';
+import { getLocalPlan, saveLocalUser, savePrefsForCurrentUser, clearSession } from './tm-session.js';
 import { apiGet, apiPost, apiUpdateProfile, apiSavePrefs } from './tm-api.js';
 
 // Production mode: disable all mock/demo UI population.
 const DEV_MODE = false;
 
 const DAILY_SWIPE_LIMIT = 20; 
+
+// --- Image helper (same behavior as Preferences page: crop to square + compress) ---
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = reject;
+    reader.readAsDataUrl(file);
+  });
+}
+
+async function fileToOptimizedSquareDataUrl(file, maxSize = 768, quality = 0.85) {
+  const dataUrl = await readFileAsDataUrl(file);
+  const img = new Image();
+  img.src = dataUrl;
+  await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+
+  const s = Math.min(img.width, img.height);
+  const sx = (img.width - s) / 2;
+  const sy = (img.height - s) / 2;
+
+  const canvas = document.createElement('canvas');
+  const out = Math.min(maxSize, s);
+  canvas.width = out;
+  canvas.height = out;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, sx, sy, s, s, 0, 0, out, out);
+  return canvas.toDataURL('image/jpeg', quality);
+}
 
 function getMockUser() {
   return {
@@ -18,7 +47,7 @@ function getMockUser() {
   };
 }
 
-const state = { me: null, prefs: null, plan: 'free', activeTab: 'home', isLoading: false };
+const state = { me: null, prefs: null, plan: 'free', activeTab: 'home', isLoading: false, selectedAvatarDataUrl: null };
 
 // Read the last known user from localStorage
 function safeGetLocalUser() {
@@ -78,14 +107,28 @@ function cacheDom() {
   DOM.sAvatar = document.getElementById('sAvatar');
   DOM.sNameDisplay = document.getElementById('sNameDisplay');
   DOM.sEmailDisplay = document.getElementById('sEmailDisplay');
-  DOM.dispCity = document.getElementById('dispCity');
-  DOM.dispAge = document.getElementById('dispAge');
+  // Settings display (should mirror Preferences page fields)
+  DOM.dispCity = document.getElementById('dispCity'); // profile city
+  DOM.dispPrefCity = document.getElementById('dispPrefCity');
+  DOM.dispAgeRange = document.getElementById('dispAgeRange');
+  DOM.dispEthnicity = document.getElementById('dispEthnicity');
   DOM.dispLooking = document.getElementById('dispLooking');
+  DOM.dispIntent = document.getElementById('dispIntent');
+  DOM.dispSharedValues = document.getElementById('dispSharedValues');
+  DOM.dispDealbreakers = document.getElementById('dispDealbreakers');
   
   DOM.dlgProfile = document.getElementById('dlgProfile');
   DOM.frmProfile = document.getElementById('frmProfile');
   DOM.btnEditProfile = document.getElementById('btnEditProfile');
-  DOM.btnCloseProfile = document.getElementById('btnCancelProfile'); 
+  DOM.btnCloseProfile = document.getElementById('btnCloseProfile');
+
+  // Profile + preferences modal controls
+  DOM.dlgAvatarPreview = document.getElementById('dlgAvatarPreview');
+  DOM.btnPickAvatar = document.getElementById('btnPickAvatar');
+  DOM.inpAvatarFile = document.getElementById('inpAvatarFile');
+  DOM.avatarFilename = document.getElementById('avatarFilename');
+  DOM.advancedPrefsSection = document.getElementById('advancedPrefsSection');
+  DOM.advLockNote = document.getElementById('advLockNote');
   
   DOM.dlgPassword = document.getElementById('dlgPassword');
   DOM.frmPassword = document.getElementById('frmPassword');
@@ -96,9 +139,14 @@ function cacheDom() {
   DOM.inpEmail = document.getElementById('inpEmail');
   DOM.inpCity = document.getElementById('inpCity');
   DOM.inpUserAge = document.getElementById('inpUserAge');
+  DOM.inpPrefCity = document.getElementById('inpPrefCity');
   DOM.inpAgeMin = document.getElementById('inpAgeMin');
   DOM.inpAgeMax = document.getElementById('inpAgeMax');
   DOM.inpLooking = document.getElementById('inpLooking');
+  DOM.inpEthnicity = document.getElementById('inpEthnicity');
+  DOM.inpIntent = document.getElementById('inpIntent');
+  DOM.inpDealbreakers = document.getElementById('inpDealbreakers');
+  DOM.inpSharedValues = document.getElementById('inpSharedValues');
   
   DOM.swipeStack = document.getElementById('swipeStack');
   DOM.swipeEmpty = document.getElementById('swipeEmpty');
@@ -277,11 +325,44 @@ function setupEventListeners() {
   // 7. Profile Editing
   if (DOM.btnEditProfile) {
     DOM.btnEditProfile.addEventListener('click', () => {
+      state.selectedAvatarDataUrl = null;
       syncFormToState();
+      applyAdvancedPrefsLock();
       DOM.dlgProfile.showModal();
     });
   }
   if (DOM.btnCloseProfile) DOM.btnCloseProfile.addEventListener('click', () => DOM.dlgProfile.close());
+
+  // Avatar selection (same as Preferences behavior)
+  if (DOM.btnPickAvatar && DOM.inpAvatarFile) {
+    DOM.btnPickAvatar.addEventListener('click', (e) => {
+      e.preventDefault();
+      DOM.inpAvatarFile.click();
+    });
+  }
+  if (DOM.dlgAvatarPreview && DOM.inpAvatarFile) {
+    DOM.dlgAvatarPreview.addEventListener('click', () => DOM.inpAvatarFile.click());
+  }
+  if (DOM.inpAvatarFile) {
+    DOM.inpAvatarFile.addEventListener('change', async () => {
+      const file = DOM.inpAvatarFile.files && DOM.inpAvatarFile.files[0];
+      if (!file) return;
+      if (!file.type || !file.type.startsWith('image/')) {
+        showToast('Please select an image file.', 'error');
+        DOM.inpAvatarFile.value = '';
+        return;
+      }
+      try {
+        const optimized = await fileToOptimizedSquareDataUrl(file);
+        state.selectedAvatarDataUrl = optimized;
+        if (DOM.dlgAvatarPreview) DOM.dlgAvatarPreview.src = optimized;
+        if (DOM.avatarFilename) DOM.avatarFilename.textContent = file.name;
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to read that image. Please try another file.', 'error');
+      }
+    });
+  }
 
   // 8. Change Password
   if (DOM.btnChangePassword) DOM.btnChangePassword.addEventListener('click', () => DOM.dlgPassword.showModal());
@@ -1214,7 +1295,7 @@ async function loadMe() {
 
     if (DEV_MODE) {
       user = getMockUser();
-      prefs = { city: 'New York', ageMin: 21, ageMax: 35, ethnicity: 'any', lookingFor: ['women'] };
+      prefs = { city: 'New York', ageMin: 21, ageMax: 35, ethnicity: 'caucasian', lookingFor: ['women'], intent: 'long-term', dealbreakers: '', sharedValues: ['fitness'] };
     } else {
       const data = await apiGet('/api/me');
       const local = safeGetLocalUser();
@@ -1244,6 +1325,7 @@ async function loadMe() {
     renderHome(user);
     renderSettingsDisplay(user, prefs);
     applyPlanNavGating();
+    applyAdvancedPrefsLock();
 
   } catch (err) {
     console.error("Error loading user:", err);
@@ -1292,15 +1374,91 @@ function applyPlanNavGating() {
   });
 }
 
+function applyAdvancedPrefsLock() {
+  if (!DOM.advancedPrefsSection) return;
+  // Keep behavior consistent with Preferences page: advanced section is not editable on Free.
+  const locked = !DEV_MODE && state.plan === 'free';
+  DOM.advancedPrefsSection.classList.toggle('is-locked', locked);
+  if (DOM.advLockNote) DOM.advLockNote.hidden = !locked;
+
+  const fields = DOM.advancedPrefsSection.querySelectorAll('select, textarea, input');
+  fields.forEach((el) => {
+    el.disabled = locked;
+  });
+}
+
+function getSharedValuesFromUI() {
+  if (!DOM.inpSharedValues) return [];
+  return Array.from(DOM.inpSharedValues.querySelectorAll('input[type="checkbox"]'))
+    .filter((cb) => cb.checked)
+    .map((cb) => cb.value);
+}
+
+function setSharedValuesInUI(values) {
+  if (!DOM.inpSharedValues) return;
+  const set = new Set(Array.isArray(values) ? values : []);
+  Array.from(DOM.inpSharedValues.querySelectorAll('input[type="checkbox"]')).forEach((cb) => {
+    cb.checked = set.has(cb.value);
+  });
+}
+
+function humanizeEthnicity(val) {
+  const map = {
+    african: 'African',
+    asian: 'Asian',
+    caucasian: 'Caucasian',
+    hispanic: 'Hispanic',
+    'middle-eastern': 'Middle Eastern',
+    mixed: 'Mixed',
+    other: 'Other'
+  };
+  return map[val] || val || '';
+}
+
+function humanizeIntent(val) {
+  const map = {
+    'long-term': 'Long-term',
+    'short-term': 'Short-term',
+    open: 'Open'
+  };
+  return map[val] || (val ? String(val) : '');
+}
+
 function renderSettingsDisplay(user, prefs) {
-  if (DOM.sNameDisplay) DOM.sNameDisplay.textContent = user.name;
-  if (DOM.sEmailDisplay) DOM.sEmailDisplay.textContent = user.email;
-  if (DOM.sAvatar && user.avatarUrl) DOM.sAvatar.src = user.avatarUrl;
-  if (DOM.dispCity) DOM.dispCity.textContent = user.city || '—';
-  if (DOM.dispAge) DOM.dispAge.textContent = prefs && prefs.ageMin ? `${prefs.ageMin} - ${prefs.ageMax}` : '—';
-  if (prefs && DOM.dispLooking) {
-      const looking = Array.isArray(prefs.lookingFor) ? prefs.lookingFor.join(', ') : prefs.lookingFor;
-      DOM.dispLooking.textContent = looking || '—';
+  if (DOM.sNameDisplay) DOM.sNameDisplay.textContent = user?.name || '—';
+  if (DOM.sEmailDisplay) DOM.sEmailDisplay.textContent = user?.email || '—';
+  if (DOM.sAvatar) DOM.sAvatar.src = user?.avatarUrl || 'assets/images/truematch-mark.png';
+
+  // Profile fields (matches Preferences "Your profile")
+  if (DOM.dispCity) DOM.dispCity.textContent = user?.city || '—';
+
+  // Preferences fields (matches Preferences page)
+  const prefCity = prefs?.city || '';
+  const ageMin = Number.isFinite(prefs?.ageMin) ? prefs.ageMin : (prefs?.ageMin ? parseInt(prefs.ageMin, 10) : null);
+  const ageMax = Number.isFinite(prefs?.ageMax) ? prefs.ageMax : (prefs?.ageMax ? parseInt(prefs.ageMax, 10) : null);
+
+  if (DOM.dispPrefCity) DOM.dispPrefCity.textContent = prefCity || '—';
+  if (DOM.dispAgeRange) {
+    DOM.dispAgeRange.textContent = (ageMin && ageMax) ? `${ageMin} - ${ageMax}` : '—';
+  }
+  if (DOM.dispEthnicity) {
+    DOM.dispEthnicity.textContent = prefs?.ethnicity ? humanizeEthnicity(prefs.ethnicity) : 'Any';
+  }
+  if (DOM.dispLooking) {
+    const lookingArr = Array.isArray(prefs?.lookingFor) ? prefs.lookingFor : (prefs?.lookingFor ? [prefs.lookingFor] : []);
+    const lookingText = lookingArr.length ? lookingArr.map(v => v ? (v[0].toUpperCase() + v.slice(1)) : '').filter(Boolean).join(', ') : '—';
+    DOM.dispLooking.textContent = lookingText;
+  }
+  if (DOM.dispIntent) {
+    DOM.dispIntent.textContent = prefs?.intent ? humanizeIntent(prefs.intent) : 'Any';
+  }
+  if (DOM.dispSharedValues) {
+    const vals = Array.isArray(prefs?.sharedValues) ? prefs.sharedValues : [];
+    DOM.dispSharedValues.textContent = vals.length ? vals.map(v => v ? (v[0].toUpperCase() + v.slice(1)) : '').filter(Boolean).join(', ') : '—';
+  }
+  if (DOM.dispDealbreakers) {
+    const d = (prefs?.dealbreakers || '').trim();
+    DOM.dispDealbreakers.textContent = d ? (d.length > 70 ? `${d.slice(0, 67)}...` : d) : '—';
   }
 }
 
@@ -1313,44 +1471,111 @@ function syncFormToState() {
   if (DOM.inpCity) DOM.inpCity.value = me.city || '';
   if (DOM.inpUserAge) DOM.inpUserAge.value = me.age || '';
 
-  if (prefs) {
-    if (DOM.inpAgeMin) DOM.inpAgeMin.value = prefs.ageMin || 18;
-    if (DOM.inpAgeMax) DOM.inpAgeMax.value = prefs.ageMax || 50;
-    if (DOM.inpLooking) DOM.inpLooking.value = Array.isArray(prefs.lookingFor) ? prefs.lookingFor[0] : (prefs.lookingFor || 'both');
+  // Avatar (preview existing unless user selects a new one)
+  if (DOM.inpAvatarFile) DOM.inpAvatarFile.value = '';
+  if (DOM.avatarFilename) DOM.avatarFilename.textContent = 'No file chosen';
+  if (DOM.dlgAvatarPreview) DOM.dlgAvatarPreview.src = me.avatarUrl || 'assets/images/truematch-mark.png';
+
+  const p = prefs || {};
+  if (DOM.inpPrefCity) DOM.inpPrefCity.value = p.city || '';
+  if (DOM.inpAgeMin) DOM.inpAgeMin.value = p.ageMin || 18;
+  if (DOM.inpAgeMax) DOM.inpAgeMax.value = p.ageMax || 50;
+  if (DOM.inpLooking) {
+    const lf = Array.isArray(p.lookingFor) ? p.lookingFor[0] : p.lookingFor;
+    DOM.inpLooking.value = lf || 'women';
   }
+  if (DOM.inpEthnicity) DOM.inpEthnicity.value = p.ethnicity || '';
+
+  // Advanced filters
+  if (DOM.inpIntent) DOM.inpIntent.value = p.intent || '';
+  if (DOM.inpDealbreakers) DOM.inpDealbreakers.value = p.dealbreakers || '';
+  setSharedValuesInUI(p.sharedValues || []);
 }
 
 async function handleProfileSave() {
-  const payload = {
-    name: DOM.inpName ? DOM.inpName.value : '',
-    email: DOM.inpEmail ? DOM.inpEmail.value : '',
-    city: DOM.inpCity ? DOM.inpCity.value : '',
-    age: DOM.inpUserAge ? parseInt(DOM.inpUserAge.value) : 18,
-    preferences: {
-      ageMin: DOM.inpAgeMin ? parseInt(DOM.inpAgeMin.value) : 18,
-      ageMax: DOM.inpAgeMax ? parseInt(DOM.inpAgeMax.value) : 50,
-      lookingFor: DOM.inpLooking ? [DOM.inpLooking.value] : ['both']
-    }
+  const name = (DOM.inpName ? DOM.inpName.value : '').trim();
+  const profileCity = (DOM.inpCity ? DOM.inpCity.value : '').trim();
+  const age = DOM.inpUserAge ? parseInt(DOM.inpUserAge.value, 10) : null;
+
+  const preferredCity = (DOM.inpPrefCity ? DOM.inpPrefCity.value : '').trim();
+  const ageMin = DOM.inpAgeMin ? parseInt(DOM.inpAgeMin.value, 10) : 18;
+  const ageMax = DOM.inpAgeMax ? parseInt(DOM.inpAgeMax.value, 10) : 50;
+  const lookingFor = DOM.inpLooking ? DOM.inpLooking.value : 'women';
+  const ethnicity = DOM.inpEthnicity ? DOM.inpEthnicity.value : '';
+
+  const intent = DOM.inpIntent ? DOM.inpIntent.value : '';
+  const dealbreakers = (DOM.inpDealbreakers ? DOM.inpDealbreakers.value : '').trim();
+  const sharedValues = getSharedValuesFromUI();
+
+  // Validation (mirrors Preferences page requirements)
+  if (!name) {
+    showToast('Name is required.', 'error');
+    return;
+  }
+  if (!preferredCity) {
+    showToast('Preferred city is required.', 'error');
+    return;
+  }
+  if (!Number.isFinite(age) || age < 18 || age > 99) {
+    showToast('Please enter a valid age (18-99).', 'error');
+    return;
+  }
+  if (!Number.isFinite(ageMin) || !Number.isFinite(ageMax) || ageMin < 18 || ageMax > 99 || ageMin > ageMax) {
+    showToast('Please enter a valid age range.', 'error');
+    return;
+  }
+
+  const profilePayload = {
+    name,
+    city: profileCity,
+    age
   };
+  if (state.selectedAvatarDataUrl) profilePayload.avatarDataUrl = state.selectedAvatarDataUrl;
+
+  const prefsPayload = {
+    city: preferredCity,
+    ageMin,
+    ageMax,
+    lookingFor: [lookingFor]
+  };
+  if (ethnicity) prefsPayload.ethnicity = ethnicity;
+  if (intent) prefsPayload.intent = intent;
+  if (dealbreakers) prefsPayload.dealbreakers = dealbreakers;
+  prefsPayload.sharedValues = Array.isArray(sharedValues) ? sharedValues : [];
 
   try {
-    let res;
-    if (DEV_MODE) {
-      res = { ok: true, user: { ...state.me, ...payload } }; 
-    } else {
-      res = await apiUpdateProfile(payload); 
+    let profileRes;
+    if (DEV_MODE) profileRes = { ok: true, user: { ...state.me, ...profilePayload } };
+    else profileRes = await apiUpdateProfile(profilePayload);
+
+    if (!profileRes || !profileRes.ok) {
+      throw new Error('Failed to update profile.');
     }
 
-    if (res && res.ok) {
-      showToast('Profile updated successfully!');
-      state.me = { ...state.me, ...payload }; 
-      state.prefs = payload.preferences;
-      renderSettingsDisplay(state.me, state.prefs); 
-      renderHome(state.me);
-      DOM.dlgProfile.close();
+    let prefsRes;
+    if (DEV_MODE) prefsRes = { ok: true, prefs: { ...state.prefs, ...prefsPayload } };
+    else prefsRes = await apiSavePrefs(prefsPayload);
+
+    if (!prefsRes || !prefsRes.ok) {
+      throw new Error('Failed to update preferences.');
     }
+
+    const updatedUser = profileRes.user || { ...state.me, ...profilePayload };
+    const updatedPrefs = prefsRes.prefs || { ...state.prefs, ...prefsPayload };
+
+    state.me = updatedUser;
+    state.prefs = updatedPrefs;
+
+    saveLocalUser(state.me);
+    savePrefsForCurrentUser(state.prefs);
+
+    showToast('Saved successfully!');
+    renderSettingsDisplay(state.me, state.prefs);
+    renderHome(state.me);
+    DOM.dlgProfile.close();
   } catch (e) {
     console.error(e);
+    showToast(e?.message || 'Failed to save. Please try again.', 'error');
   }
 }
 

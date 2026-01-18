@@ -1841,6 +1841,9 @@ app.post('/api/me/preferences', async (req, res) => {
     const ageMaxRaw = (typeof body.ageMax !== 'undefined') ? body.ageMax : body.maxAge;
     const lookingRaw = (typeof body.lookingFor !== 'undefined') ? body.lookingFor : body.looking_for;
     const ethRaw = body.ethnicity;
+    const intentRaw = body.intent;
+    const dealbreakersRaw = body.dealbreakers;
+    const sharedValuesRaw = body.sharedValues;
 
     const city = (cityRaw || '').toString().trim();
     const min = Number(ageMinRaw);
@@ -1898,13 +1901,43 @@ app.post('/api/me/preferences', async (req, res) => {
       return res.status(400).json({ ok: false, message: 'lookingFor required' });
     }
 
+    // normalize + validate intent (optional)
+    const allowedIntent = new Set(['long-term','short-term','open']);
+    let intent = undefined;
+    if (typeof intentRaw !== 'undefined' && intentRaw !== null) {
+      const cand = String(intentRaw).trim().toLowerCase();
+      if (cand && allowedIntent.has(cand)) intent = cand;
+    }
+
+    // normalize dealbreakers (optional)
+    let dealbreakers = undefined;
+    if (typeof dealbreakersRaw !== 'undefined' && dealbreakersRaw !== null) {
+      const cand = String(dealbreakersRaw).trim();
+      if (cand) {
+        dealbreakers = cand.slice(0, 500);
+      }
+    }
+
+    // normalize sharedValues (optional)
+    const allowedSV = new Set(['family','career','faith','fitness','travel']);
+    let sharedValues = [];
+    if (Array.isArray(sharedValuesRaw)) {
+      sharedValues = sharedValuesRaw.map(v => String(v).trim().toLowerCase()).filter(Boolean);
+    } else if (typeof sharedValuesRaw === 'string') {
+      sharedValues = sharedValuesRaw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    }
+    sharedValues = sharedValues.filter(v => allowedSV.has(v));
+
     // Save in memory
     DB.prefs = {
       city,
       ageMin: min,
       ageMax: max,
       lookingFor: lf,
-      ...(eth ? { ethnicity: eth } : {})
+      ...(eth ? { ethnicity: eth } : {}),
+      ...(intent ? { intent } : {}),
+      ...(dealbreakers ? { dealbreakers } : {}),
+      sharedValues
     };
     DB.user.prefsSaved = true;
 
