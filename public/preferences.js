@@ -638,82 +638,6 @@ if (prefs.intent && qs('select[name="intent"]')) {
     }
   }
 
-  // ---- Top nav (Logout only on Preferences) ----
-  function sanitizeReturnUrl(raw) {
-    const val = (raw || '').toString().trim();
-    if (!val) return '';
-    // Block absolute URLs / protocol-relative / javascript:
-    if (/^https?:\/\//i.test(val) || val.startsWith('//') || /^javascript:/i.test(val)) return '';
-
-    let out = val;
-    try { out = decodeURIComponent(out); } catch {}
-
-    // Allow same-origin relative paths only
-    out = out.replace(/^\/+/, '');
-
-    // Only allow html pages (with optional query/hash)
-    if (!/\.html($|[?#])/i.test(out)) return '';
-
-    return out;
-  }
-
-  function getReturnDestination(params) {
-    if (!params) return 'dashboard.html';
-    const cand =
-      params.get('return') ||
-      params.get('ret') ||
-      params.get('redirect') ||
-      params.get('next') ||
-      '';
-
-    return sanitizeReturnUrl(cand) || 'dashboard.html';
-  }
-
-  async function performLogout() {
-    // Attempt to clear cookie-based session on backend (non-fatal if it fails)
-    try {
-      const url = API_BASE ? `${API_BASE}/api/auth/logout` : '/api/auth/logout';
-      await fetch(url, { method: 'POST', credentials: 'include' });
-    } catch (err) {
-      console.warn('[prefs] logout request failed', err);
-    }
-
-    try { SESSION?.clearAuth?.(); } catch {}
-    try { SESSION?.clearSession?.(); } catch {}
-
-    try { localStorage.removeItem('tm_user'); } catch {}
-    try { sessionStorage.clear(); } catch {}
-
-    // Always send user back to home/landing
-    window.location.href = 'index.html';
-  }
-
-  function syncTopNav(user, params) {
-    const logoutLink =
-      document.querySelector('.nav-logout-link') ||
-      document.querySelector('.nav-login-link');
-
-    if (!logoutLink) return;
-
-    const isAuthed = !!(user && user.email);
-
-    if (isAuthed) {
-      logoutLink.textContent = 'LOG OUT';
-      logoutLink.setAttribute('href', '#');
-      logoutLink.onclick = (e) => {
-        e.preventDefault();
-        performLogout();
-      };
-    } else {
-      // Preferences page should normally be protected by backend auth,
-      // but keep a safe fallback just in case.
-      logoutLink.textContent = 'LOG IN';
-      logoutLink.setAttribute('href', 'auth.html?mode=signin&return=/preferences.html');
-      logoutLink.onclick = null;
-    }
-  }
-
-
   async function initPreferencesPage() {
     showLoader();
 
@@ -736,68 +660,28 @@ if (prefs.intent && qs('select[name="intent"]')) {
     const api = ensureApiClient();
     let localUser = getLocalUserFromSessionOrStorage();
 
-    // Sync top nav immediately (LOG OUT for authed users)
-    try { syncTopNav(localUser, params); } catch {}
-
     // Do NOT auto-create demo users here.
     // If there is no valid session/user, the redirect-to-auth logic below will handle it.
 
     try {
-      // IMPORTANT:
-      // Do NOT rely on localStorage for auth detection.
-      // On first login, cookie session may exist but local 'tm_user' isn't written yet.
-      // So we must try /api/me first to avoid the "login once → error → login again works" issue.
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const userFromSession = getLocalUserFromSessionOrStorage();
+      const user = userFromSession || localUser;
 
-      let me = await getApiMe(api);
-      if (me && me.ok === false) {
-        // small retry to handle session propagation on first redirect
-        await sleep(250);
-        me = await getApiMe(api);
-      }
-
-      const hasServerSession = !!(me && me.user && me.ok !== false);
-
-      // If server session is not ready/valid, fall back to local storage.
-      // If neither exists, force sign-in.
-      if (!hasServerSession) {
-        const userFromSession = getLocalUserFromSessionOrStorage();
-        const user = userFromSession || localUser;
-
-        if (!user || !user.email) {
-          console.warn('[prefs] No server session and no local user/email, redirecting to auth');
-          try { syncTopNav(null, params); } catch {}
-          window.location.replace('/auth.html?mode=signin&return=/preferences.html');
-          hideLoader();
-          return;
-        }
-
-        // Local prefill only
-        try {
-          const pAge = qs('#profileAge');
-          const pCity = qs('#profileCity');
-          if (pAge && user.age) pAge.value = String(user.age);
-          if (pCity && user.city) pCity.value = String(user.city);
-
-          EXISTING_AVATAR_URL = String(user.avatarUrl || user.avatar || '');
-          setAvatarPreview(EXISTING_AVATAR_URL);
-          setAvatarFileName('');
-          attachAvatarHandlers();
-        } catch (e) {
-          console.warn('[prefs] local prefill failed', e);
-        }
-
-        toggleAdvancedSection((user.plan || user.planKey || initialPlan || 'free'));
-
-        const localPrefs = getStoredPrefs();
-        if (localPrefs) fillFormFromPrefs(localPrefs);
+      if (!user || !user.email) {
+        console.warn('[prefs] No local user/email, redirecting to auth');
+        window.location.replace(
+          '/auth.html?mode=signin&return=/preferences.html'
+        );
+        hideLoader();
+        return;
       }
 
       let serverPrefs = null;
 
       try {
-        // If server session exists, hydrate from backend
-        if (hasServerSession) {
+        const me = await getApiMe(api);
+
+        if (me && me.user) {
           const userFromApi = me.user;
           const prefsFromUser =
             userFromApi.preferences ||
@@ -813,9 +697,6 @@ if (prefs.intent && qs('select[name="intent"]')) {
           const mergedUser = Object.assign({}, localUser, userFromApi, {
             prefsSaved: !!serverPrefs
           });
-
-          // Keep top nav in sync with authenticated state
-          try { syncTopNav(mergedUser, params); } catch {}
 
           SESSION?.setCurrentUser?.(mergedUser);
           localStorage.setItem('tm_user', JSON.stringify(mergedUser));
@@ -848,9 +729,7 @@ if (prefs.intent && qs('select[name="intent"]')) {
           }
 
           // Optionally re-read prefs via api.getPreferences
-          // NOTE: keep existing serverPrefs if endpoint is missing (404) or returns null.
-          const fetchedPrefs = await getApiPrefs(api);
-          if (fetchedPrefs) serverPrefs = fetchedPrefs;
+          serverPrefs = await getApiPrefs(api);
 
           if (onboarding && serverPrefs) {
             const profileOk = isProfileComplete(userFromApi);
@@ -882,7 +761,6 @@ if (prefs.intent && qs('select[name="intent"]')) {
             if (localPrefs) fillFormFromPrefs(localPrefs);
           }
         } else {
-          // No server session: already handled above (local prefill), but keep safe fallback
           const localPrefs = getStoredPrefs();
           if (localPrefs) fillFormFromPrefs(localPrefs);
         }
@@ -897,7 +775,6 @@ if (prefs.intent && qs('select[name="intent"]')) {
         // Prefill profile from local user store
         try {
           const u = getLocalUserFromSessionOrStorage();
-          try { syncTopNav(u, params); } catch {}
           const pAge = qs('#profileAge');
           const pCity = qs('#profileCity');
           if (pAge && u && u.age) pAge.value = String(u.age);
