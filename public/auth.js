@@ -254,7 +254,14 @@
       }
       return;
     }
-    window.location.replace('/preferences.html' + (extraQuery || ''));
+    // URLSearchParams.toString() returns "a=1&b=2" (no leading "?").
+    // If we append it directly, we accidentally produce "/preferences.htmla=1..." and get a 404.
+    let q = (extraQuery || '').trim();
+    if (q) {
+      if (q.startsWith('&')) q = '?' + q.slice(1);
+      else if (!q.startsWith('?')) q = '?' + q;
+    }
+    window.location.replace('/preferences.html' + q);
   }
 
   function setActiveTab(mode) {
