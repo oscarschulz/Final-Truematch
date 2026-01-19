@@ -17,7 +17,22 @@
 
 * { box-sizing: border-box; }
 
-body.tm-page { margin: 0; padding: 0; min-height: 100vh; background: var(--bg); color: var(--text); font-family: var(--font-main); overflow: hidden; -webkit-font-smoothing: antialiased; }
+/* FIX: Global Overflow Protection */
+html, body {
+  width: 100%;
+  overflow-x: hidden; /* Patayin ang horizontal scroll sa root */
+  margin: 0;
+  padding: 0;
+}
+
+body.tm-page { 
+  min-height: 100vh; 
+  background: var(--bg); 
+  color: var(--text); 
+  font-family: var(--font-main); 
+  -webkit-font-smoothing: antialiased; 
+}
+
 body.tm-page::before { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 50; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.04'/%3E%3C/svg%3E"); opacity: 0.3; }
 
 /* AMBIENT GLOWS */
@@ -38,13 +53,21 @@ body.tm-page::before { content: ""; position: fixed; inset: 0; pointer-events: n
 ::selection { background: rgba(100, 233, 238, 0.3); color: #fff; }
 
 #tm-bg-canvas { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
-.dashboard-layout { display: flex; width: 100vw; height: 100vh; position: relative; z-index: 1; }
+
+/* FIX: Changed 100vw to 100% to stop horizontal scroll */
+.dashboard-layout { 
+  display: flex; 
+  width: 100%; 
+  height: 100vh; /* Default Desktop: Fixed Height */
+  position: relative; 
+  z-index: 1; 
+  overflow: hidden; /* Hide outer scroll on desktop */
+}
 
 /* SIDEBAR & TABS */
 .dashboard-sidebar { width: var(--sidebar-w); background: rgba(8, 12, 20, 0.7); backdrop-filter: blur(25px); border-right: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; flex-shrink: 0; z-index: 20; box-shadow: 10px 0 40px rgba(0,0,0,0.4); }
 .sidebar-brand { height: 90px; display: flex; align-items: center; gap: 12px; padding: 0 28px; }
 .brand__logo { width: 36px; height: auto; filter: drop-shadow(0 0 8px rgba(100, 233, 238, 0.4)); }
-/* FIX: Removed uppercase for iTRUEMATCH */
 .brand__name { font-weight: 800; letter-spacing: 1.5px; font-size: 1.1rem; color: #fff; text-transform: none; }
 .sidebar-header { padding: 0 28px 10px; font-size: 0.65rem; font-weight: 700; color: var(--muted); letter-spacing: 2px; opacity: 0.6; text-transform: uppercase; }
 .sidebar-nav { flex: 1; padding: 10px 16px; display: flex; flex-direction: column; gap: 8px; }
@@ -89,7 +112,6 @@ body.tm-page::before { content: ""; position: fixed; inset: 0; pointer-events: n
 .pill { display: inline-block; padding: 6px 16px; border-radius: 50px; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; border: 1px solid rgba(100, 233, 238, 0.3); color: var(--primary); background: rgba(100, 233, 238, 0.05); margin-bottom: 20px; }
 .premium-title { font-size: 3.5rem; font-weight: 800; line-height: 1.1; margin: 0 0 20px; }
 
-/* FIX: Added background-clip alongside webkit */
 .highlight { 
   background: linear-gradient(135deg, #64E9EE 0%, #29a3ff 100%); 
   background-clip: text; 
@@ -97,7 +119,6 @@ body.tm-page::before { content: ""; position: fixed; inset: 0; pointer-events: n
   -webkit-text-fill-color: transparent; 
 }
 
-/* FIX: Added background-clip alongside webkit */
 .text-shimmer { 
   background: linear-gradient(to right, #fff 20%, #64E9EE 40%, #64E9EE 60%, #fff 80%); 
   background-size: 200% auto; 
@@ -156,7 +177,6 @@ body.tm-page::before { content: ""; position: fixed; inset: 0; pointer-events: n
 .visual-side { flex: 1.2; background: linear-gradient(135deg, rgba(100, 233, 238, 0.1), rgba(10, 15, 26, 0.8)); display: flex; flex-direction: column; justify-content: center; align-items: center; border-right: 1px solid rgba(255,255,255,0.1); padding: 40px; position: relative; }
 .visual-text { text-align: center; margin-top: 30px; position: relative; z-index: 2; }
 
-/* FIX: Added background-clip alongside webkit */
 .highlight-text { 
   font-size: 1.8rem; font-weight: 800; color: #fff; margin-bottom: 5px; 
   background: linear-gradient(90deg, #fff, #64E9EE); 
@@ -189,7 +209,6 @@ body.tm-page::before { content: ""; position: fixed; inset: 0; pointer-events: n
 .form-side { flex: 1.5; padding: 50px; display: flex; flex-direction: column; justify-content: center; }
 .form-header-compact { text-align: left; margin-bottom: 30px; }
 
-/* FIX: Added background-clip alongside webkit */
 .gradient-title { 
   font-size: 2rem; margin-bottom: 5px; 
   background: linear-gradient(90deg, #fff, #64E9EE); 
@@ -254,7 +273,6 @@ select option { background-color: #0d1426; color: #fff; padding: 10px; }
 /* =========================================================
    LOUNGE DASHBOARD (NEW DESKTOP LAYOUT)
    ========================================================= */
-/* ADJUSTED: WIDER LEFT SIDE (380px) */
 .lounge-dashboard-grid { display: grid; grid-template-columns: 380px 1fr; grid-template-rows: auto auto; gap: 20px; width: 100%; max-width: 1300px; margin: 0 auto; }
 .lounge-match-panel { grid-row: 1 / -1; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
 .lounge-panel-header { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
@@ -310,18 +328,6 @@ select option { background-color: #0d1426; color: #fff; padding: 10px; }
 .perk-pill.active { background: rgba(100, 233, 238, 0.1); border-color: var(--primary); color: #fff; }
 .perk-pill.active i { color: var(--primary); }
 
-@media(max-width: 990px) {
-  .lounge-dashboard-grid { grid-template-columns: 1fr; }
-  .lounge-match-panel { grid-row: auto; height: 500px; }
-  .lounge-chat-panel { height: 400px; }
-  .perks-row-desktop { flex-wrap: wrap; }
-  .split-layout-container { flex-direction: column; min-height: auto; }
-  .visual-side { padding: 30px; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.1); }
-  .form-side { padding: 30px; }
-  .elite-cards-container { width: 100%; max-width: 300px; }
-  .perks-grid { grid-template-columns: 1fr 1fr; }
-}
-
 /* =========================================================
    ANIMATIONS
    ========================================================= */
@@ -346,9 +352,10 @@ select option { background-color: #0d1426; color: #fff; padding: 10px; }
 @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
 /* =========================================================
-   1280x800 LAPTOP OPTIMIZATIONS (COMPACT MODE)
+   1. LAPTOP COMPACT MODE (1201px - 1400px)
+   Keeps 2 columns, but smaller
    ========================================================= */
-@media screen and (max-width: 1400px), screen and (max-height: 850px) {
+@media screen and (min-width: 1201px) and (max-width: 1400px), screen and (max-height: 850px) {
   
   /* Sidebar Compact */
   :root { --sidebar-w: 240px; }
@@ -371,7 +378,7 @@ select option { background-color: #0d1426; color: #fff; padding: 10px; }
   .pill { padding: 4px 12px; font-size: 0.7rem; margin-bottom: 15px; }
   .hero-cta-group { gap: 15px; }
   .btn { padding: 10px 20px; font-size: 0.85rem; }
-  .floating-card-container { width: 280px; height: 170px; } /* Smaller card */
+  .floating-card-container { width: 280px; height: 170px; }
 
   /* Bento Grid */
   .premium-bento-grid { gap: 15px; margin-bottom: 30px; }
@@ -381,11 +388,10 @@ select option { background-color: #0d1426; color: #fff; padding: 10px; }
   .bento-card p { font-size: 0.8rem; }
 
   /* APPLICATION TAB */
-  .split-layout-container { min-height: 450px; } /* Force shorter container */
+  .split-layout-container { min-height: 450px; }
   .visual-side { padding: 20px; }
-  .phone-mockup { width: 180px; height: 340px; } /* Smaller phone */
+  .phone-mockup { width: 180px; height: 340px; }
   .highlight-text { font-size: 1.5rem; }
-  
   .form-side { padding: 25px; }
   .form-icon-circle { width: 50px; height: 50px; font-size: 1.2rem; }
   .gradient-title { font-size: 1.8rem; }
@@ -406,12 +412,12 @@ select option { background-color: #0d1426; color: #fff; padding: 10px; }
   /* LOUNGE TAB */
   .lounge-dashboard-grid { grid-template-columns: 280px 1fr; gap: 15px; }
   .lounge-match-panel { padding: 15px; gap: 15px; }
-  .elite-portrait-card { height: 350px; } /* Compact card height */
+  .elite-portrait-card { height: 350px; }
   .elite-name-lg { font-size: 1.2rem; }
   .elite-job-lg { font-size: 0.8rem; margin-bottom: 10px; }
   .action-btn { width: 40px; height: 40px; font-size: 1rem; }
   
-  .lounge-chat-panel { height: 420px; } /* Shorter chat window */
+  .lounge-chat-panel { height: 420px; }
   .chat-header-desktop { padding: 10px 20px; }
   .c-avatar-lg { width: 36px; height: 36px; font-size: 1rem; }
   .chat-body-desktop { padding: 15px; gap: 15px; }
@@ -420,4 +426,396 @@ select option { background-color: #0d1426; color: #fff; padding: 10px; }
   .lounge-perks-panel { padding: 15px 20px; }
   .perks-row-desktop { gap: 10px; flex-wrap: wrap; }
   .perk-pill { padding: 6px 12px; font-size: 0.7rem; }
+}
+
+/* =========================================================
+   2. FIXED TABLET & SMALL LAPTOP LAYOUT (Max 1200px)
+   TARGET: 820px to 1200px (Removes floating/gap by stacking)
+   ========================================================= */
+@media screen and (max-width: 1200px) {
+  
+  /* FIX: Enable natural vertical scroll for tablets */
+  .dashboard-layout {
+    height: auto;       /* Unset fixed 100vh */
+    min-height: 100vh;  /* Allow growing */
+    overflow: visible;  /* Allow scroll */
+  }
+  
+  .dashboard-content-scroll {
+    height: auto;
+    overflow: visible;  /* Let body handle scroll */
+    padding-bottom: 80px; /* Padding for bottom nav */
+  }
+
+  /* Sidebar adjustments */
+  :root { --sidebar-w: 240px; }
+  .sidebar-brand { height: 70px; padding: 0 20px; }
+  .brand__name { font-size: 1rem; }
+  .sidebar-header { padding: 0 20px 8px; font-size: 0.6rem; }
+  .nav-tab { padding: 10px 15px; font-size: 0.85rem; }
+  .sidebar-foot { padding: 15px; }
+
+  /* Main Header & Padding */
+  .dashboard-header { height: 70px; padding: 0 30px; }
+  .header-title { font-size: 1.5rem; }
+
+  /* STACKING GRID (1 Column) */
+  .lounge-dashboard-grid { 
+    grid-template-columns: 1fr; /* Single Column Stack */
+    grid-template-rows: auto auto auto;
+    gap: 25px; 
+    max-width: 600px; /* Limit width for cleaner look */
+    margin: 0 auto;
+  }
+
+  /* MATCH CARD (Top) */
+  .lounge-match-panel { 
+    grid-row: auto; 
+    height: 550px; 
+  }
+
+  /* CHAT PANEL (Middle - STRETCHED) */
+  .lounge-chat-panel { 
+    grid-column: 1; 
+    height: 600px; /* Taller to fill vertical space */
+    margin-bottom: 10px;
+  }
+  
+  .chat-body-desktop {
+    flex: 1; 
+  }
+
+  /* PERKS PANEL (Bottom) */
+  .lounge-perks-panel {
+    grid-column: 1;
+    flex-wrap: wrap;
+    gap: 15px;
+    justify-content: center;
+    background: rgba(8, 12, 20, 0.4);
+  }
+  
+  /* Apply & Status Page fixes */
+  .split-layout-container { min-height: auto; flex-direction: column; }
+  .visual-side { padding: 30px; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.1); }
+  .phone-mockup { width: 200px; height: 380px; margin: 0 auto; }
+  .form-side { padding: 30px; }
+  
+  /* Status Page */
+  .scanner-wrapper { width: 100px; height: 100px; margin-bottom: 15px; }
+  .big-scanner { width: 120px; height: 120px; }
+  .scanner-icon { font-size: 1.8rem; }
+}
+
+/* =========================================================
+   3. MOBILE PHONE MODE (< 768px)
+   ========================================================= */
+@media screen and (max-width: 768px) {
+
+  /* Sidebar becomes Bottom Navigation */
+  .dashboard-layout {
+    flex-direction: column;
+    min-height: auto;
+    height: auto; /* Allow grow */
+    overflow: visible;
+  }
+
+  .dashboard-sidebar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 70px;
+    background: rgba(8, 12, 20, 0.95);
+    border-right: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-around;
+    padding: 0 10px;
+    z-index: 9999;
+    box-shadow: 0 -5px 20px rgba(0,0,0,0.5);
+    animation: none;
+    transform: none;
+    opacity: 1;
+  }
+
+  /* Hide Header/Footer items */
+  .sidebar-brand, .sidebar-header, .sidebar-foot { display: none !important; }
+
+  /* Adjust Nav Items */
+  .sidebar-nav {
+    flex-direction: row;
+    width: 100%;
+    justify-content: space-between;
+    padding: 0;
+    gap: 0;
+  }
+
+  .nav-tab {
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 8px;
+    border-radius: 8px;
+    background: transparent !important;
+    box-shadow: none !important;
+    transform: none !important;
+    opacity: 1;
+    animation: none;
+  }
+  
+  .tab-content-wrapper { flex-direction: column; align-items: center; }
+  .tab-icon { font-size: 1.2rem; margin-bottom: 4px; }
+  .tab-text { margin-left: 0; font-size: 0.6rem; display: block; }
+  .status-indicator { display: none; }
+  .nav-tab.active .tab-icon { color: var(--primary); }
+  .nav-tab.active .tab-text { color: var(--primary); }
+
+  /* Main Content Adjustments */
+  .dashboard-main { width: 100%; padding-bottom: 80px; }
+  .dashboard-header { padding: 0 20px; height: 60px; }
+  .header-title { font-size: 1.2rem; }
+  .dashboard-content-scroll { 
+    padding: 20px 20px 80px; 
+    height: auto;
+    overflow: visible; 
+  }
+
+  /* Stacked Hero */
+  .premium-hero-split {
+    flex-direction: column-reverse;
+    align-items: center;
+    text-align: center;
+    gap: 30px;
+  }
+
+  .premium-hero-left { max-width: 100%; }
+  .premium-title { font-size: 2rem; }
+  .hero-cta-group { justify-content: center; }
+  .social-proof-row { justify-content: center; }
+  .floating-card-container { width: 280px; height: 180px; }
+
+  /* Stacked Bento */
+  .premium-bento-grid { grid-template-columns: 1fr; }
+  .bento-card.wide { grid-column: span 1; }
+
+  /* Stacked Split Layout */
+  .split-layout-container { flex-direction: column; min-height: auto; }
+  .visual-side { padding: 30px 20px; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.1); }
+  .form-side { padding: 30px 20px; }
+  .phone-mockup { transform: scale(0.9); }
+  .tm-form-row { flex-direction: column; gap: 15px; }
+
+  /* Lounge Stacked */
+  .lounge-dashboard-grid { grid-template-columns: 1fr; gap: 15px; }
+  .lounge-match-panel { height: 450px; }
+  .lounge-chat-panel { height: 400px; }
+  
+  .lounge-perks-panel {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .perks-row-desktop {
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 5px;
+    flex-wrap: nowrap;
+  }
+  
+  .perk-pill { white-space: nowrap; }
+}
+
+/* =========================================
+   MOBILE & TABLET VIEW LOGIC (Max Width: 1024px) 
+   Tinder-style: Toggle between Swipe & Chat
+   ========================================= */
+
+@media screen and (max-width: 1024px) {
+  /* 1. Container Settings: Gawing Block instead of Grid */
+  .lounge-dashboard-grid {
+    display: block !important;
+    position: relative;
+    height: 80vh; /* Full height area */
+    overflow: hidden;
+  }
+
+  /* 2. MATCH PANEL (Swipe Cards) - Default na nakikita */
+  .lounge-match-panel {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    z-index: 1;
+    transition: transform 0.3s ease;
+  }
+
+  /* 3. CHAT PANEL - Default na nakatago sa kanan */
+  .lounge-chat-panel {
+    position: absolute !important;
+    top: 0;
+    left: 0;
+    width: 100% !important;
+    /* Default height for Phones */
+    height: calc(100% - 130px) !important; 
+    background: rgba(20, 20, 30, 0.98);
+    backdrop-filter: blur(15px);
+    z-index: 10;
+    transform: translateX(100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* 4. PERKS PANEL - Default behavior (Phones) */
+  .lounge-perks-panel {
+    position: absolute !important;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 130px;
+    background: rgba(15, 20, 35, 1);
+    z-index: 10;
+    transform: translateX(100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex; 
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 0;
+    border-top: 1px solid rgba(255,255,255,0.1);
+  }
+
+  /* Force Title to Show & Center */
+  .lounge-perks-panel h4 {
+    display: block !important;
+    margin-bottom: 12px;
+    text-align: center;
+    width: 100%;
+    font-size: 0.8rem;
+    opacity: 0.7;
+  }
+
+  /* 5. TOGGLE STATE: Show Chat & Perks */
+  .lounge-dashboard-grid.show-chat .lounge-chat-panel,
+  .lounge-dashboard-grid.show-chat .lounge-perks-panel {
+    transform: translateX(0);
+  }
+  
+  /* I-slide pa-kaliwa ang match panel pag nag chat */
+  .lounge-dashboard-grid.show-chat .lounge-match-panel {
+    transform: translateX(-20%);
+    opacity: 0.5;
+  }
+
+  /* ==============================================
+     PHONE SPECIFIC (Horizontal Scroll) 
+     Hanggang 767px lang ito.
+     ============================================== */
+  .lounge-dashboard-grid.show-chat .perks-row-desktop {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+    /* Start from left para hindi putol sa simula */
+    justify-content: flex-start; 
+    overflow-x: auto; 
+    padding: 0 20px; /* Padding sa gilid para hindi dikit */
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap; /* Pigilan ang pagbaba ng linya */
+  }
+
+  .lounge-dashboard-grid.show-chat .perk-pill {
+    flex: 0 0 auto; /* Huwag liitan */
+    font-size: 0.75rem;
+    padding: 8px 16px;
+  }
+
+  /* ==============================================
+     TABLET SPECIFIC FIX (768px - 1024px)
+     Dito natin i-ce-center at i-wa-wrap para 
+     HINDI PUTOL (gaya sa image mo).
+     ============================================== */
+  @media screen and (min-width: 768px) {
+    
+    /* Taasan ng konti ang panel sa tablet para kasya kung mag-wrap */
+    .lounge-perks-panel {
+      height: 180px !important; /* Tinaasan ko para sa wrap */
+      padding: 20px;
+    }
+    
+    /* Adjust chat height dahil tumaas ang footer */
+    .lounge-chat-panel {
+      height: calc(100% - 180px) !important;
+    }
+
+    /* CENTER & WRAP Logic */
+    .lounge-dashboard-grid.show-chat .perks-row-desktop {
+      justify-content: center !important; /* Center sa gitna */
+      flex-wrap: wrap !important; /* !IMPORTANT: Ito ang solusyon sa putol */
+      overflow-x: visible !important; /* Alisin ang scroll */
+      white-space: normal !important; /* Payagan bumaba */
+      width: 90%; /* Limit width para gumana ang wrap sa gitna */
+      margin: 0 auto;
+    }
+
+    .lounge-dashboard-grid.show-chat .perk-pill {
+      margin-bottom: 8px; /* Space pag bumaba sa 2nd line */
+    }
+  }
+
+  /* 6. FLOATING BUTTON */
+  .mobile-chat-fab {
+    position: fixed;
+    bottom: 25px;
+    right: 25px;
+    width: 60px;
+    height: 60px;
+    background: linear-gradient(135deg, #ff007f, #ff5e00);
+    border-radius: 50%;
+    color: white;
+    border: none;
+    box-shadow: 0 10px 25px rgba(255, 0, 127, 0.4);
+    font-size: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    cursor: pointer;
+    transition: transform 0.2s, opacity 0.2s;
+  }
+  
+  .mobile-chat-fab:active {
+    transform: scale(0.9);
+  }
+
+  .lounge-dashboard-grid.show-chat .mobile-chat-fab,
+  .lounge-dashboard-grid.show-chat ~ .mobile-chat-fab {
+    transform: scale(0) !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    z-index: -1 !important;
+  }
+
+  /* 7. BACK BUTTON */
+  .mobile-chat-back {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 35px;
+    height: 35px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 50%;
+    border: none;
+    color: white;
+    margin-right: 10px;
+    cursor: pointer;
+  }
+}
+
+/* Desktop: Hide Mobile Elements */
+@media screen and (min-width: 1025px) {
+  .mobile-chat-fab, 
+  .mobile-chat-back {
+    display: none !important;
+  }
 }

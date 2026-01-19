@@ -351,8 +351,12 @@
             <div class="ambient-glow glow-blue center-left"></div>
             <div class="ambient-glow glow-purple top-right"></div>
 
-            <div class="lounge-dashboard-grid reveal-up">
+            <div class="lounge-dashboard-grid reveal-up" id="loungeGrid">
                
+               <button class="mobile-chat-fab" onclick="toggleMobileChat()">
+                 <i class="fa-solid fa-comment-dots"></i>
+               </button>
+
                <div class="lounge-match-panel glass-panel">
                  <div class="lounge-panel-header">
                    <h3><i class="fa-solid fa-star"></i> Featured Match</h3>
@@ -375,6 +379,10 @@
 
                <div class="lounge-chat-panel glass-panel">
                  <div class="chat-header-desktop">
+                   <button class="mobile-chat-back" onclick="toggleMobileChat()">
+                      <i class="fa-solid fa-arrow-left"></i>
+                   </button>
+                   
                    <div class="concierge-info">
                      <div class="c-avatar-lg"><i class="fa-solid fa-bell-concierge"></i></div>
                      <div>
@@ -417,8 +425,8 @@
                  <div class="perks-row-desktop">
                    <div class="perk-pill active" id="perkTravel"><i class="fa-solid fa-jet-fighter"></i> Travel Mode</div>
                    <div class="perk-pill" id="perkIncognito"><i class="fa-solid fa-eye-slash"></i> Incognito</div>
-                   <div class="perk-pill active" id="perkBoost"><i class="fa-solid fa-bolt"></i> Boost Active</div>
-                   <div class="perk-pill" id="perkEvents"><i class="fa-solid fa-champagne-glasses"></i> Event Access</div>
+                   <div class="perk-pill active" id="perkBoost"><i class="fa-solid fa-bolt"></i> Boost</div>
+                   <div class="perk-pill" id="perkEvents"><i class="fa-solid fa-champagne-glasses"></i> Event</div>
                  </div>
                </div>
 
@@ -440,6 +448,9 @@
   <script type="module" src="premium-society.js"></script>
 
   <script>
+  // ==============================================
+  // BACKGROUND CANVAS ANIMATION
+  // ==============================================
   (() => {
     const canvas = document.getElementById('tm-bg-canvas');
     if (!canvas) return;
@@ -526,6 +537,20 @@
     
     window.addEventListener('resize', resize); resize(); animate();
   })();
+
+  // ==============================================
+  // MOBILE CHAT TOGGLE LOGIC
+  // ==============================================
+  function toggleMobileChat() {
+    const grid = document.getElementById('loungeGrid');
+    if(grid) {
+      grid.classList.toggle('show-chat');
+    }
+  }
+
+  // Make it available globally for the HTML onclick attributes
+  window.toggleMobileChat = toggleMobileChat;
+
   </script>
 </body>
 </html>
