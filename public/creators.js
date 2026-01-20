@@ -1,153 +1,199 @@
-// creators.js — Logic Updated for Icons & Dynamic Visuals + Animations
-
 import * as TMAPI from './tm-api.js';
 
 const DOM = {
-  denied: document.getElementById('access-denied'),
   feed: document.getElementById('creator-feed'),
-  feedContainer: document.getElementById('feed-container'),
-  leftTrack: document.getElementById('leftScrollTrack'), // Target for icons
-  btnBack: document.getElementById('btnBack'),
   btnSubscribe: document.getElementById('btnSubscribe'),
   paymentModal: document.getElementById('payment-modal'),
   btnPayConfirm: document.getElementById('btnPayConfirm'),
-  btnPayCancel: document.getElementById('btnPayCancel')
+  btnPayCancel: document.getElementById('btnPayCancel'),
+  
+  // Views
+  viewHome: document.getElementById('view-home'),
+  viewNotif: document.getElementById('view-notifications'),
+
+  // Navigation Links
+  navHome: document.getElementById('nav-link-home'),
+  navNotif: document.getElementById('nav-link-notif'),
+  mobHome: document.getElementById('mob-nav-home'),
+  mobNotif: document.getElementById('mob-nav-notif'),
+
+  // Popover
+  popover: document.getElementById('settings-popover'),
+  closePopoverBtn: document.getElementById('btnClosePopover'),
+  triggers: [
+    document.getElementById('trigger-profile-card'),
+    document.getElementById('trigger-more-btn')
+  ],
+  
+  // Theme Toggle
+  themeToggle: document.getElementById('themeToggle')
 };
 
-const MOCK_POSTS = [
-  { id: 1, author: 'Fit_Guru', avatar: 'assets/images/sample1.jpg', time: '2h ago', text: 'Morning stretch routine! 💪✨', image: 'assets/images/sample2.jpg', locked: false },
-  { id: 2, author: 'Anna_Yoga', avatar: 'assets/images/sample2.jpg', time: '5h ago', text: 'Full 30-min workout routine (Uncut).', image: 'assets/images/sample3.jpg', locked: true, price: 5.00 },
-  { id: 3, author: 'Sarah_K', avatar: 'assets/images/sample3.jpg', time: '1d ago', text: 'Healthy meal prep ideas 🥗', image: 'assets/images/sample4.jpg', locked: false }
-];
+// --- Custom Toast (SweetAlert) ---
+const TopToast = Swal.mixin({
+  toast: true,
+  position: 'top',
+  showConfirmButton: false,
+  timer: 3000,
+  timerProgressBar: true,
+  background: '#0d1423',
+  color: '#fff',
+  didOpen: (toast) => {
+    toast.addEventListener('mouseenter', Swal.stopTimer)
+    toast.addEventListener('mouseleave', Swal.resumeTimer)
+  }
+});
+
+function removeLoader() {
+    const loader = document.getElementById('app-loader');
+    if (loader) {
+        loader.style.opacity = '0';
+        loader.style.visibility = 'hidden';
+        setTimeout(() => {
+            if(loader.parentNode) loader.parentNode.removeChild(loader);
+        }, 500);
+    }
+}
+
+window.addEventListener('load', () => setTimeout(removeLoader, 1000));
+if (document.readyState === 'complete') { setTimeout(removeLoader, 500); }
+setTimeout(removeLoader, 3000);
+
 
 async function init() {
-  if (DOM.btnBack) DOM.btnBack.onclick = () => window.location.href = 'dashboard.html';
   if (DOM.btnSubscribe) DOM.btnSubscribe.onclick = openPaymentModal; 
   if (DOM.btnPayCancel) DOM.btnPayCancel.onclick = closePaymentModal;
   if (DOM.btnPayConfirm) DOM.btnPayConfirm.onclick = processPayment;
 
-  await checkAccess();
-}
-
-async function checkAccess() {
-  try {
-    const res = await TMAPI.apiGet('/api/me');
-    if (res.ok && res.user && res.user.hasCreatorAccess) {
-      // IF UNLOCKED:
-      if (DOM.feed) DOM.feed.hidden = false;
-      if (DOM.denied) DOM.denied.hidden = true;
-      
-      // Trigger Icon Change on Left Side
-      unlockVisuals();
-      
-      renderFeed(MOCK_POSTS);
-    } else {
-      // IF LOCKED:
-      if (DOM.denied) DOM.denied.hidden = false;
-      if (DOM.feed) DOM.feed.hidden = true;
-    }
-  } catch (err) {
-    console.error(err);
-    if (DOM.denied) DOM.denied.hidden = false;
+  if (DOM.triggers.length > 0) {
+    DOM.triggers.forEach(t => {
+      if(t) t.addEventListener('click', togglePopover);
+    });
   }
-}
-
-function unlockVisuals() {
-  if (!DOM.leftTrack) return;
-  // Find all lock icons
-  const icons = DOM.leftTrack.querySelectorAll('.fa-lock');
-  icons.forEach(icon => {
-    // Replace Lock with Open Lock
-    icon.classList.remove('fa-lock');
-    icon.classList.add('fa-lock-open');
-    
-    // Add Glow to the container
-    const parentBox = icon.closest('.icon-box');
-    if (parentBox) {
-      parentBox.classList.add('active');
+  if (DOM.closePopoverBtn) DOM.closePopoverBtn.addEventListener('click', closePopover);
+  
+  document.addEventListener('click', (e) => {
+    if (DOM.popover && DOM.popover.classList.contains('is-open')) {
+      const isClickInside = DOM.popover.contains(e.target);
+      const isClickTrigger = DOM.triggers.some(t => t && t.contains(e.target));
+      if (!isClickInside && !isClickTrigger) {
+        closePopover();
+      }
     }
   });
-}
 
-function renderFeed(posts) {
-  if (!DOM.feedContainer) return;
-  DOM.feedContainer.innerHTML = '';
+  if (DOM.themeToggle) {
+    DOM.themeToggle.addEventListener('change', (e) => {
+        if (e.target.checked) {
+            document.body.classList.remove('tm-light');
+            document.body.classList.add('tm-dark');
+        } else {
+            document.body.classList.remove('tm-dark');
+            document.body.classList.add('tm-light');
+        }
+    });
+  }
 
-  posts.forEach((post, index) => {
-    const article = document.createElement('article');
-    article.className = 'post-card';
-    
-    // --- ANIMATION INJECTION ---
-    // Make posts invisible initially, then fade them up one by one
-    article.style.opacity = '0';
-    article.style.animation = `contentFadeUp 0.6s ease-out ${index * 0.15}s forwards`;
-    // ---------------------------
-    
-    let mediaContent = '';
-    if (post.locked) {
-      mediaContent = `
-        <div class="locked-container">
-          <div class="locked-overlay">
-            <span style="font-size:24px; margin-bottom:10px;">🔒</span>
-            <button class="btn btn-primary" style="width: auto; padding: 5px 15px; font-size: 0.8rem;" onclick="alert('Unlock feature coming soon!')">Unlock for $${post.price.toFixed(2)}</button>
-          </div>
-          <img src="${post.image}" class="post-img locked-blur" onerror="this.src='assets/images/truematch-mark.png'">
-        </div>
-      `;
-    } else {
-      mediaContent = `<img src="${post.image}" class="post-img" onerror="this.src='assets/images/truematch-mark.png'">`;
+  // --- FIXED SWITCH VIEW LOGIC ---
+  function switchView(viewName) {
+    if (DOM.viewHome) DOM.viewHome.style.display = 'none';
+    if (DOM.viewNotif) DOM.viewNotif.style.display = 'none';
+
+    // Reset icons (Desktop & Mobile)
+    [DOM.navHome, DOM.navNotif, DOM.mobHome, DOM.mobNotif].forEach(el => {
+        if(el) {
+            el.classList.remove('active');
+            const icon = el.querySelector('i');
+            // FIX: Huwag palitan ang icon kung 'fa-house' ito
+            if (icon && !icon.classList.contains('fa-house')) {
+                icon.classList.replace('fa-solid', 'fa-regular');
+            }
+        }
+    });
+
+    if (viewName === 'home') {
+        if (DOM.viewHome) DOM.viewHome.style.display = 'block';
+        if (DOM.navHome) setActive(DOM.navHome);
+        if (DOM.mobHome) setActive(DOM.mobHome);
+    } 
+    else if (viewName === 'notifications') {
+        if (DOM.viewNotif) DOM.viewNotif.style.display = 'block';
+        if (DOM.navNotif) setActive(DOM.navNotif);
+        if (DOM.mobNotif) setActive(DOM.mobNotif);
     }
+  }
 
-    article.innerHTML = `
-      <div class="post-header">
-        <div style="display:flex; align-items:center; gap:12px;">
-          <img src="${post.avatar}" style="width:40px; height:40px; border-radius:50%; object-fit:cover;" onerror="this.src='assets/images/truematch-mark.png'">
-          <div>
-            <strong style="display:block; color:#fff;">@${post.author}</strong>
-            <div class="tiny muted" style="font-size:0.75rem;">${post.time}</div>
-          </div>
-        </div>
-      </div>
-      <p style="margin: 12px 0; color: #eee;">${post.text}</p>
-      ${mediaContent}
-      <div class="post-actions" style="margin-top:16px; display:flex; gap:16px; font-size:1.2rem; opacity:0.7;">
-        <i class="fa-regular fa-heart" style="cursor:pointer;"></i>
-        <i class="fa-regular fa-comment" style="cursor:pointer;"></i>
-      </div>
-    `;
-    DOM.feedContainer.appendChild(article);
-  });
+  function setActive(el) {
+      el.classList.add('active');
+      const icon = el.querySelector('i');
+      if (icon) {
+          // Keep fa-house logic safe, otherwise switch to solid
+          icon.classList.replace('fa-regular', 'fa-solid');
+      }
+  }
+
+  if (DOM.navHome) DOM.navHome.addEventListener('click', (e) => { e.preventDefault(); switchView('home'); });
+  if (DOM.navNotif) DOM.navNotif.addEventListener('click', (e) => { e.preventDefault(); switchView('notifications'); });
+  if (DOM.mobHome) DOM.mobHome.addEventListener('click', (e) => { e.preventDefault(); switchView('home'); });
+  if (DOM.mobNotif) DOM.mobNotif.addEventListener('click', (e) => { e.preventDefault(); switchView('notifications'); });
+
+  // Notification Tabs Click
+  const notifPills = document.querySelectorAll('.n-pill');
+  if (notifPills.length > 0) {
+      notifPills.forEach(pill => {
+          pill.addEventListener('click', function() {
+              notifPills.forEach(p => p.classList.remove('active'));
+              this.classList.add('active');
+          });
+      });
+  }
+
+  // Notification Settings Icon Click (Toast)
+  const notifSettingsBtn = document.querySelector('.nh-right .fa-gear');
+  if (notifSettingsBtn) {
+      notifSettingsBtn.addEventListener('click', () => {
+          TopToast.fire({
+              icon: 'info',
+              title: 'Settings available soon!'
+          });
+      });
+  }
+
+  if (DOM.feed) DOM.feed.hidden = false;
+  
+  try { await checkAccess(); } catch (e) { console.log(e); }
 }
 
-function openPaymentModal() {
-  if (DOM.paymentModal) DOM.paymentModal.classList.add('is-visible');
+function togglePopover(e) {
+  if (e) e.stopPropagation();
+  if (DOM.popover) DOM.popover.classList.toggle('is-open');
 }
-
-function closePaymentModal() {
-  if (DOM.paymentModal) DOM.paymentModal.classList.remove('is-visible');
+function closePopover() {
+  if (DOM.popover) DOM.popover.classList.remove('is-open');
 }
+function openPaymentModal() { if (DOM.paymentModal) DOM.paymentModal.classList.add('is-visible'); }
+function closePaymentModal() { if (DOM.paymentModal) DOM.paymentModal.classList.remove('is-visible'); }
 
 async function processPayment() {
   if (!DOM.btnPayConfirm) return;
   DOM.btnPayConfirm.disabled = true;
   DOM.btnPayConfirm.textContent = 'Processing...';
-
-  try {
-    const res = await TMAPI.apiPost('/api/coinbase/create-charge', { planKey: 'creator_access' });
-    if (res.ok && res.url) {
-      window.location.href = res.url;
-    } else {
-      alert(res.message || "Payment initialization failed.");
-      closePaymentModal();
-    }
-  } catch (e) {
-    console.error(e);
-    alert("Network error. Please try again.");
+  
+  setTimeout(() => {
+    TopToast.fire({
+      icon: 'success',
+      title: 'Subscription Successful!'
+    });
     closePaymentModal();
-  } finally {
     DOM.btnPayConfirm.disabled = false;
     DOM.btnPayConfirm.textContent = 'Proceed';
-  }
+  }, 1000);
+}
+
+async function checkAccess() {
+    return new Promise(resolve => {
+        setTimeout(() => { resolve(true); }, 500);
+    });
 }
 
 document.addEventListener('DOMContentLoaded', init);

@@ -4,248 +4,263 @@
   <script>window.API_BASE = '';</script>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  
-  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
-
-  <title>iTRUEMATCH — Creator Space</title>
+  <title>Home | iTRUEMATCH</title>
   
   <link rel="icon" href="assets/images/truematch-mark.png" />
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
+  
   <link rel="stylesheet" href="creators.css" />
 </head>
 
 <body class="tm-dark">
+  
+  <div id="app-loader">
+      <img src="assets/images/truematch-mark.png" class="loader-logo" alt="Loading...">
+      <div class="loader-text">iTRUEMATCH</div>
+  </div>
 
   <canvas id="tm-bg-canvas" aria-hidden="true"></canvas>
 
-  <nav class="auth-top-nav">
-    <a href="index.html" class="nav-brand">
-      <img src="assets/images/truematch-mark.png" alt="Logo" />
-      <span>iTRUEMATCH</span>
-    </a>
-    <div class="nav-actions">
-      <a href="dashboard.html" class="nav-back-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="15 18 9 12 15 6"></polyline></svg>
-        Dashboard
-      </a>
-    </div>
+  <div class="of-layout-container">
+    
+    <nav class="left-sidebar">
+      <div class="sidebar-inner">
+        
+        <div class="profile-header-card" id="trigger-profile-card">
+          <div class="ph-avatar-container">
+            <img src="assets/images/default-avatar.png" alt="Profile" onerror="this.src='assets/images/truematch-mark.png'">
+            <div class="status-indicator"></div>
+          </div>
+          <div class="ph-user-details">
+            <div class="ph-name">
+              Username <i class="fa-solid fa-circle-check"></i>
+            </div>
+            <div class="ph-handle">@handle</div>
+          </div>
+          <div class="ph-settings">
+            <i class="fa-solid fa-gear"></i>
+          </div>
+        </div>
+
+        <a href="#" id="nav-link-home" class="nav-item active">
+          <div class="nav-icon"><i class="fa-solid fa-house"></i></div>
+          <span class="nav-text">Home</span>
+        </a>
+        <a href="#" id="nav-link-notif" class="nav-item">
+          <div class="nav-icon"><i class="fa-regular fa-bell"></i></div>
+          <span class="nav-text">Notifications</span>
+        </a>
+        <a href="#" class="nav-item">
+          <div class="nav-icon"><i class="fa-regular fa-envelope"></i></div>
+          <span class="nav-text">Messages</span>
+        </a>
+        <a href="#" class="nav-item">
+          <div class="nav-icon"><i class="fa-regular fa-bookmark"></i></div>
+          <span class="nav-text">Collections</span>
+        </a>
+        <a href="#" class="nav-item">
+          <div class="nav-icon"><i class="fa-solid fa-user-group"></i></div>
+          <span class="nav-text">Subscriptions</span>
+        </a>
+        <a href="#" class="nav-item">
+          <div class="nav-icon"><i class="fa-regular fa-credit-card"></i></div>
+          <span class="nav-text">Add card</span>
+        </a>
+        <a href="#" class="nav-item">
+          <div class="nav-icon"><i class="fa-regular fa-user"></i></div>
+          <span class="nav-text">My profile</span>
+        </a>
+        <a href="#" class="nav-item" id="trigger-more-btn">
+          <div class="nav-icon"><i class="fa-solid fa-circle-notch"></i></div> 
+          <span class="nav-text">More</span>
+        </a>
+        
+        <button class="btn-new-post">
+          <i class="fa-solid fa-plus"></i> <span class="btn-text">NEW POST</span>
+        </button>
+
+        <div class="sidebar-brand-footer">
+            <img src="assets/images/truematch-mark.png" alt="Logo">
+            <div class="brand-text">
+                <span>iTRUEMATCH</span>
+                <small>© 2026 Corp.</small>
+            </div>
+        </div>
+
+      </div>
+    </nav>
+
+    <main class="main-feed-column">
+      
+      <div id="view-home">
+          <div class="feed-top-header">
+            <div class="header-content">
+              <h2>HOME</h2>
+            </div>
+          </div>
+
+          <div class="compose-area">
+            <div class="compose-top">
+              <input type="text" placeholder="Compose new post...">
+            </div>
+            <div class="compose-actions">
+               <i class="fa-regular fa-image" title="Media"></i>
+               <i class="fa-solid fa-square-poll-horizontal" title="Poll"></i>
+               <i class="fa-solid fa-clipboard-question" title="Quiz"></i>
+               <span style="font-weight:700; font-size:1rem; padding-top:2px; cursor:pointer;">Aa</span>
+            </div>
+          </div>
+
+          <div class="feed-divider"></div>
+
+          <div id="creator-feed" class="active-feed">
+             <div class="end-message" style="margin-top: 50px;">No posts yet. Be the first to post!</div>
+          </div>
+      </div>
+
+      <div id="view-notifications" style="display: none;">
+          <div class="feed-top-header notif-header-flex">
+            <div class="nh-left">
+                 <div class="back-btn" onclick="document.getElementById('nav-link-home').click()">
+                    <i class="fa-solid fa-arrow-left"></i>
+                 </div>
+                 <h2>NOTIFICATIONS</h2>
+            </div>
+            <div class="nh-right">
+                 <i class="fa-solid fa-magnifying-glass"></i>
+                 <i class="fa-solid fa-gear" style="cursor: pointer;"></i>
+            </div>
+          </div>
+
+          <div class="notif-tabs-bar">
+             <button class="n-pill active">All</button>
+             <button class="n-pill">Tags</button>
+             <button class="n-pill">Comments</button>
+             <button class="n-pill">Mentions</button>
+             <button class="n-pill">Subscriptions</button>
+             <button class="n-pill">Promotions</button>
+             <button class="n-pill icon-only"><i class="fa-solid fa-pencil"></i></button>
+          </div>
+
+          <div class="notif-empty-state">
+              <span>No notifications currently!</span>
+          </div>
+      </div>
+
+    </main>
+
+    <aside class="right-sidebar">
+      <div class="sidebar-inner">
+        <div class="search-bar">
+           <input type="text" placeholder="Search posts">
+           <i class="fa-solid fa-magnifying-glass"></i> 
+        </div>
+        <div class="suggestions-header">
+           <span class="title">SUGGESTIONS</span>
+           <div class="sugg-actions">
+              <i class="fa-solid fa-rotate"></i>
+           </div>
+        </div>
+        
+        <div class="suggestion-list">
+            <div style="padding: 20px; text-align: center; color: var(--muted); font-size: 0.9rem;">
+                No suggestions available.
+            </div>
+        </div>
+        
+        <div class="footer-links">
+             Privacy · Cookie Notice · Terms of Service <br>
+             © 2026 iTrueMatch Corp.
+        </div>
+      </div>
+    </aside>
+
+  </div>
+
+  <nav class="mobile-bottom-nav">
+    <a href="#" id="mob-nav-home" class="mob-nav-item active"><i class="fa-solid fa-house"></i></a>
+    <a href="#" class="mob-nav-item"><i class="fa-regular fa-compass"></i></a>
+    <a href="#" class="mob-nav-item special-add"><div class="add-circle"><i class="fa-solid fa-plus"></i></div></a>
+    <a href="#" id="mob-nav-notif" class="mob-nav-item"><i class="fa-regular fa-bell"></i></a>
+    <a href="#" class="mob-nav-item"><i class="fa-regular fa-envelope"></i></a>
   </nav>
 
-  <div class="split-layout">
-    <div class="unified-card">
-      
-      <div class="visual-side">
-        
-        <div class="feed-title-overlay">
-          <i class="fa-solid fa-bolt" style="color: #64E9EE; margin-right: 8px;"></i> Live Activity
+  <div id="settings-popover" class="tm-popover-menu">
+    <div class="pop-header">
+      <div class="pop-user-section">
+        <div class="pop-avatar">
+            <img src="assets/images/default-avatar.png" onerror="this.src='assets/images/truematch-mark.png'">
+            <div class="pop-online"></div>
         </div>
-
-        <div class="vertical-scroll-track" id="leftScrollTrack">
-          
-          <div class="notif-group">
-            <div class="notif-item">
-              <div class="icon-box"><i class="fa-solid fa-lock"></i></div>
-              <div class="text-box">
-                <p><strong>Marcus_22</strong> accessed exclusive content.</p>
-                <span>Just now</span>
-              </div>
-            </div>
-            <div class="notif-item">
-              <div class="icon-box special"><i class="fa-solid fa-star"></i></div>
-              <div class="text-box">
-                <p><strong>Sarah_Fit</strong> posted a new VIP workout!</p>
-                <span>2 mins ago</span>
-              </div>
-            </div>
-            <div class="notif-item">
-              <div class="icon-box"><i class="fa-solid fa-lock"></i></div>
-              <div class="text-box">
-                <p><strong>Javier</strong> subscribed to Creator Tier.</p>
-                <span>5 mins ago</span>
-              </div>
-            </div>
-            <div class="notif-item">
-              <div class="icon-box"><i class="fa-solid fa-lock"></i></div>
-              <div class="text-box">
-                <p><strong>Anna</strong> sent a private message.</p>
-                <span>12 mins ago</span>
-              </div>
-            </div>
-            <div class="notif-item">
-              <div class="icon-box"><i class="fa-solid fa-lock"></i></div>
-              <div class="text-box">
-                <p><strong>User882</strong> joined the live stream.</p>
-                <span>15 mins ago</span>
-              </div>
-            </div>
-            <div class="notif-item">
-              <div class="icon-box"><i class="fa-solid fa-lock"></i></div>
-              <div class="text-box">
-                <p><strong>Mike_T</strong> unlocked a meal plan.</p>
-                <span>18 mins ago</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="notif-group">
-            <div class="notif-item">
-              <div class="icon-box"><i class="fa-solid fa-lock"></i></div>
-              <div class="text-box">
-                <p><strong>Marcus_22</strong> accessed exclusive content.</p>
-                <span>Just now</span>
-              </div>
-            </div>
-            <div class="notif-item">
-              <div class="icon-box special"><i class="fa-solid fa-star"></i></div>
-              <div class="text-box">
-                <p><strong>Sarah_Fit</strong> posted a new VIP workout!</p>
-                <span>2 mins ago</span>
-              </div>
-            </div>
-            <div class="notif-item">
-              <div class="icon-box"><i class="fa-solid fa-lock"></i></div>
-              <div class="text-box">
-                <p><strong>Javier</strong> subscribed to Creator Tier.</p>
-                <span>5 mins ago</span>
-              </div>
-            </div>
-            <div class="notif-item">
-              <div class="icon-box"><i class="fa-solid fa-lock"></i></div>
-              <div class="text-box">
-                <p><strong>Anna</strong> sent a private message.</p>
-                <span>12 mins ago</span>
-              </div>
-            </div>
-            <div class="notif-item">
-              <div class="icon-box"><i class="fa-solid fa-lock"></i></div>
-              <div class="text-box">
-                <p><strong>User882</strong> joined the live stream.</p>
-                <span>15 mins ago</span>
-              </div>
-            </div>
-            <div class="notif-item">
-              <div class="icon-box"><i class="fa-solid fa-lock"></i></div>
-              <div class="text-box">
-                <p><strong>Mike_T</strong> unlocked a meal plan.</p>
-                <span>18 mins ago</span>
-              </div>
-            </div>
-          </div>
-
+        <div class="pop-info">
+            <strong>Username <i class="fa-solid fa-circle-check"></i></strong>
+            <span>@handle</span>
         </div>
-        
-        <div class="fade-bottom"></div>
+        <button id="btnClosePopover" class="btn-close-pop"><i class="fa-solid fa-xmark"></i></button>
       </div>
-
-      <div class="form-side" id="right-content-area">
-        
-        <div id="access-denied" class="denied-wrapper" hidden>
-          <div class="header-text stagger-1">
-            <h1>Content Locked</h1>
-            <p>Subscribe to unlock exclusive workouts and messages.</p>
-          </div>
-          <div class="lock-visual stagger-2">
-            <i class="fa-solid fa-lock"></i>
-          </div>
-          <div class="info-grid stagger-3">
-            <div class="info-row">
-              <span class="info-label">Direct Messaging</span>
-              <span class="info-value">Locked</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Workout Videos</span>
-              <span class="info-value">Locked</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Meal Plans</span>
-              <span class="info-value">Locked</span>
-            </div>
-          </div>
-          <div class="btn-row stagger-4">
-            <button id="btnSubscribe" class="btn btn-primary">Unlock All ($9.99/mo)</button>
-            <button id="btnBack" class="btn btn-ghost">Back to Dashboard</button>
-          </div>
-          <div class="card-footer stagger-5">
-            Secure payment via Coinbase
-          </div>
-        </div>
-
-        <div id="creator-feed" class="feed-wrapper" hidden>
-          <div class="feed-header stagger-1">
-            <h2>Creator Feed</h2>
-            <div class="filter-row">
-              <button class="chip active">All</button>
-              <button class="chip">Fitness</button>
-              <button class="chip">VIP</button>
-            </div>
-          </div>
-          <div class="stories-scroll stagger-2">
-            <div class="story-item">
-              <div class="story-ring live"><img src="assets/images/sample1.jpg" onerror="this.src='assets/images/truematch-mark.png'"></div>
-              <span>Live</span>
-            </div>
-            <div class="story-item">
-              <div class="story-ring"><img src="assets/images/sample2.jpg" onerror="this.src='assets/images/truematch-mark.png'"></div>
-              <span>Anna</span>
-            </div>
-            <div class="story-item">
-              <div class="story-ring"><img src="assets/images/sample3.jpg" onerror="this.src='assets/images/truematch-mark.png'"></div>
-              <span>Guru</span>
-            </div>
-             <div class="story-item">
-              <div class="story-ring"><img src="assets/images/sample4.jpg" onerror="this.src='assets/images/truematch-mark.png'"></div>
-              <span>Sarah</span>
-            </div>
-          </div>
-          
-          <div id="feed-container" class="feed-grid stagger-3"></div>
-          
-          <div class="footer-note stagger-4">You're all caught up!</div>
-        </div>
-
+      <div class="pop-stats">
+        <div class="stat-item"><strong>0</strong> <span>Fans</span></div>
+        <div class="stat-item"><strong>0</strong> <span>Following</span></div>
       </div>
+    </div>
+    <div class="pop-content-full">
+        <div class="pop-group">
+            <a href="#" class="pop-item"><i class="fa-regular fa-user"></i> My profile</a>
+            <a href="#" class="pop-item"><i class="fa-regular fa-bookmark"></i> Collections</a>
+            <a href="#" class="pop-item"><i class="fa-solid fa-gear"></i> Settings</a>
+        </div>
+        <div class="pop-divider"></div>
+        <div class="pop-group">
+            <a href="#" class="pop-item"><i class="fa-regular fa-credit-card"></i> Your cards <span class="muted">(to subscribe)</span></a>
+            <a href="#" class="pop-item"><i class="fa-solid fa-building-columns"></i> Become a creator <span class="muted">(to earn)</span></a>
+        </div>
+        <div class="pop-divider"></div>
+        <div class="pop-group">
+            <a href="#" class="pop-item"><i class="fa-regular fa-circle-question"></i> Help and support</a>
+            <div class="pop-item toggle-row">
+                <div class="flex-icon"><i class="fa-solid fa-moon"></i> Dark mode</div>
+                <label class="switch">
+                  <input type="checkbox" id="themeToggle" checked>
+                  <span class="slider round"></span>
+                </label>
+            </div>
+            <div class="pop-item"><i class="fa-solid fa-globe"></i> English</div>
+        </div>
+        <div class="pop-divider"></div>
+        <div class="pop-group">
+            <a href="index.html" class="pop-item danger"><i class="fa-solid fa-arrow-right-from-bracket"></i> Log out</a>
+        </div>
     </div>
   </div>
 
   <div id="payment-modal" class="payment-overlay">
     <div class="payment-card">
-      <div class="card-icon-box" style="margin: 0 auto 20px;">
-        <i class="fa-regular fa-credit-card" style="font-size: 24px; color: #fff;"></i>
-      </div>
+      <div class="card-icon-box" style="margin: 0 auto 20px;"><i class="fa-regular fa-credit-card" style="font-size: 24px; color: #fff;"></i></div>
       <h3>Confirm Access</h3>
-      <p class="muted-text">
-        Total: <strong style="color: #64E9EE;">$9.99/mo</strong> via Coinbase.
-      </p>
-      <div class="btn-group">
-        <button id="btnPayConfirm" class="btn btn-primary">Proceed to Pay</button>
-        <button id="btnPayCancel" class="btn btn-ghost">Cancel</button>
+      <p class="muted-text">Total: <strong style="color: #64E9EE;">$9.99/mo</strong> via Coinbase.</p>
+      <div class="btn-group-modal">
+        <button id="btnPayConfirm" class="btn-modal primary">Proceed to Pay</button>
+        <button id="btnPayCancel" class="btn-modal ghost">Cancel</button>
       </div>
     </div>
   </div>
 
+  <script src="./tm-loader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script type="module" src="creators.js"></script>
   <script>
   (() => {
     const canvas = document.getElementById('tm-bg-canvas');
     if (canvas) {
         const ctx = canvas.getContext('2d', { alpha: true });
-        const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         let cw = 0, ch = 0; const particles = [];
         function resize() { cw = window.innerWidth; ch = window.innerHeight; canvas.width = cw; canvas.height = ch; init(); }
-        function init() { particles.length = 0; const count = Math.floor((cw * ch) / 25000); for(let i=0;i<count;i++) particles.push({x:Math.random()*cw, y:Math.random()*ch, vx:(Math.random()-0.5)*0.5, vy:(Math.random()-0.5)*0.5, r:1+Math.random()}); }
-        function draw() { ctx.clearRect(0,0,cw,ch); ctx.fillStyle='rgba(255,255,255,0.4)'; for(let p of particles){ p.x+=p.vx; p.y+=p.vy; if(p.x<0||p.x>cw)p.vx*=-1; if(p.y<0||p.y>ch)p.vy*=-1; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); } requestAnimationFrame(draw); }
+        function init() { particles.length = 0; const count = Math.floor((cw * ch) / 30000); for(let i=0;i<count;i++) particles.push({x:Math.random()*cw, y:Math.random()*ch, vx:(Math.random()-0.5)*0.5, vy:(Math.random()-0.5)*0.5, r:1+Math.random()}); }
+        function draw() { ctx.clearRect(0,0,cw,ch); ctx.fillStyle='rgba(255,255,255,0.3)'; for(let p of particles){ p.x+=p.vx; p.y+=p.vy; if(p.x<0||p.x>cw)p.vx*=-1; if(p.y<0||p.y>ch)p.vy*=-1; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); } requestAnimationFrame(draw); }
         window.addEventListener('resize', resize); resize(); draw();
     }
   })();
   </script>
-
-  <script src="./tm-loader.js"></script>
-  <script type="module" src="creators.js"></script>
 </body>
 </html>
