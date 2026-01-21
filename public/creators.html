@@ -4,11 +4,13 @@
   <script>window.API_BASE = '';</script>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Home | iTRUEMATCH</title>
+  <title>Collections | iTRUEMATCH</title>
   
   <link rel="icon" href="assets/images/truematch-mark.png" />
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <script src="https://cdn.jsdelivr.net/npm/picmo@latest/dist/umd/index.js"></script>
   
   <link rel="stylesheet" href="creators.css" />
 </head>
@@ -22,21 +24,21 @@
 
   <canvas id="tm-bg-canvas" aria-hidden="true"></canvas>
 
-  <div class="of-layout-container">
+  <div class="of-layout-container" id="main-layout">
     
     <nav class="left-sidebar">
       <div class="sidebar-inner">
         
         <div class="profile-header-card" id="trigger-profile-card">
           <div class="ph-avatar-container">
-            <img src="assets/images/default-avatar.png" alt="Profile" onerror="this.src='assets/images/truematch-mark.png'">
+            <img src="assets/images/sample1.jpg" alt="Profile" onerror="this.src='assets/images/truematch-mark.png'">
             <div class="status-indicator"></div>
           </div>
           <div class="ph-user-details">
             <div class="ph-name">
-              Username <i class="fa-solid fa-circle-check"></i>
+              Aljur Abrenica <i class="fa-solid fa-circle-check"></i>
             </div>
-            <div class="ph-handle">@handle</div>
+            <div class="ph-handle">@aljur_official</div>
           </div>
           <div class="ph-settings">
             <i class="fa-solid fa-gear"></i>
@@ -51,11 +53,11 @@
           <div class="nav-icon"><i class="fa-regular fa-bell"></i></div>
           <span class="nav-text">Notifications</span>
         </a>
-        <a href="#" class="nav-item">
+        <a href="#" id="nav-link-messages" class="nav-item">
           <div class="nav-icon"><i class="fa-regular fa-envelope"></i></div>
           <span class="nav-text">Messages</span>
         </a>
-        <a href="#" class="nav-item">
+        <a href="#" id="nav-link-collections" class="nav-item">
           <div class="nav-icon"><i class="fa-regular fa-bookmark"></i></div>
           <span class="nav-text">Collections</span>
         </a>
@@ -63,7 +65,7 @@
           <div class="nav-icon"><i class="fa-solid fa-user-group"></i></div>
           <span class="nav-text">Subscriptions</span>
         </a>
-        <a href="#" class="nav-item">
+        <a href="#" class="nav-item" id="btnSubscribe">
           <div class="nav-icon"><i class="fa-regular fa-credit-card"></i></div>
           <span class="nav-text">Add card</span>
         </a>
@@ -102,20 +104,165 @@
 
           <div class="compose-area">
             <div class="compose-top">
-              <input type="text" placeholder="Compose new post...">
+              <input type="text" name="post_content" placeholder="Compose new post...">
             </div>
+            
+            <div id="poll-creator-ui" class="poll-creator hidden">
+                <div class="poll-header">
+                    <span><i class="fa-solid fa-square-poll-horizontal"></i> Poll</span>
+                    <div class="poll-meta">
+                        <span>7 days</span>
+                        <i class="fa-solid fa-xmark close-poll-btn"></i>
+                    </div>
+                </div>
+                <div class="poll-inputs">
+                    <div class="poll-input-row">
+                        <input type="text" name="poll_options[]" placeholder="Option 1...">
+                        <i class="fa-solid fa-grip-lines"></i>
+                    </div>
+                    <div class="poll-input-row">
+                        <input type="text" name="poll_options[]" placeholder="Option 2...">
+                        <i class="fa-solid fa-grip-lines"></i>
+                    </div>
+                </div>
+                <div class="poll-footer">
+                    <span class="add-option-btn">+ Add another option</span>
+                </div>
+            </div>
+
+            <div id="text-format-toolbar" class="text-toolbar hidden">
+                <button class="fmt-btn" title="Bold"><i class="fa-solid fa-bold"></i></button>
+                <button class="fmt-btn" title="Italic"><i class="fa-solid fa-italic"></i></button>
+                <button class="fmt-btn" title="Underline"><i class="fa-solid fa-underline"></i></button>
+                <div class="fmt-divider"></div>
+                <button class="fmt-btn" title="List"><i class="fa-solid fa-list-ul"></i></button>
+                <button class="fmt-btn" title="Quote"><i class="fa-solid fa-quote-right"></i></button>
+            </div>
+
             <div class="compose-actions">
                <i class="fa-regular fa-image" title="Media"></i>
-               <i class="fa-solid fa-square-poll-horizontal" title="Poll"></i>
+               <i class="fa-solid fa-square-poll-horizontal" id="btn-trigger-poll" title="Poll"></i>
                <i class="fa-solid fa-clipboard-question" title="Quiz"></i>
-               <span style="font-weight:700; font-size:1rem; padding-top:2px; cursor:pointer;">Aa</span>
+               <span style="font-weight:700; font-size:1rem; padding-top:2px; cursor:pointer;" id="btn-trigger-text">Aa</span>
+               <input type="file" name="media_files[]" id="media-upload-input" accept="image/*,video/*" multiple style="display: none;">
             </div>
           </div>
 
           <div class="feed-divider"></div>
 
           <div id="creator-feed" class="active-feed">
-             <div class="end-message" style="margin-top: 50px;">No posts yet. Be the first to post!</div>
+             <article class="post-card" data-post-id="101" data-author-id="5">
+                <div class="post-header">
+                  <div class="ph-left">
+                    <img src="assets/images/truematch-mark.png" class="ph-avatar"> 
+                    <div class="ph-info">
+                      <strong class="ph-name">OnlyFans <i class="fa-solid fa-circle-check verify-badge"></i></strong>
+                      <span class="ph-handle">@onlyfans</span>
+                    </div>
+                  </div>
+                  <div class="ph-right">
+                    <span class="ph-time">4h</span>
+                    <i class="fa-solid fa-ellipsis"></i>
+                  </div>
+                </div>
+                <div class="post-body">
+                  <p>
+                    <a href="#" class="link-text">@thelittleexplorer</a> rides through Morocco's Dades Gorge. 🚴‍♀️ 🇲🇦
+                    <br>
+                    <a href="#" class="link-url">onlyfans.com/oftv</a>
+                  </p>
+                </div>
+                <div class="post-media">
+                   <img src="assets/images/sample_morocco.jpg" onerror="this.src='https://images.unsplash.com/photo-1534234828563-025317359310?q=80&w=1000&auto=format&fit=crop'" class="media-img">
+                   <div class="video-overlay"><i class="fa-solid fa-play"></i></div>
+                   <div class="media-text-overlay">
+                     <span>Morocco</span><br>
+                     <strong>Dades Gorge</strong>
+                   </div>
+                </div>
+                <div class="post-actions">
+                  <div class="action-group">
+                      <i class="fa-regular fa-heart"></i>
+                      <i class="fa-regular fa-comment btn-toggle-comment"></i> 
+                      <i class="fa-solid fa-dollar-sign"></i> 
+                  </div>
+                  <div class="action-group right">
+                      <i class="fa-regular fa-bookmark"></i>
+                  </div>
+                </div>
+
+                <div class="post-comments-section hidden">
+                    <div class="comment-list">
+                        <div class="comment-item">
+                            <img src="assets/images/sample1.jpg" class="c-avatar" onerror="this.src='assets/images/truematch-mark.png'">
+                            <div class="c-bubble">
+                                <span class="c-user">Jane Doe</span>
+                                <span class="c-txt">Wow amazing view! 😍</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="comment-input-row">
+                        <img src="assets/images/sample1.jpg" class="c-avatar-small" onerror="this.src='assets/images/truematch-mark.png'">
+                        <div class="c-input-wrapper">
+                            <input type="text" name="comment_text" placeholder="Write a comment...">
+                            <i class="fa-regular fa-paper-plane"></i>
+                        </div>
+                    </div>
+                </div>
+             </article>
+             <div class="end-message">You're all caught up!</div>
+          </div>
+      </div>
+
+      <div id="view-collections" style="display: none;">
+          <div class="feed-top-header">
+            <div class="header-content" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+                <div style="display:flex; align-items:center; gap:15px;">
+                    <i class="fa-solid fa-arrow-left back-btn" onclick="document.getElementById('nav-link-home').click()"></i>
+                    <h2>COLLECTIONS</h2>
+                </div>
+                <div style="display:flex; gap:20px; font-size:1.1rem; color:var(--text);">
+                    <i class="fa-solid fa-magnifying-glass" style="cursor:pointer;"></i>
+                    <i class="fa-solid fa-plus" style="cursor:pointer;"></i>
+                </div>
+            </div>
+          </div>
+
+          <div class="collection-tabs-bar">
+              <div class="c-tab-item active">USER LISTS</div>
+              <div class="c-tab-item">BOOKMARKS</div>
+          </div>
+
+          <div class="collection-list-container">
+              <div class="c-list-header">
+                  <span>CUSTOM ORDER</span>
+                  <i class="fa-solid fa-arrow-down-short-wide"></i>
+              </div>
+
+              <div class="c-list-item active" data-collection-id="fans">
+                  <div class="c-item-content">
+                      <span class="c-item-name">Fans</span>
+                      <span class="c-item-status">empty</span>
+                  </div>
+              </div>
+              <div class="c-list-item" data-collection-id="following">
+                  <div class="c-item-content">
+                      <span class="c-item-name">Following</span>
+                      <span class="c-item-status">empty</span>
+                  </div>
+              </div>
+              <div class="c-list-item" data-collection-id="restricted">
+                  <div class="c-item-content">
+                      <span class="c-item-name">Restricted</span>
+                      <span class="c-item-status">empty</span>
+                  </div>
+              </div>
+              <div class="c-list-item" data-collection-id="blocked">
+                  <div class="c-item-content">
+                      <span class="c-item-name">Blocked</span>
+                      <span class="c-item-status">empty</span>
+                  </div>
+              </div>
           </div>
       </div>
 
@@ -140,7 +287,6 @@
              <button class="n-pill">Mentions</button>
              <button class="n-pill">Subscriptions</button>
              <button class="n-pill">Promotions</button>
-             <button class="n-pill icon-only"><i class="fa-solid fa-pencil"></i></button>
           </div>
 
           <div class="notif-empty-state">
@@ -148,12 +294,133 @@
           </div>
       </div>
 
+      <div id="view-messages" style="display: none;">
+          <div class="msg-container">
+              
+              <div class="msg-sidebar">
+                  <div class="msg-header-tools">
+                      <div class="mh-top">
+                          <i class="fa-solid fa-arrow-left back-btn" onclick="document.getElementById('nav-link-home').click()"></i>
+                          <h3>MESSAGES</h3>
+                          <div class="mh-icons">
+                              <i class="fa-solid fa-plus" id="btn-new-msg" title="New Message"></i>
+                              <i class="fa-solid fa-magnifying-glass" id="trigger-msg-search" title="Search Users"></i>
+                          </div>
+                      </div>
+                      
+                      <div class="msg-search-container hidden" id="msg-search-box">
+                          <div class="search-input-wrapper">
+                             <i class="fa-solid fa-magnifying-glass"></i>
+                             <input type="text" id="msg-search-input" name="user_search" placeholder="Search user...">
+                             <i class="fa-solid fa-circle-xmark" id="close-msg-search"></i>
+                          </div>
+                      </div>
+
+                      <div class="msg-tabs" id="msg-tabs">
+                          <span class="active" data-filter="all">All</span>
+                          <span data-filter="priority">Priority</span>
+                          <span data-filter="unread">Unread</span>
+                          <span data-filter="money">$$$</span>
+                      </div>
+                  </div>
+                  
+                  <div class="msg-user-list" id="msg-user-list">
+                      <div class="msg-user-item active" data-id="1" data-name="Bauds Dev" data-category="priority" data-avatar="assets/images/sample2.jpg" data-handle="@baudss-server" data-joined="21 days" data-spent="$50">
+                          <img src="assets/images/sample2.jpg" class="u-avatar" onerror="this.src='assets/images/truematch-mark.png'">
+                          <div class="u-info">
+                              <div class="u-name">Bauds Dev <i class="fa-solid fa-star" style="color:gold; font-size:0.7rem;"></i></div>
+                              <div class="u-preview">I just sent the updated layout!</div>
+                          </div>
+                          <div class="u-meta">Now</div>
+                      </div>
+                      <div class="msg-user-item" data-id="2" data-name="Sarah Fit" data-category="unread" data-avatar="assets/images/sample1.jpg" data-handle="@sarah_fitness" data-joined="5 days" data-spent="$0">
+                          <img src="assets/images/sample1.jpg" class="u-avatar" onerror="this.src='assets/images/truematch-mark.png'">
+                          <div class="u-info">
+                              <div class="u-name">Sarah Fit <span style="background:var(--primary-cyan); width:8px; height:8px; border-radius:50%; display:inline-block;"></span></div>
+                              <div class="u-preview">Thanks for subscribing! 😘</div>
+                          </div>
+                          <div class="u-meta">2h</div>
+                      </div>
+                      </div>
+              </div>
+
+              <div class="msg-chat-area">
+                  <div class="chat-header">
+                      <div class="ch-user">
+                         <img src="assets/images/sample2.jpg" id="active-chat-avatar" class="c-avatar-small" onerror="this.src='assets/images/truematch-mark.png'">
+                         <span class="chat-user-name" id="active-chat-name">Bauds Dev <i class="fa-solid fa-circle-check verify-badge"></i></span>
+                      </div>
+                      <div class="ch-actions">
+                          <div class="chat-search-bar hidden" id="chat-inner-search-bar">
+                              <input type="text" id="chat-history-search" name="chat_search" placeholder="Find in chat...">
+                              <i class="fa-solid fa-xmark" id="close-chat-search"></i>
+                          </div>
+                          <i class="fa-solid fa-magnifying-glass" id="btn-chat-search" title="Search in chat"></i>
+                          <i class="fa-regular fa-image" title="Gallery"></i>
+                          <i class="fa-regular fa-star" id="btn-chat-star" title="Favorite"></i>
+                      </div>
+                  </div>
+                  
+                  <div class="chat-history" id="chat-history-container"></div>
+
+                  <div class="emoji-picker hidden" id="emoji-picker-container"></div>
+
+                  <div class="chat-input-box">
+                      <i class="fa-regular fa-image"></i>
+                      <input type="text" id="chat-message-input" name="message_content" placeholder="Type a message..." autocomplete="off">
+                      <i class="fa-regular fa-face-smile" id="btn-emoji-trigger"></i>
+                      <i class="fa-solid fa-dollar-sign" id="btn-ppv-trigger"></i>
+                      <i class="fa-regular fa-paper-plane send-icon" id="btn-send-message"></i>
+                  </div>
+              </div>
+
+              <div class="msg-info-panel" id="msg-info-panel">
+                  <div class="info-header">
+                      <div class="info-input-wrap">
+                          <input type="text" class="info-nickname-input" id="info-nickname" name="nickname" value="Bauds Dev">
+                          <i class="fa-solid fa-pen"></i>
+                      </div>
+                      <a href="#" class="info-profile-link" id="info-handle">@baudss-server</a>
+                  </div>
+                  <div class="info-stats-grid">
+                      <div class="i-stat">
+                          <div class="icon-box"><i class="fa-regular fa-calendar"></i></div>
+                          <div class="stat-txt">
+                              <small>Subscribed</small>
+                              <strong id="info-joined">21 days</strong>
+                          </div>
+                      </div>
+                      <div class="i-stat">
+                          <div class="icon-box"><i class="fa-solid fa-sack-dollar"></i></div>
+                          <div class="stat-txt">
+                              <small>Total Spent</small>
+                              <strong id="info-spent">$50</strong>
+                          </div>
+                      </div>
+                  </div>
+                  <div class="info-form-group">
+                      <label>PREFERENCES</label>
+                      <input type="text" name="preference_tag" placeholder="e.g. Customs, Chat">
+                  </div>
+                  <div class="info-form-group">
+                      <label>NOTES</label>
+                      <textarea name="user_note" placeholder="Add note...">IM awake dont upsell rn</textarea>
+                  </div>
+                  <div class="info-section-link">
+                      <span>Lists</span>
+                      <i class="fa-solid fa-chevron-right"></i>
+                  </div>
+                  <button class="btn-view-history"><i class="fa-solid fa-receipt"></i> View PPV History</button>
+              </div>
+          </div>
+      </div>
+
     </main>
 
-    <aside class="right-sidebar">
-      <div class="sidebar-inner">
+    <aside class="right-sidebar" id="right-sidebar">
+      <div class="sidebar-inner" id="rs-suggestions-view">
         <div class="search-bar">
-           <input type="text" placeholder="Search posts">
+           <input type="text" name="global_search" placeholder="Search posts">
            <i class="fa-solid fa-magnifying-glass"></i> 
         </div>
         <div class="suggestions-header">
@@ -162,17 +429,76 @@
               <i class="fa-solid fa-rotate"></i>
            </div>
         </div>
-        
         <div class="suggestion-list">
-            <div style="padding: 20px; text-align: center; color: var(--muted); font-size: 0.9rem;">
-                No suggestions available.
+            <div class="sugg-card">
+               <div class="sugg-banner" style="background-image: url('assets/images/sample1.jpg');">
+                  <div class="sugg-badge">Free</div>
+                  <div class="sugg-menu"><i class="fa-solid fa-ellipsis-vertical"></i></div>
+               </div>
+               <div class="sugg-details">
+                  <div class="sugg-avatar-wrap">
+                     <img src="assets/images/sample1.jpg" onerror="this.src='assets/images/truematch-mark.png'">
+                     <div class="online-dot"></div>
+                  </div>
+                  <div class="sugg-text">
+                     <div class="sugg-name">April Rayne <i class="fa-solid fa-circle-check"></i></div>
+                     <div class="sugg-handle">@aprilraynectv</div>
+                  </div>
+               </div>
+            </div>
+            <div class="sugg-card">
+               <div class="sugg-banner" style="background-image: url('assets/images/sample2.jpg');">
+                  <div class="sugg-badge">Free</div>
+                  <div class="sugg-menu"><i class="fa-solid fa-ellipsis-vertical"></i></div>
+               </div>
+               <div class="sugg-details">
+                  <div class="sugg-avatar-wrap">
+                     <img src="assets/images/sample2.jpg" onerror="this.src='assets/images/truematch-mark.png'">
+                     <div class="online-dot"></div>
+                  </div>
+                  <div class="sugg-text">
+                     <div class="sugg-name">Mur 🍓 <i class="fa-solid fa-circle-check"></i></div>
+                     <div class="sugg-handle">@murcadi</div>
+                  </div>
+               </div>
             </div>
         </div>
-        
         <div class="footer-links">
              Privacy · Cookie Notice · Terms of Service <br>
              © 2026 iTrueMatch Corp.
         </div>
+      </div>
+
+      <div class="sidebar-inner hidden" id="rs-collections-view">
+          <div class="rs-col-header">
+              <h3>FANS</h3>
+          </div>
+          <div class="collection-tabs-bar secondary">
+              <div class="c-tab-item active">USERS</div>
+              <div class="c-tab-item">POSTS</div>
+          </div>
+          <div class="rs-col-filters">
+              <div class="filter-head">
+                  <span>RECENT</span>
+                  <div class="fh-icons">
+                      <i class="fa-solid fa-magnifying-glass"></i>
+                      <i class="fa-solid fa-arrow-down-short-wide"></i>
+                  </div>
+              </div>
+              <div class="filter-chips">
+                  <span class="chip active">All 0</span>
+                  <span class="chip">Active 0</span>
+                  <span class="chip">Expired 0</span>
+                  <span class="chip">Restricted 0</span>
+                  <span class="chip">Blocked 0</span>
+              </div>
+          </div>
+          <div class="rs-col-empty">
+              <div class="empty-icon-wrap">
+                  <i class="fa-regular fa-folder-open"></i>
+              </div>
+              <span>No users yet</span>
+          </div>
       </div>
     </aside>
 
@@ -183,25 +509,25 @@
     <a href="#" class="mob-nav-item"><i class="fa-regular fa-compass"></i></a>
     <a href="#" class="mob-nav-item special-add"><div class="add-circle"><i class="fa-solid fa-plus"></i></div></a>
     <a href="#" id="mob-nav-notif" class="mob-nav-item"><i class="fa-regular fa-bell"></i></a>
-    <a href="#" class="mob-nav-item"><i class="fa-regular fa-envelope"></i></a>
+    <a href="#" id="mob-nav-messages" class="mob-nav-item"><i class="fa-regular fa-envelope"></i></a>
   </nav>
 
   <div id="settings-popover" class="tm-popover-menu">
     <div class="pop-header">
       <div class="pop-user-section">
         <div class="pop-avatar">
-            <img src="assets/images/default-avatar.png" onerror="this.src='assets/images/truematch-mark.png'">
+            <img src="assets/images/sample1.jpg" onerror="this.src='assets/images/truematch-mark.png'">
             <div class="pop-online"></div>
         </div>
         <div class="pop-info">
-            <strong>Username <i class="fa-solid fa-circle-check"></i></strong>
-            <span>@handle</span>
+            <strong>Aljur Abrenica <i class="fa-solid fa-circle-check"></i></strong>
+            <span>@aljur_official</span>
         </div>
         <button id="btnClosePopover" class="btn-close-pop"><i class="fa-solid fa-xmark"></i></button>
       </div>
       <div class="pop-stats">
-        <div class="stat-item"><strong>0</strong> <span>Fans</span></div>
-        <div class="stat-item"><strong>0</strong> <span>Following</span></div>
+        <div class="stat-item"><strong>1.2k</strong> <span>Fans</span></div>
+        <div class="stat-item"><strong>50</strong> <span>Following</span></div>
       </div>
     </div>
     <div class="pop-content-full">
@@ -221,7 +547,7 @@
             <div class="pop-item toggle-row">
                 <div class="flex-icon"><i class="fa-solid fa-moon"></i> Dark mode</div>
                 <label class="switch">
-                  <input type="checkbox" id="themeToggle" checked>
+                  <input type="checkbox" id="themeToggle" name="dark_mode" checked>
                   <span class="slider round"></span>
                 </label>
             </div>
@@ -246,7 +572,6 @@
     </div>
   </div>
 
-  <script src="./tm-loader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script type="module" src="creators.js"></script>
   <script>
