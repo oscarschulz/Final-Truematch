@@ -4,6 +4,9 @@ const TMAPI = {};
 // Default avatar constant for better handling
 const DEFAULT_AVATAR = 'assets/images/truematch-mark.png';
 
+// Blank Image for Grid
+const BLANK_IMG = "data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22200%22%20height%3D%22200%22%20viewBox%3D%220%200%20200%20200%22%3E%3Crect%20fill%3D%22%23222%22%20width%3D%22200%22%20height%3D%22200%22%2F%3E%3C%2Fsvg%3E";
+
 const DOM = {
   feed: document.getElementById('creator-feed'),
   btnSubscribe: document.getElementById('btnSubscribe'),
@@ -16,6 +19,9 @@ const DOM = {
   viewMessages: document.getElementById('view-messages'),
   viewCollections: document.getElementById('view-collections'),
   
+  // Need to reference Main Column for dynamic resizing
+  mainFeedColumn: document.querySelector('.main-feed-column'),
+
   rightSidebar: document.getElementById('right-sidebar'),
   rsSuggestions: document.getElementById('rs-suggestions-view'),
   rsCollections: document.getElementById('rs-collections-view'),
@@ -24,6 +30,7 @@ const DOM = {
   navNotif: document.getElementById('nav-link-notif'),
   navMessages: document.getElementById('nav-link-messages'),
   navCollections: document.getElementById('nav-link-collections'),
+  navSubs: document.getElementById('nav-link-subs'), // ID for Subscriptions
 
   mobHome: document.getElementById('mob-nav-home'),
   mobNotif: document.getElementById('mob-nav-notif'),
@@ -187,7 +194,7 @@ async function init() {
   }
 
   // ============================================
-  // VIEW SWITCHING LOGIC
+  // VIEW SWITCHING LOGIC (UPDATED FOR ADAPTIVE LAYOUT)
   // ============================================
   function switchView(viewName) {
     // 1. Reset Main Views
@@ -196,21 +203,23 @@ async function init() {
     if (DOM.viewMessages) DOM.viewMessages.style.display = 'none';
     if (DOM.viewCollections) DOM.viewCollections.style.display = 'none';
 
-    // 2. Reset Nav Active States
-    [DOM.navHome, DOM.navNotif, DOM.navMessages, DOM.navCollections, DOM.mobHome, DOM.mobNotif, DOM.mobMessages].forEach(el => {
+    // 2. Reset Layout Classes (Standardize first)
+    if (DOM.mainFeedColumn) DOM.mainFeedColumn.classList.remove('narrow-view');
+    if (DOM.rightSidebar) DOM.rightSidebar.classList.remove('wide-view');
+    if (DOM.rightSidebar) DOM.rightSidebar.classList.remove('hidden-sidebar');
+
+    // 3. Reset Nav Active States
+    [DOM.navHome, DOM.navNotif, DOM.navMessages, DOM.navCollections, DOM.navSubs, DOM.mobHome, DOM.mobNotif, DOM.mobMessages].forEach(el => {
         if(el) {
             el.classList.remove('active');
             const icon = el.querySelector('i');
-            if (icon && !icon.classList.contains('fa-house')) {
+            
+            // FIX: Added !icon.classList.contains('fa-user-group') to prevent Subscriptions icon from breaking
+            if (icon && !icon.classList.contains('fa-house') && !icon.classList.contains('fa-user-group')) {
                 icon.classList.replace('fa-solid', 'fa-regular');
             }
         }
     });
-
-    // 3. Right Sidebar Logic (Safe Checks)
-    if(DOM.rightSidebar) DOM.rightSidebar.classList.remove('hidden-sidebar');
-    if(DOM.rsSuggestions) DOM.rsSuggestions.classList.remove('hidden');
-    if(DOM.rsCollections) DOM.rsCollections.classList.add('hidden');
 
     // 4. Handle Specific Views
     if (viewName === 'messages') {
@@ -224,14 +233,25 @@ async function init() {
         }
     } 
     else if (viewName === 'collections') {
+        // *** APPLY ADAPTIVE LAYOUT FOR COLLECTIONS ***
+        if (DOM.mainFeedColumn) DOM.mainFeedColumn.classList.add('narrow-view');
+        if (DOM.rightSidebar) DOM.rightSidebar.classList.add('wide-view');
+
+        // Swap Content
+        if(DOM.rsSuggestions) DOM.rsSuggestions.classList.add('hidden');
+        if(DOM.rsCollections) DOM.rsCollections.classList.remove('hidden');
+
         if (DOM.viewCollections) DOM.viewCollections.style.display = 'block';
         if (DOM.navCollections) setActive(DOM.navCollections);
         
-        // Swap Right Sidebar Content
-        if(DOM.rsSuggestions) DOM.rsSuggestions.classList.add('hidden');
-        if(DOM.rsCollections) DOM.rsCollections.classList.remove('hidden');
+        // Initial Render
+        renderCollections();
     }
     else if (viewName === 'home') {
+        // Reset Right Sidebar to Suggestions
+        if(DOM.rsSuggestions) DOM.rsSuggestions.classList.remove('hidden');
+        if(DOM.rsCollections) DOM.rsCollections.classList.add('hidden');
+
         if (DOM.viewHome) DOM.viewHome.style.display = 'block';
         if (DOM.navHome) setActive(DOM.navHome);
         if (DOM.mobHome) setActive(DOM.mobHome);
@@ -257,12 +277,46 @@ async function init() {
   if (DOM.navMessages) DOM.navMessages.addEventListener('click', (e) => { e.preventDefault(); switchView('messages'); });
   if (DOM.navCollections) DOM.navCollections.addEventListener('click', (e) => { e.preventDefault(); switchView('collections'); });
   
+  // NEW: Subscriptions Link Behavior (Goes to Collections -> Following)
+  if (DOM.navSubs) {
+      DOM.navSubs.addEventListener('click', (e) => {
+          e.preventDefault();
+          switchView('collections'); // Use collections layout logic
+          
+          // MANUAL OVERRIDE: Highlight Subscriptions, Unhighlight Collections
+          DOM.navCollections.classList.remove('active');
+          if(DOM.navCollections.querySelector('i')) DOM.navCollections.querySelector('i').classList.replace('fa-solid', 'fa-regular');
+          setActive(DOM.navSubs);
+
+          // Force "User Lists" Tab active
+          if(colDOM.tabUsers) colDOM.tabUsers.click();
+
+          // Force Open "Following" list
+          const followingCol = COLLECTIONS_DB.find(c => c.id === 'following');
+          if(followingCol) {
+              updateRightSidebarContent(followingCol);
+              
+              // Highlight "Following" in the list
+              setTimeout(() => {
+                  const items = document.querySelectorAll('.c-list-item');
+                  items.forEach(el => {
+                      if(el.querySelector('.c-item-name').innerText === 'Following') {
+                          el.classList.add('active');
+                      } else {
+                          el.classList.remove('active');
+                      }
+                  });
+              }, 50);
+          }
+      });
+  }
+  
   if (DOM.mobHome) DOM.mobHome.addEventListener('click', (e) => { e.preventDefault(); switchView('home'); });
   if (DOM.mobNotif) DOM.mobNotif.addEventListener('click', (e) => { e.preventDefault(); switchView('notifications'); });
   if (DOM.mobMessages) DOM.mobMessages.addEventListener('click', (e) => { e.preventDefault(); switchView('messages'); });
 
   // ============================================
-  // GLOBAL INTERACTIONS (Feed Tip, Comments, etc.)
+  // GLOBAL INTERACTIONS
   // ============================================
   document.addEventListener('click', (e) => {
       
@@ -303,7 +357,6 @@ async function init() {
       }
 
       // 4. Handle FEED TIP BUTTON ($)
-      // Check if target is dollar sign AND inside a post (feed), NOT chat
       if (e.target.classList.contains('fa-dollar-sign') && e.target.closest('.post-actions')) {
           Swal.fire({
               title: 'Send Tip',
@@ -324,44 +377,32 @@ async function init() {
       }
   });
 
-  // ============================================
-  // NOTIFICATION TABS LOGIC (FIX)
-  // ============================================
+  // Notif Tabs
   const notifPills = document.querySelectorAll('.notif-tabs-bar .n-pill');
   if (notifPills.length > 0) {
       notifPills.forEach(pill => {
           pill.addEventListener('click', () => {
-              // Remove active from all
               notifPills.forEach(p => p.classList.remove('active'));
-              // Add active to clicked
               pill.classList.add('active');
-              
-              // Optional: You can add logic here to filter the list later
-              console.log('Filtered by:', pill.innerText);
           });
       });
   }
 
-  // --- COMPOSE AREA LOGIC (Polls & Text) ---
+  // Compose Area
   if (DOM.composeActions) {
       DOM.composeActions.addEventListener('click', (e) => {
           const target = e.target;
-          
-          // Media
           if (target.classList.contains('fa-image')) {
               if (DOM.mediaUploadInput) DOM.mediaUploadInput.click();
           }
-          // Poll
           else if (target.classList.contains('fa-square-poll-horizontal') || target.id === 'btn-trigger-poll') {
               if(DOM.pollUI) DOM.pollUI.classList.toggle('hidden');
           }
-          // Text Format (Aa) - FIXED
           else if (target.id === 'btn-trigger-text' || target.innerText === 'Aa') {
               if(DOM.textTools) DOM.textTools.classList.toggle('hidden');
           }
       });
   }
-
   if (DOM.closePollBtn) {
       DOM.closePollBtn.addEventListener('click', () => {
           if(DOM.pollUI) DOM.pollUI.classList.add('hidden');
@@ -369,8 +410,6 @@ async function init() {
   }
 
   // --- MESSAGING LOGIC ---
-
-  // 1. PLUS ICON (New Message)
   if(DOM.btnNewMsg) {
       DOM.btnNewMsg.addEventListener('click', () => {
           Swal.fire({
@@ -399,7 +438,6 @@ async function init() {
       });
   }
 
-  // 2. SIDEBAR SEARCH UI
   if(DOM.btnTriggerSearch) {
       DOM.btnTriggerSearch.addEventListener('click', () => {
           DOM.msgSearchBox.classList.remove('hidden');
@@ -423,7 +461,6 @@ async function init() {
       });
   }
 
-  // 3. FILTER TABS
   DOM.msgTabs.forEach(tab => {
       tab.addEventListener('click', () => {
           DOM.msgTabs.forEach(t => t.classList.remove('active'));
@@ -442,7 +479,6 @@ async function init() {
       });
   }
 
-  // 4. USER SWITCHING
   if (DOM.msgUserItems) {
       DOM.msgUserItems.forEach(item => {
           item.addEventListener('click', () => {
@@ -474,7 +510,6 @@ async function init() {
       DOM.chatHistoryContainer.innerHTML = '';
       const messages = CHAT_DATA[userId] || [];
       messages.forEach(msg => {
-          // Use the new secure renderMessage function
           const msgElement = renderMessage(msg.text, msg.type, msg.time);
           DOM.chatHistoryContainer.appendChild(msgElement);
       });
@@ -487,41 +522,32 @@ async function init() {
       }
   }
 
-  // 5. EMOJI FUNCTIONALITY (USING PICMO LIBRARY)
   if (DOM.btnEmoji) {
-      // Initialize Picker
       const picker = picmo.createPicker({
           rootElement: DOM.emojiContainer,
-          theme: 'dark', // Auto dark mode
+          theme: 'dark',
           showPreview: false,
           autoFocus: 'search',
           visibleRows: 4
       });
 
-      // Handle Emoji Selection
       picker.addEventListener('emoji:select', (selection) => {
           DOM.chatInput.value += selection.emoji;
           DOM.chatInput.focus();
-          // Optional: Keep picker open or close it
-          // DOM.emojiContainer.classList.add('hidden'); 
       });
 
-      // Toggle Picker Visibility
       DOM.btnEmoji.addEventListener('click', (e) => {
           e.stopPropagation();
           DOM.emojiContainer.classList.toggle('hidden');
       });
 
-      // Close when clicking outside
       document.addEventListener('click', (e) => {
-          // Check if click is outside container AND not on the toggle button
           if (!DOM.emojiContainer.contains(e.target) && e.target !== DOM.btnEmoji) {
               DOM.emojiContainer.classList.add('hidden');
           }
       });
   }
 
-  // 6. PPV / DOLLAR ICON (CHAT)
   if(DOM.btnPPV) {
       DOM.btnPPV.addEventListener('click', () => {
           Swal.fire({
@@ -550,7 +576,6 @@ async function init() {
       });
   }
 
-  // 7. CHAT HEADER: SEARCH
   if(DOM.btnChatSearch) {
       DOM.btnChatSearch.addEventListener('click', () => {
           DOM.chatSearchBar.classList.remove('hidden');
@@ -564,12 +589,11 @@ async function init() {
       });
   }
 
-  // 8. CHAT HEADER: STAR (Favorite)
   if(DOM.btnChatStar) {
       DOM.btnChatStar.addEventListener('click', function() {
           if(this.classList.contains('fa-regular')) {
-              this.classList.replace('fa-regular', 'fa-solid'); // Solid star
-              this.classList.add('active-star'); // Gold color via CSS
+              this.classList.replace('fa-regular', 'fa-solid'); 
+              this.classList.add('active-star'); 
               
               const TopToast = Swal.mixin({
                   toast: true, position: 'top', showConfirmButton: false, timer: 1500,
@@ -583,17 +607,13 @@ async function init() {
       });
   }
 
-  // 9. Send Message Logic
   if (DOM.btnSendMsg && DOM.chatInput) {
       const sendMsg = () => {
           const text = DOM.chatInput.value.trim();
           if (text) {
               const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-              
-              // Use secure renderMessage function
               const msgElement = renderMessage(text, 'sent', time);
               DOM.chatHistoryContainer.appendChild(msgElement);
-              
               DOM.chatInput.value = '';
               scrollToBottom();
           }
@@ -605,20 +625,234 @@ async function init() {
       });
   }
 
-  // Common UI Logic (Polls, etc)
-  if (DOM.composeActions) {
-      DOM.composeActions.addEventListener('click', (e) => {
-          const target = e.target;
-          if (target.classList.contains('fa-image')) {
-              if (DOM.mediaUploadInput) DOM.mediaUploadInput.click();
+  // ============================================
+  // COLLECTIONS LOGIC (UPDATED WITH 3-COL LAYOUT)
+  // ============================================
+  
+  // 1. Initial Data (Mock Database)
+  let COLLECTIONS_DB = [
+      { id: 'fans', name: 'Fans', type: 'user', count: 120, system: true },
+      { id: 'following', name: 'Following', type: 'user', count: 45, system: true },
+      { id: 'restricted', name: 'Restricted', type: 'user', count: 2, system: true },
+      { id: 'blocked', name: 'Blocked', type: 'user', count: 5, system: true },
+      { id: 'favorites', name: 'Favorite Posts', type: 'post', count: 10, system: true },
+      { id: 'watch_later', name: 'Watch Later', type: 'post', count: 3, system: false }
+  ];
+
+  let currentColType = 'user'; // 'user' or 'post'
+
+  // 2. DOM Elements for Collections
+  const colDOM = {
+      listWrapper: document.getElementById('collection-list-wrapper'),
+      btnSearch: document.getElementById('col-btn-search'),
+      btnAdd: document.getElementById('col-btn-add'),
+      searchContainer: document.getElementById('col-search-container'),
+      searchInput: document.getElementById('col-search-input'),
+      searchClose: document.getElementById('col-search-close'),
+      tabUsers: document.getElementById('tab-col-users'),
+      tabBookmarks: document.getElementById('tab-col-bookmarks'),
+      
+      // Right Sidebar Elements
+      rsTitle: document.getElementById('rs-col-title'),
+      rsViewUsers: document.getElementById('rs-view-type-users'),
+      rsViewMedia: document.getElementById('rs-view-type-media'),
+      rsMediaGrid: document.getElementById('rs-media-grid-content'),
+      rsMediaEmpty: document.getElementById('rs-media-empty-state')
+  };
+
+  // 3. Render Function
+  function renderCollections(filterText = '') {
+      if (!colDOM.listWrapper) return;
+      colDOM.listWrapper.innerHTML = '';
+
+      const filtered = COLLECTIONS_DB.filter(c => 
+          c.type === currentColType && 
+          c.name.toLowerCase().includes(filterText.toLowerCase())
+      );
+
+      if (filtered.length === 0) {
+          colDOM.listWrapper.innerHTML = `<div style="padding:30px; text-align:center; color:var(--muted);">No collections found.</div>`;
+          return;
+      }
+
+      filtered.forEach(col => {
+          const div = document.createElement('div');
+          div.className = 'c-list-item';
+          
+          // CLICK LOGIC: Update Right Sidebar directly
+          div.onclick = () => {
+              document.querySelectorAll('.c-list-item').forEach(el => el.classList.remove('active'));
+              div.classList.add('active');
+              updateRightSidebarContent(col);
+          };
+
+          div.innerHTML = `
+              <div class="c-item-content">
+                  <div style="display:flex; justify-content:space-between;">
+                      <span class="c-item-name">${col.name}</span>
+                      ${!col.system ? '<i class="fa-solid fa-trash" style="font-size:0.8rem; color:#ff4757; opacity:0.5; cursor:pointer;"></i>' : ''}
+                  </div>
+                  <span class="c-item-status">${col.count} items</span>
+              </div>
+          `;
+          
+          const delBtn = div.querySelector('.fa-trash');
+          if(delBtn) {
+              delBtn.addEventListener('click', (e) => {
+                  e.stopPropagation();
+                  deleteCollection(col.id);
+              });
           }
-          // Logic for Poll Button click is handled above, but here's a fallback or specific check if needed
+
+          colDOM.listWrapper.appendChild(div);
       });
   }
 
-  if (DOM.closePollBtn) {
-      DOM.closePollBtn.addEventListener('click', () => {
-          if(DOM.pollUI) DOM.pollUI.classList.add('hidden');
+  // 4. Update Right Sidebar (3-Column View)
+  function updateRightSidebarContent(col) {
+      // HANDLE THE "TWIST": If 'following' is clicked, sidebar highlights Subscriptions
+      if (col.id === 'following') {
+          DOM.navCollections.classList.remove('active');
+          if(DOM.navCollections.querySelector('i')) DOM.navCollections.querySelector('i').classList.replace('fa-solid', 'fa-regular');
+          setActive(DOM.navSubs);
+      } else {
+          // Revert to Collections highlighting
+          DOM.navSubs.classList.remove('active');
+          // FIX: REMOVED THE LINE THAT FORCED ICON CHANGE
+          setActive(DOM.navCollections);
+      }
+
+      if(colDOM.rsTitle) colDOM.rsTitle.innerText = col.name.toUpperCase();
+
+      if (col.type === 'user') {
+          // Show User Filters, Hide Media
+          colDOM.rsViewUsers.classList.remove('hidden');
+          colDOM.rsViewMedia.classList.add('hidden');
+          
+          // RE-ATTACH CLICK EVENTS TO CHIPS (Fix for non-clickable chips)
+          const chips = colDOM.rsViewUsers.querySelectorAll('.chip');
+          chips.forEach(chip => {
+              chip.onclick = () => {
+                  chips.forEach(c => c.classList.remove('active'));
+                  chip.classList.add('active');
+              };
+          });
+
+      } else {
+          // Show Media Grid, Hide Users
+          colDOM.rsViewUsers.classList.add('hidden');
+          colDOM.rsViewMedia.classList.remove('hidden');
+          
+          renderMediaGrid(col.count);
+      }
+  }
+
+  function renderMediaGrid(count) {
+      if(!colDOM.rsMediaGrid) return;
+      colDOM.rsMediaGrid.innerHTML = '';
+
+      if (count === 0) {
+          colDOM.rsMediaEmpty.classList.remove('hidden');
+      } else {
+          colDOM.rsMediaEmpty.classList.add('hidden');
+          // Inject Blank Images
+          for(let i=0; i < count; i++) {
+              const img = document.createElement('img');
+              img.src = BLANK_IMG;
+              img.style.width = '100%';
+              img.style.aspectRatio = '1/1';
+              img.style.objectFit = 'cover';
+              img.style.borderRadius = '8px';
+              img.style.background = '#222';
+              img.style.cursor = 'pointer';
+              colDOM.rsMediaGrid.appendChild(img);
+          }
+      }
+  }
+
+  // Add Collection
+  if (colDOM.btnAdd) {
+      colDOM.btnAdd.addEventListener('click', () => {
+          Swal.fire({
+              title: `New ${currentColType === 'user' ? 'List' : 'Bookmark'}`,
+              input: 'text',
+              inputPlaceholder: 'Collection Name',
+              showCancelButton: true,
+              confirmButtonText: 'Create',
+              confirmButtonColor: '#64E9EE',
+              background: '#0d1423',
+              color: '#fff'
+          }).then((result) => {
+              if (result.isConfirmed && result.value) {
+                  const newId = result.value.toLowerCase().replace(/\s/g, '_');
+                  const newCol = {
+                      id: newId,
+                      name: result.value,
+                      type: currentColType,
+                      count: 0,
+                      system: false
+                  };
+                  COLLECTIONS_DB.push(newCol);
+                  renderCollections(colDOM.searchInput ? colDOM.searchInput.value : '');
+                  TopToast.fire({ icon: 'success', title: 'Collection created!' });
+              }
+          });
+      });
+  }
+
+  function deleteCollection(id) {
+      Swal.fire({
+          title: 'Delete this list?',
+          text: "You cannot undo this.",
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonColor: '#ff4757',
+          confirmButtonText: 'Yes, delete',
+          background: '#0d1423',
+          color: '#fff'
+      }).then((result) => {
+          if (result.isConfirmed) {
+              COLLECTIONS_DB = COLLECTIONS_DB.filter(c => c.id !== id);
+              renderCollections(colDOM.searchInput ? colDOM.searchInput.value : '');
+              TopToast.fire({ icon: 'success', title: 'Deleted' });
+          }
+      });
+  }
+
+  // Search
+  if (colDOM.btnSearch) {
+      colDOM.btnSearch.addEventListener('click', () => {
+          colDOM.searchContainer.classList.remove('hidden');
+          colDOM.searchInput.focus();
+      });
+  }
+  if (colDOM.searchClose) {
+      colDOM.searchClose.addEventListener('click', () => {
+          colDOM.searchContainer.classList.add('hidden');
+          colDOM.searchInput.value = '';
+          renderCollections(); 
+      });
+  }
+  if (colDOM.searchInput) {
+      colDOM.searchInput.addEventListener('input', (e) => {
+          renderCollections(e.target.value);
+      });
+  }
+
+  // Tab Switch
+  if (colDOM.tabUsers && colDOM.tabBookmarks) {
+      colDOM.tabUsers.addEventListener('click', () => {
+          colDOM.tabUsers.classList.add('active');
+          colDOM.tabBookmarks.classList.remove('active');
+          currentColType = 'user';
+          renderCollections(colDOM.searchInput ? colDOM.searchInput.value : '');
+      });
+
+      colDOM.tabBookmarks.addEventListener('click', () => {
+          colDOM.tabBookmarks.classList.add('active');
+          colDOM.tabUsers.classList.remove('active');
+          currentColType = 'post';
+          renderCollections(colDOM.searchInput ? colDOM.searchInput.value : '');
       });
   }
 
