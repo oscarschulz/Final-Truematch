@@ -4,7 +4,7 @@
   <script>window.API_BASE = '';</script>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Collections | iTRUEMATCH</title>
+  <title>iTRUEMATCH | Creators</title>
   
   <link rel="icon" href="assets/images/truematch-mark.png" />
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -12,7 +12,7 @@
   
   <script src="https://cdn.jsdelivr.net/npm/picmo@latest/dist/umd/index.js"></script>
   
-  <link rel="stylesheet" href="creators.css" />
+  <link rel="stylesheet" href="assets/css/creators/global.css" />
 </head>
 
 <body class="tm-dark">
@@ -35,61 +35,27 @@
             <div class="status-indicator"></div>
           </div>
           <div class="ph-user-details">
-            <div class="ph-name">
-              Aljur Abrenica <i class="fa-solid fa-circle-check"></i>
-            </div>
+            <div class="ph-name">Aljur Abrenica <i class="fa-solid fa-circle-check"></i></div>
             <div class="ph-handle">@aljur_official</div>
           </div>
-          <div class="ph-settings">
-            <i class="fa-solid fa-gear"></i>
-          </div>
+          <div class="ph-settings"><i class="fa-solid fa-gear"></i></div>
         </div>
 
-        <a href="#" id="nav-link-home" class="nav-item active">
-          <div class="nav-icon"><i class="fa-solid fa-house"></i></div>
-          <span class="nav-text">Home</span>
-        </a>
-        <a href="#" id="nav-link-notif" class="nav-item">
-          <div class="nav-icon"><i class="fa-regular fa-bell"></i></div>
-          <span class="nav-text">Notifications</span>
-        </a>
-        <a href="#" id="nav-link-messages" class="nav-item">
-          <div class="nav-icon"><i class="fa-regular fa-envelope"></i></div>
-          <span class="nav-text">Messages</span>
-        </a>
-        <a href="#" id="nav-link-collections" class="nav-item">
-          <div class="nav-icon"><i class="fa-regular fa-bookmark"></i></div>
-          <span class="nav-text">Collections</span>
-        </a>
-        <a href="#" id="nav-link-subs" class="nav-item">
-          <div class="nav-icon"><i class="fa-solid fa-user-group"></i></div>
-          <span class="nav-text">Subscriptions</span>
-        </a>
-        <a href="#" class="nav-item" id="btnSubscribe">
-          <div class="nav-icon"><i class="fa-regular fa-credit-card"></i></div>
-          <span class="nav-text">Add card</span>
-        </a>
-        <a href="#" class="nav-item">
-          <div class="nav-icon"><i class="fa-regular fa-user"></i></div>
-          <span class="nav-text">My profile</span>
-        </a>
-        <a href="#" class="nav-item" id="trigger-more-btn">
-          <div class="nav-icon"><i class="fa-solid fa-circle-notch"></i></div> 
-          <span class="nav-text">More</span>
-        </a>
+        <a href="#" id="nav-link-home" class="nav-item active"><div class="nav-icon"><i class="fa-solid fa-house"></i></div><span class="nav-text">Home</span></a>
+        <a href="#" id="nav-link-notif" class="nav-item"><div class="nav-icon"><i class="fa-regular fa-bell"></i></div><span class="nav-text">Notifications</span></a>
+        <a href="#" id="nav-link-messages" class="nav-item"><div class="nav-icon"><i class="fa-regular fa-envelope"></i></div><span class="nav-text">Messages</span></a>
+        <a href="#" id="nav-link-collections" class="nav-item"><div class="nav-icon"><i class="fa-regular fa-bookmark"></i></div><span class="nav-text">Collections</span></a>
+        <a href="#" id="nav-link-subs" class="nav-item"><div class="nav-icon"><i class="fa-solid fa-user-group"></i></div><span class="nav-text">Subscriptions</span></a>
+        <a href="#" class="nav-item" id="nav-link-add-card"><div class="nav-icon"><i class="fa-regular fa-credit-card"></i></div><span class="nav-text">Add card</span></a>
+        <a href="#" class="nav-item" id="nav-link-profile"><div class="nav-icon"><i class="fa-regular fa-user"></i></div><span class="nav-text">My profile</span></a>
+        <a href="#" class="nav-item" id="trigger-more-btn"><div class="nav-icon"><i class="fa-solid fa-circle-notch"></i></div><span class="nav-text">More</span></a>
         
-        <button class="btn-new-post">
-          <i class="fa-solid fa-plus"></i> <span class="btn-text">NEW POST</span>
-        </button>
+        <button class="btn-new-post"><i class="fa-solid fa-plus"></i> <span class="btn-text">NEW POST</span></button>
 
         <div class="sidebar-brand-footer">
             <img src="assets/images/truematch-mark.png" alt="Logo">
-            <div class="brand-text">
-                <span>iTRUEMATCH</span>
-                <small>© 2026 Corp.</small>
-            </div>
+            <div class="brand-text"><span>iTRUEMATCH</span><small>© 2026 Corp.</small></div>
         </div>
-
       </div>
     </nav>
 
@@ -97,9 +63,7 @@
       
       <div id="view-home">
           <div class="feed-top-header">
-            <div class="header-content">
-              <h2>HOME</h2>
-            </div>
+            <div class="header-content"><h2>HOME</h2></div>
           </div>
 
           <div class="compose-area">
@@ -110,33 +74,21 @@
             <div id="poll-creator-ui" class="poll-creator hidden">
                 <div class="poll-header">
                     <span><i class="fa-solid fa-square-poll-horizontal"></i> Poll</span>
-                    <div class="poll-meta">
-                        <span>7 days</span>
-                        <i class="fa-solid fa-xmark close-poll-btn"></i>
-                    </div>
+                    <div class="poll-meta"><span>7 days</span><i class="fa-solid fa-xmark close-poll-btn"></i></div>
                 </div>
                 <div class="poll-inputs">
-                    <div class="poll-input-row">
-                        <input type="text" name="poll_options[]" placeholder="Option 1...">
-                        <i class="fa-solid fa-grip-lines"></i>
-                    </div>
-                    <div class="poll-input-row">
-                        <input type="text" name="poll_options[]" placeholder="Option 2...">
-                        <i class="fa-solid fa-grip-lines"></i>
-                    </div>
+                    <div class="poll-input-row"><input type="text" placeholder="Option 1..."><i class="fa-solid fa-grip-lines"></i></div>
+                    <div class="poll-input-row"><input type="text" placeholder="Option 2..."><i class="fa-solid fa-grip-lines"></i></div>
                 </div>
-                <div class="poll-footer">
-                    <span class="add-option-btn">+ Add another option</span>
-                </div>
+                <div class="poll-footer"><span class="add-option-btn">+ Add another option</span></div>
             </div>
 
             <div id="text-format-toolbar" class="text-toolbar hidden">
-                <button class="fmt-btn" title="Bold"><i class="fa-solid fa-bold"></i></button>
-                <button class="fmt-btn" title="Italic"><i class="fa-solid fa-italic"></i></button>
-                <button class="fmt-btn" title="Underline"><i class="fa-solid fa-underline"></i></button>
+                <button class="fmt-btn"><i class="fa-solid fa-bold"></i></button>
+                <button class="fmt-btn"><i class="fa-solid fa-italic"></i></button>
+                <button class="fmt-btn"><i class="fa-solid fa-underline"></i></button>
                 <div class="fmt-divider"></div>
-                <button class="fmt-btn" title="List"><i class="fa-solid fa-list-ul"></i></button>
-                <button class="fmt-btn" title="Quote"><i class="fa-solid fa-quote-right"></i></button>
+                <button class="fmt-btn"><i class="fa-solid fa-list-ul"></i></button>
             </div>
 
             <div class="compose-actions">
@@ -144,41 +96,23 @@
                <i class="fa-solid fa-square-poll-horizontal" id="btn-trigger-poll" title="Poll"></i>
                <i class="fa-solid fa-clipboard-question" title="Quiz"></i>
                <span style="font-weight:700; font-size:1rem; padding-top:2px; cursor:pointer;" id="btn-trigger-text">Aa</span>
-               <input type="file" name="media_files[]" id="media-upload-input" accept="image/*,video/*" multiple style="display: none;">
+               <input type="file" id="media-upload-input" accept="image/*,video/*" multiple style="display: none;">
             </div>
           </div>
 
           <div class="feed-divider"></div>
 
           <div id="creator-feed" class="active-feed">
-             <article class="post-card" data-post-id="101" data-author-id="5">
+             <article class="post-card">
                 <div class="post-header">
                   <div class="ph-left">
                     <img src="assets/images/truematch-mark.png" class="ph-avatar"> 
-                    <div class="ph-info">
-                      <strong class="ph-name">OnlyFans <i class="fa-solid fa-circle-check verify-badge"></i></strong>
-                      <span class="ph-handle">@onlyfans</span>
-                    </div>
+                    <div class="ph-info"><strong class="ph-name">OnlyFans <i class="fa-solid fa-circle-check verify-badge"></i></strong><span class="ph-handle">@onlyfans</span></div>
                   </div>
-                  <div class="ph-right">
-                    <span class="ph-time">4h</span>
-                    <i class="fa-solid fa-ellipsis"></i>
-                  </div>
+                  <div class="ph-right"><span class="ph-time">4h</span><i class="fa-solid fa-ellipsis"></i></div>
                 </div>
                 <div class="post-body">
-                  <p>
-                    <a href="#" class="link-text">@thelittleexplorer</a> rides through Morocco's Dades Gorge. 🚴‍♀️ 🇲🇦
-                    <br>
-                    <a href="#" class="link-url">onlyfans.com/oftv</a>
-                  </p>
-                </div>
-                <div class="post-media">
-                   <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22600%22%20height%3D%22400%22%20viewBox%3D%220%200%20600%20400%22%3E%3Crect%20fill%3D%22%23222%22%20width%3D%22600%22%20height%3D%22400%22%2F%3E%3Ctext%20fill%3D%22%23555%22%20font-family%3D%22sans-serif%22%20font-size%3D%2230%22%20dy%3D%2210.5%22%20font-weight%3D%22bold%22%20x%3D%2250%25%22%20y%3D%2250%25%22%20text-anchor%3D%22middle%22%3EPOST%20MEDIA%3C%2Ftext%3E%3C%2Fsvg%3E" class="media-img">
-                   <div class="video-overlay"><i class="fa-solid fa-play"></i></div>
-                   <div class="media-text-overlay">
-                     <span>Morocco</span><br>
-                     <strong>Dades Gorge</strong>
-                   </div>
+                  <p>Welcome to iTrueMatch! Connect with your fans today.</p>
                 </div>
                 <div class="post-actions">
                   <div class="action-group">
@@ -186,31 +120,121 @@
                       <i class="fa-regular fa-comment btn-toggle-comment"></i> 
                       <i class="fa-solid fa-dollar-sign"></i> 
                   </div>
-                  <div class="action-group right">
-                      <i class="fa-regular fa-bookmark"></i>
-                  </div>
+                  <div class="action-group right"><i class="fa-regular fa-bookmark"></i></div>
                 </div>
-
                 <div class="post-comments-section hidden">
-                    <div class="comment-list">
-                        <div class="comment-item">
-                            <img src="assets/images/truematch-mark.png" class="c-avatar">
-                            <div class="c-bubble">
-                                <span class="c-user">Jane Doe</span>
-                                <span class="c-txt">Wow amazing view! 😍</span>
-                            </div>
-                        </div>
-                    </div>
                     <div class="comment-input-row">
                         <img src="assets/images/truematch-mark.png" class="c-avatar-small">
-                        <div class="c-input-wrapper">
-                            <input type="text" name="comment_text" placeholder="Write a comment...">
-                            <i class="fa-regular fa-paper-plane"></i>
-                        </div>
+                        <div class="c-input-wrapper"><input type="text" placeholder="Write a comment..."><i class="fa-regular fa-paper-plane"></i></div>
                     </div>
                 </div>
              </article>
-             <div class="end-message">You're all caught up!</div>
+          </div>
+      </div>
+
+      <div id="view-my-profile" style="display: none;">
+          <div class="feed-top-header">
+            <div class="header-content" style="display:flex; align-items:center; gap:15px;">
+                <i class="fa-solid fa-arrow-left back-btn" onclick="document.getElementById('nav-link-home').click()" style="cursor:pointer; font-size:1.2rem;"></i>
+                <div style="display:flex; flex-direction:column;">
+                    <h2 style="margin:0; font-size:1.1rem; font-weight:700;">Aljur Abrenica</h2>
+                    <span style="font-size:0.8rem; color:var(--muted);">2 posts</span>
+                </div>
+            </div>
+          </div>
+
+          <div style="position: relative;">
+              <div style="height: 180px; background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); width: 100%;"></div>
+              
+              <div style="padding: 0 20px;">
+                  <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                      <div style="margin-top: -50px; position: relative; width: 100px; height: 100px;">
+                          <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23333%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width: 100%; height: 100%; border-radius: 50%; border: 4px solid var(--bg); object-fit:cover;">
+                          <div style="position: absolute; bottom: 8px; right: 5px; width: 18px; height: 18px; background: #46e85e; border: 3px solid var(--bg); border-radius: 50%;"></div>
+                      </div>
+                      <div style="margin-top: 15px; display: flex; gap: 10px;">
+                           <button style="background: transparent; border: 1px solid var(--border); color: var(--text); padding: 8px 16px; border-radius: 20px; font-weight: 700; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s;" onmouseover="this.style.borderColor='var(--primary-cyan)'; this.style.color='var(--primary-cyan)'" onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--text)'">
+                               <i class="fa-solid fa-gear"></i> EDIT PROFILE
+                           </button>
+                           <button style="background: transparent; border: 1px solid var(--border); color: var(--text); width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.borderColor='var(--primary-cyan)'; this.style.color='var(--primary-cyan)'" onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--text)'">
+                               <i class="fa-solid fa-arrow-up-from-bracket"></i>
+                           </button>
+                      </div>
+                  </div>
+                  
+                  <div style="margin-top: 10px; margin-bottom: 25px;">
+                      <h1 style="margin: 0; font-size: 1.3rem; display: flex; align-items: center; gap: 6px;">Aljur Abrenica <i class="fa-solid fa-circle-check" style="color:var(--primary-cyan); font-size: 0.9rem;"></i></h1>
+                      <div style="color: var(--muted); font-size: 0.9rem; margin-top: 4px;">@aljur_official &bull; <span style="cursor: pointer;">Available <i class="fa-solid fa-chevron-down" style="font-size: 0.75rem;"></i></span></div>
+                      <div style="color: var(--text); font-size: 0.9rem; margin-top: 10px; line-height: 1.4;">
+                          Professional actor and content creator. Subscribe for exclusive behind-the-scenes content! 🎥✨
+                      </div>
+                  </div>
+              </div>
+          </div>
+
+          <div style="display: flex; border-bottom: var(--border);">
+              <div id="tab-profile-posts" style="flex: 1; text-align: center; padding: 15px; border-bottom: 3px solid var(--text); font-weight: 700; cursor: pointer; color: var(--text);">POSTS</div>
+              <div id="tab-profile-media" style="flex: 1; text-align: center; padding: 15px; border-bottom: 3px solid transparent; color: var(--muted); font-weight: 600; cursor: pointer; transition: 0.2s;">MEDIA</div>
+          </div>
+
+          <div id="profile-content-posts">
+             <article class="post-card">
+                <div class="post-header">
+                  <div class="ph-left">
+                    <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23333%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" class="ph-avatar"> 
+                    <div class="ph-info"><strong class="ph-name">Aljur Abrenica <i class="fa-solid fa-circle-check verify-badge"></i></strong><span class="ph-handle">@aljur_official</span></div>
+                  </div>
+                  <div class="ph-right"><span class="ph-time">2h</span><i class="fa-solid fa-ellipsis"></i></div>
+                </div>
+                <div class="post-body">
+                  <p>Just finished a great workout! 💪 Check out the full routine in my next video.</p>
+                </div>
+                <div class="post-media">
+                     <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23222%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" class="media-img" style="aspect-ratio: 16/9;">
+                </div>
+                <div class="post-actions">
+                  <div class="action-group">
+                      <i class="fa-regular fa-heart"></i>
+                      <i class="fa-regular fa-comment"></i> 
+                      <i class="fa-solid fa-dollar-sign"></i> 
+                  </div>
+                  <div class="action-group right"><i class="fa-regular fa-bookmark"></i></div>
+                </div>
+             </article>
+
+             <article class="post-card">
+                <div class="post-header">
+                  <div class="ph-left">
+                    <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23333%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" class="ph-avatar"> 
+                    <div class="ph-info"><strong class="ph-name">Aljur Abrenica <i class="fa-solid fa-circle-check verify-badge"></i></strong><span class="ph-handle">@aljur_official</span></div>
+                  </div>
+                  <div class="ph-right"><span class="ph-time">Yesterday</span><i class="fa-solid fa-ellipsis"></i></div>
+                </div>
+                <div class="post-body">
+                  <p>Thanks for subscribing! More exclusive content coming soon.</p>
+                </div>
+                <div class="post-actions">
+                  <div class="action-group">
+                      <i class="fa-regular fa-heart"></i>
+                      <i class="fa-regular fa-comment"></i> 
+                      <i class="fa-solid fa-dollar-sign"></i> 
+                  </div>
+                  <div class="action-group right"><i class="fa-regular fa-bookmark"></i></div>
+                </div>
+             </article>
+          </div>
+
+          <div id="profile-content-media" class="hidden" style="padding: 5px;">
+              <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px;">
+                  <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23222%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width:100%; aspect-ratio:1/1; object-fit:cover;">
+                  <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23333%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width:100%; aspect-ratio:1/1; object-fit:cover;">
+                  <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23444%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width:100%; aspect-ratio:1/1; object-fit:cover;">
+                  <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23555%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width:100%; aspect-ratio:1/1; object-fit:cover;">
+                  <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23666%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width:100%; aspect-ratio:1/1; object-fit:cover;">
+                  <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23777%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width:100%; aspect-ratio:1/1; object-fit:cover;">
+                  <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23888%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width:100%; aspect-ratio:1/1; object-fit:cover;">
+                  <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23999%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width:100%; aspect-ratio:1/1; object-fit:cover;">
+              </div>
           </div>
       </div>
 
@@ -222,11 +246,10 @@
                     <h2>COLLECTIONS</h2>
                 </div>
                 <div style="display:flex; gap:20px; font-size:1.1rem; color:var(--text);">
-                    <i class="fa-solid fa-magnifying-glass" id="col-btn-search" style="cursor:pointer;" title="Search Lists"></i>
-                    <i class="fa-solid fa-plus" id="col-btn-add" style="cursor:pointer;" title="Create Collection"></i>
+                    <i class="fa-solid fa-magnifying-glass" id="col-btn-search" style="cursor:pointer;" title="Search"></i>
+                    <i class="fa-solid fa-plus" id="col-btn-add" style="cursor:pointer;" title="New List"></i>
                 </div>
             </div>
-            
             <div id="col-search-container" class="hidden" style="margin-top: 10px; padding-bottom:10px; border-bottom:var(--border);">
                 <div class="search-input-wrapper" style="background:var(--search-bg); border-radius:8px; padding:8px 12px; display:flex; align-items:center;">
                     <i class="fa-solid fa-magnifying-glass" style="color:var(--muted)"></i>
@@ -235,22 +258,17 @@
                 </div>
             </div>
           </div>
-
           <div class="collection-tabs-bar">
-              <div class="c-tab-item active" id="tab-col-users" data-type="user">USER LISTS</div>
-              <div class="c-tab-item" id="tab-col-bookmarks" data-type="post">BOOKMARKS</div>
+              <div class="c-tab-item active" id="tab-col-users">USER LISTS</div>
+              <div class="c-tab-item" id="tab-col-bookmarks">BOOKMARKS</div>
           </div>
-
-          <div class="collection-list-container" id="collection-list-wrapper">
-              </div>
+          <div class="collection-list-container" id="collection-list-wrapper"></div>
       </div>
 
       <div id="view-notifications" style="display: none;">
           <div class="feed-top-header notif-header-flex">
             <div class="nh-left">
-                 <div class="back-btn" onclick="document.getElementById('nav-link-home').click()">
-                    <i class="fa-solid fa-arrow-left"></i>
-                 </div>
+                 <div class="back-btn" onclick="document.getElementById('nav-link-home').click()"><i class="fa-solid fa-arrow-left"></i></div>
                  <h2>NOTIFICATIONS</h2>
             </div>
             <div class="nh-right">
@@ -258,7 +276,6 @@
                  <i class="fa-solid fa-gear" style="cursor: pointer;"></i>
             </div>
           </div>
-
           <div class="notif-tabs-bar">
              <button class="n-pill active">All</button>
              <button class="n-pill">Tags</button>
@@ -267,15 +284,11 @@
              <button class="n-pill">Subscriptions</button>
              <button class="n-pill">Promotions</button>
           </div>
-
-          <div class="notif-empty-state">
-              <span>No notifications currently!</span>
-          </div>
+          <div class="notif-empty-state"><span>No notifications currently!</span></div>
       </div>
 
       <div id="view-messages" style="display: none;">
           <div class="msg-container">
-              
               <div class="msg-sidebar">
                   <div class="msg-header-tools">
                       <div class="mh-top">
@@ -283,18 +296,16 @@
                           <h3>MESSAGES</h3>
                           <div class="mh-icons">
                               <i class="fa-solid fa-plus" id="btn-new-msg" title="New Message"></i>
-                              <i class="fa-solid fa-magnifying-glass" id="trigger-msg-search" title="Search Users"></i>
+                              <i class="fa-solid fa-magnifying-glass" id="trigger-msg-search" title="Search"></i>
                           </div>
                       </div>
-                      
                       <div class="msg-search-container hidden" id="msg-search-box">
                           <div class="search-input-wrapper">
                              <i class="fa-solid fa-magnifying-glass"></i>
-                             <input type="text" id="msg-search-input" name="user_search" placeholder="Search user...">
+                             <input type="text" id="msg-search-input" placeholder="Search user...">
                              <i class="fa-solid fa-circle-xmark" id="close-msg-search"></i>
                           </div>
                       </div>
-
                       <div class="msg-tabs" id="msg-tabs">
                           <span class="active" data-filter="all">All</span>
                           <span data-filter="priority">Priority</span>
@@ -302,7 +313,6 @@
                           <span data-filter="money">$$$</span>
                       </div>
                   </div>
-                  
                   <div class="msg-user-list" id="msg-user-list">
                       <div class="msg-user-item active" data-id="1" data-name="Bauds Dev" data-category="priority" data-avatar="assets/images/sample2.jpg" data-handle="@baudss-server" data-joined="21 days" data-spent="$50">
                           <img src="assets/images/sample2.jpg" class="u-avatar" onerror="this.src='assets/images/truematch-mark.png'">
@@ -312,9 +322,8 @@
                           </div>
                           <div class="u-meta">Now</div>
                       </div>
-                      </div>
+                  </div>
               </div>
-
               <div class="msg-chat-area">
                   <div class="chat-header">
                       <div class="ch-user">
@@ -323,7 +332,7 @@
                       </div>
                       <div class="ch-actions">
                           <div class="chat-search-bar hidden" id="chat-inner-search-bar">
-                              <input type="text" id="chat-history-search" name="chat_search" placeholder="Find in chat...">
+                              <input type="text" id="chat-history-search" placeholder="Find in chat...">
                               <i class="fa-solid fa-xmark" id="close-chat-search"></i>
                           </div>
                           <i class="fa-solid fa-magnifying-glass" id="btn-chat-search" title="Search in chat"></i>
@@ -331,57 +340,90 @@
                           <i class="fa-regular fa-star" id="btn-chat-star" title="Favorite"></i>
                       </div>
                   </div>
-                  
                   <div class="chat-history" id="chat-history-container"></div>
-
                   <div class="emoji-picker hidden" id="emoji-picker-container"></div>
-
                   <div class="chat-input-box">
                       <i class="fa-regular fa-image"></i>
-                      <input type="text" id="chat-message-input" name="message_content" placeholder="Type a message..." autocomplete="off">
+                      <input type="text" id="chat-message-input" placeholder="Type a message..." autocomplete="off">
                       <i class="fa-regular fa-face-smile" id="btn-emoji-trigger"></i>
                       <i class="fa-solid fa-dollar-sign" id="btn-ppv-trigger"></i>
                       <i class="fa-regular fa-paper-plane send-icon" id="btn-send-message"></i>
                   </div>
               </div>
-
               <div class="msg-info-panel" id="msg-info-panel">
                   <div class="info-header">
-                      <div class="info-input-wrap">
-                          <input type="text" class="info-nickname-input" id="info-nickname" name="nickname" value="Bauds Dev">
-                          <i class="fa-solid fa-pen"></i>
-                      </div>
+                      <div class="info-input-wrap"><input type="text" class="info-nickname-input" id="info-nickname" value="Bauds Dev"><i class="fa-solid fa-pen"></i></div>
                       <a href="#" class="info-profile-link" id="info-handle">@baudss-server</a>
                   </div>
                   <div class="info-stats-grid">
-                      <div class="i-stat">
-                          <div class="icon-box"><i class="fa-regular fa-calendar"></i></div>
-                          <div class="stat-txt">
-                              <small>Subscribed</small>
-                              <strong id="info-joined">21 days</strong>
-                          </div>
-                      </div>
-                      <div class="i-stat">
-                          <div class="icon-box"><i class="fa-solid fa-sack-dollar"></i></div>
-                          <div class="stat-txt">
-                              <small>Total Spent</small>
-                              <strong id="info-spent">$50</strong>
-                          </div>
-                      </div>
+                      <div class="i-stat"><div class="icon-box"><i class="fa-regular fa-calendar"></i></div><div class="stat-txt"><small>Subscribed</small><strong id="info-joined">21 days</strong></div></div>
+                      <div class="i-stat"><div class="icon-box"><i class="fa-solid fa-sack-dollar"></i></div><div class="stat-txt"><small>Total Spent</small><strong id="info-spent">$50</strong></div></div>
                   </div>
-                  <div class="info-form-group">
-                      <label>PREFERENCES</label>
-                      <input type="text" name="preference_tag" placeholder="e.g. Customs, Chat">
-                  </div>
-                  <div class="info-form-group">
-                      <label>NOTES</label>
-                      <textarea name="user_note" placeholder="Add note...">IM awake dont upsell rn</textarea>
-                  </div>
-                  <div class="info-section-link">
-                      <span>Lists</span>
-                      <i class="fa-solid fa-chevron-right"></i>
-                  </div>
+                  <div class="info-form-group"><label>PREFERENCES</label><input type="text" placeholder="e.g. Customs, Chat"></div>
+                  <div class="info-form-group"><label>NOTES</label><textarea placeholder="Add note...">IM awake dont upsell rn</textarea></div>
+                  <div class="info-section-link"><span>Lists</span><i class="fa-solid fa-chevron-right"></i></div>
                   <button class="btn-view-history"><i class="fa-solid fa-receipt"></i> View PPV History</button>
+              </div>
+          </div>
+      </div>
+
+      <div id="view-add-card" style="display: none;">
+          <div class="feed-top-header">
+            <div class="header-content" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+                <div style="display:flex; align-items:center; gap:15px;">
+                    <i class="fa-solid fa-arrow-left back-btn" onclick="document.getElementById('nav-link-home').click()"></i>
+                    <h2>ADD CARD</h2>
+                </div>
+                <div style="font-weight:700; color:var(--primary-cyan); font-size:0.9rem; cursor:pointer;">VERIFY</div>
+            </div>
+          </div>
+
+          <div class="add-card-body" style="padding: 20px;">
+              <div class="ac-section">
+                  <h4 class="ac-title">BILLING DETAILS</h4>
+                  <p class="ac-desc">We are fully compliant with Payment Card Industry Data Security Standards.</p>
+                  <div class="ac-form-grid">
+                      <div class="ac-group"><label>Country</label><select><option>Germany</option></select></div>
+                      <div class="ac-group"><label>State / Province</label><select><option>Berlin</option></select></div>
+                  </div>
+                  <div class="ac-group"><label>Address</label><input type="text" placeholder="Musterstraße 1"></div>
+                  <div class="ac-form-grid">
+                      <div class="ac-group"><label>City</label><input type="text" value="Berlin"></div>
+                      <div class="ac-group"><label>ZIP / Postal Code</label><input type="text" value="10115"></div>
+                  </div>
+              </div>
+
+              <div class="ac-section">
+                  <h4 class="ac-title">CARD DETAILS</h4>
+                  <div class="ac-form-grid">
+                      <div class="ac-group"><label>Email</label><input type="email" value="jerw3345@gmail.com"></div>
+                      <div class="ac-group"><label>Name on the card</label><input type="text"></div>
+                  </div>
+                  <div class="ac-group card-input-wrap">
+                      <label>Card Number</label>
+                      <div class="input-with-icon"><input type="text"><i class="fa-regular fa-credit-card"></i></div>
+                      <small style="color:var(--primary-cyan); cursor:pointer; font-size:0.8rem; margin-top:5px; display:block;">My card number is longer</small>
+                  </div>
+                  <div class="ac-form-grid">
+                      <div class="ac-group"><label>Expiration</label><input type="text" placeholder="MM / YY"></div>
+                      <div class="ac-group"><label>CVC</label><input type="text"></div>
+                  </div>
+              </div>
+
+              <div class="ac-footer">
+                  <div class="ac-check-row">
+                      <input type="checkbox" id="ageCheck">
+                      <label for="ageCheck">Tick here to confirm that you are at least 18 years old and the age of majority in your place of residence</label>
+                  </div>
+                  <div class="ac-submit-row"><button class="btn-submit-card">SUBMIT</button></div>
+                  
+                  <div class="crypto-logos">
+                      <div class="c-logo" data-tooltip="Binance"><i class="fa-brands fa-bitcoin" style="color:#F3BA2F;"></i></div>
+                      <div class="c-logo" data-tooltip="Bybit"><i class="fa-solid fa-bolt" style="color:#FFAA00;"></i></div>
+                      <div class="c-logo" data-tooltip="OKX"><i class="fa-solid fa-cube" style="color:#fff;"></i></div>
+                      <div class="c-logo" data-tooltip="Coinbase"><i class="fa-solid fa-coins" style="color:#0052FF;"></i></div>
+                      <div class="c-logo" data-tooltip="KuCoin"><i class="fa-brands fa-ethereum" style="color:#24AE8F;"></i></div>
+                  </div>
               </div>
           </div>
       </div>
@@ -389,111 +431,59 @@
     </main>
 
     <aside class="right-sidebar" id="right-sidebar">
-      
       <div class="sidebar-inner" id="rs-suggestions-view">
-        <div class="search-bar">
-           <input type="text" name="global_search" placeholder="Search posts">
-           <i class="fa-solid fa-magnifying-glass"></i> 
-        </div>
-        <div class="suggestions-header">
-           <span class="title">SUGGESTIONS</span>
-           <div class="sugg-actions">
-              <i class="fa-solid fa-rotate"></i>
-           </div>
-        </div>
+        <div class="search-bar"><input type="text" name="global_search" placeholder="Search posts"><i class="fa-solid fa-magnifying-glass"></i></div>
+        <div class="suggestions-header"><span class="title">SUGGESTIONS</span><div class="sugg-actions"><i class="fa-solid fa-rotate"></i></div></div>
         <div class="suggestion-list">
             <div class="sugg-card">
                <div class="sugg-banner" style="background-image: url('data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23333%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E');">
-                  <div class="sugg-badge">Free</div>
-                  <div class="sugg-menu"><i class="fa-solid fa-ellipsis-vertical"></i></div>
+                  <div class="sugg-badge">Free</div><div class="sugg-menu"><i class="fa-solid fa-ellipsis-vertical"></i></div>
                </div>
                <div class="sugg-details">
-                  <div class="sugg-avatar-wrap">
-                     <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23444%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E">
-                     <div class="online-dot"></div>
-                  </div>
-                  <div class="sugg-text">
-                     <div class="sugg-name">April Rayne <i class="fa-solid fa-circle-check"></i></div>
-                     <div class="sugg-handle">@aprilraynectv</div>
-                  </div>
-               </div>
-            </div>
-            <div class="sugg-card">
-               <div class="sugg-banner" style="background-image: url('data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23333%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E');">
-                  <div class="sugg-badge">Free</div>
-                  <div class="sugg-menu"><i class="fa-solid fa-ellipsis-vertical"></i></div>
-               </div>
-               <div class="sugg-details">
-                  <div class="sugg-avatar-wrap">
-                     <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23444%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E">
-                     <div class="online-dot"></div>
-                  </div>
-                  <div class="sugg-text">
-                     <div class="sugg-name">Mur 🍓 <i class="fa-solid fa-circle-check"></i></div>
-                     <div class="sugg-handle">@murcadi</div>
-                  </div>
+                  <div class="sugg-avatar-wrap"><img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23444%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E"><div class="online-dot"></div></div>
+                  <div class="sugg-text"><div class="sugg-name">April Rayne <i class="fa-solid fa-circle-check"></i></div><div class="sugg-handle">@aprilraynectv</div></div>
                </div>
             </div>
         </div>
-        <div class="footer-links">
-             Privacy · Cookie Notice · Terms of Service <br>
-             © 2026 iTrueMatch Corp.
-        </div>
+        <div class="footer-links">Privacy · Cookie Notice · Terms of Service <br> © 2026 iTrueMatch Corp.</div>
       </div>
 
       <div class="sidebar-inner hidden" id="rs-collections-view">
+          <div class="rs-col-header"><h3 id="rs-col-title">FANS</h3></div>
           
-          <div class="rs-col-header">
-              <h3 id="rs-col-title">FANS</h3>
-          </div>
-
           <div id="rs-view-type-users" class="hidden">
               <div class="rs-col-filters">
-                  <div class="filter-head">
-                      <span>RECENT</span>
-                      <div class="fh-icons">
-                          <i class="fa-solid fa-magnifying-glass"></i>
-                          <i class="fa-solid fa-arrow-down-short-wide"></i>
-                      </div>
-                  </div>
-                  <div class="filter-chips">
-                      <span class="chip active">All 0</span>
-                      <span class="chip">Active 0</span>
-                      <span class="chip">Expired 0</span>
-                      <span class="chip">Restricted 0</span>
-                      <span class="chip">Blocked 0</span>
-                  </div>
+                  <div class="filter-head"><span>RECENT</span><div class="fh-icons"><i class="fa-solid fa-magnifying-glass"></i><i class="fa-solid fa-arrow-down-short-wide"></i></div></div>
+                  <div class="filter-chips"><span class="chip active">All 0</span></div>
               </div>
-              <div class="rs-col-empty">
-                  <div class="empty-icon-wrap">
-                      <i class="fa-regular fa-folder-open"></i>
-                  </div>
-                  <span>No users yet</span>
-              </div>
+              <div class="rs-col-empty"><div class="empty-icon-wrap"><i class="fa-regular fa-folder-open"></i></div><span>No users yet</span></div>
           </div>
 
           <div id="rs-view-type-media" class="hidden">
-               <div class="notif-tabs-bar" style="border:none; padding:10px 0;">
-                   <button class="n-pill active icon-only" style="padding:5px 12px; font-size:0.8rem;">All</button>
-                   <button class="n-pill icon-only" style="padding:5px 12px; font-size:0.8rem;">Photos</button>
-                   <button class="n-pill icon-only" style="padding:5px 12px; font-size:0.8rem;">Videos</button>
-                   <button class="n-pill icon-only" style="padding:5px 12px; font-size:0.8rem;">Locked</button>
-               </div>
-               
-               <div id="rs-media-grid-content">
-                    </div>
-               
-               <div id="rs-media-empty-state" class="rs-col-empty hidden">
-                  <div class="empty-icon-wrap">
-                      <i class="fa-regular fa-images"></i>
-                  </div>
-                  <span>No media saved</span>
-               </div>
+               <div class="media-header-row"><span class="section-title">RECENT</span><div class="header-tools"><i class="fa-solid fa-magnifying-glass" title="Search"></i><i class="fa-solid fa-table-cells-large" title="Grid View"></i><i class="fa-solid fa-bars-staggered" title="Sort"></i></div></div>
+               <div class="media-filter-chips"><button class="n-pill active">All</button><button class="n-pill">Photos</button><button class="n-pill">Videos</button><button class="n-pill">Audio</button><button class="n-pill">Other</button><button class="n-pill">Locked</button></div>
+               <div id="rs-media-grid-content"></div>
+               <div id="rs-media-empty-state" class="rs-col-empty hidden"><div class="empty-icon-wrap"><i class="fa-regular fa-images"></i></div><span>No media saved</span></div>
           </div>
+      </div>
 
+      <div class="sidebar-inner hidden" id="rs-wallet-view">
+          <div class="wallet-widget-card">
+              <div class="ww-header"><h1 class="ww-amount">$0</h1><span class="ww-label">Wallet credits</span></div>
+              <div class="ww-body">
+                  <small style="color:var(--muted); font-size:0.75rem; font-weight:700; display:block; margin-bottom:10px;">ADD FUNDS TO YOUR WALLET</small>
+                  <button class="btn-add-payment-card">ADD A PAYMENT CARD</button>
+                  <div class="ww-toggle-row"><span>Make wallet primary method for rebills</span><label class="switch"><input type="checkbox"><span class="slider round"></span></label></div>
+              </div>
+          </div>
+          <div class="wallet-widget-card">
+              <div class="ww-body">
+                  <small style="color:var(--muted); font-size:0.75rem; font-weight:700; display:block; margin-bottom:20px;">LATEST TRANSACTIONS</small>
+                  <div class="ww-empty"><i class="fa-solid fa-bag-shopping"></i><span>No Payments done yet.</span></div>
+              </div>
+          </div>
       </div>
     </aside>
-
   </div>
 
   <nav class="mobile-bottom-nav">
@@ -507,48 +497,24 @@
   <div id="settings-popover" class="tm-popover-menu">
     <div class="pop-header">
       <div class="pop-user-section">
-        <div class="pop-avatar">
-            <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23333%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E">
-            <div class="pop-online"></div>
-        </div>
-        <div class="pop-info">
-            <strong>Aljur Abrenica <i class="fa-solid fa-circle-check"></i></strong>
-            <span>@aljur_official</span>
-        </div>
+        <div class="pop-avatar"><img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23333%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E"><div class="pop-online"></div></div>
+        <div class="pop-info"><strong>Aljur Abrenica <i class="fa-solid fa-circle-check"></i></strong><span>@aljur_official</span></div>
         <button id="btnClosePopover" class="btn-close-pop"><i class="fa-solid fa-xmark"></i></button>
       </div>
-      <div class="pop-stats">
-        <div class="stat-item"><strong>1.2k</strong> <span>Fans</span></div>
-        <div class="stat-item"><strong>50</strong> <span>Following</span></div>
-      </div>
+      <div class="pop-stats"><div class="stat-item"><strong>1.2k</strong> <span>Fans</span></div><div class="stat-item"><strong>50</strong> <span>Following</span></div></div>
     </div>
     <div class="pop-content-full">
-        <div class="pop-group">
-            <a href="#" class="pop-item"><i class="fa-regular fa-user"></i> My profile</a>
-            <a href="#" class="pop-item"><i class="fa-regular fa-bookmark"></i> Collections</a>
-            <a href="#" class="pop-item"><i class="fa-solid fa-gear"></i> Settings</a>
-        </div>
+        <div class="pop-group"><a href="#" class="pop-item"><i class="fa-regular fa-user"></i> My profile</a><a href="#" class="pop-item"><i class="fa-regular fa-bookmark"></i> Collections</a><a href="#" class="pop-item"><i class="fa-solid fa-gear"></i> Settings</a></div>
         <div class="pop-divider"></div>
-        <div class="pop-group">
-            <a href="#" class="pop-item"><i class="fa-regular fa-credit-card"></i> Your cards <span class="muted">(to subscribe)</span></a>
-            <a href="#" class="pop-item"><i class="fa-solid fa-building-columns"></i> Become a creator <span class="muted">(to earn)</span></a>
-        </div>
+        <div class="pop-group"><a href="#" class="pop-item"><i class="fa-regular fa-credit-card"></i> Your cards <span class="muted">(to subscribe)</span></a><a href="#" class="pop-item"><i class="fa-solid fa-building-columns"></i> Become a creator <span class="muted">(to earn)</span></a></div>
         <div class="pop-divider"></div>
         <div class="pop-group">
             <a href="#" class="pop-item"><i class="fa-regular fa-circle-question"></i> Help and support</a>
-            <div class="pop-item toggle-row">
-                <div class="flex-icon"><i class="fa-solid fa-moon"></i> Dark mode</div>
-                <label class="switch">
-                  <input type="checkbox" id="themeToggle" name="dark_mode" checked>
-                  <span class="slider round"></span>
-                </label>
-            </div>
+            <div class="pop-item toggle-row"><div class="flex-icon"><i class="fa-solid fa-moon"></i> Dark mode</div><label class="switch"><input type="checkbox" id="themeToggle" name="dark_mode" checked><span class="slider round"></span></label></div>
             <div class="pop-item"><i class="fa-solid fa-globe"></i> English</div>
         </div>
         <div class="pop-divider"></div>
-        <div class="pop-group">
-            <a href="index.html" class="pop-item danger"><i class="fa-solid fa-arrow-right-from-bracket"></i> Log out</a>
-        </div>
+        <div class="pop-group"><a href="index.html" class="pop-item danger"><i class="fa-solid fa-arrow-right-from-bracket"></i> Log out</a></div>
     </div>
   </div>
 
@@ -557,16 +523,117 @@
       <div class="card-icon-box" style="margin: 0 auto 20px;"><i class="fa-regular fa-credit-card" style="font-size: 24px; color: #fff;"></i></div>
       <h3>Confirm Access</h3>
       <p class="muted-text">Total: <strong style="color: #64E9EE;">$9.99/mo</strong> via Coinbase.</p>
-      <div class="btn-group-modal">
-        <button id="btnPayConfirm" class="btn-modal primary">Proceed to Pay</button>
-        <button id="btnPayCancel" class="btn-modal ghost">Cancel</button>
-      </div>
+      <div class="btn-group-modal"><button id="btnPayConfirm" class="btn-modal primary">Proceed to Pay</button><button id="btnPayCancel" class="btn-modal ghost">Cancel</button></div>
+    </div>
+  </div>
+
+  <div id="add-card-modal" class="tm-modal-overlay hidden">
+    <div class="tm-modal-content">
+        <div class="tm-modal-header">
+            <h3>ADD CARD</h3>
+        </div>
+        
+        <div class="tm-modal-body">
+            <div class="ac-section">
+                <h4 class="ac-title">BILLING DETAILS</h4>
+                <p class="ac-desc">We are fully compliant with Payment Card Industry Data Security Standards.</p>
+                
+                <div class="ac-form-grid">
+                    <div class="ac-group">
+                        <label>Country</label>
+                        <div class="custom-select-wrapper">
+                            <select><option>Germany</option></select>
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </div>
+                    </div>
+                    <div class="ac-group">
+                        <label>State / Province</label>
+                        <div class="custom-select-wrapper">
+                            <select><option>Berlin</option></select>
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="ac-group">
+                    <label>Address</label>
+                    <input type="text">
+                </div>
+
+                <div class="ac-form-grid">
+                    <div class="ac-group">
+                        <label>City</label>
+                        <input type="text" value="Berlin">
+                    </div>
+                    <div class="ac-group">
+                        <label>ZIP / Postal Code</label>
+                        <input type="text" value="10115">
+                    </div>
+                </div>
+            </div>
+
+            <div class="ac-section">
+                <h4 class="ac-title">CARD DETAILS</h4>
+                
+                <div class="ac-form-grid">
+                    <div class="ac-group">
+                        <label>E-mail</label>
+                        <input type="email" value="jerw3345@gmail.com">
+                    </div>
+                    <div class="ac-group">
+                        <label>Name on the card</label>
+                        <input type="text">
+                    </div>
+                </div>
+
+                <div class="ac-group">
+                    <label>Card Number</label>
+                    <div class="input-with-icon">
+                        <input type="text">
+                        <i class="fa-solid fa-camera" style="color:var(--primary-cyan);"></i>
+                    </div>
+                    <a href="#" class="link-small">My card number is longer</a>
+                </div>
+
+                <div class="ac-form-grid">
+                    <div class="ac-group">
+                        <label>Expiration</label>
+                        <input type="text" placeholder="MM / YY">
+                    </div>
+                    <div class="ac-group">
+                        <label>CVC</label>
+                        <input type="text">
+                    </div>
+                </div>
+            </div>
+
+            <div class="ac-check-row">
+                <input type="radio" id="ageCheckModal" name="age_confirm">
+                <label for="ageCheckModal">Tick here to confirm that you are at least 18 years old and the age of majority in your place of residence</label>
+            </div>
+
+            <div class="crypto-logos-container">
+                 <div class="c-logo" data-tooltip="Binance"><i class="fa-brands fa-bitcoin" style="color:#F3BA2F;"></i></div>
+                 <div class="c-logo" data-tooltip="Bybit"><i class="fa-solid fa-bolt" style="color:#FFAA00;"></i></div>
+                 <div class="c-logo" data-tooltip="OKX"><i class="fa-solid fa-cube" style="color:#fff;"></i></div>
+                 <div class="c-logo" data-tooltip="Coinbase"><i class="fa-solid fa-coins" style="color:#0052FF;"></i></div>
+                 <div class="c-logo" data-tooltip="KuCoin"><i class="fa-brands fa-ethereum" style="color:#24AE8F;"></i></div>
+            </div>
+            
+        </div>
+
+        <div class="tm-modal-footer">
+            <button class="btn-cancel-modal">CANCEL</button>
+            <button class="btn-submit-card-modal">SUBMIT</button>
+        </div>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <script type="module" src="creators.js"></script>
+  <script type="module" src="assets/js/creators/app.js"></script>
+  
   <script>
+  // Background Animation
   (() => {
     const canvas = document.getElementById('tm-bg-canvas');
     if (canvas) {

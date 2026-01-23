@@ -1,0 +1,169 @@
+/* ================= FORCE WINDOW SCROLL ================= */
+html, body {
+  width: 100%;
+  height: 100%; /* Balik sa 100% para sa chat support */
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden; 
+}
+
+/* Kapag nasa Feed/Home/Notif, hayaan mag-scroll ang body */
+body:not(:has(#view-messages[style*="display: block"])) {
+  height: auto !important;
+  min-height: 100vh;
+  overflow-y: auto !important;
+}
+
+/* ================= MAIN LAYOUT STRUCTURE ================= */
+.of-layout-container {
+  display: flex; 
+  width: 100%; 
+  min-height: 100vh; 
+  align-items: stretch; /* Importante para pantay ang height */
+}
+
+/* ================= LEFT SIDEBAR (FIXED STICKY) ================= */
+.left-sidebar {
+  width: 275px; 
+  flex-shrink: 0; 
+  display: flex; 
+  justify-content: flex-end; 
+  border-right: var(--border); 
+  background: var(--bg); 
+  z-index: 50;
+  
+  /* STICKY */
+  position: -webkit-sticky;
+  position: sticky;
+  top: 0;
+  height: 100vh; 
+  overflow-y: auto; 
+}
+
+.left-sidebar .sidebar-inner {
+  width: 240px; 
+  padding: 20px 10px; 
+  min-height: 100%; 
+  display: flex; 
+  flex-direction: column; 
+}
+
+/* --- MENU ITEMS --- */
+.nav-item { display: flex; align-items: center; gap: 20px; padding: 12px 15px; border-radius: 30px; color: var(--text); transition: background 0.2s; margin-bottom: 5px; font-size: 1.1rem; white-space: nowrap; text-decoration: none; }
+.nav-item:hover { background: var(--hover-bg); color: var(--primary-cyan); }
+.nav-item.active { color: var(--primary-cyan); font-weight: 700; }
+.nav-icon { width: 30px; display: flex; justify-content: center; font-size: 1.3rem; }
+
+.btn-new-post { margin-top: 30px; background: var(--primary-cyan); color: #000; border: none; padding: 14px 0; border-radius: 30px; width: 100%; font-weight: 800; font-size: 1rem; cursor: pointer; transition: transform 0.2s; display: flex; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 4px 15px rgba(100, 233, 238, 0.3); }
+.btn-new-post:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(100, 233, 238, 0.4); }
+
+.sidebar-brand-footer { margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 15px; border-top: var(--border); opacity: 0.7; }
+.sidebar-brand-footer img { width: 30px; height: 30px; }
+.brand-text { display: flex; flex-direction: column; line-height: 1.1; }
+.brand-text span { font-weight: 800; font-size: 0.9rem; letter-spacing: 1px; }
+.brand-text small { font-size: 0.65rem; }
+
+/* ================= CENTER COLUMN (ADAPTIVE) ================= */
+.main-feed-column {
+  flex-grow: 1; /* Default: Kukunin ang lahat ng space */
+  min-width: 0; 
+  width: auto;
+  border-right: var(--border); 
+  position: relative;
+  transition: all 0.3s ease;
+  padding-bottom: 100px;
+}
+
+/* === VIEW SPECIFIC FIXES === */
+
+/* 1. NARROW VIEW (For Collections/Subscriptions) */
+.main-feed-column.narrow-view {
+    flex-grow: 0 !important; /* Huwag mag-grow */
+    flex-shrink: 0 !important;
+    width: 400px !important; /* Fixed Width */
+    max-width: 400px !important;
+}
+
+/* 2. MESSAGES VIEW (Fix Scroll Issue) */
+.main-feed-column:has(#view-messages[style*="display: block"]) {
+    height: 100vh !important;
+    overflow: hidden !important;
+    padding-bottom: 0 !important;
+}
+
+/* ================= RIGHT SIDEBAR (ADAPTIVE) ================= */
+.right-sidebar { 
+    width: 350px; /* Default Fixed Width */
+    min-width: 350px;
+    flex-shrink: 0; 
+    display: flex; 
+    flex-direction: column; 
+    background: var(--bg); 
+    border-left: none; 
+    transition: all 0.3s ease; 
+    
+    /* Sticky Default */
+    position: -webkit-sticky;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto; 
+}
+
+.right-sidebar .sidebar-inner { 
+    padding: 20px 25px; 
+    width: 100%; 
+    min-height: 100%; 
+    display: flex;
+    flex-direction: column;
+}
+
+/* === WIDE MODE (For Collections/Subscriptions) === */
+.right-sidebar.wide-view {
+    flex-grow: 1 !important; /* Kukunin ang natirang space */
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    
+    /* Disable Sticky para sa mahabang grid */
+    position: static !important; 
+    height: auto !important;
+    overflow: visible !important;
+}
+
+.right-sidebar.hidden-sidebar { display: none !important; }
+
+/* ================= RESPONSIVE ================= */
+.mobile-bottom-nav { display: none; position: fixed; bottom: 0; left: 0; width: 100%; height: 60px; background: rgba(2, 4, 10, 0.95); backdrop-filter: blur(10px); border-top: var(--border); justify-content: space-around; align-items: center; z-index: 1000; padding-bottom: env(safe-area-inset-bottom); }
+.mob-nav-item { color: var(--muted); font-size: 1.4rem; padding: 10px 20px; position: relative; }
+.mob-nav-item.active { color: var(--primary-cyan); }
+.add-circle { width: 45px; height: 45px; background: var(--primary-cyan); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #000; font-size: 1.2rem; margin-top: -25px; border: 4px solid var(--bg); box-shadow: 0 0 10px var(--primary-cyan); }
+
+@media (max-width: 1024px) { 
+  .right-sidebar { display: none; }
+  .right-sidebar.wide-view { display: none; }
+  
+  /* Reset Center Column to Full Width */
+  .main-feed-column { border-right: none; }
+  .main-feed-column.narrow-view { 
+      flex-grow: 1 !important; 
+      width: 100% !important; 
+      max-width: none !important; 
+  }
+}
+
+@media (max-width: 1000px) {
+  .left-sidebar { width: 80px; align-items: center; }
+  .sidebar-inner { width: 100%; padding: 20px 0; align-items: center; }
+  .nav-text, .btn-text, .profile-header-card, .sidebar-brand-footer { display: none; }
+  .nav-item { justify-content: center; padding: 15px; }
+  .nav-icon { font-size: 1.6rem; width: auto; }
+  .btn-new-post { width: 50px; height: 50px; border-radius: 50%; padding: 0; margin-top: 20px; }
+  .ph-user-details, .ph-settings { display: none; } 
+}
+
+@media (max-width: 500px) {
+  .left-sidebar { display: none; }
+  .mobile-bottom-nav { display: flex; }
+  .main-feed-column { width: 100%; border: none; padding-bottom: 70px; }
+}

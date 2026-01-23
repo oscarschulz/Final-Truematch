@@ -1,0 +1,146 @@
+/* ======================================================
+   1. IMPORTS
+   ====================================================== */
+@import 'layout.css';
+@import 'chat.css';
+@import 'feed.css';
+
+/* ======================================================
+   2. GLOBAL VARIABLES & RESET
+   ====================================================== */
+:root {
+  /* DARK MODE DEFAULTS */
+  --bg: #02040a; 
+  --primary-cyan: #64E9EE;
+  --text: #F6FAFF;
+  --muted: #8a96a3;
+  --card-bg: #0d1423;
+  --border: 1px solid rgba(255, 255, 255, 0.1); 
+  --hover-bg: rgba(255, 255, 255, 0.08);
+  --input-text: #fff;
+  --search-bg: #242529;
+}
+
+/* LIGHT MODE OVERRIDES - Variables Only */
+body.tm-light {
+  --bg: #f0f2f5;
+  --primary-cyan: #008c9e; 
+  --text: #050505;
+  --muted: #65676b;
+  --card-bg: #ffffff;
+  --border: 1px solid #dbdbdb;
+  --hover-bg: #e4e6eb;
+  --input-text: #050505;
+  --search-bg: #ffffff;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0; padding: 0;
+  background-color: var(--bg) !important;
+  color: var(--text);
+  font-family: 'Montserrat', sans-serif;
+  height: 100vh;
+  overflow: hidden; /* Fix scroll */
+  transition: background-color 0.3s, color 0.3s;
+}
+
+input { color: var(--input-text) !important; }
+
+#tm-bg-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: -1; pointer-events: none; }
+a { text-decoration: none; color: inherit; }
+.hidden { display: none !important; }
+
+/* --- APP LOADER --- */
+#app-loader {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: #000;
+    z-index: 99999;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column;
+    transition: opacity 0.5s ease-out, visibility 0.5s ease;
+}
+.loader-logo { width: 80px; height: 80px; border-radius: 50%; animation: pulseLogo 2s infinite; }
+.loader-text { margin-top: 15px; font-weight: 700; letter-spacing: 1px; font-size: 1.2rem; color: #fff; }
+@keyframes pulseLogo {
+    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(100, 233, 238, 0.7); }
+    70% { transform: scale(1.1); box-shadow: 0 0 0 20px rgba(100, 233, 238, 0); }
+    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(100, 233, 238, 0); }
+}
+
+/* ======================================================
+   3. GLOBAL MODALS (Payment & SweetAlert)
+   ====================================================== */
+
+/* Payment Modal */
+.payment-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 2000; display: none; align-items: center; justify-content: center; backdrop-filter: blur(5px); }
+.payment-overlay.is-visible { display: flex !important; }
+.payment-card { background: var(--card-bg); padding: 40px; border-radius: 20px; width: 90%; max-width: 400px; border: 1px solid var(--primary-cyan); text-align: center; }
+.btn-group-modal { display: flex; gap: 10px; margin-top: 20px; }
+.btn-modal { flex: 1; padding: 12px; border-radius: 50px; border: 1px solid; cursor: pointer; font-weight: 700; }
+.btn-modal.primary { background: var(--primary-cyan); border-color: var(--primary-cyan); }
+.btn-modal.ghost { background: transparent; border-color: var(--text); color: var(--text); }
+
+/* SweetAlert2 Customization */
+div:where(.swal2-container) div:where(.swal2-popup) {
+    background: #0d1423 !important; border: 1px solid rgba(100, 233, 238, 0.3); border-radius: 24px !important; padding: 30px !important; box-shadow: 0 0 40px rgba(0, 0, 0, 0.8), 0 0 15px rgba(100, 233, 238, 0.1) !important;
+}
+div:where(.swal2-container) h2:where(.swal2-title) { color: #F6FAFF !important; font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 1.5rem; margin-bottom: 10px; }
+div:where(.swal2-container) .swal2-html-container { color: #8a96a3 !important; font-size: 0.95rem; margin-bottom: 20px; }
+div:where(.swal2-container) input:where(.swal2-input), div:where(.swal2-container) textarea:where(.swal2-textarea) {
+    background: rgba(255, 255, 255, 0.03) !important; border: 1px solid rgba(255, 255, 255, 0.1) !important; color: #fff !important; border-radius: 12px !important; font-size: 1rem; padding: 15px !important; margin: 10px auto !important; width: 90% !important; box-shadow: inset 0 2px 5px rgba(0,0,0,0.5); transition: all 0.3s ease;
+}
+div:where(.swal2-container) input:where(.swal2-input):focus, div:where(.swal2-container) textarea:where(.swal2-textarea):focus {
+    border-color: #64E9EE !important; box-shadow: 0 0 0 3px rgba(100, 233, 238, 0.2) !important; background: rgba(255, 255, 255, 0.05) !important; outline: none;
+}
+div:where(.swal2-container) .swal2-actions { margin-top: 25px !important; gap: 15px; width: 100%; justify-content: center; }
+div:where(.swal2-container) button:where(.swal2-styled).swal2-confirm {
+    background: linear-gradient(135deg, #64E9EE 0%, #4bc5ca 100%) !important; color: #000 !important; font-weight: 700; font-size: 1rem; padding: 14px 30px !important; border-radius: 50px !important; box-shadow: 0 5px 20px rgba(100, 233, 238, 0.4) !important; border: none !important; width: auto; min-width: 140px;
+}
+div:where(.swal2-container) button:where(.swal2-styled).swal2-confirm:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(100, 233, 238, 0.6) !important; }
+div:where(.swal2-container) button:where(.swal2-styled).swal2-cancel {
+    background: transparent !important; color: #8a96a3 !important; border: 1px solid rgba(255,255,255,0.2) !important; border-radius: 50px !important; padding: 14px 25px !important; font-weight: 600;
+}
+div:where(.swal2-container) button:where(.swal2-styled).swal2-cancel:hover { background: rgba(255,255,255,0.05) !important; color: #fff !important; border-color: #fff !important; }
+
+/* ======================================================
+   4. RESPONSIVE MEDIA QUERIES (FIXED)
+   ====================================================== */
+
+/* FIX: Changed from 1200px to 1024px to show sidebar on laptops */
+@media (max-width: 1024px) { 
+  .right-sidebar { display: none; }
+  .right-sidebar.wide-view { display: none; }
+  /* Ensure main column expands correctly */
+  .main-feed-column { border-right: var(--border); flex: 1; min-width: 0; max-width: none; }
+}
+
+@media (max-width: 1000px) {
+  .left-sidebar { width: 80px; align-items: center; }
+  .sidebar-inner { width: 100%; padding: 20px 0; align-items: center; }
+  .nav-text, .btn-text, .profile-header-card, .sidebar-brand-footer { display: none; }
+  .nav-item { justify-content: center; padding: 15px; }
+  .nav-icon { font-size: 1.6rem; width: auto; }
+  .btn-new-post { width: 50px; height: 50px; border-radius: 50%; padding: 0; margin-top: 20px; }
+  
+  /* Message Sidebar Compact */
+  .msg-sidebar { width: 80px; min-width: 80px; }
+  .msg-user-item { padding: 15px 5px; justify-content: center; }
+  .u-info, .u-meta, .mh-top h3, .msg-tabs { display: none; }
+  .msg-info-panel { display: none; }
+}
+
+@media (max-width: 768px) {
+  .of-layout-container { display: block; overflow: auto; /* Re-enable scroll for mobile layout */ }
+  .left-sidebar, .right-sidebar { display: none !important; }
+  .mobile-bottom-nav { display: flex; }
+  
+  /* Mobile Feed */
+  .main-feed-column { width: 100%; border: none; margin-bottom: 70px; height: auto; overflow: visible; }
+  #view-home, #view-notifications { height: auto; overflow: visible; }
+  
+  .feed-top-header { padding: 10px 15px; }
+}
