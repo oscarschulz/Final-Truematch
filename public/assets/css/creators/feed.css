@@ -219,7 +219,21 @@ input:checked + .slider:before { transform: translateX(18px); background-color: 
 .ac-check-row { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 25px; font-size: 0.9rem; color: var(--text); line-height: 1.4; }
 .ac-check-row input { margin-top: 3px; accent-color: var(--primary-cyan); }
 .ac-submit-row { display: flex; justify-content: flex-end; margin-bottom: 40px; }
-.btn-submit-card { background: var(--primary-cyan); color: #000; font-weight: 700; border: none; padding: 12px 40px; border-radius: 30px; cursor: pointer; font-size: 1rem; transition: transform 0.2s; }
+
+/* --- UPDATED SUBMIT BUTTON (PILL SHAPE, AUTO WIDTH) --- */
+.btn-submit-card {
+    background: var(--primary-cyan);
+    color: #000;
+    font-weight: 700;
+    border: none;
+    padding: 12px 50px; /* Reduced padding */
+    border-radius: 30px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: transform 0.2s;
+    width: auto; /* Fix */
+    min-width: 180px;
+}
 .btn-submit-card:hover { transform: scale(1.02); opacity: 0.9; }
 
 /* Crypto Pills */
@@ -238,13 +252,30 @@ input:checked + .slider:before { transform: translateX(18px); background-color: 
 .ww-amount { margin: 0; font-size: 2rem; font-weight: 800; color: var(--text); }
 .ww-label { font-size: 0.9rem; color: var(--muted); }
 .ww-body { padding: 20px; }
-.btn-add-payment-card { width: 100%; background: var(--primary-cyan); color: #000; font-weight: 700; border: none; padding: 12px; border-radius: 30px; margin-bottom: 20px; cursor: pointer; }
+
+/* --- UPDATED WALLET BUTTON (CENTERED, AUTO WIDTH) --- */
+.btn-add-payment-card {
+    width: auto; /* Fix */
+    display: block;
+    margin: 0 auto 20px auto; /* Centered */
+    background: var(--primary-cyan);
+    color: #000;
+    font-weight: 700;
+    border: none;
+    padding: 10px 30px; /* Adjusted padding */
+    border-radius: 30px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: transform 0.2s;
+}
+.btn-add-payment-card:hover { transform: scale(1.05); }
+
 .ww-toggle-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; color: var(--text); gap: 10px; }
 .ww-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--muted); padding: 20px 0; font-size: 0.9rem; }
 .ww-empty i { font-size: 2rem; opacity: 0.5; }
 
 /* ======================================================
-   ADD CARD MODAL STYLES (NEW)
+   ADD CARD MODAL STYLES
    ====================================================== */
 
 .tm-modal-overlay { 
@@ -348,3 +379,186 @@ body.tm-dark .ac-group label, body.tm-dark .ac-title { color: #aaa; }
 body.tm-dark .ac-desc, body.tm-dark .ac-check-row label { color: #ddd; }
 body.tm-dark .ac-group input, body.tm-dark .ac-group select { background: #252525; border-color: #444; color: #fff; }
 body.tm-dark .c-logo { background: #252525; border-color: #444; }
+
+/* ================= BANKING / CREATOR SETUP STYLES ================= */
+
+/* Warning Box */
+.of-warning-box {
+    background: rgba(255, 71, 87, 0.15);
+    border: 1px solid #ff4757;
+    border-radius: 6px;
+    padding: 15px;
+    display: flex;
+    gap: 15px;
+    color: var(--text);
+    margin-bottom: 20px;
+}
+.wb-icon {
+    color: #ff4757;
+    font-size: 1.2rem;
+    padding-top: 2px;
+}
+.wb-text strong {
+    font-size: 0.95rem;
+    display: block;
+    margin-bottom: 5px;
+}
+.wb-text ul {
+    margin: 0;
+    padding-left: 20px;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    color: var(--text);
+    opacity: 0.9;
+}
+
+/* Profile Images Editor */
+.profile-setup-container {
+    position: relative;
+    margin-bottom: 80px; /* Space for avatar hanging down */
+}
+
+.setup-header-img {
+    height: 220px; /* INCREASED HEIGHT */
+    background: linear-gradient(135deg, #1e2a3b 0%, #0d1423 100%); 
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px dashed rgba(255,255,255,0.2);
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.setup-header-img:hover {
+    background: rgba(255,255,255,0.05);
+}
+
+.cam-circle {
+    width: 40px;
+    height: 40px;
+    border: 2px solid rgba(255,255,255,0.5);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255,255,255,0.8);
+    font-size: 1.1rem;
+}
+
+.setup-avatar-wrapper {
+    position: absolute;
+    bottom: -50px;
+    left: 20px;
+}
+
+.setup-avatar-placeholder {
+    width: 100px;
+    height: 100px;
+    background: #141414;
+    border: 4px solid var(--bg); /* Matches page bg */
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary-cyan);
+    font-weight: 700;
+    font-size: 2rem;
+    position: relative;
+    cursor: pointer;
+}
+
+.avatar-cam-overlay {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 1.5rem;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+.setup-avatar-placeholder:hover .avatar-cam-overlay {
+    opacity: 1;
+}
+
+/* Bio Input (Material Style) */
+.bio-input-group {
+    background: var(--card-bg); /* Or darker shade */
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+}
+
+.bio-wrapper {
+    position: relative;
+    padding: 20px 15px 5px 15px;
+}
+
+.bio-wrapper textarea {
+    width: 100%;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-size: 1rem;
+    resize: none;
+    height: 100px;
+    padding: 0;
+}
+
+.bio-wrapper label {
+    position: absolute;
+    top: 20px;
+    left: 15px;
+    color: var(--muted);
+    pointer-events: none;
+    transition: 0.2s ease all;
+    font-size: 1rem;
+}
+
+/* Floating Label Logic */
+.bio-wrapper textarea:focus + label,
+.bio-wrapper textarea:not(:placeholder-shown) + label {
+    top: 5px;
+    font-size: 0.75rem;
+    color: var(--primary-cyan);
+    font-weight: 700;
+}
+
+.bio-footer {
+    display: flex;
+    justify-content: flex-end; /* Right align icons/text */
+    align-items: center;
+    padding: 5px 15px 10px;
+    gap: 15px;
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+/* Save Button */
+.setup-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+.btn-save-setup {
+    background: var(--primary-cyan);
+    color: #000;
+    border: none;
+    padding: 10px 25px;
+    border-radius: 20px;
+    font-weight: 700;
+    font-size: 0.9rem;
+    cursor: pointer;
+    text-transform: uppercase;
+}
+.btn-save-setup:disabled {
+    background: rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.3);
+    cursor: default;
+}

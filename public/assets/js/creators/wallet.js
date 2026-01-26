@@ -1,20 +1,24 @@
 import { DOM } from './dom.js';
 
 export function initWallet(TopToast) {
-    const btnAddCard = document.querySelector('.btn-add-payment-card');
     const modal = document.getElementById('add-card-modal');
     const btnCancel = document.querySelector('.btn-cancel-modal');
     const btnSubmit = document.querySelector('.btn-submit-card-modal');
 
-    // Open Modal logic
-    if(btnAddCard && modal) {
-        btnAddCard.addEventListener('click', (e) => {
+    // FIX: Event Delegation para gumana kahit dynamic content (Settings View)
+    document.addEventListener('click', (e) => {
+        // Check if clicked element or its parent has the class
+        const btn = e.target.closest('.btn-add-payment-card');
+        
+        if (btn) {
             e.preventDefault();
-            modal.classList.remove('hidden');
-            // Small delay to allow CSS transition
-            setTimeout(() => modal.classList.add('open'), 10);
-        });
-    }
+            if(modal) {
+                modal.classList.remove('hidden');
+                // Small delay for transition
+                setTimeout(() => modal.classList.add('open'), 10);
+            }
+        }
+    });
 
     // Close Modal Function
     const closeModal = () => {
@@ -33,7 +37,7 @@ export function initWallet(TopToast) {
         });
     }
 
-    // Submit Logic (Demo)
+    // Submit Logic
     if(btnSubmit) {
         btnSubmit.addEventListener('click', () => {
             closeModal();

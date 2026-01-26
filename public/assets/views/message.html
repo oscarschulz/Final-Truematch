@@ -1,0 +1,90 @@
+<div id="view-messages" style="display: none; height: 100%;">
+    <div class="msg-container" style="display: flex; height: 100%; width: 100%; overflow: hidden; position: relative;">
+        
+        <div class="msg-sidebar" style="width: 320px; display: flex; flex-direction: column; border-right: var(--border); flex-shrink: 0;">
+            <div class="msg-header-tools" style="padding: 15px;">
+                <div class="mh-top" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <i class="fa-solid fa-arrow-left back-btn" onclick="document.getElementById('nav-link-home').click()" style="cursor: pointer;"></i>
+                    <h3 style="margin: 0; font-size: 1.2rem;">MESSAGES</h3>
+                    <div class="mh-icons" style="display: flex; gap: 10px;">
+                        <i class="fa-solid fa-plus" id="btn-new-msg" title="New Message" style="cursor: pointer;"></i>
+                        <i class="fa-solid fa-magnifying-glass" id="trigger-msg-search" title="Search" style="cursor: pointer;"></i>
+                    </div>
+                </div>
+                <div class="msg-search-container hidden" id="msg-search-box" style="margin-bottom: 10px;">
+                    <div class="search-input-wrapper" style="display: flex; align-items: center; background: var(--search-bg); padding: 5px 10px; border-radius: 20px;">
+                        <i class="fa-solid fa-magnifying-glass" style="color: var(--muted);"></i>
+                        <input type="text" id="msg-search-input" placeholder="Search user..." style="background: transparent; border: none; color: #fff; margin-left: 10px; flex: 1; outline: none;">
+                        <i class="fa-solid fa-circle-xmark" id="close-msg-search" style="cursor: pointer;"></i>
+                    </div>
+                </div>
+                <div class="msg-tabs" id="msg-tabs" style="display: flex; gap: 15px; border-bottom: var(--border); padding-bottom: 5px;">
+                    <span class="active" style="border-bottom: 2px solid var(--primary-cyan); font-weight: bold; cursor: pointer;">All</span>
+                    <span style="color: var(--muted); cursor: pointer;">Priority</span>
+                    <span style="color: var(--muted); cursor: pointer;">Unread</span>
+                    <span style="color: var(--muted); cursor: pointer;">$$$</span>
+                </div>
+            </div>
+            <div class="msg-user-list" id="msg-user-list" style="flex: 1; overflow-y: auto;">
+                <div class="msg-user-item active" style="padding: 15px; display: flex; gap: 10px; cursor: pointer; background: rgba(100, 233, 238, 0.1); border-left: 3px solid var(--primary-cyan);">
+                    <img src="assets/images/truematch-mark.png" class="u-avatar" style="width: 40px; height: 40px; border-radius: 50%;" onerror="this.src='assets/images/truematch-mark.png'">
+                    <div class="u-info">
+                        <div class="u-name" style="font-weight: bold;">Bauds Dev <i class="fa-solid fa-star" style="color:gold; font-size:0.7rem;"></i></div>
+                        <div class="u-preview" style="font-size: 0.8rem; color: var(--muted);">I just sent the updated layout!</div>
+                    </div>
+                    <div class="u-meta" style="font-size: 0.7rem; color: var(--muted);">Now</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="msg-chat-area" style="flex: 1; display: flex; flex-direction: column; background: rgba(0,0,0,0.2);">
+            
+            <div class="chat-header" style="padding: 15px; border-bottom: var(--border); display: flex; justify-content: space-between; align-items: center; position: relative;">
+                <div class="ch-user" style="display: flex; align-items: center; gap: 10px;">
+                    <img src="assets/images/truematch-mark.png" id="active-chat-avatar" class="c-avatar-small" style="width: 35px; height: 35px; border-radius: 50%;" onerror="this.src='assets/images/truematch-mark.png'">
+                    <span class="chat-user-name" id="active-chat-name" style="font-weight: bold;">Bauds Dev <i class="fa-solid fa-circle-check verify-badge" style="color: var(--primary-cyan);"></i></span>
+                </div>
+
+                <div id="chat-inner-search-bar" class="hidden" style="position: absolute; right: 10px; top: 10px; bottom: 10px; background: var(--bg); display: flex; align-items: center; border: 1px solid var(--primary-cyan); border-radius: 30px; padding: 0 15px; z-index: 20;">
+                    <input type="text" id="chat-history-search" placeholder="Search conversation..." style="background: transparent; border: none; outline: none; color: #fff; width: 150px;">
+                    <i class="fa-solid fa-xmark" id="close-chat-search" style="cursor: pointer; color: var(--muted); margin-left: 5px;"></i>
+                </div>
+
+                <div class="ch-actions" style="display: flex; gap: 15px; font-size: 1.2rem; color: var(--primary-cyan);">
+                    <i class="fa-solid fa-magnifying-glass" id="btn-chat-search" title="Search in chat" style="cursor: pointer;"></i>
+                    <i class="fa-regular fa-image" title="Gallery" style="cursor: pointer;"></i>
+                    <i class="fa-regular fa-star" id="btn-chat-star" title="Favorite" style="cursor: pointer;"></i>
+                </div>
+            </div>
+            
+            <div class="chat-history" id="chat-history-container" style="flex: 1; overflow-y: auto; padding: 20px;"></div>
+            <div class="emoji-picker hidden" id="emoji-picker-container" style="position: absolute; bottom: 70px; right: 20px;"></div>
+            <div class="chat-input-box" style="padding: 15px; display: flex; align-items: center; gap: 10px; border-top: var(--border);">
+                <i class="fa-regular fa-image" style="font-size: 1.5rem; color: var(--primary-cyan);"></i>
+                <input type="text" id="chat-message-input" placeholder="Type a message..." autocomplete="off" style="flex: 1; background: var(--hover-bg); border: none; padding: 10px 15px; border-radius: 20px; color: #fff; outline: none;">
+                <i class="fa-regular fa-face-smile" id="btn-emoji-trigger" style="font-size: 1.3rem; cursor: pointer;"></i>
+                <i class="fa-solid fa-dollar-sign" id="btn-ppv-trigger" style="font-size: 1.3rem; cursor: pointer;"></i>
+                <i class="fa-regular fa-paper-plane send-icon" id="btn-send-message" style="font-size: 1.3rem; color: var(--primary-cyan); cursor: pointer;"></i>
+            </div>
+        </div>
+
+        <div class="msg-info-panel" id="msg-info-panel" style="width: 250px; border-left: var(--border); padding: 20px; display: flex; flex-direction: column; gap: 20px;">
+            <div class="info-header" style="text-align: center;">
+                <div class="info-input-wrap"><input type="text" class="info-nickname-input" id="info-nickname" value="Bauds Dev" style="background: transparent; border: none; color: #fff; font-weight: bold; text-align: center; font-size: 1.1rem;"></div>
+                <a href="#" class="info-profile-link" id="info-handle" style="color: var(--muted); font-size: 0.9rem;">@baudss-server</a>
+            </div>
+            <div class="info-stats-grid" style="display: flex; gap: 10px;">
+                <div class="i-stat" style="flex: 1; background: var(--hover-bg); padding: 10px; border-radius: 8px; text-align: center;">
+                    <div class="stat-txt"><small style="color: var(--muted);">Subscribed</small><br><strong id="info-joined">21 days</strong></div>
+                </div>
+                <div class="i-stat" style="flex: 1; background: var(--hover-bg); padding: 10px; border-radius: 8px; text-align: center;">
+                    <div class="stat-txt"><small style="color: var(--muted);">Total Spent</small><br><strong id="info-spent">$50</strong></div>
+                </div>
+            </div>
+            <div class="info-form-group">
+                <label style="color: var(--muted); font-size: 0.8rem; font-weight: bold;">NOTES</label>
+                <textarea placeholder="Add note..." style="width: 100%; background: var(--hover-bg); border: none; color: #fff; padding: 10px; margin-top: 5px; border-radius: 5px;">IM awake dont upsell rn</textarea>
+            </div>
+        </div>
+    </div>
+</div>

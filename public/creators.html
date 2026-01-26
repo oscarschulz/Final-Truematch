@@ -3,13 +3,12 @@
 <head>
   <script>window.API_BASE = '';</script>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=0" />
   <title>iTRUEMATCH | Creators</title>
   
   <link rel="icon" href="assets/images/truematch-mark.png" />
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  
   <script src="https://cdn.jsdelivr.net/npm/picmo@latest/dist/umd/index.js"></script>
   
   <link rel="stylesheet" href="assets/css/creators/global.css" />
@@ -28,7 +27,6 @@
     
     <nav class="left-sidebar">
       <div class="sidebar-inner">
-        
         <div class="profile-header-card" id="trigger-profile-card">
           <div class="ph-avatar-container">
             <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23333%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" alt="Profile">
@@ -41,16 +39,16 @@
           <div class="ph-settings"><i class="fa-solid fa-gear"></i></div>
         </div>
 
-        <a href="#" id="nav-link-home" class="nav-item active"><div class="nav-icon"><i class="fa-solid fa-house"></i></div><span class="nav-text">Home</span></a>
-        <a href="#" id="nav-link-notif" class="nav-item"><div class="nav-icon"><i class="fa-regular fa-bell"></i></div><span class="nav-text">Notifications</span></a>
-        <a href="#" id="nav-link-messages" class="nav-item"><div class="nav-icon"><i class="fa-regular fa-envelope"></i></div><span class="nav-text">Messages</span></a>
-        <a href="#" id="nav-link-collections" class="nav-item"><div class="nav-icon"><i class="fa-regular fa-bookmark"></i></div><span class="nav-text">Collections</span></a>
-        <a href="#" id="nav-link-subs" class="nav-item"><div class="nav-icon"><i class="fa-solid fa-user-group"></i></div><span class="nav-text">Subscriptions</span></a>
-        <a href="#" class="nav-item" id="nav-link-add-card"><div class="nav-icon"><i class="fa-regular fa-credit-card"></i></div><span class="nav-text">Add card</span></a>
-        <a href="#" class="nav-item" id="nav-link-profile"><div class="nav-icon"><i class="fa-regular fa-user"></i></div><span class="nav-text">My profile</span></a>
-        <a href="#" class="nav-item" id="trigger-more-btn"><div class="nav-icon"><i class="fa-solid fa-circle-notch"></i></div><span class="nav-text">More</span></a>
+        <a href="#" id="nav-link-home" class="nav-item active"><div class="nav-icon"><i class="fa-solid fa-house"></i></div><span class="nav-text" data-lang="nav_home">Home</span></a>
+        <a href="#" id="nav-link-notif" class="nav-item"><div class="nav-icon"><i class="fa-regular fa-bell"></i></div><span class="nav-text" data-lang="nav_notif">Notifications</span></a>
+        <a href="#" id="nav-link-messages" class="nav-item"><div class="nav-icon"><i class="fa-regular fa-envelope"></i></div><span class="nav-text" data-lang="nav_msg">Messages</span></a>
+        <a href="#" id="nav-link-collections" class="nav-item"><div class="nav-icon"><i class="fa-regular fa-bookmark"></i></div><span class="nav-text" data-lang="nav_col">Collections</span></a>
+        <a href="#" id="nav-link-subs" class="nav-item"><div class="nav-icon"><i class="fa-solid fa-user-group"></i></div><span class="nav-text" data-lang="nav_subs">Subscriptions</span></a>
+        <a href="#" class="nav-item" id="nav-link-add-card"><div class="nav-icon"><i class="fa-regular fa-credit-card"></i></div><span class="nav-text" data-lang="nav_card">Add card</span></a>
+        <a href="#" class="nav-item" id="nav-link-profile"><div class="nav-icon"><i class="fa-regular fa-user"></i></div><span class="nav-text" data-lang="nav_profile">My profile</span></a>
+        <a href="#" class="nav-item" id="trigger-more-btn"><div class="nav-icon"><i class="fa-solid fa-circle-notch"></i></div><span class="nav-text" data-lang="nav_more">More</span></a>
         
-        <button class="btn-new-post"><i class="fa-solid fa-plus"></i> <span class="btn-text">NEW POST</span></button>
+        <button class="btn-new-post"><i class="fa-solid fa-plus"></i> <span class="btn-text" data-lang="nav_post">NEW POST</span></button>
 
         <div class="sidebar-brand-footer">
             <img src="assets/images/truematch-mark.png" alt="Logo">
@@ -63,7 +61,14 @@
       
       <div id="view-home">
           <div class="feed-top-header">
-            <div class="header-content"><h2>HOME</h2></div>
+            <div class="header-content header-desktop-only"><h2>HOME</h2></div>
+            
+            <div class="header-tablet-only" style="display:none; width: 100%; justify-content: space-between; align-items: center;">
+                <img src="assets/images/truematch-mark.png" style="height: 30px; width: auto;">
+                <div class="tablet-header-icons" style="display: flex; gap: 20px; align-items: center; font-size: 1.2rem;">
+                    <i class="fa-regular fa-envelope tablet-msg-btn" style="cursor:pointer;"></i>
+                    </div>
+            </div>
           </div>
 
           <div class="compose-area">
@@ -142,7 +147,6 @@
                 </div>
             </div>
           </div>
-
           <div style="position: relative;">
               <div style="height: 180px; background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); width: 100%;"></div>
               
@@ -153,7 +157,7 @@
                           <div style="position: absolute; bottom: 8px; right: 5px; width: 18px; height: 18px; background: #46e85e; border: 3px solid var(--bg); border-radius: 50%;"></div>
                       </div>
                       <div style="margin-top: 15px; display: flex; gap: 10px;">
-                           <button style="background: transparent; border: 1px solid var(--border); color: var(--text); padding: 8px 16px; border-radius: 20px; font-weight: 700; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s;" onmouseover="this.style.borderColor='var(--primary-cyan)'; this.style.color='var(--primary-cyan)'" onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--text)'">
+                           <button id="btn-edit-profile" style="background: transparent; border: 1px solid var(--border); color: var(--text); padding: 8px 16px; border-radius: 20px; font-weight: 700; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s;" onmouseover="this.style.borderColor='var(--primary-cyan)'; this.style.color='var(--primary-cyan)'" onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--text)'">
                                <i class="fa-solid fa-gear"></i> EDIT PROFILE
                            </button>
                            <button style="background: transparent; border: 1px solid var(--border); color: var(--text); width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.borderColor='var(--primary-cyan)'; this.style.color='var(--primary-cyan)'" onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--text)'">
@@ -190,7 +194,7 @@
                   <p>Just finished a great workout! 💪 Check out the full routine in my next video.</p>
                 </div>
                 <div class="post-media">
-                     <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23222%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" class="media-img" style="aspect-ratio: 16/9;">
+                      <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23222%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" class="media-img" style="aspect-ratio: 16/9;">
                 </div>
                 <div class="post-actions">
                   <div class="action-group">
@@ -200,26 +204,11 @@
                   </div>
                   <div class="action-group right"><i class="fa-regular fa-bookmark"></i></div>
                 </div>
-             </article>
-
-             <article class="post-card">
-                <div class="post-header">
-                  <div class="ph-left">
-                    <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23333%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" class="ph-avatar"> 
-                    <div class="ph-info"><strong class="ph-name">Aljur Abrenica <i class="fa-solid fa-circle-check verify-badge"></i></strong><span class="ph-handle">@aljur_official</span></div>
-                  </div>
-                  <div class="ph-right"><span class="ph-time">Yesterday</span><i class="fa-solid fa-ellipsis"></i></div>
-                </div>
-                <div class="post-body">
-                  <p>Thanks for subscribing! More exclusive content coming soon.</p>
-                </div>
-                <div class="post-actions">
-                  <div class="action-group">
-                      <i class="fa-regular fa-heart"></i>
-                      <i class="fa-regular fa-comment"></i> 
-                      <i class="fa-solid fa-dollar-sign"></i> 
-                  </div>
-                  <div class="action-group right"><i class="fa-regular fa-bookmark"></i></div>
+                <div class="post-comments-section hidden">
+                    <div class="comment-input-row">
+                        <img src="assets/images/truematch-mark.png" class="c-avatar-small" onerror="this.src='data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23333%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E'">
+                        <div class="c-input-wrapper"><input type="text" placeholder="Write a comment..."><i class="fa-regular fa-paper-plane"></i></div>
+                    </div>
                 </div>
              </article>
           </div>
@@ -232,137 +221,7 @@
                   <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23555%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width:100%; aspect-ratio:1/1; object-fit:cover;">
                   <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23666%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width:100%; aspect-ratio:1/1; object-fit:cover;">
                   <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23777%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width:100%; aspect-ratio:1/1; object-fit:cover;">
-                  <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23888%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width:100%; aspect-ratio:1/1; object-fit:cover;">
                   <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23999%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width:100%; aspect-ratio:1/1; object-fit:cover;">
-              </div>
-          </div>
-      </div>
-
-      <div id="view-collections" style="display: none;">
-          <div class="feed-top-header">
-            <div class="header-content" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
-                <div style="display:flex; align-items:center; gap:15px;">
-                    <i class="fa-solid fa-arrow-left back-btn" onclick="document.getElementById('nav-link-home').click()"></i>
-                    <h2>COLLECTIONS</h2>
-                </div>
-                <div style="display:flex; gap:20px; font-size:1.1rem; color:var(--text);">
-                    <i class="fa-solid fa-magnifying-glass" id="col-btn-search" style="cursor:pointer;" title="Search"></i>
-                    <i class="fa-solid fa-plus" id="col-btn-add" style="cursor:pointer;" title="New List"></i>
-                </div>
-            </div>
-            <div id="col-search-container" class="hidden" style="margin-top: 10px; padding-bottom:10px; border-bottom:var(--border);">
-                <div class="search-input-wrapper" style="background:var(--search-bg); border-radius:8px; padding:8px 12px; display:flex; align-items:center;">
-                    <i class="fa-solid fa-magnifying-glass" style="color:var(--muted)"></i>
-                    <input type="text" id="col-search-input" placeholder="Find a collection..." style="background:transparent; border:none; color:var(--text); width:100%; margin-left:10px; outline:none;">
-                    <i class="fa-solid fa-xmark" id="col-search-close" style="cursor:pointer; color:var(--muted);"></i>
-                </div>
-            </div>
-          </div>
-          <div class="collection-tabs-bar">
-              <div class="c-tab-item active" id="tab-col-users">USER LISTS</div>
-              <div class="c-tab-item" id="tab-col-bookmarks">BOOKMARKS</div>
-          </div>
-          <div class="collection-list-container" id="collection-list-wrapper"></div>
-      </div>
-
-      <div id="view-notifications" style="display: none;">
-          <div class="feed-top-header notif-header-flex">
-            <div class="nh-left">
-                 <div class="back-btn" onclick="document.getElementById('nav-link-home').click()"><i class="fa-solid fa-arrow-left"></i></div>
-                 <h2>NOTIFICATIONS</h2>
-            </div>
-            <div class="nh-right">
-                 <i class="fa-solid fa-magnifying-glass"></i>
-                 <i class="fa-solid fa-gear" style="cursor: pointer;"></i>
-            </div>
-          </div>
-          <div class="notif-tabs-bar">
-             <button class="n-pill active">All</button>
-             <button class="n-pill">Tags</button>
-             <button class="n-pill">Comments</button>
-             <button class="n-pill">Mentions</button>
-             <button class="n-pill">Subscriptions</button>
-             <button class="n-pill">Promotions</button>
-          </div>
-          <div class="notif-empty-state"><span>No notifications currently!</span></div>
-      </div>
-
-      <div id="view-messages" style="display: none;">
-          <div class="msg-container">
-              <div class="msg-sidebar">
-                  <div class="msg-header-tools">
-                      <div class="mh-top">
-                          <i class="fa-solid fa-arrow-left back-btn" onclick="document.getElementById('nav-link-home').click()"></i>
-                          <h3>MESSAGES</h3>
-                          <div class="mh-icons">
-                              <i class="fa-solid fa-plus" id="btn-new-msg" title="New Message"></i>
-                              <i class="fa-solid fa-magnifying-glass" id="trigger-msg-search" title="Search"></i>
-                          </div>
-                      </div>
-                      <div class="msg-search-container hidden" id="msg-search-box">
-                          <div class="search-input-wrapper">
-                             <i class="fa-solid fa-magnifying-glass"></i>
-                             <input type="text" id="msg-search-input" placeholder="Search user...">
-                             <i class="fa-solid fa-circle-xmark" id="close-msg-search"></i>
-                          </div>
-                      </div>
-                      <div class="msg-tabs" id="msg-tabs">
-                          <span class="active" data-filter="all">All</span>
-                          <span data-filter="priority">Priority</span>
-                          <span data-filter="unread">Unread</span>
-                          <span data-filter="money">$$$</span>
-                      </div>
-                  </div>
-                  <div class="msg-user-list" id="msg-user-list">
-                      <div class="msg-user-item active" data-id="1" data-name="Bauds Dev" data-category="priority" data-avatar="assets/images/sample2.jpg" data-handle="@baudss-server" data-joined="21 days" data-spent="$50">
-                          <img src="assets/images/sample2.jpg" class="u-avatar" onerror="this.src='assets/images/truematch-mark.png'">
-                          <div class="u-info">
-                              <div class="u-name">Bauds Dev <i class="fa-solid fa-star" style="color:gold; font-size:0.7rem;"></i></div>
-                              <div class="u-preview">I just sent the updated layout!</div>
-                          </div>
-                          <div class="u-meta">Now</div>
-                      </div>
-                  </div>
-              </div>
-              <div class="msg-chat-area">
-                  <div class="chat-header">
-                      <div class="ch-user">
-                         <img src="assets/images/sample2.jpg" id="active-chat-avatar" class="c-avatar-small" onerror="this.src='assets/images/truematch-mark.png'">
-                         <span class="chat-user-name" id="active-chat-name">Bauds Dev <i class="fa-solid fa-circle-check verify-badge"></i></span>
-                      </div>
-                      <div class="ch-actions">
-                          <div class="chat-search-bar hidden" id="chat-inner-search-bar">
-                              <input type="text" id="chat-history-search" placeholder="Find in chat...">
-                              <i class="fa-solid fa-xmark" id="close-chat-search"></i>
-                          </div>
-                          <i class="fa-solid fa-magnifying-glass" id="btn-chat-search" title="Search in chat"></i>
-                          <i class="fa-regular fa-image" title="Gallery"></i>
-                          <i class="fa-regular fa-star" id="btn-chat-star" title="Favorite"></i>
-                      </div>
-                  </div>
-                  <div class="chat-history" id="chat-history-container"></div>
-                  <div class="emoji-picker hidden" id="emoji-picker-container"></div>
-                  <div class="chat-input-box">
-                      <i class="fa-regular fa-image"></i>
-                      <input type="text" id="chat-message-input" placeholder="Type a message..." autocomplete="off">
-                      <i class="fa-regular fa-face-smile" id="btn-emoji-trigger"></i>
-                      <i class="fa-solid fa-dollar-sign" id="btn-ppv-trigger"></i>
-                      <i class="fa-regular fa-paper-plane send-icon" id="btn-send-message"></i>
-                  </div>
-              </div>
-              <div class="msg-info-panel" id="msg-info-panel">
-                  <div class="info-header">
-                      <div class="info-input-wrap"><input type="text" class="info-nickname-input" id="info-nickname" value="Bauds Dev"><i class="fa-solid fa-pen"></i></div>
-                      <a href="#" class="info-profile-link" id="info-handle">@baudss-server</a>
-                  </div>
-                  <div class="info-stats-grid">
-                      <div class="i-stat"><div class="icon-box"><i class="fa-regular fa-calendar"></i></div><div class="stat-txt"><small>Subscribed</small><strong id="info-joined">21 days</strong></div></div>
-                      <div class="i-stat"><div class="icon-box"><i class="fa-solid fa-sack-dollar"></i></div><div class="stat-txt"><small>Total Spent</small><strong id="info-spent">$50</strong></div></div>
-                  </div>
-                  <div class="info-form-group"><label>PREFERENCES</label><input type="text" placeholder="e.g. Customs, Chat"></div>
-                  <div class="info-form-group"><label>NOTES</label><textarea placeholder="Add note...">IM awake dont upsell rn</textarea></div>
-                  <div class="info-section-link"><span>Lists</span><i class="fa-solid fa-chevron-right"></i></div>
-                  <button class="btn-view-history"><i class="fa-solid fa-receipt"></i> View PPV History</button>
               </div>
           </div>
       </div>
@@ -377,16 +236,18 @@
                 <div style="font-weight:700; color:var(--primary-cyan); font-size:0.9rem; cursor:pointer;">VERIFY</div>
             </div>
           </div>
-
           <div class="add-card-body" style="padding: 20px;">
               <div class="ac-section">
                   <h4 class="ac-title">BILLING DETAILS</h4>
                   <p class="ac-desc">We are fully compliant with Payment Card Industry Data Security Standards.</p>
+                  
                   <div class="ac-form-grid">
-                      <div class="ac-group"><label>Country</label><select><option>Germany</option></select></div>
-                      <div class="ac-group"><label>State / Province</label><select><option>Berlin</option></select></div>
+                      <div class="ac-group"><label>Country</label><div class="custom-select-wrapper"><select><option>Germany</option></select><i class="fa-solid fa-chevron-down"></i></div></div>
+                      <div class="ac-group"><label>State / Province</label><div class="custom-select-wrapper"><select><option>Berlin</option></select><i class="fa-solid fa-chevron-down"></i></div></div>
                   </div>
+
                   <div class="ac-group"><label>Address</label><input type="text" placeholder="Musterstraße 1"></div>
+
                   <div class="ac-form-grid">
                       <div class="ac-group"><label>City</label><input type="text" value="Berlin"></div>
                       <div class="ac-group"><label>ZIP / Postal Code</label><input type="text" value="10115"></div>
@@ -399,11 +260,13 @@
                       <div class="ac-group"><label>Email</label><input type="email" value="jerw3345@gmail.com"></div>
                       <div class="ac-group"><label>Name on the card</label><input type="text"></div>
                   </div>
-                  <div class="ac-group card-input-wrap">
+
+                  <div class="ac-group">
                       <label>Card Number</label>
                       <div class="input-with-icon"><input type="text"><i class="fa-regular fa-credit-card"></i></div>
-                      <small style="color:var(--primary-cyan); cursor:pointer; font-size:0.8rem; margin-top:5px; display:block;">My card number is longer</small>
+                      <a href="#" class="link-small">My card number is longer</a>
                   </div>
+
                   <div class="ac-form-grid">
                       <div class="ac-group"><label>Expiration</label><input type="text" placeholder="MM / YY"></div>
                       <div class="ac-group"><label>CVC</label><input type="text"></div>
@@ -413,21 +276,134 @@
               <div class="ac-footer">
                   <div class="ac-check-row">
                       <input type="checkbox" id="ageCheck">
-                      <label for="ageCheck">Tick here to confirm that you are at least 18 years old and the age of majority in your place of residence</label>
+                      <label for="ageCheck">Tick here to confirm that you are at least 18 years old.</label>
                   </div>
                   <div class="ac-submit-row"><button class="btn-submit-card">SUBMIT</button></div>
                   
                   <div class="crypto-logos">
-                      <div class="c-logo" data-tooltip="Binance"><i class="fa-brands fa-bitcoin" style="color:#F3BA2F;"></i></div>
-                      <div class="c-logo" data-tooltip="Bybit"><i class="fa-solid fa-bolt" style="color:#FFAA00;"></i></div>
-                      <div class="c-logo" data-tooltip="OKX"><i class="fa-solid fa-cube" style="color:#fff;"></i></div>
-                      <div class="c-logo" data-tooltip="Coinbase"><i class="fa-solid fa-coins" style="color:#0052FF;"></i></div>
-                      <div class="c-logo" data-tooltip="KuCoin"><i class="fa-brands fa-ethereum" style="color:#24AE8F;"></i></div>
+                      <div class="c-logo"><i class="fa-brands fa-bitcoin" style="color:#F3BA2F;"></i></div>
+                      <div class="c-logo"><i class="fa-solid fa-bolt" style="color:#FFAA00;"></i></div>
+                      <div class="c-logo"><i class="fa-solid fa-cube" style="color:#fff;"></i></div>
+                      <div class="c-logo"><i class="fa-solid fa-coins" style="color:#0052FF;"></i></div>
                   </div>
               </div>
           </div>
       </div>
 
+      <div id="view-your-cards" style="display: none;">
+          <div class="feed-top-header">
+            <div class="header-content" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+                <div style="display:flex; align-items:center; gap:15px;">
+                    <i class="fa-solid fa-arrow-left back-btn" onclick="document.getElementById('nav-link-home').click()" style="cursor:pointer; font-size:1.2rem;"></i>
+                    <h2 style="margin:0; font-size:1.1rem; text-transform:uppercase;">PAYMENT CARDS</h2>
+                </div>
+                <div style="font-weight:700; color:var(--primary-cyan); font-size:0.9rem; cursor:pointer;">VERIFY</div>
+            </div>
+          </div>
+
+          <div class="collection-tabs-bar secondary" style="margin-top: 0; padding: 0 20px; border-bottom: var(--border);">
+              <div id="btn-tab-cards" class="c-tab-item active" style="flex:0 0 auto; margin-right:20px; border-bottom-width: 2px;">YOUR CARDS</div>
+              <div id="btn-tab-payments" class="c-tab-item" style="flex:0 0 auto; border-bottom-width: 2px;">PAYMENTS</div>
+          </div>
+
+          <div class="add-card-body" style="padding: 20px;">
+              <div id="tab-content-cards">
+                  <div class="of-alert-box">
+                      <i class="fa-solid fa-circle-exclamation"></i>
+                      <span>Please <a href="#" onclick="document.getElementById('nav-link-add-card').click()" class="link-text">add a new card</a> to subscribe to other users or recharge your wallet.</span>
+                  </div>
+
+                  <div style="margin: 25px 0; font-size: 0.95rem; color: var(--text);">
+                      We are fully compliant with Payment Card Industry Data Security Standards.
+                  </div>
+
+                  <div class="of-info-box">
+                      <i class="fa-solid fa-circle-info"></i>
+                      <span>The charges on your credit card statement will appear as <strong>OnlyFans</strong></span>
+                  </div>
+
+                  <div class="of-card-logos">
+                      <i class="fa-brands fa-cc-visa"></i>
+                      <i class="fa-brands fa-cc-mastercard"></i>
+                      <i class="fa-brands fa-cc-amex"></i>
+                      <i class="fa-brands fa-cc-discover"></i>
+                      <i class="fa-brands fa-cc-jcb"></i>
+                  </div>
+
+                  <div class="of-footer-address">
+                      <p>Fenix International Limited, 9th Floor, 107 Cheapside, London, EC2V 6DN</p>
+                      <p>Fenix Internet LLC, 1000 N.West Street, Suite 1200, Wilmington, Delaware, 19801 USA</p>
+                  </div>
+              </div>
+
+              <div id="tab-content-payments" class="hidden">
+                  <div class="rs-col-empty" style="margin-top: 50px;">
+                      <div class="empty-icon-wrap"><i class="fa-regular fa-credit-card"></i></div>
+                      <span>No payments yet</span>
+                  </div>
+              </div>
+          </div>
+      </div>
+
+      <div id="view-become-creator" style="display: none;">
+          <div class="feed-top-header">
+            <div class="header-content" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+                <div style="display:flex; align-items:center; gap:15px;">
+                    <i class="fa-solid fa-arrow-left back-btn" onclick="document.getElementById('nav-link-home').click()" style="cursor:pointer; font-size:1.2rem;"></i>
+                    <h2 style="margin:0; font-size:1.1rem; text-transform:uppercase; font-weight:700;">BANKING</h2>
+                </div>
+                <i class="fa-regular fa-circle-question" style="font-size:1.2rem; color:var(--text); cursor:pointer; opacity:0.7;"></i>
+            </div>
+          </div>
+
+          <div class="banking-body" style="padding: 20px;">
+              <div class="of-warning-box">
+                  <div class="wb-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                  <div class="wb-text">
+                      <strong>Please complete filling out the following fields:</strong>
+                      <ul>
+                          <li>avatar image</li>
+                          <li>header image</li>
+                          <li>about me information</li>
+                      </ul>
+                  </div>
+              </div>
+
+              <div class="profile-setup-container">
+                  <div class="setup-header-img">
+                      <div class="cam-circle"><i class="fa-solid fa-camera"></i></div>
+                  </div>
+                  
+                  <div class="setup-avatar-wrapper">
+                        <div class="setup-avatar-placeholder">
+                            <span>AF</span>
+                            <div class="avatar-cam-overlay"><i class="fa-solid fa-camera"></i></div>
+                        </div>
+                  </div>
+              </div>
+
+              <div class="bio-input-group">
+                  <div class="bio-wrapper">
+                      <textarea id="setup-bio" placeholder=" " maxlength="1000"></textarea>
+                      <label for="setup-bio">Bio</label>
+                  </div>
+                  <div class="bio-footer">
+                      <i class="fa-solid fa-font" style="font-size:1.1rem;"></i>
+                      <span class="char-count">0/1000</span>
+                  </div>
+              </div>
+
+              <div class="setup-actions">
+                  <button class="btn-save-setup" disabled>SAVE CHANGES</button>
+              </div>
+          </div>
+      </div>
+      
+      <div id="container-collections"></div> 
+      <div id="container-settings"></div>    
+      <div id="container-notifications"></div> 
+      <div id="container-messages"></div>    
+    
     </main>
 
     <aside class="right-sidebar" id="right-sidebar">
@@ -450,23 +426,29 @@
 
       <div class="sidebar-inner hidden" id="rs-collections-view">
           <div class="rs-col-header"><h3 id="rs-col-title">FANS</h3></div>
-          
           <div id="rs-view-type-users" class="hidden">
               <div class="rs-col-filters">
                   <div class="filter-head"><span>RECENT</span><div class="fh-icons"><i class="fa-solid fa-magnifying-glass"></i><i class="fa-solid fa-arrow-down-short-wide"></i></div></div>
-                  <div class="filter-chips"><span class="chip active">All 0</span></div>
+                  <div class="filter-chips">
+                      <span class="chip active">All 0</span>
+                      <span class="chip">Active 0</span>
+                      <span class="chip">Expired 0</span>
+                      <span class="chip">Restricted 0</span>
+                      <span class="chip">Blocked 0</span>
+                  </div>
               </div>
               <div class="rs-col-empty"><div class="empty-icon-wrap"><i class="fa-regular fa-folder-open"></i></div><span>No users yet</span></div>
           </div>
-
           <div id="rs-view-type-media" class="hidden">
-               <div class="media-header-row"><span class="section-title">RECENT</span><div class="header-tools"><i class="fa-solid fa-magnifying-glass" title="Search"></i><i class="fa-solid fa-table-cells-large" title="Grid View"></i><i class="fa-solid fa-bars-staggered" title="Sort"></i></div></div>
-               <div class="media-filter-chips"><button class="n-pill active">All</button><button class="n-pill">Photos</button><button class="n-pill">Videos</button><button class="n-pill">Audio</button><button class="n-pill">Other</button><button class="n-pill">Locked</button></div>
-               <div id="rs-media-grid-content"></div>
-               <div id="rs-media-empty-state" class="rs-col-empty hidden"><div class="empty-icon-wrap"><i class="fa-regular fa-images"></i></div><span>No media saved</span></div>
+                <div class="media-header-row"><span class="section-title">RECENT</span><div class="header-tools"><i class="fa-solid fa-magnifying-glass" title="Search"></i><i class="fa-solid fa-table-cells-large" title="Grid View"></i><i class="fa-solid fa-bars-staggered" title="Sort"></i></div></div>
+                <div class="media-filter-chips"><button class="n-pill active">All</button><button class="n-pill">Photos</button><button class="n-pill">Videos</button><button class="n-pill">Audio</button><button class="n-pill">Other</button><button class="n-pill">Locked</button></div>
+                <div id="rs-media-grid-content"></div>
+                <div id="rs-media-empty-state" class="rs-col-empty hidden"><div class="empty-icon-wrap"><i class="fa-regular fa-images"></i></div><span>No media saved</span></div>
           </div>
       </div>
 
+      <div class="sidebar-inner hidden" id="rs-settings-view"></div>
+      
       <div class="sidebar-inner hidden" id="rs-wallet-view">
           <div class="wallet-widget-card">
               <div class="ww-header"><h1 class="ww-amount">$0</h1><span class="ww-label">Wallet credits</span></div>
@@ -483,15 +465,31 @@
               </div>
           </div>
       </div>
+
+      <div class="sidebar-inner hidden" id="rs-banking-view">
+          <div class="wallet-widget-card">
+               <div class="ww-header" style="border:none; padding-bottom:5px;">
+                   <h3 style="margin:0; font-size:0.9rem; color:var(--text); font-weight:700;">START EARNING</h3>
+               </div>
+               <div class="ww-body" style="padding-top:0;">
+                   <p style="color:var(--muted); font-size:0.85rem; margin-bottom:20px; line-height:1.4;">
+                       Verify your account to be able to set up Banking and Subscription price.
+                   </p>
+                   <div style="display:flex; justify-content:center; padding:30px 0; color:var(--muted); opacity:0.2;">
+                       <i class="fa-solid fa-building-columns" style="font-size:5rem;"></i>
+                   </div>
+               </div>
+          </div>
+      </div>
     </aside>
   </div>
 
   <nav class="mobile-bottom-nav">
     <a href="#" id="mob-nav-home" class="mob-nav-item active"><i class="fa-solid fa-house"></i></a>
-    <a href="#" class="mob-nav-item"><i class="fa-regular fa-compass"></i></a>
-    <a href="#" class="mob-nav-item special-add"><div class="add-circle"><i class="fa-solid fa-plus"></i></div></a>
+    <a href="#" id="mob-nav-add-card" class="mob-nav-item"><i class="fa-regular fa-credit-card"></i></a>
+    <a href="#" id="mob-nav-add" class="mob-nav-item special-add"><div class="add-circle"><i class="fa-solid fa-plus"></i></div></a>
+    <a href="#" id="mob-nav-collections" class="mob-nav-item"><i class="fa-regular fa-bookmark"></i></a>
     <a href="#" id="mob-nav-notif" class="mob-nav-item"><i class="fa-regular fa-bell"></i></a>
-    <a href="#" id="mob-nav-messages" class="mob-nav-item"><i class="fa-regular fa-envelope"></i></a>
   </nav>
 
   <div id="settings-popover" class="tm-popover-menu">
@@ -504,17 +502,17 @@
       <div class="pop-stats"><div class="stat-item"><strong>1.2k</strong> <span>Fans</span></div><div class="stat-item"><strong>50</strong> <span>Following</span></div></div>
     </div>
     <div class="pop-content-full">
-        <div class="pop-group"><a href="#" class="pop-item"><i class="fa-regular fa-user"></i> My profile</a><a href="#" class="pop-item"><i class="fa-regular fa-bookmark"></i> Collections</a><a href="#" class="pop-item"><i class="fa-solid fa-gear"></i> Settings</a></div>
+        <div class="pop-group"><a href="#" class="pop-item"><i class="fa-regular fa-user"></i> <span data-lang="pop_profile">My profile</span></a><a href="#" class="pop-item"><i class="fa-regular fa-bookmark"></i> <span data-lang="pop_col">Collections</span></a><a href="#" class="pop-item" id="btn-settings-pop"><i class="fa-solid fa-gear"></i> <span data-lang="pop_set">Settings</span></a></div>
         <div class="pop-divider"></div>
-        <div class="pop-group"><a href="#" class="pop-item"><i class="fa-regular fa-credit-card"></i> Your cards <span class="muted">(to subscribe)</span></a><a href="#" class="pop-item"><i class="fa-solid fa-building-columns"></i> Become a creator <span class="muted">(to earn)</span></a></div>
+        <div class="pop-group"><a href="#" class="pop-item"><i class="fa-regular fa-credit-card"></i> <span data-lang="pop_cards">Your cards</span> <span class="muted" data-lang="pop_cards_sub">(to subscribe)</span></a><a href="#" class="pop-item"><i class="fa-solid fa-building-columns"></i> <span data-lang="pop_creator">Become a creator</span> <span class="muted" data-lang="pop_creator_sub">(to earn)</span></a></div>
         <div class="pop-divider"></div>
         <div class="pop-group">
-            <a href="#" class="pop-item"><i class="fa-regular fa-circle-question"></i> Help and support</a>
-            <div class="pop-item toggle-row"><div class="flex-icon"><i class="fa-solid fa-moon"></i> Dark mode</div><label class="switch"><input type="checkbox" id="themeToggle" name="dark_mode" checked><span class="slider round"></span></label></div>
-            <div class="pop-item"><i class="fa-solid fa-globe"></i> English</div>
+            <a href="#" class="pop-item"><i class="fa-regular fa-circle-question"></i> <span data-lang="pop_help">Help and support</span></a>
+            <div class="pop-item toggle-row"><div class="flex-icon"><i class="fa-solid fa-moon"></i> <span data-lang="pop_dark">Dark mode</span></div><label class="switch"><input type="checkbox" id="themeToggle" name="dark_mode" checked><span class="slider round"></span></label></div>
+            <div class="pop-item" id="popover-lang-label"><i class="fa-solid fa-globe"></i> English</div>
         </div>
         <div class="pop-divider"></div>
-        <div class="pop-group"><a href="index.html" class="pop-item danger"><i class="fa-solid fa-arrow-right-from-bracket"></i> Log out</a></div>
+        <div class="pop-group"><a href="index.html" class="pop-item danger"><i class="fa-solid fa-arrow-right-from-bracket"></i> <span data-lang="pop_logout">Log out</span></a></div>
     </div>
   </div>
 

@@ -6,52 +6,83 @@ export const DOM = {
 
     // --- VIEWS ---
     viewHome: document.getElementById('view-home'),
-    viewNotif: document.getElementById('view-notifications'),
-    viewMessages: document.getElementById('view-messages'),
-    viewCollections: document.getElementById('view-collections'),
-    viewAddCard: document.getElementById('view-add-card'),
-    viewMyProfile: document.getElementById('view-my-profile'), // ADDED
+    viewAddCard: document.getElementById('view-add-card'),     // Form View (Sidebar)
+    viewYourCards: document.getElementById('view-your-cards'), // OnlyFans Style View (Popover)
+    viewBecomeCreator: document.getElementById('view-become-creator'), // New Creator View
+    viewMyProfile: document.getElementById('view-my-profile'),
+    
+    // FETCHED VIEWS (USE GETTERS)
+    get viewMessages() { return document.getElementById('view-messages'); },
+    get viewSettings() { return document.getElementById('view-settings'); },
+    get viewNotif() { return document.getElementById('view-notifications'); },
+    get viewCollections() { return document.getElementById('view-collections'); },
 
-    // --- PROFILE ELEMENTS (NEW) ---
+    // --- PROFILE ELEMENTS ---
     profileTabPosts: document.getElementById('tab-profile-posts'),
     profileTabMedia: document.getElementById('tab-profile-media'),
     profileContentPosts: document.getElementById('profile-content-posts'),
     profileContentMedia: document.getElementById('profile-content-media'),
 
+    // --- CARD TABS (YOUR CARDS VIEW) ---
+    btnTabCards: document.getElementById('btn-tab-cards'),
+    btnTabPayments: document.getElementById('btn-tab-payments'),
+    tabContentCards: document.getElementById('tab-content-cards'),
+    tabContentPayments: document.getElementById('tab-content-payments'),
+
     // --- SIDEBAR WIDGETS ---
     rsSuggestions: document.getElementById('rs-suggestions-view'),
     rsCollections: document.getElementById('rs-collections-view'),
     rsWalletView: document.getElementById('rs-wallet-view'),
+    rsSettingsView: document.getElementById('rs-settings-view'),
     
-    // Collections Sidebar
     rsTitle: document.getElementById('rs-col-title'),
     rsViewUsers: document.getElementById('rs-view-type-users'),
     rsViewMedia: document.getElementById('rs-view-type-media'),
     rsMediaGrid: document.getElementById('rs-media-grid-content'),
     rsMediaEmpty: document.getElementById('rs-media-empty-state'),
 
-    // --- NAVIGATION ---
+    // --- SETTINGS ELEMENTS ---
+    get settingsItems() { return document.querySelectorAll('.set-item'); },
+    settingsContents: {
+        get profile() { return document.getElementById('set-content-profile'); },
+        get account() { return document.getElementById('set-content-account'); },
+        get privacy() { return document.getElementById('set-content-privacy'); },
+        get display() { return document.getElementById('set-content-display'); },
+        get notifications() { return document.getElementById('set-content-notifications'); },
+        get subscription() { return document.getElementById('set-content-subscription'); },
+        get cards() { return document.getElementById('set-content-cards'); },
+        get bank() { return document.getElementById('set-content-bank'); },
+        get security() { return document.getElementById('set-content-security'); },
+        get help() { return document.getElementById('set-content-help'); }
+    },
+
+    // --- NAVIGATION (DESKTOP) ---
     navHome: document.getElementById('nav-link-home'),
     navNotif: document.getElementById('nav-link-notif'),
     navMessages: document.getElementById('nav-link-messages'),
     navCollections: document.getElementById('nav-link-collections'),
     navSubs: document.getElementById('nav-link-subs'),
     navAddCard: document.getElementById('nav-link-add-card'),
-    navProfile: document.getElementById('nav-link-profile'), // ADDED
+    navProfile: document.getElementById('nav-link-profile'),
     
-    // Mobile
+    // --- MOBILE NAVIGATION ---
     mobHome: document.getElementById('mob-nav-home'),
+    mobExplore: document.getElementById('mob-nav-explore'),
+    mobAdd: document.getElementById('mob-nav-add'),
     mobNotif: document.getElementById('mob-nav-notif'),
     mobMessages: document.getElementById('mob-nav-messages'),
 
-    // --- GLOBAL POPUPS ---
+    // --- GLOBAL POPOVERS & BUTTONS ---
     themeToggle: document.getElementById('themeToggle'),
     popover: document.getElementById('settings-popover'),
     closePopoverBtn: document.getElementById('btnClosePopover'),
-    triggers: [
-        document.getElementById('trigger-profile-card'),
-        document.getElementById('trigger-more-btn')
-    ],
+    btnSettingsPop: document.getElementById('btn-settings-pop'),
+    
+    get popoverLinks() { return document.querySelectorAll('.pop-item'); },
+
+    get btnMore() { return document.getElementById('trigger-more-btn'); },
+    get profileCard() { return document.getElementById('trigger-profile-card'); },
+
     paymentModal: document.getElementById('payment-modal'),
     btnPayConfirm: document.getElementById('btnPayConfirm'),
     btnPayCancel: document.getElementById('btnPayCancel'),
@@ -63,49 +94,52 @@ export const DOM = {
     pollUI: document.getElementById('poll-creator-ui'),
     textTools: document.getElementById('text-format-toolbar'),
     closePollBtn: document.querySelector('.close-poll-btn'),
+    
+    get composeInput() { return document.querySelector('.compose-top input'); }, 
 
     // --- MESSAGES ---
-    btnNewMsg: document.getElementById('btn-new-msg'),
-    btnTriggerSearch: document.getElementById('trigger-msg-search'),
-    btnCloseSearch: document.getElementById('close-msg-search'),
-    msgSearchBox: document.getElementById('msg-search-box'),
-    msgSearchInput: document.getElementById('msg-search-input'),
-    msgTabs: document.querySelectorAll('#msg-tabs span'),
-    msgUserItems: document.querySelectorAll('.msg-user-item'),
+    get btnNewMsg() { return document.getElementById('btn-new-msg'); },
+    get btnTriggerSearch() { return document.getElementById('trigger-msg-search'); },
+    get btnCloseSearch() { return document.getElementById('close-msg-search'); },
+    get msgSearchBox() { return document.getElementById('msg-search-box'); },
+    get msgSearchInput() { return document.getElementById('msg-search-input'); },
+    get msgTabs() { return document.querySelectorAll('#msg-tabs span'); },
+    get msgUserList() { return document.getElementById('msg-user-list'); }, 
+    get msgUserItems() { return document.querySelectorAll('.msg-user-item'); },
     
     // Chat Area
-    activeChatAvatar: document.getElementById('active-chat-avatar'),
-    activeChatName: document.getElementById('active-chat-name'),
-    chatHistoryContainer: document.getElementById('chat-history-container'),
-    chatInput: document.getElementById('chat-message-input'),
-    btnSendMsg: document.getElementById('btn-send-message'),
-    btnEmoji: document.getElementById('btn-emoji-trigger'),
-    emojiContainer: document.getElementById('emoji-picker-container'),
-    btnPPV: document.getElementById('btn-ppv-trigger'),
-    btnChatSearch: document.getElementById('btn-chat-search'),
-    chatSearchBar: document.getElementById('chat-inner-search-bar'),
-    closeChatSearch: document.getElementById('close-chat-search'),
-    chatSearchInput: document.getElementById('chat-history-search'),
-    btnChatStar: document.getElementById('btn-chat-star'),
+    get activeChatAvatar() { return document.getElementById('active-chat-avatar'); },
+    get activeChatName() { return document.getElementById('active-chat-name'); },
+    get chatHistoryContainer() { return document.getElementById('chat-history-container'); },
+    get chatInput() { return document.getElementById('chat-message-input'); },
+    get btnSendMsg() { return document.getElementById('btn-send-message'); },
+    get btnEmoji() { return document.getElementById('btn-emoji-trigger'); },
+    get emojiContainer() { return document.getElementById('emoji-picker-container'); },
+    get btnPPV() { return document.getElementById('btn-ppv-trigger'); },
+    get btnChatSearch() { return document.getElementById('btn-chat-search'); },
+    get chatSearchBar() { return document.getElementById('chat-inner-search-bar'); },
+    get closeChatSearch() { return document.getElementById('close-chat-search'); },
+    get chatSearchInput() { return document.getElementById('chat-history-search'); },
+    get btnChatStar() { return document.getElementById('btn-chat-star'); },
 
     // Info Panel
-    infoNickname: document.getElementById('info-nickname'),
-    infoHandle: document.getElementById('info-handle'),
-    infoJoined: document.getElementById('info-joined'),
-    infoSpent: document.getElementById('info-spent'),
+    get infoNickname() { return document.getElementById('info-nickname'); },
+    get infoHandle() { return document.getElementById('info-handle'); },
+    get infoJoined() { return document.getElementById('info-joined'); },
+    get infoSpent() { return document.getElementById('info-spent'); },
 
     // --- COLLECTIONS ---
-    colListWrapper: document.getElementById('collection-list-wrapper'),
-    colBtnSearch: document.getElementById('col-btn-search'),
-    colBtnAdd: document.getElementById('col-btn-add'),
-    colSearchContainer: document.getElementById('col-search-container'),
-    colSearchInput: document.getElementById('col-search-input'),
-    colSearchClose: document.getElementById('col-search-close'),
-    colTabUsers: document.getElementById('tab-col-users'),
-    colTabBookmarks: document.getElementById('tab-col-bookmarks'),
+    get colListWrapper() { return document.getElementById('collection-list-wrapper'); },
+    get colBtnSearch() { return document.getElementById('col-btn-search'); },
+    get colBtnAdd() { return document.getElementById('col-btn-add'); },
+    get colSearchContainer() { return document.getElementById('col-search-container'); },
+    get colSearchInput() { return document.getElementById('col-search-input'); },
+    get colSearchClose() { return document.getElementById('col-search-close'); },
+    get colTabUsers() { return document.getElementById('tab-col-users'); },
+    get colTabBookmarks() { return document.getElementById('tab-col-bookmarks'); },
 
     // --- NOTIFICATIONS ---
-    notifPills: document.querySelectorAll('.notif-tabs-bar .n-pill'),
+    get notifPills() { return document.querySelectorAll('.notif-tabs-bar .n-pill'); },
 
     // --- WALLET ---
     btnAddPaymentCard: document.querySelector('.btn-add-payment-card')

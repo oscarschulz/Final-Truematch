@@ -1,0 +1,462 @@
+<div id="view-settings" style="display: none;">
+    
+    <style>
+        select option { background-color: #1a1a1a; color: #fff; padding: 10px; }
+        .crypto-pill { display: inline-flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 6px 12px; border-radius: 20px; font-size: 0.8rem; color: var(--muted); }
+        body.tm-light .crypto-pill { background: #e4e6eb; border-color: #ccc; color: #333; }
+        body.tm-light select option { background-color: #fff; color: #000; }
+    </style>
+
+    <div class="feed-top-header">
+      <div class="header-content" style="display:flex; align-items:center; gap:15px;">
+          <i class="fa-solid fa-arrow-left back-btn" onclick="document.getElementById('nav-link-home').click()" style="cursor:pointer; font-size:1.2rem;"></i>
+          <h2 style="margin:0; font-size:1.1rem;" data-lang="set_header">SETTINGS</h2>
+      </div>
+    </div>
+
+    <div class="settings-menu">
+        <div class="set-group-title">@aljur_official</div>
+        
+        <div class="set-item active" data-target="profile">
+            <div class="set-icon"><i class="fa-regular fa-user"></i></div>
+            <div class="set-info"><span data-lang="set_profile">Profile</span><small data-lang="set_profile_desc">Edit details, avatar, cover</small></div>
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+
+        <div class="set-item" data-target="account">
+            <div class="set-icon"><i class="fa-solid fa-at"></i></div>
+            <div class="set-info"><span data-lang="set_account">Account</span><small data-lang="set_account_desc">Username, email, phone</small></div>
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+
+        <div class="set-item" data-target="privacy">
+            <div class="set-icon"><i class="fa-solid fa-lock"></i></div>
+            <div class="set-info"><span data-lang="set_privacy">Privacy and safety</span><small data-lang="set_privacy_desc">Discoverability, message privacy</small></div>
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+
+        <div class="set-item" data-target="security">
+            <div class="set-icon"><i class="fa-solid fa-shield-halved"></i></div>
+            <div class="set-info"><span data-lang="set_security">Security</span><small data-lang="set_security_desc">Password, 2FA, Sessions</small></div>
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+
+        <div class="set-item" data-target="notifications">
+            <div class="set-icon"><i class="fa-regular fa-bell"></i></div>
+            <div class="set-info"><span data-lang="set_notif">Notifications</span><small data-lang="set_notif_desc">Push, Email, Telegram</small></div>
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+
+        <div class="set-item" data-target="subscription">
+            <div class="set-icon"><i class="fa-solid fa-tag"></i></div>
+            <div class="set-info"><span data-lang="set_sub">Subscription price</span><small data-lang="set_sub_desc">Bundles, promotions</small></div>
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+
+        <div class="set-group-title" data-lang="set_pay_title">Payments</div>
+
+        <div class="set-item" data-target="cards">
+            <div class="set-icon"><i class="fa-regular fa-credit-card"></i></div>
+            <div class="set-info"><span data-lang="set_cards">Payment Methods</span><small data-lang="set_cards_desc">Cards & Crypto</small></div>
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+
+        <div class="set-item" data-target="bank">
+            <div class="set-icon"><i class="fa-solid fa-building-columns"></i></div>
+            <div class="set-info"><span data-lang="set_bank">Bank details</span><small data-lang="set_bank_desc">Payouts & Earnings</small></div>
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+
+        <div class="set-group-title" data-lang="set_gen_title">General</div>
+
+        <div class="set-item" data-target="display">
+            <div class="set-icon"><i class="fa-solid fa-desktop"></i></div>
+            <div class="set-info"><span data-lang="set_display">Display</span><small data-lang="set_display_desc">Dark mode, language</small></div>
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+
+        <div class="set-item" data-target="help">
+            <div class="set-icon"><i class="fa-regular fa-circle-question"></i></div>
+            <div class="set-info"><span data-lang="set_help">Help and support</span><small data-lang="set_help_desc">FAQ, Support tickets</small></div>
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+    </div>
+</div>
+
+<div style="display:none;"> 
+    
+    <div id="set-content-profile-source">
+        <div class="rs-col-header" style="border-bottom:none; padding-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+            <h3 style="font-size:1.2rem;" data-lang="set_profile">EDIT PROFILE</h3>
+            <button class="btn-submit-card" style="width:auto; padding: 8px 20px; font-size:0.8rem; min-width:auto;">SAVE</button>
+        </div>
+        
+        <div style="position:relative; margin-bottom:60px;">
+            <div style="height:200px; background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); border-radius:8px; position:relative; overflow:hidden;">
+                <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#fff; font-size:1.5rem; cursor:pointer; opacity:0.8;"><i class="fa-solid fa-camera"></i></div>
+            </div>
+            <div style="position:absolute; bottom:-40px; left:20px; width:80px; height:80px;">
+                <img src="assets/images/truematch-mark.png" style="width:100%; height:100%; border-radius:50%; border:3px solid var(--bg); object-fit:cover;" onerror="this.src='assets/images/truematch-mark.png'">
+                <div style="position:absolute; bottom:0; right:0; background:rgba(0,0,0,0.5); border-radius:50%; width:24px; height:24px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:0.8rem; cursor:pointer;"><i class="fa-solid fa-camera"></i></div>
+            </div>
+        </div>
+
+        <div class="ac-section" style="max-width: 700px; margin: 0 auto;">
+            <div class="ac-group">
+                <label>Display Name</label>
+                <div class="input-with-icon" style="position:relative;">
+                    <input type="text" value="Abegail Fairfax" style="width:100%;">
+                    <span class="char-count">15/50</span>
+                </div>
+            </div>
+            <div class="ac-group">
+                <label>Bio</label>
+                <div style="position:relative;">
+                    <textarea style="width:100%; resize:none; height:120px;"></textarea>
+                    <span class="char-count" style="bottom:5px;">0/1000</span>
+                </div>
+            </div>
+            <div class="ac-group">
+                <label>Location</label>
+                <input type="text">
+            </div>
+            <div class="ac-group">
+                <label>Website URL</label>
+                <input type="text">
+            </div>
+        </div>
+    </div>
+
+    <div id="set-content-account-source">
+        <div class="rs-col-header"><h3 data-lang="set_account">ACCOUNT</h3></div>
+        <div class="ac-section" style="padding:20px; max-width: 700px; margin: 0 auto;">
+            <div class="ac-group"><label>Username</label><input type="text" value="@aljur_official"></div>
+            <div class="ac-group"><label>Email</label><input type="email" value="aljur@gmail.com"></div>
+            <div class="ac-group"><label>Phone Number</label><input type="text" value="+63 912 345 6789"></div>
+            <div style="margin-top:20px; padding-top:20px; border-top:var(--border);">
+                 <h4 style="color:var(--text); font-size:0.9rem; margin-bottom:15px;">Linked Accounts</h4>
+                 <div class="set-link-row"><span><i class="fa-brands fa-google"></i> Google</span><span style="color:var(--primary-cyan);">Connected</span></div>
+                 <div class="set-link-row"><span><i class="fa-brands fa-twitter"></i> Twitter</span><span>Connect</span></div>
+            </div>
+            <div style="display:flex; justify-content:flex-end; margin-top:30px;">
+                <button class="btn-new-post" style="background:transparent; border:1px solid #ff4757; color:#ff4757; width:auto; padding: 10px 25px; font-size:0.85rem; border-radius:30px;">Delete Account</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="set-content-privacy-source">
+        <div class="rs-col-header"><h3 data-lang="set_privacy">PRIVACY & SAFETY</h3></div>
+        <div style="padding:20px;">
+            <div class="set-link-row toggle-row"><span>Show Activity Status</span><label class="switch"><input type="checkbox" checked><span class="slider round"></span></label></div>
+            <div class="set-link-row toggle-row"><span>Show Subscription Offers</span><label class="switch"><input type="checkbox" checked><span class="slider round"></span></label></div>
+            <div class="set-link-row"><span>Blocked Users</span><i class="fa-solid fa-chevron-right"></i></div>
+            <div class="set-link-row"><span>Restricted Users</span><i class="fa-solid fa-chevron-right"></i></div>
+        </div>
+    </div>
+
+    <div id="set-content-security-source">
+        <div class="rs-col-header"><h3 data-lang="set_security">SECURITY</h3></div>
+        <div style="padding:20px; max-width: 700px; margin: 0 auto;">
+            
+            <div class="set-section-header" style="margin-top:0;">CHANGE PASSWORD</div>
+            <div class="ac-group">
+                <label>Current Password</label>
+                <div class="input-with-icon">
+                    <input type="password" placeholder="••••••••">
+                    <i class="fa-regular fa-eye-slash" title="Toggle Visibility"></i>
+                </div>
+            </div>
+            <div class="ac-form-grid">
+                <div class="ac-group">
+                    <label>New Password</label>
+                    <div class="input-with-icon">
+                        <input type="password" placeholder="••••••••">
+                        <i class="fa-regular fa-eye-slash" title="Toggle Visibility"></i>
+                    </div>
+                </div>
+                <div class="ac-group">
+                    <label>Confirm Password</label>
+                    <div class="input-with-icon">
+                        <input type="password" placeholder="••••••••">
+                        <i class="fa-regular fa-eye-slash" title="Toggle Visibility"></i>
+                    </div>
+                </div>
+            </div>
+            <div style="display:flex; justify-content:flex-end;">
+                <button class="btn-submit-card" style="width:auto; min-width:auto; padding:10px 30px; font-size:0.9rem;">UPDATE PASSWORD</button>
+            </div>
+
+            <div style="height:1px; background:var(--border); margin:30px 0; opacity:0.3;"></div>
+
+            <div class="set-section-header">TWO-FACTOR AUTHENTICATION</div>
+            <div class="set-link-row toggle-row" style="background:rgba(255,255,255,0.03); border-radius:8px; padding:15px; border:var(--border);">
+                <div style="display:flex; flex-direction:column;">
+                    <span style="font-weight:700; font-size:0.95rem; color:var(--text);">Authenticator App</span>
+                    <small style="color:var(--muted); font-size:0.8rem; margin-top:4px;">Protect your account with an extra layer of security.</small>
+                </div>
+                <label class="switch"><input type="checkbox"><span class="slider round"></span></label>
+            </div>
+
+            <div class="set-section-header" style="margin-top:30px;">LOGIN ACTIVITY</div>
+            <div class="set-link-row" style="justify-content:space-between; border-bottom:none; background:transparent;">
+                <div style="display:flex; gap:15px; align-items:center;">
+                    <i class="fa-solid fa-mobile-screen-button" style="font-size:1.5rem; color:var(--muted);"></i>
+                    <div style="display:flex; flex-direction:column;">
+                        <span style="font-weight:700; color:var(--text);">iPhone 14 Pro Max</span>
+                        <small style="color:#46e85e;">Active now • Philippines</small>
+                    </div>
+                </div>
+                <i class="fa-solid fa-chevron-right" style="font-size:0.9rem; color:var(--muted);"></i>
+            </div>
+            <div class="set-link-row" style="justify-content:space-between; border-bottom:none; background:transparent; opacity:0.7;">
+                <div style="display:flex; gap:15px; align-items:center;">
+                    <i class="fa-solid fa-desktop" style="font-size:1.4rem; color:var(--muted);"></i>
+                    <div style="display:flex; flex-direction:column;">
+                        <span style="font-weight:700; color:var(--text);">Windows PC</span>
+                        <small style="color:var(--muted);">October 24, 2025 • United Kingdom</small>
+                    </div>
+                </div>
+                <i class="fa-solid fa-chevron-right" style="font-size:0.9rem; color:var(--muted);"></i>
+            </div>
+
+        </div>
+    </div>
+
+    <div id="set-content-notifications-source">
+        <div class="rs-col-header"><h3 data-lang="set_notif">NOTIFICATIONS</h3></div>
+        <div style="padding:20px;">
+            <div class="set-section-header">Push Notifications</div>
+            <div class="set-link-row toggle-row"><span>New Subscriber</span><label class="switch"><input type="checkbox" checked><span class="slider round"></span></label></div>
+            <div class="set-link-row toggle-row"><span>Tips</span><label class="switch"><input type="checkbox" checked><span class="slider round"></span></label></div>
+            <div class="set-link-row toggle-row"><span>Messages</span><label class="switch"><input type="checkbox" checked><span class="slider round"></span></label></div>
+            
+            <div class="set-section-header">Email Notifications</div>
+            <div class="set-link-row toggle-row"><span>New Login</span><label class="switch"><input type="checkbox" checked><span class="slider round"></span></label></div>
+        </div>
+    </div>
+
+    <div id="set-content-subscription-source">
+        <div class="rs-col-header"><h3 data-lang="set_sub">SUBSCRIPTION</h3></div>
+        <div style="padding:20px; max-width: 700px; margin: 0 auto;">
+            
+            <div class="set-section-header" style="margin-top:0;">PRICE</div>
+            <div class="ac-group">
+                <label>Price per month ($)</label>
+                <div class="input-with-icon">
+                    <input type="number" value="9.99">
+                    <i class="fa-solid fa-dollar-sign"></i>
+                </div>
+                <small style="color:var(--muted); font-size:0.75rem; margin-top:5px;">Minimum $4.99 USD. Cannot be free.</small>
+            </div>
+
+            <div class="set-section-header">PROMOTION</div>
+            <div style="background:rgba(255,255,255,0.03); border:var(--border); border-radius:8px; padding:20px; display:flex; flex-direction:column; gap:15px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <span style="font-weight:700; color:var(--text); font-size:0.95rem;">Limit Offer</span>
+                        <div style="font-size:0.8rem; color:var(--muted);">Discount for new subscribers</div>
+                    </div>
+                    <label class="switch"><input type="checkbox"><span class="slider round"></span></label>
+                </div>
+                <div style="display:flex; justify-content:flex-end;">
+                    <button class="btn-submit-card" style="width:auto; min-width:auto; padding:8px 20px; font-size:0.85rem;"><i class="fa-solid fa-bullhorn"></i> CREATE CAMPAIGN</button>
+                </div>
+            </div>
+
+            <div class="set-section-header">BUNDLES</div>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+                <div class="set-link-row toggle-row" style="background:rgba(255,255,255,0.03); border-radius:8px; padding:15px; border:var(--border);">
+                    <div style="display:flex; flex-direction:column;">
+                        <span style="font-weight:700; font-size:0.95rem; color:var(--text);">3 Months (15% OFF)</span>
+                        <small style="color:var(--muted); font-size:0.8rem;">$25.47 total</small>
+                    </div>
+                    <label class="switch"><input type="checkbox" checked><span class="slider round"></span></label>
+                </div>
+                <div class="set-link-row toggle-row" style="background:rgba(255,255,255,0.03); border-radius:8px; padding:15px; border:var(--border);">
+                    <div style="display:flex; flex-direction:column;">
+                        <span style="font-weight:700; font-size:0.95rem; color:var(--text);">6 Months (25% OFF)</span>
+                        <small style="color:var(--muted); font-size:0.8rem;">$44.95 total</small>
+                    </div>
+                    <label class="switch"><input type="checkbox"><span class="slider round"></span></label>
+                </div>
+                <div class="set-link-row toggle-row" style="background:rgba(255,255,255,0.03); border-radius:8px; padding:15px; border:var(--border);">
+                    <div style="display:flex; flex-direction:column;">
+                        <span style="font-weight:700; font-size:0.95rem; color:var(--text);">12 Months (35% OFF)</span>
+                        <small style="color:var(--muted); font-size:0.8rem;">$77.92 total</small>
+                    </div>
+                    <label class="switch"><input type="checkbox"><span class="slider round"></span></label>
+                </div>
+            </div>
+            
+            <div style="display:flex; justify-content:flex-end; margin-top:20px;">
+                <button class="btn-submit-card" style="width:auto; min-width:auto; padding:10px 30px; font-size:0.9rem;">SAVE CHANGES</button>
+            </div>
+
+        </div>
+    </div>
+
+    <div id="set-content-cards-source">
+        <div class="rs-col-header"><h3 data-lang="set_cards">PAYMENT METHODS</h3></div>
+        <div style="padding:20px; max-width: 700px; margin: 0 auto;">
+            
+            <div style="margin-bottom:20px; display:flex; flex-wrap:wrap; gap:10px; justify-content:center;">
+                <span class="crypto-pill"><i class="fa-brands fa-cc-visa" style="color:#fff;"></i> Cards</span>
+                <span class="crypto-pill"><i class="fa-brands fa-bitcoin" style="color:#F3BA2F;"></i> BTC</span>
+                <span class="crypto-pill"><i class="fa-brands fa-ethereum" style="color:#627EEA;"></i> ETH</span>
+                <span class="crypto-pill"><i class="fa-solid fa-circle-dollar-to-slot" style="color:#26A17B;"></i> USDT</span>
+            </div>
+
+            <div class="set-link-row" style="justify-content:space-between; border-radius:8px; border:1px solid rgba(255,255,255,0.05); background:rgba(255,255,255,0.02); margin-bottom:10px;">
+                <div style="display:flex; align-items:center; gap:15px;">
+                    <i class="fa-brands fa-cc-visa" style="font-size:1.8rem; color:#fff;"></i>
+                    <div style="display:flex; flex-direction:column;">
+                        <span style="font-weight:700; color:var(--text);">Chase Bank (USA)</span>
+                        <small style="color:var(--muted);">Visa ending in 4242 • USD</small>
+                    </div>
+                </div>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <span style="font-size:0.75rem; background:rgba(100, 233, 238, 0.1); color:var(--primary-cyan); padding:2px 8px; border-radius:4px;">Primary</span>
+                    <i class="fa-solid fa-trash" style="color:#ff4757; opacity:0.6; cursor:pointer; margin-left:10px;"></i>
+                </div>
+            </div>
+
+            <div class="set-link-row" style="justify-content:space-between; border-radius:8px; border:1px solid rgba(255,255,255,0.05); background:rgba(255,255,255,0.02);">
+                <div style="display:flex; align-items:center; gap:15px;">
+                    <i class="fa-solid fa-wallet" style="font-size:1.6rem; color:#627EEA;"></i>
+                    <div style="display:flex; flex-direction:column;">
+                        <span style="font-weight:700; color:var(--text);">MetaMask (ETH)</span>
+                        <small style="color:var(--muted);">0x3f...8a91 • Connected</small>
+                    </div>
+                </div>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <i class="fa-solid fa-trash" style="color:#ff4757; opacity:0.6; cursor:pointer; margin-left:10px;"></i>
+                </div>
+            </div>
+
+            <p style="text-align:center; color:var(--muted); font-size:0.8rem; margin-top:30px;">
+                <i class="fa-solid fa-lock"></i> Global payments are secure and encrypted.
+            </p>
+
+            <div style="display:flex; justify-content:flex-end; margin-top:20px;">
+                <button class="btn-add-payment-card" style="width:auto; min-width:auto; padding:8px 20px; font-size:0.85rem; background:var(--primary-cyan); color:#000; border:none; border-radius:20px; font-weight:700; cursor:pointer;">
+                    <i class="fa-solid fa-plus"></i> ADD NEW
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="set-content-bank-source">
+        <div class="rs-col-header"><h3 data-lang="set_bank">BANK DETAILS & EARNINGS</h3></div>
+        <div style="padding:20px; max-width: 700px; margin: 0 auto;">
+            
+            <div style="background:rgba(255, 71, 87, 0.1); color:#ff4757; padding:15px; border-radius:8px; border:1px solid rgba(255, 71, 87, 0.3); margin-bottom:25px; display:flex; align-items:center; gap:10px; font-size:0.9rem;">
+                 <i class="fa-solid fa-circle-exclamation"></i>
+                 <span>Action Required: Please verify your identity to receive international payouts.</span>
+            </div>
+
+            <div class="ac-form-grid">
+                <div class="ac-group">
+                    <label>Legal First Name</label>
+                    <input type="text" placeholder="As shown in Passport/ID">
+                </div>
+                <div class="ac-group">
+                    <label>Legal Last Name</label>
+                    <input type="text" placeholder="As shown in Passport/ID">
+                </div>
+            </div>
+            
+            <div class="ac-group">
+                <label>Payout Currency</label>
+                <div style="position:relative;">
+                    <select style="width:100%; appearance:none; cursor:pointer;">
+                        <option>USD - US Dollar</option>
+                        <option>EUR - Euro (CET)</option>
+                        <option>GBP - British Pound</option>
+                        <option>JPY - Japanese Yen</option>
+                        <option>PHP - Philippine Peso</option>
+                    </select>
+                    <i class="fa-solid fa-chevron-down" style="position:absolute; right:15px; top:50%; transform:translateY(-50%); color:var(--muted); pointer-events:none;"></i>
+                </div>
+            </div>
+
+            <div class="ac-group">
+                <label>Country of Residence</label>
+                <div style="position:relative;">
+                    <select style="width:100%; appearance:none; cursor:pointer;">
+                        <option value="" disabled selected>Select your country</option>
+                        <option>United States</option>
+                        <option>United Kingdom</option>
+                        <option>Germany</option>
+                        <option>France</option>
+                        <option>Spain</option>
+                        <option>Canada</option>
+                        <option>Australia</option>
+                        <option>Japan</option>
+                        <option>Philippines</option>
+                        <option>Others</option>
+                    </select>
+                    <i class="fa-solid fa-chevron-down" style="position:absolute; right:15px; top:50%; transform:translateY(-50%); color:var(--muted); pointer-events:none;"></i>
+                </div>
+            </div>
+
+            <div class="ac-group">
+                <label>Government ID Type</label>
+                 <div style="position:relative;">
+                    <select style="width:100%; appearance:none; cursor:pointer;">
+                        <option>Passport (Recommended)</option>
+                        <option>National ID / SSN</option>
+                        <option>Driver's License</option>
+                    </select>
+                    <i class="fa-solid fa-chevron-down" style="position:absolute; right:15px; top:50%; transform:translateY(-50%); color:var(--muted); pointer-events:none;"></i>
+                </div>
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+                <button class="btn-submit-card" style="width:auto; min-width:auto; padding:10px 30px; font-size:0.9rem;">VERIFY IDENTITY</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="set-content-display-source">
+        <div class="rs-col-header"><h3 data-lang="set_display">DISPLAY</h3></div>
+        <div style="padding:20px;">
+             <div class="set-link-row toggle-row"><span data-lang="lbl_dark">Dark Mode</span><label class="switch"><input type="checkbox" id="setting-theme-toggle" checked><span class="slider round"></span></label></div>
+             
+             <div class="ac-group" style="margin-top:20px;">
+                <label data-lang="lbl_lang">Language</label>
+                <div style="position:relative;">
+                    <select id="settings-lang-select" style="width:100%; appearance:none; cursor:pointer;">
+                        <option value="en">English</option>
+                        <option value="ph">Filipino (Tagalog)</option>
+                        <option value="es">Spanish (Español)</option>
+                        <option value="fr">French (Français)</option>
+                        <option value="de">German (Deutsch)</option>
+                        <option value="it">Italian (Italiano)</option>
+                        <option value="pt">Portuguese (Português)</option>
+                        <option value="ja">Japanese (日本語)</option>
+                        <option value="ko">Korean (한국어)</option>
+                        <option value="zh-CN">Chinese Simplified (简体中文)</option>
+                        <option value="zh-TW">Chinese Traditional (繁體中文)</option>
+                        <option value="ru">Russian (Русский)</option>
+                        <option value="ar">Arabic (العربية)</option>
+                        <option value="hi">Hindi (हिन्दी)</option>
+                        <option value="th">Thai (ไทย)</option>
+                        <option value="vi">Vietnamese (Tiếng Việt)</option>
+                        <option value="id">Indonesian (Bahasa Indonesia)</option>
+                    </select>
+                    <i class="fa-solid fa-chevron-down" style="position:absolute; right:15px; top:50%; transform:translateY(-50%); color:var(--muted); pointer-events:none;"></i>
+                </div>
+             </div>
+        </div>
+    </div>
+
+    <div id="set-content-help-source">
+        <div class="rs-col-header"><h3 data-lang="set_help">HELP & SUPPORT</h3></div>
+        <div style="padding:20px;">
+             <div class="set-link-row"><span>Help Center / FAQ</span><i class="fa-solid fa-chevron-right"></i></div>
+             <div class="set-link-row"><span>Submit a Ticket</span><i class="fa-solid fa-chevron-right"></i></div>
+             <div class="set-link-row"><span>Status</span><span style="color:#46e85e;">Operational</span></div>
+        </div>
+    </div>
+
+</div>

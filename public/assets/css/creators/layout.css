@@ -1,28 +1,31 @@
-/* ================= FORCE WINDOW SCROLL ================= */
+/* ==========================================================
+   GLOBAL CUSTOM SCROLLBAR (WINDOWS STYLE)
+   ========================================================== */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--primary-cyan); }
+* { scrollbar-width: thin; scrollbar-color: #333 var(--bg); }
+
+/* ================= FORCE APP LAYOUT ================= */
 html, body {
-  width: 100%;
-  height: 100%; /* Balik sa 100% para sa chat support */
-  margin: 0;
-  padding: 0;
-  overflow-x: hidden; 
+  width: 100%; 
+  height: 100%; 
+  margin: 0; 
+  padding: 0; 
+  overflow: hidden; 
+  touch-action: pan-y; 
 }
 
-/* Kapag nasa Feed/Home/Notif, hayaan mag-scroll ang body */
-body:not(:has(#view-messages[style*="display: block"])) {
-  height: auto !important;
-  min-height: 100vh;
-  overflow-y: auto !important;
-}
-
-/* ================= MAIN LAYOUT STRUCTURE ================= */
 .of-layout-container {
   display: flex; 
   width: 100%; 
-  min-height: 100vh; 
-  align-items: stretch; /* Importante para pantay ang height */
+  height: 100vh; 
+  align-items: stretch; 
+  overflow: hidden;
 }
 
-/* ================= LEFT SIDEBAR (FIXED STICKY) ================= */
+/* ================= LEFT SIDEBAR (FIXED - DESKTOP) ================= */
 .left-sidebar {
   width: 275px; 
   flex-shrink: 0; 
@@ -30,17 +33,12 @@ body:not(:has(#view-messages[style*="display: block"])) {
   justify-content: flex-end; 
   border-right: var(--border); 
   background: var(--bg); 
-  z-index: 50;
-  
-  /* STICKY */
-  position: -webkit-sticky;
-  position: sticky;
-  top: 0;
+  z-index: var(--z-sticky);
   height: 100vh; 
   overflow-y: auto; 
 }
 
-.left-sidebar .sidebar-inner {
+.left-sidebar .sidebar-inner { 
   width: 240px; 
   padding: 20px 10px; 
   min-height: 100%; 
@@ -48,122 +46,359 @@ body:not(:has(#view-messages[style*="display: block"])) {
   flex-direction: column; 
 }
 
-/* --- MENU ITEMS --- */
-.nav-item { display: flex; align-items: center; gap: 20px; padding: 12px 15px; border-radius: 30px; color: var(--text); transition: background 0.2s; margin-bottom: 5px; font-size: 1.1rem; white-space: nowrap; text-decoration: none; }
-.nav-item:hover { background: var(--hover-bg); color: var(--primary-cyan); }
-.nav-item.active { color: var(--primary-cyan); font-weight: 700; }
-.nav-icon { width: 30px; display: flex; justify-content: center; font-size: 1.3rem; }
+/* Menu Items */
+.nav-item { 
+  display: flex; 
+  align-items: center; 
+  gap: 20px; 
+  padding: 12px 15px; 
+  border-radius: 30px; 
+  color: var(--text); 
+  transition: background 0.2s; 
+  margin-bottom: 5px; 
+  font-size: 1.1rem; 
+  white-space: nowrap; 
+  text-decoration: none; 
+}
 
-.btn-new-post { margin-top: 30px; background: var(--primary-cyan); color: #000; border: none; padding: 14px 0; border-radius: 30px; width: 100%; font-weight: 800; font-size: 1rem; cursor: pointer; transition: transform 0.2s; display: flex; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 4px 15px rgba(100, 233, 238, 0.3); }
-.btn-new-post:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(100, 233, 238, 0.4); }
+.nav-item:hover { 
+  background: var(--hover-bg); 
+  color: var(--primary-cyan); 
+}
 
-.sidebar-brand-footer { margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 15px; border-top: var(--border); opacity: 0.7; }
+.nav-item.active { 
+  color: var(--primary-cyan); 
+  font-weight: 700; 
+}
+
+.nav-item.active .nav-icon i {
+    color: var(--primary-cyan);
+}
+
+.nav-icon { 
+  width: 30px; 
+  display: flex; 
+  justify-content: center; 
+  font-size: 1.3rem; 
+}
+
+.btn-new-post { 
+  margin-top: 30px; 
+  background: var(--primary-cyan); 
+  color: #000; 
+  border: none; 
+  padding: 14px 0; 
+  border-radius: 30px; 
+  width: 100%; 
+  font-weight: 800; 
+  font-size: 1rem; 
+  cursor: pointer; 
+  transition: transform 0.2s; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  gap: 10px; 
+  box-shadow: 0 4px 15px rgba(100, 233, 238, 0.3); 
+}
+
+.btn-new-post:hover { transform: translateY(-2px); }
+
+.sidebar-brand-footer { 
+  margin-top: auto; 
+  display: flex; 
+  align-items: center; 
+  gap: 10px; 
+  padding: 15px; 
+  border-top: var(--border); 
+  opacity: 0.7; 
+}
+
 .sidebar-brand-footer img { width: 30px; height: 30px; }
 .brand-text { display: flex; flex-direction: column; line-height: 1.1; }
 .brand-text span { font-weight: 800; font-size: 0.9rem; letter-spacing: 1px; }
 .brand-text small { font-size: 0.65rem; }
 
-/* ================= CENTER COLUMN (ADAPTIVE) ================= */
+/* ================= CENTER COLUMN (MASTER SCROLL) ================= */
 .main-feed-column {
-  flex-grow: 1; /* Default: Kukunin ang lahat ng space */
+  flex-grow: 1; 
   min-width: 0; 
-  width: auto;
+  width: auto; 
   border-right: var(--border); 
-  position: relative;
-  transition: all 0.3s ease;
+  position: relative; 
+  height: 100vh; 
+  overflow-y: auto; 
+  overflow-x: hidden; 
   padding-bottom: 100px;
 }
 
-/* === VIEW SPECIFIC FIXES === */
+#view-my-profile, #view-home, #view-notifications, #view-collections, #view-settings {
+    height: auto !important; 
+    overflow-y: visible !important; 
+    min-height: 0 !important; 
+    display: block; 
+}
 
-/* 1. NARROW VIEW (For Collections/Subscriptions) */
+.main-feed-column:has(#view-messages[style*="display: flex"]) {
+    overflow: hidden !important; 
+    padding-bottom: 0 !important; 
+    display: flex !important; 
+    flex-direction: column; 
+    width: 100% !important; 
+    max-width: none !important;
+}
+
 .main-feed-column.narrow-view {
-    flex-grow: 0 !important; /* Huwag mag-grow */
-    flex-shrink: 0 !important;
-    width: 400px !important; /* Fixed Width */
-    max-width: 400px !important;
+    flex-grow: 0; 
+    flex-shrink: 0; 
+    width: 460px; 
+    max-width: 460px; 
+    padding-bottom: 0;
 }
 
-/* 2. MESSAGES VIEW (Fix Scroll Issue) */
-.main-feed-column:has(#view-messages[style*="display: block"]) {
-    height: 100vh !important;
-    overflow: hidden !important;
-    padding-bottom: 0 !important;
-}
-
-/* ================= RIGHT SIDEBAR (ADAPTIVE) ================= */
+/* ================= RIGHT SIDEBAR (FIXED - DESKTOP DEFAULT) ================= */
 .right-sidebar { 
-    width: 350px; /* Default Fixed Width */
-    min-width: 350px;
+    width: 350px; 
+    min-width: 350px; 
     flex-shrink: 0; 
     display: flex; 
     flex-direction: column; 
     background: var(--bg); 
     border-left: none; 
-    transition: all 0.3s ease; 
-    
-    /* Sticky Default */
-    position: -webkit-sticky;
-    position: sticky;
-    top: 0;
-    height: 100vh;
+    height: 100vh; 
     overflow-y: auto; 
+    z-index: var(--z-sticky);
 }
 
 .right-sidebar .sidebar-inner { 
     padding: 20px 25px; 
     width: 100%; 
     min-height: 100%; 
-    display: flex;
-    flex-direction: column;
+    display: flex; 
+    flex-direction: column; 
 }
 
-/* === WIDE MODE (For Collections/Subscriptions) === */
-.right-sidebar.wide-view {
-    flex-grow: 1 !important; /* Kukunin ang natirang space */
-    width: auto !important;
-    min-width: 0 !important;
-    max-width: none !important;
-    
-    /* Disable Sticky para sa mahabang grid */
-    position: static !important; 
-    height: auto !important;
-    overflow: visible !important;
+#rs-settings-view { padding: 0 !important; overflow-x: hidden; }
+
+.right-sidebar.wide-view { 
+    flex-grow: 1; 
+    width: auto; 
+    min-width: 0; 
+    max-width: none; 
+    position: relative; 
+    overflow-x: hidden; 
+    padding-bottom: 50px; 
 }
 
-.right-sidebar.hidden-sidebar { display: none !important; }
+.right-sidebar.hidden-sidebar { 
+    display: none !important; 
+}
 
-/* ================= RESPONSIVE ================= */
-.mobile-bottom-nav { display: none; position: fixed; bottom: 0; left: 0; width: 100%; height: 60px; background: rgba(2, 4, 10, 0.95); backdrop-filter: blur(10px); border-top: var(--border); justify-content: space-around; align-items: center; z-index: 1000; padding-bottom: env(safe-area-inset-bottom); }
-.mob-nav-item { color: var(--muted); font-size: 1.4rem; padding: 10px 20px; position: relative; }
+/* ================= POPOVER MENU (DESKTOP DEFAULT) ================= */
+/* 🔥 FIX: Ito ang nawawala kaya hindi lumalabas sa Desktop 🔥 */
+.tm-popover-menu {
+    position: fixed; /* Relative to window */
+    bottom: 80px; /* Above the 'More' button */
+    left: 40px; /* Align with sidebar */
+    width: 280px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+    z-index: 9999;
+    display: none; /* Hidden by default */
+    overflow: hidden;
+    padding-bottom: 10px;
+}
+
+.tm-popover-menu.is-open {
+    display: block; /* Show when active */
+    animation: popUp 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.pop-header { background: rgba(255,255,255,0.03); padding: 15px; border-bottom: var(--border); }
+.pop-user-section { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; position: relative; }
+.pop-avatar { position: relative; width: 45px; height: 45px; }
+.pop-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.pop-online { position: absolute; bottom: 0; right: 0; width: 10px; height: 10px; background: #2ecc71; border: 2px solid var(--card-bg); border-radius: 50%; }
+.pop-info { display: flex; flex-direction: column; overflow: hidden; }
+.pop-info strong { font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pop-info span { font-size: 0.8rem; color: var(--muted); }
+.btn-close-pop { position: absolute; top: 0; right: 0; background: transparent; border: none; color: var(--text); cursor: pointer; display: none; } /* Hidden on desktop */
+
+.pop-stats { display: flex; justify-content: space-around; }
+.stat-item { display: flex; flex-direction: column; align-items: center; font-size: 0.85rem; }
+.stat-item span { color: var(--muted); font-size: 0.75rem; }
+
+.pop-content-full { padding: 10px 0; max-height: 400px; overflow-y: auto; }
+.pop-item { display: flex; align-items: center; gap: 15px; padding: 12px 20px; color: var(--text); text-decoration: none; transition: 0.2s; font-size: 0.95rem; font-weight: 500; cursor: pointer; }
+.pop-item:hover { background: var(--hover-bg); color: var(--primary-cyan); }
+.pop-item i { width: 25px; text-align: center; }
+.pop-divider { height: 1px; background: var(--border-color); margin: 5px 0; }
+.pop-item.danger { color: #ff4757; }
+.pop-item.danger:hover { background: rgba(255, 71, 87, 0.1); }
+.pop-item.toggle-row { justify-content: space-between; }
+.flex-icon { display: flex; align-items: center; gap: 15px; }
+
+@keyframes popUp {
+    from { opacity: 0; transform: translateY(10px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ================= RESPONSIVE COMPONENTS ================= */
+
+/* FIXED FOOTER (Mobile/Tablet Only) */
+.mobile-bottom-nav { 
+    display: none; 
+    position: fixed; 
+    bottom: 0; 
+    left: 0; 
+    width: 100%; 
+    height: 60px; 
+    background: rgba(2, 4, 10, 0.98); 
+    backdrop-filter: blur(10px); 
+    border-top: var(--border); 
+    justify-content: space-around; 
+    align-items: center; 
+    z-index: 9999; 
+    padding-bottom: env(safe-area-inset-bottom); 
+}
+
+.mob-nav-item { color: var(--muted); font-size: 1.4rem; padding: 10px 20px; position: relative; cursor: pointer; }
 .mob-nav-item.active { color: var(--primary-cyan); }
 .add-circle { width: 45px; height: 45px; background: var(--primary-cyan); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #000; font-size: 1.2rem; margin-top: -25px; border: 4px solid var(--bg); box-shadow: 0 0 10px var(--primary-cyan); }
 
+/* HEADER ICONS ALIGNMENT */
+.feed-top-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; }
+.feed-top-header > h1, .feed-top-header > h2, .feed-top-header > span { margin-right: auto; }
+.feed-top-header i { margin-left: 15px; font-size: 1.1rem; color: var(--text); cursor: pointer; }
+
+/* HIDE HAMBURGER ON DESKTOP DEFAULT */
+.header-toggle-btn { display: none; }
+
+/* Mobile Back Button (Drawer) */
+.mobile-drawer-back {
+    display: none; align-items: center; gap: 10px; padding: 10px 0 20px 0; margin-bottom: 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.1); cursor: pointer; color: var(--primary-cyan); font-weight: 700; font-size: 0.95rem;
+}
+
+/* ==========================================================
+   LAPTOP (1025px - 1440px) - Retained Layout
+   ========================================================== */
+@media (min-width: 1025px) and (max-width: 1440px) {
+    .left-sidebar { width: 220px !important; } 
+    .left-sidebar .sidebar-inner { padding: 15px 10px !important; width: 100% !important; }
+    
+    /* Laptop Popover Positioning */
+    .tm-popover-menu { left: 20px !important; width: 260px !important; }
+    
+    .right-sidebar { width: 260px !important; min-width: 260px !important; } 
+    .right-sidebar .sidebar-inner { padding: 15px 15px !important; }
+    
+    .main-feed-column { max-width: 950px !important; } 
+    .main-feed-column:has(#view-messages[style*="display: flex"]) { max-width: none !important; width: auto !important; flex: 1 !important; }
+    
+    .main-feed-column.narrow-view { width: 420px !important; max-width: 420px !important; }
+    .nav-item { padding: 8px 12px !important; font-size: 0.9rem !important; }
+    
+    .header-toggle-btn { display: none !important; }
+}
+
+/* ==========================================================
+   TABLET & MOBILE (Max 1024px)
+   ========================================================== */
 @media (max-width: 1024px) { 
-  .right-sidebar { display: none; }
-  .right-sidebar.wide-view { display: none; }
-  
-  /* Reset Center Column to Full Width */
-  .main-feed-column { border-right: none; }
-  .main-feed-column.narrow-view { 
-      flex-grow: 1 !important; 
+  html, body { overflow-y: auto !important; height: auto !important; }
+  .of-layout-container { height: auto !important; overflow: visible !important; display: block; }
+
+  /* Show Footer */
+  .mobile-bottom-nav { display: flex !important; }
+  .left-sidebar { display: none !important; }
+
+  /* Full Width Feed */
+  .main-feed-column, .main-feed-column.narrow-view { 
       width: 100% !important; 
       max-width: none !important; 
+      flex: none !important; 
+      border-right: none !important; 
+      position: static !important; 
+      height: auto !important; 
+      overflow: visible !important; 
+      padding-bottom: 80px !important; 
+  }
+
+  /* --- HEADER CUSTOMIZATION FOR TABLET --- */
+  .header-desktop-only { display: none !important; }
+  .header-tablet-only { display: flex !important; }
+  .header-toggle-btn { display: inline-block !important; } 
+
+  /* 🔥 MODIFIED POPOVER (SIDE DRAWER STYLE) OVERRIDES 🔥 */
+  .tm-popover-menu {
+      display: block !important;
+      position: fixed !important;
+      top: 0 !important;
+      right: -320px; /* Hidden off-screen right */
+      left: auto !important; /* Reset Desktop 'left' */
+      bottom: 0 !important;
+      width: 300px !important; 
+      height: 100vh !important;
+      background: #0d1423 !important;
+      border-left: 1px solid var(--border-color) !important;
+      border-radius: 20px 0 0 20px !important;
+      z-index: 10000 !important;
+      transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: -10px 0 50px rgba(0,0,0,0.8);
+      opacity: 1 !important;
+      visibility: visible !important;
+      padding-bottom: 0 !important;
+  }
+
+  /* Show close button on drawer */
+  .btn-close-pop { display: block !important; }
+
+  /* When Active - Slide In */
+  .tm-popover-menu.is-open {
+      right: 0 !important;
+  }
+
+  /* 🔥🔥🔥 NUCLEAR OPTION: HIDE RIGHT SIDEBAR ON TABLET/MOBILE 🔥🔥🔥 */
+  .right-sidebar, 
+  .right-sidebar.wide-view, 
+  .right-sidebar.mobile-active,
+  .right-sidebar.hidden-sidebar { 
+      display: none !important; 
+      width: 0 !important;
+      min-width: 0 !important;
+      flex-basis: 0 !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+  }
+  
+  .mobile-drawer-back { display: flex !important; }
+  
+  /* Messages Mobile Fix */
+  body:has(#view-messages[style*="display: flex"]) { overflow: hidden !important; }
+  .main-feed-column:has(#view-messages[style*="display: flex"]) { 
+      height: 100dvh !important; 
+      overflow: hidden !important; 
+      padding-bottom: 0 !important; 
   }
 }
 
-@media (max-width: 1000px) {
-  .left-sidebar { width: 80px; align-items: center; }
-  .sidebar-inner { width: 100%; padding: 20px 0; align-items: center; }
-  .nav-text, .btn-text, .profile-header-card, .sidebar-brand-footer { display: none; }
-  .nav-item { justify-content: center; padding: 15px; }
-  .nav-icon { font-size: 1.6rem; width: auto; }
-  .btn-new-post { width: 50px; height: 50px; border-radius: 50%; padding: 0; margin-top: 20px; }
-  .ph-user-details, .ph-settings { display: none; } 
+@keyframes slideInRight {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
 }
 
-@media (max-width: 500px) {
-  .left-sidebar { display: none; }
-  .mobile-bottom-nav { display: flex; }
-  .main-feed-column { width: 100%; border: none; padding-bottom: 70px; }
+@media (max-width: 768px) {
+    .settings-mobile-back {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 15px;
+        border-bottom: var(--border);
+        font-weight: 700;
+        font-size: 1.1rem;
+        cursor: pointer;
+        color: var(--text);
+    }
 }

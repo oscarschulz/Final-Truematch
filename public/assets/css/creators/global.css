@@ -9,29 +9,44 @@
    2. GLOBAL VARIABLES & RESET
    ====================================================== */
 :root {
-  /* DARK MODE DEFAULTS */
+  /* DARK MODE DEFAULT */
   --bg: #02040a; 
   --primary-cyan: #64E9EE;
   --text: #F6FAFF;
   --muted: #8a96a3;
   --card-bg: #0d1423;
-  --border: 1px solid rgba(255, 255, 255, 0.1); 
+  --border-color: rgba(255, 255, 255, 0.1);
+  --border: 1px solid var(--border-color); 
   --hover-bg: rgba(255, 255, 255, 0.08);
+  --input-bg: rgba(255, 255, 255, 0.05);
+  --input-border: rgba(255, 255, 255, 0.2);
   --input-text: #fff;
   --search-bg: #242529;
+
+  /* Z-INDEX LAYERS */
+  --z-back: -1;
+  --z-normal: 1;
+  --z-sticky: 50; 
+  --z-header: 60; 
+  --z-dropdown: 100;
+  --z-popover: 2000;
+  --z-modal: 5000;
+  --z-loader: 99999;
 }
 
-/* LIGHT MODE OVERRIDES - Variables Only */
+/* LIGHT MODE OVERRIDES */
 body.tm-light {
-  --bg: #f0f2f5;
-  --primary-cyan: #008c9e; 
+  --bg: #F0F2F5; 
   --text: #050505;
-  --muted: #65676b;
-  --card-bg: #ffffff;
-  --border: 1px solid #dbdbdb;
-  --hover-bg: #e4e6eb;
+  --muted: #65676B;
+  --card-bg: #FFFFFF;
+  --border-color: #CED0D4;
+  --border: 1px solid var(--border-color);
+  --hover-bg: #E4E6EB;
+  --input-bg: #F0F2F5;
+  --input-border: #CED0D4;
   --input-text: #050505;
-  --search-bg: #ffffff;
+  --search-bg: #E4E6EB;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -42,27 +57,88 @@ body {
   color: var(--text);
   font-family: 'Montserrat', sans-serif;
   height: 100vh;
-  overflow: hidden; /* Fix scroll */
-  transition: background-color 0.3s, color 0.3s;
+  overflow: hidden; 
+  transition: background-color 0.3s, color 0.3s; /* Smooth Transition */
 }
 
-input { color: var(--input-text) !important; }
+/* Allow scrolling on normal pages */
+body:not(:has(#view-messages[style*="display: flex"])) {
+  height: auto !important;
+  min-height: 100vh;
+  overflow-y: auto !important;
+  overflow-x: hidden;
+}
 
-#tm-bg-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: -1; pointer-events: none; }
+input, textarea, select { color: var(--input-text) !important; font-family: 'Montserrat', sans-serif; }
+#tm-bg-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: var(--z-back); pointer-events: none; }
 a { text-decoration: none; color: inherit; }
 .hidden { display: none !important; }
 
-/* --- APP LOADER --- */
-#app-loader {
-    position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    background: #000;
-    z-index: 99999;
-    display: flex; align-items: center; justify-content: center;
-    flex-direction: column;
-    transition: opacity 0.5s ease-out, visibility 0.5s ease;
+/* Custom Scrollbars */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--primary-cyan); }
+
+/* ======================================================
+   3. SETTINGS MENU STYLES
+   ====================================================== */
+.settings-menu { padding: 10px 0; }
+.set-group-title { padding: 20px 20px 10px; font-size: 0.8rem; font-weight: 700; color: var(--muted); text-transform: uppercase; border-bottom: 1px solid var(--border-color); }
+.set-item { display: flex; align-items: center; padding: 15px 20px; cursor: pointer; transition: background 0.2s; border-bottom: 1px solid var(--border-color); }
+.set-item:hover { background: var(--hover-bg); }
+.set-item.active { background: rgba(100, 233, 238, 0.1); border-left: 3px solid var(--primary-cyan); padding-left: 17px; }
+.set-icon { width: 40px; font-size: 1.2rem; color: var(--text); }
+.set-info { flex: 1; display: flex; flex-direction: column; }
+.set-info span { font-size: 0.95rem; font-weight: 600; }
+.set-info small { font-size: 0.75rem; color: var(--muted); }
+
+/* ======================================================
+   4. FORM UI (UPDATED FOR THEME SUPPORT)
+   ====================================================== */
+#rs-settings-view { padding: 0 !important; }
+
+.ac-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+.ac-group label { font-size: 0.8rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* FIXED: Using variables instead of hardcoded colors */
+.ac-group input, 
+.ac-group textarea, 
+.ac-group select { 
+    background: var(--input-bg) !important;
+    border: 1px solid var(--input-border) !important;
+    color: var(--input-text) !important; 
+    padding: 15px; 
+    border-radius: 6px; 
+    font-size: 1rem; 
+    outline: none; 
+    transition: all 0.2s; 
+    width: 100%;
+    min-height: 50px; 
 }
+
+.ac-group input:focus, 
+.ac-group textarea:focus,
+.ac-group select:focus { 
+    border-color: var(--primary-cyan) !important; 
+    background: rgba(100, 233, 238, 0.05) !important; 
+    box-shadow: 0 0 0 1px var(--primary-cyan); 
+}
+
+.char-count { position: absolute; bottom: 5px; right: 15px; font-size: 0.7rem; color: var(--muted); pointer-events: none; }
+
+.set-section-header { font-size: 0.85rem; font-weight: 700; color: var(--text); margin-top: 20px; margin-bottom: 10px; padding-left: 5px; }
+.set-link-row { display: flex; justify-content: space-between; align-items: center; padding: 15px 10px; border-bottom: 1px solid var(--border-color); cursor: pointer; transition: background 0.2s; font-size: 0.95rem; color: var(--muted); }
+.set-link-row:hover { background: var(--hover-bg); color: var(--primary-cyan); padding-left: 15px; }
+
+.ac-submit-row { display: flex; justify-content: flex-end; margin-top: 10px; }
+.ac-submit-row button, .btn-submit-card { width: auto; min-width: 150px; padding: 12px 30px; background: var(--primary-cyan); color: #000; font-weight: 800; border: none; border-radius: 30px; cursor: pointer; font-size: 0.95rem; transition: transform 0.2s; }
+.ac-submit-row button:hover, .btn-submit-card:hover { transform: translateY(-2px); opacity: 0.9; }
+
+/* ======================================================
+   5. GLOBAL MODALS & UTILS
+   ====================================================== */
+#app-loader { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: var(--z-loader); display: flex; align-items: center; justify-content: center; flex-direction: column; transition: opacity 0.5s ease-out, visibility 0.5s ease; }
 .loader-logo { width: 80px; height: 80px; border-radius: 50%; animation: pulseLogo 2s infinite; }
 .loader-text { margin-top: 15px; font-weight: 700; letter-spacing: 1px; font-size: 1.2rem; color: #fff; }
 @keyframes pulseLogo {
@@ -71,12 +147,8 @@ a { text-decoration: none; color: inherit; }
     100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(100, 233, 238, 0); }
 }
 
-/* ======================================================
-   3. GLOBAL MODALS (Payment & SweetAlert)
-   ====================================================== */
-
 /* Payment Modal */
-.payment-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 2000; display: none; align-items: center; justify-content: center; backdrop-filter: blur(5px); }
+.payment-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: var(--z-popover); display: none; align-items: center; justify-content: center; backdrop-filter: blur(5px); }
 .payment-overlay.is-visible { display: flex !important; }
 .payment-card { background: var(--card-bg); padding: 40px; border-radius: 20px; width: 90%; max-width: 400px; border: 1px solid var(--primary-cyan); text-align: center; }
 .btn-group-modal { display: flex; gap: 10px; margin-top: 20px; }
@@ -84,37 +156,20 @@ a { text-decoration: none; color: inherit; }
 .btn-modal.primary { background: var(--primary-cyan); border-color: var(--primary-cyan); }
 .btn-modal.ghost { background: transparent; border-color: var(--text); color: var(--text); }
 
-/* SweetAlert2 Customization */
-div:where(.swal2-container) div:where(.swal2-popup) {
-    background: #0d1423 !important; border: 1px solid rgba(100, 233, 238, 0.3); border-radius: 24px !important; padding: 30px !important; box-shadow: 0 0 40px rgba(0, 0, 0, 0.8), 0 0 15px rgba(100, 233, 238, 0.1) !important;
-}
-div:where(.swal2-container) h2:where(.swal2-title) { color: #F6FAFF !important; font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 1.5rem; margin-bottom: 10px; }
-div:where(.swal2-container) .swal2-html-container { color: #8a96a3 !important; font-size: 0.95rem; margin-bottom: 20px; }
-div:where(.swal2-container) input:where(.swal2-input), div:where(.swal2-container) textarea:where(.swal2-textarea) {
-    background: rgba(255, 255, 255, 0.03) !important; border: 1px solid rgba(255, 255, 255, 0.1) !important; color: #fff !important; border-radius: 12px !important; font-size: 1rem; padding: 15px !important; margin: 10px auto !important; width: 90% !important; box-shadow: inset 0 2px 5px rgba(0,0,0,0.5); transition: all 0.3s ease;
-}
-div:where(.swal2-container) input:where(.swal2-input):focus, div:where(.swal2-container) textarea:where(.swal2-textarea):focus {
-    border-color: #64E9EE !important; box-shadow: 0 0 0 3px rgba(100, 233, 238, 0.2) !important; background: rgba(255, 255, 255, 0.05) !important; outline: none;
-}
-div:where(.swal2-container) .swal2-actions { margin-top: 25px !important; gap: 15px; width: 100%; justify-content: center; }
-div:where(.swal2-container) button:where(.swal2-styled).swal2-confirm {
-    background: linear-gradient(135deg, #64E9EE 0%, #4bc5ca 100%) !important; color: #000 !important; font-weight: 700; font-size: 1rem; padding: 14px 30px !important; border-radius: 50px !important; box-shadow: 0 5px 20px rgba(100, 233, 238, 0.4) !important; border: none !important; width: auto; min-width: 140px;
-}
-div:where(.swal2-container) button:where(.swal2-styled).swal2-confirm:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(100, 233, 238, 0.6) !important; }
-div:where(.swal2-container) button:where(.swal2-styled).swal2-cancel {
-    background: transparent !important; color: #8a96a3 !important; border: 1px solid rgba(255,255,255,0.2) !important; border-radius: 50px !important; padding: 14px 25px !important; font-weight: 600;
-}
-div:where(.swal2-container) button:where(.swal2-styled).swal2-cancel:hover { background: rgba(255,255,255,0.05) !important; color: #fff !important; border-color: #fff !important; }
+/* SweetAlert2 Theme Overrides */
+div:where(.swal2-container) div:where(.swal2-popup) { background: var(--card-bg) !important; border: 1px solid rgba(100, 233, 238, 0.3); border-radius: 24px !important; padding: 30px !important; color: var(--text) !important; }
+div:where(.swal2-container) h2:where(.swal2-title) { color: var(--text) !important; font-family: 'Montserrat', sans-serif; font-weight: 800; }
+div:where(.swal2-container) .swal2-html-container { color: var(--muted) !important; }
+div:where(.swal2-container) input:where(.swal2-input) { background: var(--input-bg) !important; border: 1px solid var(--input-border) !important; color: var(--input-text) !important; }
+div:where(.swal2-container) button:where(.swal2-styled).swal2-confirm { background: linear-gradient(135deg, #64E9EE 0%, #4bc5ca 100%) !important; color: #000 !important; border-radius: 50px !important; }
+div:where(.swal2-container) button:where(.swal2-styled).swal2-cancel { background: transparent !important; color: var(--muted) !important; border: 1px solid var(--border-color) !important; border-radius: 50px !important; }
 
 /* ======================================================
-   4. RESPONSIVE MEDIA QUERIES (FIXED)
+   6. RESPONSIVE MEDIA QUERIES
    ====================================================== */
-
-/* FIX: Changed from 1200px to 1024px to show sidebar on laptops */
 @media (max-width: 1024px) { 
   .right-sidebar { display: none; }
   .right-sidebar.wide-view { display: none; }
-  /* Ensure main column expands correctly */
   .main-feed-column { border-right: var(--border); flex: 1; min-width: 0; max-width: none; }
 }
 
@@ -125,8 +180,6 @@ div:where(.swal2-container) button:where(.swal2-styled).swal2-cancel:hover { bac
   .nav-item { justify-content: center; padding: 15px; }
   .nav-icon { font-size: 1.6rem; width: auto; }
   .btn-new-post { width: 50px; height: 50px; border-radius: 50%; padding: 0; margin-top: 20px; }
-  
-  /* Message Sidebar Compact */
   .msg-sidebar { width: 80px; min-width: 80px; }
   .msg-user-item { padding: 15px 5px; justify-content: center; }
   .u-info, .u-meta, .mh-top h3, .msg-tabs { display: none; }
@@ -134,13 +187,142 @@ div:where(.swal2-container) button:where(.swal2-styled).swal2-cancel:hover { bac
 }
 
 @media (max-width: 768px) {
-  .of-layout-container { display: block; overflow: auto; /* Re-enable scroll for mobile layout */ }
+  .of-layout-container { display: block; overflow: auto; }
   .left-sidebar, .right-sidebar { display: none !important; }
   .mobile-bottom-nav { display: flex; }
-  
-  /* Mobile Feed */
   .main-feed-column { width: 100%; border: none; margin-bottom: 70px; height: auto; overflow: visible; }
-  #view-home, #view-notifications { height: auto; overflow: visible; }
-  
   .feed-top-header { padding: 10px 15px; }
 }
+
+/* ======================================================
+   MOBILE SLIDE-IN SIDEBAR FIX
+   ====================================================== */
+@media (max-width: 1024px) {
+    .right-sidebar.mobile-active {
+        display: flex !important;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100% !important;
+        height: 100vh;
+        z-index: 2000;
+        background: var(--bg);
+        animation: slideInRight 0.3s ease-out forwards;
+    }
+
+    @keyframes slideInRight {
+        from { transform: translateX(100%); }
+        to { transform: translateX(0); }
+    }
+    
+    .settings-mobile-back {
+        padding: 15px;
+        border-bottom: var(--border);
+        font-weight: 700;
+        font-size: 1.1rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        cursor: pointer;
+        color: var(--text);
+    }
+}
+
+/* ================= ONLYFANS STYLE CARDS UI ================= */
+
+.of-alert-box {
+    background: rgba(255, 71, 87, 0.1);
+    border: 1px solid #ff4757;
+    color: var(--text);
+    padding: 15px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    font-size: 0.95rem;
+    line-height: 1.4;
+}
+.of-alert-box i { color: #ff4757; font-size: 1.2rem; flex-shrink: 0; }
+.of-alert-box a { color: var(--primary-cyan); text-decoration: none; font-weight: 600; }
+.of-alert-box a:hover { text-decoration: underline; }
+
+.of-info-box {
+    background: rgba(0, 145, 234, 0.1);
+    border: 1px solid #0091ea; /* OF Blueish */
+    color: var(--text);
+    padding: 15px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    font-size: 0.95rem;
+}
+.of-info-box i { color: #0091ea; font-size: 1.2rem; flex-shrink: 0; }
+
+.of-card-logos {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    margin: 30px 0;
+    font-size: 2rem;
+    color: var(--text);
+    opacity: 0.8;
+}
+
+.of-footer-address {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.75rem;
+    line-height: 1.6;
+    margin-top: 40px;
+    padding: 0 20px;
+}
+.of-footer-address p { margin: 5px 0; }
+
+/* Override for sidebar button color to match screenshot blue */
+.right-sidebar .btn-add-payment-card {
+    background: #00baec !important; /* OF Blue/Cyan */
+    color: #fff !important;
+    text-transform: uppercase;
+}
+
+/* ================= CREATOR VERIFICATION STEPS ================= */
+.creator-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+.step-item {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    opacity: 0.5;
+    transition: 0.3s;
+}
+.step-item.active {
+    opacity: 1;
+    border-color: var(--primary-cyan);
+    box-shadow: 0 0 15px rgba(100, 233, 238, 0.1);
+}
+.step-num {
+    width: 35px;
+    height: 35px;
+    background: var(--input-bg);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    flex-shrink: 0;
+}
+.step-item.active .step-num {
+    background: var(--primary-cyan);
+    color: #000;
+}
+.step-info h4 { margin: 0; font-size: 1rem; }
+.step-info p { margin: 5px 0 0; font-size: 0.85rem; color: var(--muted); }
+.step-check { margin-left: auto; color: var(--primary-cyan); font-size: 1.2rem; }

@@ -1,0 +1,26 @@
+<div id="view-collections" style="display: none;">
+    <div class="feed-top-header">
+      <div class="header-content" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+          <div style="display:flex; align-items:center; gap:15px;">
+              <i class="fa-solid fa-arrow-left back-btn" onclick="document.getElementById('nav-link-home').click()"></i>
+              <h2>COLLECTIONS</h2>
+          </div>
+          <div style="display:flex; gap:20px; font-size:1.1rem; color:var(--text);">
+              <i class="fa-solid fa-magnifying-glass" id="col-btn-search" style="cursor:pointer;" title="Search"></i>
+              <i class="fa-solid fa-plus" id="col-btn-add" style="cursor:pointer;" title="New List"></i>
+          </div>
+      </div>
+      <div id="col-search-container" class="hidden" style="margin-top: 10px; padding-bottom:10px; border-bottom:var(--border);">
+          <div class="search-input-wrapper" style="background:var(--search-bg); border-radius:8px; padding:8px 12px; display:flex; align-items:center;">
+              <i class="fa-solid fa-magnifying-glass" style="color:var(--muted)"></i>
+              <input type="text" id="col-search-input" placeholder="Find a collection..." style="background:transparent; border:none; color:var(--text); width:100%; margin-left:10px; outline:none;">
+              <i class="fa-solid fa-xmark" id="col-search-close" style="cursor:pointer; color:var(--muted);"></i>
+          </div>
+      </div>
+    </div>
+    <div class="collection-tabs-bar">
+        <div class="c-tab-item active" id="tab-col-users">USER LISTS</div>
+        <div class="c-tab-item" id="tab-col-bookmarks">BOOKMARKS</div>
+    </div>
+    <div class="collection-list-container" id="collection-list-wrapper"></div>
+</div>

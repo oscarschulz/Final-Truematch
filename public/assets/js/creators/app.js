@@ -1,158 +1,389 @@
 import { DOM } from './dom.js';
-import { COLLECTIONS_DB } from './data.js';
 import { initHome } from './home.js';
 import { initNotifications } from './notifications.js';
 import { initMessages, loadChat } from './message.js';
-import { initCollections, renderCollections, updateRightSidebarContent } from './collections.js';
+import { initCollections, renderCollections, updateRightSidebarContent } from './collections.js'; 
 import { initWallet } from './wallet.js';
+import { loadView } from './loader.js';
+import { initSettings } from './settings.js';
+import { COLLECTIONS_DB } from './data.js';
 
 const TopToast = Swal.mixin({
-  toast: true, position: 'top', showConfirmButton: false, timer: 3000, timerProgressBar: true, background: '#0d1423', color: '#fff',
-  didOpen: (toast) => { toast.addEventListener('mouseenter', Swal.stopTimer); toast.addEventListener('mouseleave', Swal.resumeTimer); }
+  toast: true, position: 'top', showConfirmButton: false, timer: 3000, timerProgressBar: true, background: '#0d1423', color: '#fff'
 });
 
-// --- INIT ---
 async function init() {
   console.log("App Init...");
   
-  // 1. CALL ALL INIT FUNCTIONS
+  await Promise.all([
+      loadView('container-messages', 'assets/views/message.html'), 
+      loadView('container-settings', 'assets/views/settings.html'),
+      loadView('container-notifications', 'assets/views/notifications.html'),
+      loadView('container-collections', 'assets/views/collections.html')
+  ]);
+  
   initHome(TopToast);
   initNotifications();
   initMessages(TopToast);
   initCollections(TopToast);
   initWallet(TopToast);
-
-  // 2. Global Listeners (Popovers & Payments)
-  if (DOM.btnSubscribe) DOM.btnSubscribe.onclick = () => DOM.paymentModal.classList.add('is-visible');
-  if (DOM.btnPayCancel) DOM.btnPayCancel.onclick = () => DOM.paymentModal.classList.remove('is-visible');
-  if (DOM.btnPayConfirm) DOM.btnPayConfirm.onclick = () => {
-      DOM.btnPayConfirm.disabled = true; DOM.btnPayConfirm.textContent = 'Processing...';
-      setTimeout(() => { TopToast.fire({ icon: 'success', title: 'Success!' }); DOM.paymentModal.classList.remove('is-visible'); DOM.btnPayConfirm.disabled = false; DOM.btnPayConfirm.textContent = 'Proceed'; }, 1000);
-  };
+  initSettings();
+  initCardTabs(); 
+  initProfile(); 
+  initNewPostButton();
+  initSwipeGestures(); 
   
-  if (DOM.triggers.length > 0) DOM.triggers.forEach(t => { if(t) t.addEventListener('click', (e) => { e.stopPropagation(); DOM.popover.classList.toggle('is-open'); }); });
-  if (DOM.closePopoverBtn) DOM.closePopoverBtn.addEventListener('click', () => DOM.popover.classList.remove('is-open'));
-  document.addEventListener('click', (e) => {
-    if (DOM.popover && DOM.popover.classList.contains('is-open') && !DOM.popover.contains(e.target) && !DOM.triggers.some(t => t && t.contains(e.target))) {
-        DOM.popover.classList.remove('is-open');
-    }
-  });
-
-  if (DOM.themeToggle) DOM.themeToggle.addEventListener('change', (e) => {
-      if (e.target.checked) { document.body.classList.remove('tm-light'); document.body.classList.add('tm-dark'); }
-      else { document.body.classList.remove('tm-dark'); document.body.classList.add('tm-light'); }
-  });
-
-  // --- PROFILE TABS LOGIC (NEW) ---
-  if(DOM.profileTabPosts && DOM.profileTabMedia) {
-      DOM.profileTabPosts.addEventListener('click', () => {
-          DOM.profileTabPosts.style.borderBottomColor = 'var(--text)';
-          DOM.profileTabPosts.style.color = 'var(--text)';
-          DOM.profileTabMedia.style.borderBottomColor = 'transparent';
-          DOM.profileTabMedia.style.color = 'var(--muted)';
-          
-          DOM.profileContentPosts.classList.remove('hidden');
-          DOM.profileContentMedia.classList.add('hidden');
-      });
-
-      DOM.profileTabMedia.addEventListener('click', () => {
-          DOM.profileTabMedia.style.borderBottomColor = 'var(--text)';
-          DOM.profileTabMedia.style.color = 'var(--text)';
-          DOM.profileTabPosts.style.borderBottomColor = 'transparent';
-          DOM.profileTabPosts.style.color = 'var(--muted)';
-          
-          DOM.profileContentMedia.classList.remove('hidden');
-          DOM.profileContentPosts.classList.add('hidden');
+  injectSidebarToggles();
+  ensureFooterHTML();
+  
+  setupGlobalEvents(); 
+  
+  if (DOM.themeToggle) {
+      DOM.themeToggle.checked = document.body.classList.contains('tm-dark');
+      DOM.themeToggle.addEventListener('change', function() {
+          if (this.checked) {
+              document.body.classList.remove('tm-light'); document.body.classList.add('tm-dark');
+          } else {
+              document.body.classList.remove('tm-dark'); document.body.classList.add('tm-light');
+          }
       });
   }
 
-  // --- VIEW ROUTER (Handles Navigation) ---
-  function switchView(viewName) {
-    if (DOM.viewHome) DOM.viewHome.style.display = 'none';
-    if (DOM.viewNotif) DOM.viewNotif.style.display = 'none';
-    if (DOM.viewMessages) DOM.viewMessages.style.display = 'none';
-    if (DOM.viewCollections) DOM.viewCollections.style.display = 'none';
-    if (DOM.viewAddCard) DOM.viewAddCard.style.display = 'none';
-    if (DOM.viewMyProfile) DOM.viewMyProfile.style.display = 'none'; // Reset Profile
+  setupNavigation();
+  
+  setTimeout(() => { 
+      if(DOM.appLoader) { 
+          DOM.appLoader.style.opacity = '0'; DOM.appLoader.style.visibility = 'hidden'; 
+          setTimeout(() => { if(DOM.appLoader.parentNode) DOM.appLoader.parentNode.removeChild(DOM.appLoader); }, 500); 
+      } 
+  }, 500);
+}
 
-    // Reset Active Classes
-    [DOM.navHome, DOM.navNotif, DOM.navMessages, DOM.navCollections, DOM.navSubs, DOM.navAddCard, DOM.navProfile, DOM.mobHome, DOM.mobNotif, DOM.mobMessages].forEach(el => {
-        if(el) { el.classList.remove('active'); const i = el.querySelector('i'); if(i && !i.classList.contains('fa-house') && !i.classList.contains('fa-user-group')) i.classList.replace('fa-solid', 'fa-regular'); }
+function initSwipeGestures() {
+    let touchStartX = 0;
+    let touchEndX = 0;
+    const minSwipeDistance = 80;
+
+    document.addEventListener('touchstart', e => {
+        touchStartX = e.changedTouches[0].screenX;
+    }, {passive: true});
+
+    document.addEventListener('touchend', e => {
+        touchEndX = e.changedTouches[0].screenX;
+        handleSwipe();
+    }, {passive: true});
+
+    function handleSwipe() {
+        if (touchEndX > touchStartX + minSwipeDistance) {
+            if (DOM.popover && DOM.popover.classList.contains('is-open')) {
+                DOM.popover.classList.remove('is-open');
+                return;
+            }
+            const msgView = document.getElementById('view-messages');
+            if (msgView && msgView.classList.contains('mobile-chat-active')) {
+                msgView.classList.remove('mobile-chat-active');
+                return;
+            }
+            const homeView = document.getElementById('view-home');
+            if (homeView && homeView.style.display === 'none') {
+                switchView('home');
+                return;
+            }
+        }
+    }
+}
+
+function setupGlobalEvents() {
+    // Hamburger (Tablet/Mobile)
+    document.addEventListener('click', (e) => {
+        const toggleBtn = e.target.closest('.header-toggle-btn');
+        if (toggleBtn) {
+            e.stopPropagation();
+            e.preventDefault();
+            const popover = document.getElementById('settings-popover');
+            if (popover) popover.classList.add('is-open');
+        }
     });
 
-    // Reset Sidebars
-    if (DOM.mainFeedColumn) DOM.mainFeedColumn.classList.remove('narrow-view');
-    if (DOM.rightSidebar) { DOM.rightSidebar.classList.remove('wide-view'); DOM.rightSidebar.classList.remove('hidden-sidebar'); }
-
-    if (viewName === 'messages') {
-        if(DOM.rightSidebar) DOM.rightSidebar.classList.add('hidden-sidebar');
-        if (DOM.viewMessages) DOM.viewMessages.style.display = 'block';
-        setActive(DOM.navMessages); setActive(DOM.mobMessages);
-        if(DOM.chatHistoryContainer && DOM.chatHistoryContainer.innerHTML.trim() === "") loadChat(1); 
-    } 
-    else if (viewName === 'collections') {
-        if (DOM.mainFeedColumn) DOM.mainFeedColumn.classList.add('narrow-view');
-        if (DOM.rightSidebar) DOM.rightSidebar.classList.add('wide-view');
-        if(DOM.rsSuggestions) DOM.rsSuggestions.classList.add('hidden');
-        if(DOM.rsWalletView) DOM.rsWalletView.classList.add('hidden');
-        if(DOM.rsCollections) DOM.rsCollections.classList.remove('hidden');
-        if (DOM.viewCollections) DOM.viewCollections.style.display = 'block';
-        setActive(DOM.navCollections);
-        renderCollections(); 
+    // More Button (Desktop)
+    if (DOM.btnMore) {
+        DOM.btnMore.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const popover = document.getElementById('settings-popover');
+            if(popover) popover.classList.toggle('is-open');
+        });
     }
-    else if (viewName === 'home') {
-        if(DOM.rsSuggestions) DOM.rsSuggestions.classList.remove('hidden');
-        if(DOM.rsCollections) DOM.rsCollections.classList.add('hidden');
-        if(DOM.rsWalletView) DOM.rsWalletView.classList.add('hidden');
+
+    // Close Button (X)
+    const btnClose = document.getElementById('btnClosePopover');
+    if(btnClose) {
+        btnClose.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const popover = document.getElementById('settings-popover');
+            if(popover) popover.classList.remove('is-open');
+        });
+    }
+
+    // Click Outside
+    document.addEventListener('click', (e) => {
+        const popover = document.getElementById('settings-popover');
+        const toggleBtn = e.target.closest('.header-toggle-btn');
+        const moreBtn = e.target.closest('#trigger-more-btn');
+        
+        if (popover && popover.classList.contains('is-open')) {
+            if (!popover.contains(e.target) && !toggleBtn && !moreBtn) {
+                popover.classList.remove('is-open');
+            }
+        }
+    });
+}
+
+function initNewPostButton() {
+    const btnNewPost = document.querySelector('.btn-new-post');
+    if (btnNewPost) {
+        btnNewPost.addEventListener('click', () => {
+            switchView('home');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            const composeInput = document.querySelector('.compose-top input');
+            if (composeInput) {
+                setTimeout(() => composeInput.focus(), 300);
+            }
+        });
+    }
+}
+
+function initCardTabs() {
+    if(DOM.btnTabCards && DOM.btnTabPayments) {
+        DOM.btnTabCards.addEventListener('click', () => {
+            DOM.btnTabCards.classList.add('active'); DOM.btnTabPayments.classList.remove('active');
+            if(DOM.tabContentCards) DOM.tabContentCards.classList.remove('hidden');
+            if(DOM.tabContentPayments) DOM.tabContentPayments.classList.add('hidden');
+        });
+        DOM.btnTabPayments.addEventListener('click', () => {
+            DOM.btnTabPayments.classList.add('active'); DOM.btnTabCards.classList.remove('active');
+            if(DOM.tabContentPayments) DOM.tabContentPayments.classList.remove('hidden');
+            if(DOM.tabContentCards) DOM.tabContentCards.classList.add('hidden');
+        });
+    }
+}
+
+function initProfile() {
+    const tabPosts = document.getElementById('tab-profile-posts');
+    const tabMedia = document.getElementById('tab-profile-media');
+    const contentPosts = document.getElementById('profile-content-posts');
+    const contentMedia = document.getElementById('profile-content-media');
+    const btnEdit = document.getElementById('btn-edit-profile');
+
+    if(tabPosts && tabMedia) {
+        tabPosts.addEventListener('click', () => {
+            tabPosts.style.borderBottomColor = 'var(--text)';
+            tabPosts.style.color = 'var(--text)';
+            tabMedia.style.borderBottomColor = 'transparent';
+            tabMedia.style.color = 'var(--muted)';
+            contentPosts.classList.remove('hidden');
+            contentMedia.classList.add('hidden');
+        });
+
+        tabMedia.addEventListener('click', () => {
+            tabMedia.style.borderBottomColor = 'var(--text)';
+            tabMedia.style.color = 'var(--text)';
+            tabPosts.style.borderBottomColor = 'transparent';
+            tabPosts.style.color = 'var(--muted)';
+            contentMedia.classList.remove('hidden');
+            contentPosts.classList.add('hidden');
+        });
+    }
+
+    if(btnEdit) {
+        btnEdit.addEventListener('click', () => {
+            switchView('settings');
+        });
+    }
+}
+
+function setupNavigation() {
+    if (DOM.navHome) DOM.navHome.addEventListener('click', (e) => { e.preventDefault(); switchView('home'); });
+    if (DOM.navNotif) DOM.navNotif.addEventListener('click', (e) => { e.preventDefault(); switchView('notifications'); });
+    if (DOM.navMessages) DOM.navMessages.addEventListener('click', (e) => { e.preventDefault(); switchView('messages'); });
+    if (DOM.navCollections) DOM.navCollections.addEventListener('click', (e) => { e.preventDefault(); switchView('collections'); });
+    if (DOM.navProfile) DOM.navProfile.addEventListener('click', (e) => { e.preventDefault(); switchView('profile'); });
+    if (DOM.navAddCard) DOM.navAddCard.addEventListener('click', (e) => { e.preventDefault(); switchView('add-card'); });
+
+    if (DOM.navSubs) {
+        DOM.navSubs.addEventListener('click', (e) => { 
+            e.preventDefault(); 
+            switchView('collections'); 
+            updateActiveNav('nav-link-subs', null);
+            const followingData = COLLECTIONS_DB.find(c => c.id === 'following');
+            if(followingData) updateRightSidebarContent(followingData);
+        }); 
+    }
+
+    document.querySelectorAll('.pop-item').forEach(link => {
+        link.addEventListener('click', (e) => {
+            const text = link.innerText.trim().toLowerCase();
+            const popover = document.getElementById('settings-popover');
+            if(popover) popover.classList.remove('is-open');
+
+            if (text.includes('cards')) { e.preventDefault(); switchView('your-cards'); }
+            else if (text.includes('add card')) { e.preventDefault(); switchView('add-card'); }
+            else if (text.includes('settings')) { e.preventDefault(); switchView('settings'); }
+            else if (text.includes('profile')) { e.preventDefault(); switchView('profile'); }
+            else if (text.includes('creator') || text.includes('banking')) { e.preventDefault(); switchView('become-creator'); }
+        });
+    });
+
+    const mobHome = document.getElementById('mob-nav-home');
+    const mobAddCard = document.getElementById('mob-nav-add-card');
+    const mobAdd = document.getElementById('mob-nav-add');
+    const mobCollections = document.getElementById('mob-nav-collections');
+    const mobNotif = document.getElementById('mob-nav-notif');
+
+    if (mobHome) mobHome.addEventListener('click', () => switchView('home'));
+    if (mobAddCard) mobAddCard.addEventListener('click', () => switchView('add-card'));
+    if (mobCollections) mobCollections.addEventListener('click', () => switchView('collections'));
+    if (mobNotif) mobNotif.addEventListener('click', () => switchView('notifications'));
+    if (mobAdd) mobAdd.addEventListener('click', () => { 
+        switchView('home'); window.scrollTo(0,0);
+        const composeInput = document.querySelector('.compose-top input');
+        if (composeInput) setTimeout(() => composeInput.focus(), 300);
+    });
+    
+    document.addEventListener('click', (e) => {
+        if(e.target.classList.contains('tablet-msg-btn')) {
+            switchView('messages');
+        }
+    });
+}
+
+function switchView(viewName) {
+    const views = [DOM.viewHome, DOM.viewNotif, DOM.viewMessages, DOM.viewCollections, DOM.viewAddCard, DOM.viewYourCards, DOM.viewBecomeCreator, DOM.viewMyProfile, DOM.viewSettings];
+    views.forEach(el => { if(el) el.style.display = 'none'; });
+
+    if (DOM.mainFeedColumn) {
+        DOM.mainFeedColumn.classList.remove('narrow-view');
+        DOM.mainFeedColumn.style.removeProperty('display'); 
+    }
+    
+    // RESTORE SIDEBAR ON DESKTOP IF HIDDEN
+    if (window.innerWidth > 1024 && DOM.rightSidebar) {
+        DOM.rightSidebar.style.display = 'flex';
+        DOM.rightSidebar.classList.remove('wide-view'); 
+        DOM.rightSidebar.classList.remove('hidden-sidebar');
+    }
+
+    if(DOM.rsSuggestions) DOM.rsSuggestions.classList.add('hidden');
+    if(DOM.rsCollections) DOM.rsCollections.classList.add('hidden');
+    if(DOM.rsWalletView) DOM.rsWalletView.classList.add('hidden');
+    if(DOM.rsSettingsView) DOM.rsSettingsView.classList.add('hidden');
+    if(document.getElementById('rs-banking-view')) document.getElementById('rs-banking-view').classList.add('hidden');
+
+    const msgContainer = document.getElementById('container-messages');
+    if(msgContainer) msgContainer.style.display = (viewName === 'messages') ? 'block' : 'none';
+
+    // --- VIEW SPECIFIC LOGIC ---
+    if (viewName === 'home') {
         if (DOM.viewHome) DOM.viewHome.style.display = 'block';
-        setActive(DOM.navHome); setActive(DOM.mobHome);
+        if(DOM.rsSuggestions) DOM.rsSuggestions.classList.remove('hidden');
+        updateActiveNav('nav-link-home', 'mob-nav-home');
     } 
     else if (viewName === 'notifications') {
         if (DOM.viewNotif) DOM.viewNotif.style.display = 'block';
-        setActive(DOM.navNotif); setActive(DOM.mobNotif);
+        if(DOM.rsSuggestions) DOM.rsSuggestions.classList.remove('hidden');
+        updateActiveNav('nav-link-notif', 'mob-nav-notif');
+    }
+    else if (viewName === 'messages') {
+        if(DOM.rightSidebar) DOM.rightSidebar.classList.add('hidden-sidebar');
+        if (DOM.viewMessages) DOM.viewMessages.style.display = 'flex'; 
+        if (DOM.mainFeedColumn) DOM.mainFeedColumn.style.display = 'flex';
+        updateActiveNav('nav-link-messages', 'mob-nav-msg');
+        if(DOM.chatHistoryContainer && DOM.chatHistoryContainer.innerHTML.trim() === "") loadChat(1); 
+    } 
+    else if (viewName === 'profile') {
+        if (DOM.viewMyProfile) DOM.viewMyProfile.style.display = 'block';
+        if(DOM.rsSuggestions) DOM.rsSuggestions.classList.remove('hidden');
+        updateActiveNav('nav-link-profile', null);
+    }
+    else if (viewName === 'collections') {
+        if (DOM.mainFeedColumn) DOM.mainFeedColumn.classList.add('narrow-view');
+        if (DOM.rightSidebar) DOM.rightSidebar.classList.add('wide-view');
+        
+        if (DOM.rsCollections) DOM.rsCollections.classList.remove('hidden');
+        if (DOM.viewCollections) DOM.viewCollections.style.display = 'block';
+        updateActiveNav('nav-link-collections', 'mob-nav-collections'); 
+        renderCollections(); 
+    }
+    else if (viewName === 'settings') {
+        if (DOM.mainFeedColumn) DOM.mainFeedColumn.classList.add('narrow-view');
+        if (DOM.rightSidebar) DOM.rightSidebar.classList.add('wide-view');
+        
+        if (DOM.rsSettingsView) DOM.rsSettingsView.classList.remove('hidden'); 
+        if (DOM.viewSettings) DOM.viewSettings.style.display = 'block';
+        updateActiveNav(null, null); 
     }
     else if (viewName === 'add-card') {
         if (DOM.viewAddCard) DOM.viewAddCard.style.display = 'block';
-        setActive(DOM.navAddCard);
-        if(DOM.rsSuggestions) DOM.rsSuggestions.classList.add('hidden');
-        if(DOM.rsCollections) DOM.rsCollections.classList.add('hidden');
+        if(DOM.rsWalletView) DOM.rsWalletView.classList.remove('hidden');
+        updateActiveNav('nav-link-add-card', 'mob-nav-add-card');
+    }
+    else if (viewName === 'your-cards') {
+        if (DOM.viewYourCards) DOM.viewYourCards.style.display = 'block';
         if(DOM.rsWalletView) DOM.rsWalletView.classList.remove('hidden');
     }
-    else if (viewName === 'profile') {
-        if (DOM.viewMyProfile) DOM.viewMyProfile.style.display = 'block';
-        setActive(DOM.navProfile);
-        if(DOM.rsSuggestions) DOM.rsSuggestions.classList.remove('hidden'); // Show Standard Sidebar
-        if(DOM.rsCollections) DOM.rsCollections.classList.add('hidden');
-        if(DOM.rsWalletView) DOM.rsWalletView.classList.add('hidden');
+    else if (viewName === 'become-creator') {
+        if (DOM.viewBecomeCreator) DOM.viewBecomeCreator.style.display = 'block';
+        const bankingSidebar = document.getElementById('rs-banking-view');
+        if(bankingSidebar) bankingSidebar.classList.remove('hidden');
     }
-  }
+    
+    injectSidebarToggles();
+}
 
-  function setActive(el) { if(!el) return; el.classList.add('active'); const i = el.querySelector('i'); if(i) i.classList.replace('fa-regular', 'fa-solid'); }
+function updateActiveNav(desktopId, mobileId) {
+    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.mob-nav-item').forEach(el => el.classList.remove('active'));
 
-  // --- NAVIGATION LISTENERS ---
-  if (DOM.navHome) DOM.navHome.addEventListener('click', (e) => { e.preventDefault(); switchView('home'); });
-  if (DOM.navNotif) DOM.navNotif.addEventListener('click', (e) => { e.preventDefault(); switchView('notifications'); });
-  if (DOM.navMessages) DOM.navMessages.addEventListener('click', (e) => { e.preventDefault(); switchView('messages'); });
-  if (DOM.navCollections) DOM.navCollections.addEventListener('click', (e) => { e.preventDefault(); switchView('collections'); });
-  if (DOM.navAddCard) DOM.navAddCard.addEventListener('click', (e) => { e.preventDefault(); switchView('add-card'); });
-  if (DOM.navProfile) DOM.navProfile.addEventListener('click', (e) => { e.preventDefault(); switchView('profile'); });
+    if(desktopId) {
+        const el = document.getElementById(desktopId);
+        if(el) el.classList.add('active');
+    }
+    if(mobileId) {
+        const el = document.getElementById(mobileId);
+        if(el) el.classList.add('active');
+    }
+}
 
-  if (DOM.navSubs) {
-      DOM.navSubs.addEventListener('click', (e) => {
-          e.preventDefault(); switchView('collections'); 
-          if(DOM.navCollections) { DOM.navCollections.classList.remove('active'); if(DOM.navCollections.querySelector('i')) DOM.navCollections.querySelector('i').classList.replace('fa-solid', 'fa-regular'); }
-          setActive(DOM.navSubs);
-          if(DOM.colTabUsers) DOM.colTabUsers.click();
-          const followingCol = COLLECTIONS_DB.find(c => c.id === 'following');
-          if(followingCol) updateRightSidebarContent(followingCol);
-      });
-  }
-  
-  if (DOM.mobHome) DOM.mobHome.addEventListener('click', (e) => { e.preventDefault(); switchView('home'); });
-  if (DOM.mobNotif) DOM.mobNotif.addEventListener('click', (e) => { e.preventDefault(); switchView('notifications'); });
-  if (DOM.mobMessages) DOM.mobMessages.addEventListener('click', (e) => { e.preventDefault(); switchView('messages'); });
+function injectSidebarToggles() {
+    const headers = document.querySelectorAll('.feed-top-header');
+    headers.forEach(header => {
+        let iconContainer = header.querySelector('.tablet-header-icons');
+        if (iconContainer) {
+            let btn = iconContainer.querySelector('.header-toggle-btn');
+            if (!btn) {
+                btn = document.createElement('i');
+                btn.className = 'fa-solid fa-bars header-toggle-btn';
+                btn.style.cursor = 'pointer';
+                // Click handled in setupGlobalEvents
+                iconContainer.appendChild(btn);
+            }
+        }
+    });
+}
 
-  window.addEventListener('load', () => { if(DOM.appLoader) { DOM.appLoader.style.opacity = '0'; DOM.appLoader.style.visibility = 'hidden'; setTimeout(() => { if(DOM.appLoader.parentNode) DOM.appLoader.parentNode.removeChild(DOM.appLoader); }, 500); } });
+function ensureFooterHTML() {
+    const nav = document.querySelector('.mobile-bottom-nav');
+    if (nav && nav.children.length === 0) {
+        nav.innerHTML = `
+            <div class="mob-nav-item active" id="mob-nav-home"><i class="fa-solid fa-house"></i></div>
+            <div class="mob-nav-item" id="mob-nav-add-card"><i class="fa-regular fa-credit-card"></i></div>
+            <div class="mob-nav-item" id="mob-nav-add"><div class="add-circle"><i class="fa-solid fa-plus"></i></div></div>
+            <div class="mob-nav-item" id="mob-nav-collections"><i class="fa-regular fa-bookmark"></i></div>
+            <div class="mob-nav-item" id="mob-nav-notif"><i class="fa-regular fa-bell"></i></div>
+        `;
+        setupNavigation();
+    }
 }
 
 document.addEventListener('DOMContentLoaded', init);
