@@ -3,25 +3,31 @@ import { CHAT_DATA, DEFAULT_AVATAR } from './data.js';
 
 export function initMessages(TopToast) {
     
-    // 0. INIT BACK BUTTON FOR MOBILE
+    // 0. INIT BACK BUTTON FOR MOBILE/TABLET
     const initMobileBackBtn = () => {
         const chatUserDiv = document.querySelector('.ch-user');
         // Check if button already exists AND if chatUserDiv exists
         if (chatUserDiv && !document.querySelector('.back-to-list-btn')) {
             const backBtn = document.createElement('i');
             backBtn.className = 'fa-solid fa-arrow-left back-to-list-btn';
+            // Insert Before Avatar
             chatUserDiv.insertBefore(backBtn, chatUserDiv.firstChild);
             
-            backBtn.addEventListener('click', () => {
+            // LOGIC: Remove 'mobile-chat-active' class to go back to list
+            backBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent bubbling
                 if(DOM.viewMessages) DOM.viewMessages.classList.remove('mobile-chat-active');
             });
         }
     };
+    
+    // Call immediately in case view is already loaded
     initMobileBackBtn();
 
-    // Resize Handler: Remove mobile-chat-active if resizing to Desktop
+    // Resize Handler: Remove mobile-chat-active ONLY if resizing to Desktop
+    // 🔥 FIX: 1180px ang breakpoint natin sa CSS, kaya dapat match din dito
     window.addEventListener('resize', () => {
-        if (window.innerWidth > 768 && DOM.viewMessages) {
+        if (window.innerWidth > 1180 && DOM.viewMessages) {
             DOM.viewMessages.classList.remove('mobile-chat-active');
         }
     });
@@ -36,7 +42,7 @@ export function initMessages(TopToast) {
         });
     }
 
-    // 2. User List Click
+    // 2. User List Click (OPEN CHAT)
     const userListContainer = document.querySelector('.msg-user-list') || document.getElementById('msg-user-list');
     if (userListContainer) {
         userListContainer.addEventListener('click', (e) => {
@@ -46,20 +52,30 @@ export function initMessages(TopToast) {
             document.querySelectorAll('.msg-user-item').forEach(i => i.classList.remove('active'));
             item.classList.add('active');
             
+            // 🔥 GET DATA FROM HTML ATTRIBUTES (Ito yung kulang kanina)
+            const userName = item.dataset.name || 'User';
+            const userAvatar = item.dataset.avatar || DEFAULT_AVATAR;
+            const userHandle = item.dataset.handle || '@user';
+            
             const hasVerify = item.querySelector('.fa-circle-check');
             const verifyHtml = hasVerify ? ' <i class="fa-solid fa-circle-check verify-badge" style="color: var(--primary-cyan);"></i>' : '';
 
-            if(DOM.activeChatName) DOM.activeChatName.innerHTML = `${item.dataset.name || 'User'}${verifyHtml}`;
-            if(DOM.activeChatAvatar) DOM.activeChatAvatar.src = item.dataset.avatar || DEFAULT_AVATAR;
+            // Update Header Name & Avatar
+            if(DOM.activeChatName) DOM.activeChatName.innerHTML = `${userName}${verifyHtml}`;
+            if(DOM.activeChatAvatar) DOM.activeChatAvatar.src = userAvatar;
             
-            if(DOM.infoNickname) DOM.infoNickname.value = item.dataset.name || 'User';
-            if(DOM.infoHandle) DOM.infoHandle.innerText = item.dataset.handle || '@user';
+            // Update Info Panel
+            if(DOM.infoNickname) DOM.infoNickname.value = userName;
+            if(DOM.infoHandle) DOM.infoHandle.innerText = userHandle;
 
+            // Load Chat Messages
             loadChat(item.dataset.id || 1);
-            initMobileBackBtn(); // Ensure button is there
             
-            // Only add class if on mobile
-            if (window.innerWidth <= 768 && DOM.viewMessages) {
+            // Re-initialize back button for the new chat header
+            initMobileBackBtn(); 
+            
+            // 🔥 OPEN CHAT ON TABLET & MOBILE (1180px and below)
+            if (window.innerWidth <= 1180 && DOM.viewMessages) {
                 DOM.viewMessages.classList.add('mobile-chat-active');
             }
         });

@@ -2,7 +2,6 @@ import { DOM } from './dom.js';
 
 export function initSettings() {
     // FIX: Use Event Delegation sa container (view-settings)
-    // Ito ay para siguradong gagana ang click kahit late ma-load ang HTML
     const settingsView = DOM.viewSettings;
     const rsContainer = DOM.rsSettingsView;
     const rightSidebar = document.getElementById('right-sidebar');
@@ -22,7 +21,7 @@ export function initSettings() {
                 const target = item.dataset.target;
                 loadSettingsContent(target);
 
-                // MOBILE ONLY: Slide in Right Sidebar
+                // 🔥 MOBILE FIX: Buksan ang sidebar bilang Full Page Overlay
                 if (window.innerWidth <= 1024 && rightSidebar) {
                     rightSidebar.classList.remove('hidden-sidebar');
                     rightSidebar.classList.add('mobile-active');
@@ -43,21 +42,17 @@ export function initSettings() {
 
         rsContainer.innerHTML = ''; // Clear previous
 
-        // MOBILE ONLY: Add Back Button Header inside Right Sidebar
+        // 🔥 MOBILE FIX: Maglagay ng BACK BUTTON sa loob ng content
         if (window.innerWidth <= 1024) {
             const backBtn = document.createElement('div');
             backBtn.className = 'settings-mobile-back';
             const title = target.charAt(0).toUpperCase() + target.slice(1);
             backBtn.innerHTML = `<i class="fa-solid fa-arrow-left"></i> ${title}`;
-            backBtn.style.padding = '15px';
-            backBtn.style.cursor = 'pointer';
-            backBtn.style.borderBottom = '1px solid var(--border-color)';
             
+            // Pag kinlick ang Back, isasara ang overlay
             backBtn.addEventListener('click', () => {
                 if(rightSidebar) {
                     rightSidebar.classList.remove('mobile-active');
-                    // Optional: Hide sidebar completely if needed
-                    // rightSidebar.classList.add('hidden-sidebar');
                 }
             });
             rsContainer.appendChild(backBtn);

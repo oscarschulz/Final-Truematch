@@ -58,7 +58,7 @@ export function renderCollections(filterText = '') {
             div.classList.add('active');
             updateRightSidebarContent(col);
 
-            // 🔥 AUTO OPEN RIGHT SIDEBAR
+            // 🔥 MOBILE FIX: Force Open Sidebar as Full Page
             if (window.innerWidth <= 1024 && DOM.rightSidebar) {
                 DOM.rightSidebar.classList.remove('hidden-sidebar');
                 DOM.rightSidebar.classList.add('mobile-active');
@@ -95,6 +95,20 @@ function deleteCollection(id) {
 
 export function updateRightSidebarContent(col) {
     if (DOM.rsTitle) DOM.rsTitle.innerText = col.name.toUpperCase();
+
+    // MOBILE FIX: Add Back Button inside Collections view too
+    if (window.innerWidth <= 1024) {
+        const header = document.querySelector('.rs-col-header');
+        if (header && !header.querySelector('.settings-mobile-back')) {
+             const backBtn = document.createElement('div');
+             backBtn.className = 'settings-mobile-back';
+             backBtn.innerHTML = `<i class="fa-solid fa-arrow-left"></i> BACK`;
+             backBtn.addEventListener('click', () => {
+                if(DOM.rightSidebar) DOM.rightSidebar.classList.remove('mobile-active');
+             });
+             header.insertBefore(backBtn, header.firstChild);
+        }
+    }
 
     if (col.type === 'user') {
         DOM.rsViewUsers.classList.remove('hidden');

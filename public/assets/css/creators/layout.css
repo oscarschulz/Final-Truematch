@@ -194,28 +194,29 @@ html, body {
 }
 
 /* ================= POPOVER MENU (DESKTOP DEFAULT) ================= */
-/* 🔥 FIX: Ito ang nawawala kaya hindi lumalabas sa Desktop 🔥 */
 .tm-popover-menu {
-    position: fixed; /* Relative to window */
-    bottom: 80px; /* Above the 'More' button */
-    left: 40px; /* Align with sidebar */
+    position: fixed;
+    bottom: 80px; 
+    left: 40px; 
     width: 280px;
     background: var(--card-bg);
     border: 1px solid var(--border-color);
     border-radius: 16px;
     box-shadow: 0 5px 20px rgba(0,0,0,0.5);
     z-index: 9999;
-    display: none; /* Hidden by default */
+    display: none; 
+    /* 🔥 Flexbox para ma-control ang footer */
+    flex-direction: column; 
     overflow: hidden;
-    padding-bottom: 10px;
+    padding-bottom: 0; /* Tinanggal ang padding para sagad ang footer */
 }
 
 .tm-popover-menu.is-open {
-    display: block; /* Show when active */
+    display: flex; /* Changed from block to flex */
     animation: popUp 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-.pop-header { background: rgba(255,255,255,0.03); padding: 15px; border-bottom: var(--border); }
+.pop-header { background: rgba(255,255,255,0.03); padding: 15px; border-bottom: var(--border); flex-shrink: 0; }
 .pop-user-section { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; position: relative; }
 .pop-avatar { position: relative; width: 45px; height: 45px; }
 .pop-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
@@ -223,13 +224,20 @@ html, body {
 .pop-info { display: flex; flex-direction: column; overflow: hidden; }
 .pop-info strong { font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pop-info span { font-size: 0.8rem; color: var(--muted); }
-.btn-close-pop { position: absolute; top: 0; right: 0; background: transparent; border: none; color: var(--text); cursor: pointer; display: none; } /* Hidden on desktop */
+.btn-close-pop { position: absolute; top: 0; right: 0; background: transparent; border: none; color: var(--text); cursor: pointer; display: none; }
 
 .pop-stats { display: flex; justify-content: space-around; }
 .stat-item { display: flex; flex-direction: column; align-items: center; font-size: 0.85rem; }
 .stat-item span { color: var(--muted); font-size: 0.75rem; }
 
-.pop-content-full { padding: 10px 0; max-height: 400px; overflow-y: auto; }
+/* 🔥 Content Area - Flex Grow para itulak ang footer pababa */
+.pop-content-full { 
+    padding: 10px 0; 
+    overflow-y: auto; 
+    flex-grow: 1; /* Ito ang magtutulak sa footer pababa */
+    max-height: 400px; /* Limitahan sa desktop */
+}
+
 .pop-item { display: flex; align-items: center; gap: 15px; padding: 12px 20px; color: var(--text); text-decoration: none; transition: 0.2s; font-size: 0.95rem; font-weight: 500; cursor: pointer; }
 .pop-item:hover { background: var(--hover-bg); color: var(--primary-cyan); }
 .pop-item i { width: 25px; text-align: center; }
@@ -238,6 +246,24 @@ html, body {
 .pop-item.danger:hover { background: rgba(255, 71, 87, 0.1); }
 .pop-item.toggle-row { justify-content: space-between; }
 .flex-icon { display: flex; align-items: center; gap: 15px; }
+
+/* 🔥 FOOTER STYLES */
+.pop-footer {
+    padding: 15px;
+    border-top: var(--border);
+    background: var(--card-bg); 
+    flex-shrink: 0;
+}
+
+.logout-btn {
+    justify-content: center;
+    background: rgba(255, 71, 87, 0.05);
+    border-radius: 8px;
+    font-weight: 700;
+}
+.logout-btn:hover {
+    background: rgba(255, 71, 87, 0.15);
+}
 
 @keyframes popUp {
     from { opacity: 0; transform: translateY(10px) scale(0.95); }
@@ -287,19 +313,13 @@ html, body {
 @media (min-width: 1025px) and (max-width: 1440px) {
     .left-sidebar { width: 220px !important; } 
     .left-sidebar .sidebar-inner { padding: 15px 10px !important; width: 100% !important; }
-    
-    /* Laptop Popover Positioning */
     .tm-popover-menu { left: 20px !important; width: 260px !important; }
-    
     .right-sidebar { width: 260px !important; min-width: 260px !important; } 
     .right-sidebar .sidebar-inner { padding: 15px 15px !important; }
-    
     .main-feed-column { max-width: 950px !important; } 
     .main-feed-column:has(#view-messages[style*="display: flex"]) { max-width: none !important; width: auto !important; flex: 1 !important; }
-    
     .main-feed-column.narrow-view { width: 420px !important; max-width: 420px !important; }
     .nav-item { padding: 8px 12px !important; font-size: 0.9rem !important; }
-    
     .header-toggle-btn { display: none !important; }
 }
 
@@ -309,38 +329,32 @@ html, body {
 @media (max-width: 1024px) { 
   html, body { overflow-y: auto !important; height: auto !important; }
   .of-layout-container { height: auto !important; overflow: visible !important; display: block; }
-
-  /* Show Footer */
   .mobile-bottom-nav { display: flex !important; }
   .left-sidebar { display: none !important; }
 
   /* Full Width Feed */
   .main-feed-column, .main-feed-column.narrow-view { 
-      width: 100% !important; 
-      max-width: none !important; 
-      flex: none !important; 
-      border-right: none !important; 
-      position: static !important; 
-      height: auto !important; 
-      overflow: visible !important; 
-      padding-bottom: 80px !important; 
+      width: 100% !important; max-width: none !important; flex: none !important; 
+      border-right: none !important; position: static !important; 
+      height: auto !important; overflow: visible !important; padding-bottom: 80px !important; 
   }
 
-  /* --- HEADER CUSTOMIZATION FOR TABLET --- */
   .header-desktop-only { display: none !important; }
   .header-tablet-only { display: flex !important; }
   .header-toggle-btn { display: inline-block !important; } 
 
-  /* 🔥 MODIFIED POPOVER (SIDE DRAWER STYLE) OVERRIDES 🔥 */
+  /* 🔥 UPDATE: Flex display para sa footer push 🔥 */
   .tm-popover-menu {
-      display: block !important;
+      display: flex !important; /* Changed from block to flex */
+      flex-direction: column !important;
       position: fixed !important;
       top: 0 !important;
-      right: -320px; /* Hidden off-screen right */
-      left: auto !important; /* Reset Desktop 'left' */
+      right: -320px; 
+      left: auto !important;
       bottom: 0 !important;
       width: 300px !important; 
-      height: 100vh !important;
+      height: 100vh !important; /* Full height */
+      max-height: none !important; /* Remove limit */
       background: #0d1423 !important;
       border-left: 1px solid var(--border-color) !important;
       border-radius: 20px 0 0 20px !important;
@@ -352,53 +366,59 @@ html, body {
       padding-bottom: 0 !important;
   }
 
-  /* Show close button on drawer */
-  .btn-close-pop { display: block !important; }
-
-  /* When Active - Slide In */
-  .tm-popover-menu.is-open {
-      right: 0 !important;
+  /* 🔥 Reset content max-height sa mobile 🔥 */
+  .pop-content-full {
+      max-height: none !important;
   }
 
-  /* 🔥🔥🔥 NUCLEAR OPTION: HIDE RIGHT SIDEBAR ON TABLET/MOBILE 🔥🔥🔥 */
+  .btn-close-pop { display: block !important; }
+  .tm-popover-menu.is-open { right: 0 !important; }
+
+  /* 🔥🔥🔥 DEFAULT STATE: NAKATAGO ANG SIDEBAR (Bye April Rayne) 🔥🔥🔥 */
   .right-sidebar, 
-  .right-sidebar.wide-view, 
-  .right-sidebar.mobile-active,
-  .right-sidebar.hidden-sidebar { 
+  .right-sidebar.wide-view { 
       display: none !important; 
-      width: 0 !important;
-      min-width: 0 !important;
-      flex-basis: 0 !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
+  }
+  
+  /* 🔥🔥🔥 ACTIVE STATE: KAPAG NAG-CLICK KA, LILITAW SIYA AS FULL PAGE 🔥🔥🔥 */
+  .right-sidebar.mobile-active {
+      display: flex !important;
+      position: fixed !important;
+      top: 0; left: 0; right: 0; bottom: 0;
+      width: 100% !important;
+      height: 100% !important;
+      background: var(--bg); /* Tatakpan niya ang buong screen */
+      z-index: 5000 !important;
+      padding-bottom: 60px;
+      animation: slideUp 0.3s ease-out; /* May pa-slide effect */
+  }
+  
+  @keyframes slideUp {
+      from { transform: translateY(100%); }
+      to { transform: translateY(0); }
   }
   
   .mobile-drawer-back { display: flex !important; }
   
-  /* Messages Mobile Fix */
   body:has(#view-messages[style*="display: flex"]) { overflow: hidden !important; }
   .main-feed-column:has(#view-messages[style*="display: flex"]) { 
-      height: 100dvh !important; 
-      overflow: hidden !important; 
-      padding-bottom: 0 !important; 
+      height: 100dvh !important; overflow: hidden !important; padding-bottom: 0 !important; 
   }
-}
-
-@keyframes slideInRight {
-    from { transform: translateX(100%); }
-    to { transform: translateX(0); }
 }
 
 @media (max-width: 768px) {
     .settings-mobile-back {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 15px;
-        border-bottom: var(--border);
-        font-weight: 700;
-        font-size: 1.1rem;
-        cursor: pointer;
-        color: var(--text);
+        display: flex; align-items: center; gap: 10px; padding: 15px; border-bottom: var(--border);
+        font-weight: 700; font-size: 1.1rem; cursor: pointer; color: var(--text);
+    }
+}
+
+/* ==========================================================
+   SAFETY NET: HIDE SUGGESTIONS ON MOBILE/TABLET
+   ========================================================== */
+@media (max-width: 1024px) {
+    /* Ito ang pipigil kay April Rayne lumabas kahit bumukas ang sidebar */
+    #rs-suggestions-view {
+        display: none !important;
     }
 }

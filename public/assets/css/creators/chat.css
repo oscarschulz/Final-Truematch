@@ -1,4 +1,4 @@
-/* ================= MESSAGES UI FIXED ================= */
+/* ================= MESSAGES UI FIXED (UNIFIED TABLET & MOBILE MODE) ================= */
 
 /* 0. PARENT CONTAINER FIX */
 #container-messages {
@@ -25,9 +25,10 @@
     height: 100%; 
     background: var(--bg); 
     overflow: hidden;
+    position: relative; 
 }
 
-/* --- LAYER 2: MESSAGE LIST (Default Desktop) --- */
+/* --- LAYER 2: MESSAGE LIST (Desktop Default) --- */
 .msg-sidebar { 
     width: 320px; 
     min-width: 320px;
@@ -36,9 +37,10 @@
     flex-direction: column; 
     background: var(--bg); 
     height: 100%;
+    z-index: 5;
 }
 
-/* --- LAYER 3: CHAT BOX (Fluid Width) --- */
+/* --- LAYER 3: CHAT BOX (Desktop Default) --- */
 .msg-chat-area { 
     flex: 1; 
     display: flex; 
@@ -51,7 +53,7 @@
 }
 body.tm-light .msg-chat-area { background: #fff; }
 
-/* --- LAYER 4: INFO PANEL (Default Desktop) --- */
+/* --- LAYER 4: INFO PANEL (Desktop Default) --- */
 .msg-info-panel { 
     width: 300px; 
     min-width: 300px;
@@ -72,7 +74,7 @@ body.tm-light .msg-chat-area { background: #fff; }
     z-index: 10;
 }
 .mh-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-.mh-top h3 { margin: 0; font-size: 1.1rem; font-weight: 800; }
+.mh-top h3 { margin: 0; font-size: 1.1rem; font-weight: 800; display: block !important; } /* Force Show */
 .mh-icons i { 
     font-size: 1.1rem; margin-left: 15px; 
     cursor: pointer; color: var(--text); 
@@ -105,9 +107,9 @@ body.tm-light .msg-chat-area { background: #fff; }
     to { opacity: 1; transform: translateY(0); }
 }
 
-/* --- TABS (DEFAULT DESKTOP) --- */
+/* --- TABS --- */
 .msg-tabs { 
-    display: flex; 
+    display: flex !important; /* Force Show */
     gap: 8px; 
     overflow-x: auto; 
     padding-bottom: 5px; 
@@ -132,13 +134,20 @@ body.tm-light .msg-tabs span.active { background: #000; color: #fff; }
 
 /* User List */
 .msg-user-list { flex: 1; overflow-y: auto; }
-.msg-user-item { display: flex; gap: 12px; padding: 15px; cursor: pointer; transition: background 0.2s; border-bottom: 1px solid rgba(255,255,255,0.02); }
+.msg-user-item { 
+    display: flex; gap: 12px; padding: 15px; cursor: pointer; 
+    transition: background 0.2s; border-bottom: 1px solid rgba(255,255,255,0.02); 
+    justify-content: flex-start !important; /* Override Center */
+}
 .msg-user-item:hover, .msg-user-item.active { background: var(--hover-bg); border-left: 3px solid var(--primary-cyan); }
 .u-avatar { width: 45px; height: 45px; border-radius: 50%; object-fit: cover; }
-.u-info { flex: 1; overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
+.u-info { 
+    flex: 1; overflow: hidden; display: flex !important; /* Force Show */
+    flex-direction: column; justify-content: center; 
+}
 .u-name { font-weight: 700; font-size: 0.95rem; margin-bottom: 3px; }
 .u-preview { font-size: 0.85rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.u-meta { font-size: 0.75rem; color: var(--muted); }
+.u-meta { font-size: 0.75rem; color: var(--muted); display: block !important; /* Force Show */ }
 
 /* 3. Active Chat Header */
 .chat-header { 
@@ -147,10 +156,13 @@ body.tm-light .msg-tabs span.active { background: #000; color: #fff; }
     background: rgba(2, 4, 10, 0.95); backdrop-filter: blur(10px);
     position: relative; 
     flex-shrink: 0; 
+    height: 60px; 
 }
 body.tm-light .chat-header { background: rgba(255,255,255,0.95); }
-.ch-user { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1rem; }
+.ch-user { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1rem; flex: 1; min-width: 0; }
+.chat-user-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 
+/* Desktop Search Bar */
 .chat-search-bar {
     position: absolute; right: 15px; top: 50%; transform: translateY(-50%);
     background: var(--bg); border: 1px solid var(--primary-cyan);
@@ -161,6 +173,7 @@ body.tm-light .chat-header { background: rgba(255,255,255,0.95); }
 .chat-search-bar input { background: transparent; border: none; outline: none; color: var(--text); width: 100%; font-size: 0.9rem; }
 .chat-search-bar i { cursor: pointer; color: var(--muted); font-size: 1rem; }
 
+.ch-actions { display: flex; flex-shrink: 0; }
 .ch-actions i { font-size: 1.2rem; margin-left: 18px; color: var(--primary-cyan); cursor: pointer; transition: 0.2s; }
 .ch-actions i.active-star { font-weight: 900 !important; color: gold; }
 
@@ -173,21 +186,24 @@ body.tm-light .chat-header { background: rgba(255,255,255,0.95); }
     flex-direction: column; 
     gap: 10px; 
     scroll-behavior: smooth;
+    min-height: 0; 
 }
 .chat-bubble { max-width: 70%; padding: 10px 15px; border-radius: 18px; font-size: 0.95rem; line-height: 1.4; position: relative; }
 .chat-bubble.received { background: var(--card-bg); border: var(--border); align-self: flex-start; border-bottom-left-radius: 4px; }
 .chat-bubble.sent { background: var(--primary-cyan); color: #000; align-self: flex-end; border-bottom-right-radius: 4px; }
 .chat-bubble .time { font-size: 0.65rem; opacity: 0.7; display: block; margin-top: 5px; text-align: right; }
 
-/* 4. Emoji Picker */
+/* Emoji Picker */
 .emoji-picker { position: absolute; bottom: 70px; left: 20px; z-index: 100; width: auto; height: auto; display: block; box-shadow: 0 10px 40px rgba(0,0,0,0.5); border-radius: 12px; overflow: hidden; }
 
-/* 5. Chat Input Box */
+/* Chat Input Box */
 .chat-input-box { 
     padding: 15px 20px; border-top: var(--border); 
     display: flex; align-items: center; gap: 15px; 
     background: var(--bg); 
     flex-shrink: 0; 
+    position: relative;
+    z-index: 20;
 }
 .chat-input-box input { flex: 1; background: transparent; border: none; outline: none; font-size: 0.95rem; color: var(--text); }
 .chat-input-box i { font-size: 1.3rem; color: var(--muted); cursor: pointer; transition: 0.2s; }
@@ -196,7 +212,7 @@ body.tm-light .chat-header { background: rgba(255,255,255,0.95); }
 .fa-dollar-sign:hover { color: #2ecc71 !important; }
 .send-icon { color: var(--primary-cyan) !important; }
 
-/* 6. Info Panel Styles */
+/* Info Panel Styles */
 .info-header { margin-bottom: 25px; }
 .info-input-wrap { display: flex; align-items: center; border-bottom: 1px solid var(--muted); padding-bottom: 5px; margin-bottom: 5px; }
 .info-nickname-input { background: transparent; border: none; outline: none; font-size: 1.1rem; font-weight: 700; color: var(--text); flex: 1; }
@@ -218,85 +234,165 @@ body.tm-light .chat-header { background: rgba(255,255,255,0.95); }
 .btn-view-history:hover { border-color: var(--primary-cyan); color: var(--primary-cyan); }
 
 /* ==========================================================
-   💻 LAPTOP / COMPACT DESKTOP (1025px - 1440px)
+   🔥🔥🔥 ULTRA PPV MODAL FIX (MAX Z-INDEX) 🔥🔥🔥
    ========================================================== */
-@media (min-width: 1025px) and (max-width: 1440px) {
+div:where(.swal2-container) {
+    z-index: 2147483647 !important; /* Pinaka-mataas na possible z-index */
+    position: fixed !important;
+    inset: 0 !important;
+}
+
+/* ==========================================================
+   💻 LAPTOP / LARGE SCREENS (1181px pataas)
+   ========================================================== */
+@media (min-width: 1181px) and (max-width: 1440px) {
     .msg-sidebar { width: 290px !important; min-width: 290px !important; }
     .msg-info-panel { width: 200px !important; min-width: 200px !important; padding: 10px !important; }
     .msg-tabs { gap: 4px !important; justify-content: space-between; }
     .msg-tabs span { padding: 6px 4px !important; font-size: 0.75rem !important; flex: 1; text-align: center; }
     .msg-info-panel .u-avatar-lg { width: 60px !important; height: 60px !important; }
-    .info-nickname-input { font-size: 0.95rem !important; }
-    .info-profile-link { font-size: 0.75rem !important; }
-    .info-stats-grid { flex-direction: column !important; gap: 5px !important; }
-    .i-stat { padding: 8px !important; flex-direction: row !important; text-align: left !important; }
-    .info-section-link { padding: 10px 0 !important; font-size: 0.85rem !important; }
-    .btn-view-history { padding: 8px !important; font-size: 0.8rem !important; }
 }
 
 /* ==========================================================
-   📱 TABLET MESSAGES (769px - 1024px)
-   Logic: 3 Panes (Slim Nav | List | Chat). Info Panel is Hidden/Overlay.
+   📱 UNIFIED MOBILE & TABLET VIEW (Max-Width: 1180px)
+   Lahat ng devices mula 0px hanggang 1180px (Phones & Tablets)
+   ay gagamit na ng "One Column Only" layout.
    ========================================================== */
-@media (min-width: 769px) and (max-width: 1024px) {
-    
-    /* Layer 2: Message List (Visible & Compact) */
-    .msg-sidebar {
-        width: 280px !important;
-        min-width: 280px !important;
-        display: flex !important;
-        border-right: var(--border) !important;
+.back-to-list-btn { display: none; } /* Default hidden on Desktop */
+
+@media (max-width: 1180px) {
+    /* 1. HIDE INFO PANEL COMPLETELY */
+    .msg-info-panel {
+        display: none !important;
+        width: 0 !important;
+        padding: 0 !important;
     }
 
-    /* Layer 3: Chat Box (Visible & Flexible) */
-    .msg-chat-area {
+    /* 2. DEFAULT STATE: Show LIST, Hide CHAT */
+    /* 🔥 OVERRIDE layout.css: Force Full Width Sidebar and Show Info */
+    .msg-sidebar { 
+        width: 100% !important; 
+        min-width: 100% !important; 
+        height: 100% !important;
         display: flex !important;
-        flex: 1 !important;
+        border-right: none;
+        z-index: 10;
+    }
+    
+    .u-info, .u-meta, .mh-top h3, .msg-tabs { display: block !important; } /* Force display details */
+    
+    .msg-chat-area { 
+        display: none !important; 
+    }
+
+    /* 3. ACTIVE CHAT STATE (Overlay Mode) */
+    /* Kapag nag-click ang user, itatago ang listahan at ilalabas ang chat */
+    
+    #view-messages.mobile-chat-active .msg-sidebar { 
+        display: none !important; 
+    }
+    
+    #view-messages.mobile-chat-active .msg-chat-area { 
+        display: flex !important;
+        position: fixed !important;
+        inset: 0; /* Full Screen */
+        width: 100% !important;
+        height: 100% !important; 
+        z-index: 10000 !important; /* Mataas, pero mas mababa sa SweetAlert (2B) */
+        background: var(--bg);
+        padding-bottom: 0 !important;
+    }
+
+    /* 4. HEADER ADJUSTMENTS */
+    .chat-header {
+        height: 60px;
+        padding: 0 15px;
+    }
+    
+    /* Hide header search bar to save space for the name */
+    .chat-search-bar { display: none !important; }
+
+    /* Show Back Button (Essential for navigation) */
+    .back-to-list-btn { 
+        display: flex !important; 
+        align-items: center;
+        justify-content: center;
+        width: 35px; height: 35px;
+        margin-right: 5px;
+        font-size: 1.2rem; 
+        cursor: pointer; 
+        color: var(--text); 
+    }
+
+    /* 5. MOBILE INPUT BOX (Sticky Bottom) */
+    .chat-input-box {
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        width: 100%;
+        background: var(--card-bg);
+        border-top: 1px solid var(--border-color);
+        padding: 10px 15px;
+        padding-bottom: max(10px, env(safe-area-inset-bottom));
+        z-index: 10001;
+    }
+
+    /* Padding para hindi matakpan ang last message */
+    .chat-history {
+        padding-bottom: 80px !important;
+    }
+}
+/* ==========================================================
+   ✨ FINAL POLISH & TABLET FIX (ADD TO BOTTOM OF CHAT.CSS)
+   ========================================================== */
+
+/* 1. FIX: FORCE SHOW NAMES ON TABLET (Override Global Layout) */
+@media (max-width: 1180px) {
+    .msg-sidebar {
+        width: 100% !important;        /* Sakupin ang buong width */
+        min-width: 100% !important;
+        max-width: none !important;    /* Labanan ang layout.css */
+        flex-shrink: 0 !important;
+        padding-right: 0 !important;
+    }
+
+    /* Pilitin ipakita ang mga nakatagong details */
+    .u-info, .u-name, .u-preview, .u-meta, .mh-top h3, .msg-tabs {
+        display: block !important;
+        opacity: 1 !important;
+        visibility: visible !important;
         width: auto !important;
     }
-
-    /* Layer 4: Info Panel (HIDDEN by Default - Overlay Logic) */
-    .msg-info-panel {
-        display: none !important; /* Will slide in via JS if we add it later */
-        position: absolute;
-        right: 0;
-        top: 0;
-        height: 100%;
-        background: var(--bg);
-        z-index: 50;
-        border-left: var(--border);
-        box-shadow: -5px 0 20px rgba(0,0,0,0.5);
-    }
-
-    /* Helper class if we toggle it via JS later */
-    .msg-info-panel.active {
-        display: flex !important;
-        animation: slideInRight 0.3s ease;
-    }
     
-    /* Hide Chat Search Input on Tablet to save space */
-    .chat-search-bar { width: 40px !important; background: transparent !important; border: none !important; justify-content: flex-end; }
-    .chat-search-bar input { display: none; } 
-    .chat-search-bar i { font-size: 1.2rem; color: var(--primary-cyan); }
+    .msg-user-item {
+        justify-content: flex-start !important;
+    }
 }
 
-/* ================= MOBILE CHAT OVERRIDES ================= */
-.back-to-list-btn { display: none; } 
-
-@media (max-width: 768px) {
-    /* DEFAULT: Show Sidebar, Hide Chat */
-    .msg-sidebar { width: 100%; min-width: 100%; border-right: none; display: flex; }
-    .msg-chat-area { display: none; width: 100%; position: fixed; top: 0; left: 0; height: 100vh; z-index: 200; background: var(--bg); }
-    .msg-info-panel { display: none; position: fixed; inset: 0; z-index: 201; width: 100%; }
-
-    /* ACTIVE STATE (JS Toggled) */
-    #view-messages.mobile-chat-active .msg-sidebar { display: none; }
-    #view-messages.mobile-chat-active .msg-chat-area { display: flex; }
-    
-    .back-to-list-btn { display: block; margin-right: 15px; font-size: 1.2rem; cursor: pointer; color: var(--text); }
-
-    /* Force full height on mobile */
-    #view-messages {
-        height: 100dvh; 
+/* 2. POLISH: IPHONE-STYLE SLIDE ANIMATION */
+@media (max-width: 1180px) {
+    #view-messages.mobile-chat-active .msg-chat-area {
+        animation: slideInRight 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+        box-shadow: -15px 0 40px rgba(0,0,0,0.6); /* Shadow depth */
     }
+
+    @keyframes slideInRight {
+        from { transform: translateX(100%); opacity: 0.8; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+}
+
+/* 3. POLISH: MODERN LIST STYLE (ROUNDED & CLEANER) */
+.msg-user-item {
+    margin: 4px 8px;          /* Space sa gilid */
+    border-radius: 12px;      /* Rounded corners */
+    border: 1px solid transparent; 
+    transition: all 0.2s ease;
+}
+
+/* Active State Polish */
+.msg-user-item.active {
+    background: rgba(100, 233, 238, 0.12) !important; 
+    border-color: rgba(100, 233, 238, 0.2);
+    border-left: 1px solid rgba(100, 233, 238, 0.5) !important; /* Subtle border instead of thick line */
+    transform: scale(0.99); /* Slight press effect */
 }

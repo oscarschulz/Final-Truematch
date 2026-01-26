@@ -75,15 +75,28 @@ function initSwipeGestures() {
 
     function handleSwipe() {
         if (touchEndX > touchStartX + minSwipeDistance) {
+            // Swipe Right (Back)
+            
+            // 1. Close Popover if open
             if (DOM.popover && DOM.popover.classList.contains('is-open')) {
                 DOM.popover.classList.remove('is-open');
                 return;
             }
+            
+            // 2. Close Sidebar Overlay (Settings/Collections Details)
+            if (DOM.rightSidebar && DOM.rightSidebar.classList.contains('mobile-active')) {
+                DOM.rightSidebar.classList.remove('mobile-active');
+                return;
+            }
+
+            // 3. Close Messages Chat
             const msgView = document.getElementById('view-messages');
             if (msgView && msgView.classList.contains('mobile-chat-active')) {
                 msgView.classList.remove('mobile-chat-active');
                 return;
             }
+            
+            // 4. Back to Home if on other views
             const homeView = document.getElementById('view-home');
             if (homeView && homeView.style.display === 'none') {
                 switchView('home');
@@ -258,6 +271,7 @@ function setupNavigation() {
     });
 }
 
+// 🔥 UPDATED SWITCHVIEW: FIXED SWIPE/NAVIGATE ISSUE 🔥
 function switchView(viewName) {
     const views = [DOM.viewHome, DOM.viewNotif, DOM.viewMessages, DOM.viewCollections, DOM.viewAddCard, DOM.viewYourCards, DOM.viewBecomeCreator, DOM.viewMyProfile, DOM.viewSettings];
     views.forEach(el => { if(el) el.style.display = 'none'; });
@@ -267,13 +281,19 @@ function switchView(viewName) {
         DOM.mainFeedColumn.style.removeProperty('display'); 
     }
     
-    // RESTORE SIDEBAR ON DESKTOP IF HIDDEN
+    // 🔥 1. FORCE CLOSE SIDEBAR OVERLAY ON MOBILE WHEN SWITCHING VIEWS
+    if (DOM.rightSidebar) {
+        DOM.rightSidebar.classList.remove('mobile-active');
+    }
+
+    // 2. RESTORE SIDEBAR ON DESKTOP IF HIDDEN (BUT KEEP IT HIDDEN ON MOBILE)
     if (window.innerWidth > 1024 && DOM.rightSidebar) {
         DOM.rightSidebar.style.display = 'flex';
         DOM.rightSidebar.classList.remove('wide-view'); 
         DOM.rightSidebar.classList.remove('hidden-sidebar');
     }
 
+    // 3. FORCE HIDE ALL SIDEBAR CONTENTS FIRST
     if(DOM.rsSuggestions) DOM.rsSuggestions.classList.add('hidden');
     if(DOM.rsCollections) DOM.rsCollections.classList.add('hidden');
     if(DOM.rsWalletView) DOM.rsWalletView.classList.add('hidden');
@@ -286,12 +306,17 @@ function switchView(viewName) {
     // --- VIEW SPECIFIC LOGIC ---
     if (viewName === 'home') {
         if (DOM.viewHome) DOM.viewHome.style.display = 'block';
-        if(DOM.rsSuggestions) DOM.rsSuggestions.classList.remove('hidden');
+        // ONLY SHOW SUGGESTIONS IF NOT MOBILE
+        if(DOM.rsSuggestions && window.innerWidth > 1024) {
+            DOM.rsSuggestions.classList.remove('hidden');
+        }
         updateActiveNav('nav-link-home', 'mob-nav-home');
     } 
     else if (viewName === 'notifications') {
         if (DOM.viewNotif) DOM.viewNotif.style.display = 'block';
-        if(DOM.rsSuggestions) DOM.rsSuggestions.classList.remove('hidden');
+        if(DOM.rsSuggestions && window.innerWidth > 1024) {
+            DOM.rsSuggestions.classList.remove('hidden');
+        }
         updateActiveNav('nav-link-notif', 'mob-nav-notif');
     }
     else if (viewName === 'messages') {
@@ -303,7 +328,9 @@ function switchView(viewName) {
     } 
     else if (viewName === 'profile') {
         if (DOM.viewMyProfile) DOM.viewMyProfile.style.display = 'block';
-        if(DOM.rsSuggestions) DOM.rsSuggestions.classList.remove('hidden');
+        if(DOM.rsSuggestions && window.innerWidth > 1024) {
+             DOM.rsSuggestions.classList.remove('hidden');
+        }
         updateActiveNav('nav-link-profile', null);
     }
     else if (viewName === 'collections') {
