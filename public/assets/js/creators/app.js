@@ -12,6 +12,30 @@ const TopToast = Swal.mixin({
   toast: true, position: 'top', showConfirmButton: false, timer: 3000, timerProgressBar: true, background: '#0d1423', color: '#fff'
 });
 
+// 🔥🔥🔥 GLOBAL SWEETALERT FIX (MOBILE/TABLET Z-INDEX) 🔥🔥🔥
+// Ito ang solusyon para lumutang ang SweetAlert sa ibabaw ng Sidebar at manatili sa gitna
+const originalSwalFire = Swal.fire;
+Swal.fire = function(args) {
+    return originalSwalFire.call(this, {
+        heightAuto: false,       // IMPORTANT: Pinipigilan ang pag-jump ng layout sa mobile
+        scrollbarPadding: false, // Pinipigilan ang pag-wiggle ng screen
+        ...args,                 // Kinukuha ang original settings mo
+        // Force Z-Index via JS para sigurado
+        didOpen: (popup) => {
+            const container = Swal.getContainer();
+            if(container) {
+                container.style.zIndex = '2147483647'; // Maximum Z-Index Value
+                container.style.position = 'fixed';
+                container.style.inset = '0';
+                container.style.display = 'flex';       // Force Flex
+                container.style.alignItems = 'center';  // Center Vertical
+                container.style.justifyContent = 'center'; // Center Horizontal
+            }
+            if(args.didOpen) args.didOpen(popup);
+        }
+    });
+};
+
 async function init() {
   console.log("App Init...");
   
@@ -224,6 +248,20 @@ function setupNavigation() {
     if (DOM.navProfile) DOM.navProfile.addEventListener('click', (e) => { e.preventDefault(); switchView('profile'); });
     if (DOM.navAddCard) DOM.navAddCard.addEventListener('click', (e) => { e.preventDefault(); switchView('add-card'); });
 
+    // --- FIX: PROFILE CARD CLICK HANDLER ---
+    if (DOM.profileCard) {
+        DOM.profileCard.addEventListener('click', (e) => {
+            // If the specific gear icon is clicked, open settings
+            if (e.target.closest('.ph-settings')) {
+                switchView('settings');
+            } else {
+                // Otherwise open profile
+                switchView('profile');
+            }
+        });
+    }
+    // ----------------------------------------
+
     if (DOM.navSubs) {
         DOM.navSubs.addEventListener('click', (e) => { 
             e.preventDefault(); 
@@ -271,10 +309,29 @@ function setupNavigation() {
     });
 }
 
-// 🔥 UPDATED SWITCHVIEW: FIXED SWIPE/NAVIGATE ISSUE 🔥
+// 🔥 UPDATED SWITCHVIEW: WITH GLOBAL ANIMATION 🔥
 function switchView(viewName) {
-    const views = [DOM.viewHome, DOM.viewNotif, DOM.viewMessages, DOM.viewCollections, DOM.viewAddCard, DOM.viewYourCards, DOM.viewBecomeCreator, DOM.viewMyProfile, DOM.viewSettings];
-    views.forEach(el => { if(el) el.style.display = 'none'; });
+    // 1. Get all main views
+    const views = [
+        DOM.viewHome, 
+        DOM.viewNotif, 
+        DOM.viewMessages, 
+        DOM.viewCollections, 
+        DOM.viewAddCard, 
+        DOM.viewYourCards, 
+        DOM.viewBecomeCreator, 
+        DOM.viewMyProfile, 
+        DOM.viewSettings
+    ];
+
+    // 2. Hide all and RESET animation class
+    views.forEach(el => { 
+        if(el) {
+            el.style.display = 'none';
+            // Important: Reset class so animation can play again later
+            el.classList.remove('view-animate-enter');
+        }
+    });
 
     if (DOM.mainFeedColumn) {
         DOM.mainFeedColumn.classList.remove('narrow-view');
@@ -303,9 +360,12 @@ function switchView(viewName) {
     const msgContainer = document.getElementById('container-messages');
     if(msgContainer) msgContainer.style.display = (viewName === 'messages') ? 'block' : 'none';
 
+    // Variable to track which view is being opened
+    let targetView = null;
+
     // --- VIEW SPECIFIC LOGIC ---
     if (viewName === 'home') {
-        if (DOM.viewHome) DOM.viewHome.style.display = 'block';
+        targetView = DOM.viewHome;
         // ONLY SHOW SUGGESTIONS IF NOT MOBILE
         if(DOM.rsSuggestions && window.innerWidth > 1024) {
             DOM.rsSuggestions.classList.remove('hidden');
@@ -313,13 +373,14 @@ function switchView(viewName) {
         updateActiveNav('nav-link-home', 'mob-nav-home');
     } 
     else if (viewName === 'notifications') {
-        if (DOM.viewNotif) DOM.viewNotif.style.display = 'block';
+        targetView = DOM.viewNotif;
         if(DOM.rsSuggestions && window.innerWidth > 1024) {
             DOM.rsSuggestions.classList.remove('hidden');
         }
         updateActiveNav('nav-link-notif', 'mob-nav-notif');
     }
     else if (viewName === 'messages') {
+        targetView = DOM.viewMessages;
         if(DOM.rightSidebar) DOM.rightSidebar.classList.add('hidden-sidebar');
         if (DOM.viewMessages) DOM.viewMessages.style.display = 'flex'; 
         if (DOM.mainFeedColumn) DOM.mainFeedColumn.style.display = 'flex';
@@ -327,44 +388,57 @@ function switchView(viewName) {
         if(DOM.chatHistoryContainer && DOM.chatHistoryContainer.innerHTML.trim() === "") loadChat(1); 
     } 
     else if (viewName === 'profile') {
-        if (DOM.viewMyProfile) DOM.viewMyProfile.style.display = 'block';
+        targetView = DOM.viewMyProfile;
         if(DOM.rsSuggestions && window.innerWidth > 1024) {
              DOM.rsSuggestions.classList.remove('hidden');
         }
         updateActiveNav('nav-link-profile', null);
     }
     else if (viewName === 'collections') {
+        targetView = DOM.viewCollections;
         if (DOM.mainFeedColumn) DOM.mainFeedColumn.classList.add('narrow-view');
         if (DOM.rightSidebar) DOM.rightSidebar.classList.add('wide-view');
         
         if (DOM.rsCollections) DOM.rsCollections.classList.remove('hidden');
-        if (DOM.viewCollections) DOM.viewCollections.style.display = 'block';
         updateActiveNav('nav-link-collections', 'mob-nav-collections'); 
         renderCollections(); 
     }
     else if (viewName === 'settings') {
+        targetView = DOM.viewSettings;
         if (DOM.mainFeedColumn) DOM.mainFeedColumn.classList.add('narrow-view');
         if (DOM.rightSidebar) DOM.rightSidebar.classList.add('wide-view');
         
         if (DOM.rsSettingsView) DOM.rsSettingsView.classList.remove('hidden'); 
-        if (DOM.viewSettings) DOM.viewSettings.style.display = 'block';
         updateActiveNav(null, null); 
     }
     else if (viewName === 'add-card') {
-        if (DOM.viewAddCard) DOM.viewAddCard.style.display = 'block';
+        targetView = DOM.viewAddCard;
         if(DOM.rsWalletView) DOM.rsWalletView.classList.remove('hidden');
         updateActiveNav('nav-link-add-card', 'mob-nav-add-card');
     }
     else if (viewName === 'your-cards') {
-        if (DOM.viewYourCards) DOM.viewYourCards.style.display = 'block';
+        targetView = DOM.viewYourCards;
         if(DOM.rsWalletView) DOM.rsWalletView.classList.remove('hidden');
     }
     else if (viewName === 'become-creator') {
-        if (DOM.viewBecomeCreator) DOM.viewBecomeCreator.style.display = 'block';
+        targetView = DOM.viewBecomeCreator;
         const bankingSidebar = document.getElementById('rs-banking-view');
         if(bankingSidebar) bankingSidebar.classList.remove('hidden');
     }
     
+    // 🔥 APPLY DISPLAY & ANIMATION 🔥
+    if (targetView) {
+        // Show the view (except messages which is handled above as flex)
+        if (viewName !== 'messages') targetView.style.display = 'block';
+
+        // Apply Animation ONLY on Mobile/Tablet
+        if (window.innerWidth <= 1024) {
+            requestAnimationFrame(() => {
+                targetView.classList.add('view-animate-enter');
+            });
+        }
+    }
+
     injectSidebarToggles();
 }
 

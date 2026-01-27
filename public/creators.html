@@ -29,12 +29,12 @@
       <div class="sidebar-inner">
         <div class="profile-header-card" id="trigger-profile-card">
           <div class="ph-avatar-container">
-            <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23333%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" alt="Profile">
+            <img src="assets/images/truematch-mark.png" alt="Profile" style="background:#000;">
             <div class="status-indicator"></div>
           </div>
           <div class="ph-user-details">
-            <div class="ph-name">Aljur Abrenica <i class="fa-solid fa-circle-check"></i></div>
-            <div class="ph-handle">@aljur_official</div>
+            <div class="ph-name">Your Name <i class="fa-solid fa-circle-check"></i></div>
+            <div class="ph-handle">@username</div>
           </div>
           <div class="ph-settings"><i class="fa-solid fa-gear"></i></div>
         </div>
@@ -67,7 +67,7 @@
                 <img src="assets/images/truematch-mark.png" style="height: 30px; width: auto;">
                 <div class="tablet-header-icons" style="display: flex; gap: 20px; align-items: center; font-size: 1.2rem;">
                     <i class="fa-regular fa-envelope tablet-msg-btn" style="cursor:pointer;"></i>
-                    </div>
+                </div>
             </div>
           </div>
 
@@ -108,32 +108,10 @@
           <div class="feed-divider"></div>
 
           <div id="creator-feed" class="active-feed">
-             <article class="post-card">
-                <div class="post-header">
-                  <div class="ph-left">
-                    <img src="assets/images/truematch-mark.png" class="ph-avatar"> 
-                    <div class="ph-info"><strong class="ph-name">OnlyFans <i class="fa-solid fa-circle-check verify-badge"></i></strong><span class="ph-handle">@onlyfans</span></div>
-                  </div>
-                  <div class="ph-right"><span class="ph-time">4h</span><i class="fa-solid fa-ellipsis"></i></div>
-                </div>
-                <div class="post-body">
-                  <p>Welcome to iTrueMatch! Connect with your fans today.</p>
-                </div>
-                <div class="post-actions">
-                  <div class="action-group">
-                      <i class="fa-regular fa-heart"></i>
-                      <i class="fa-regular fa-comment btn-toggle-comment"></i> 
-                      <i class="fa-solid fa-dollar-sign"></i> 
-                  </div>
-                  <div class="action-group right"><i class="fa-regular fa-bookmark"></i></div>
-                </div>
-                <div class="post-comments-section hidden">
-                    <div class="comment-input-row">
-                        <img src="assets/images/truematch-mark.png" class="c-avatar-small">
-                        <div class="c-input-wrapper"><input type="text" placeholder="Write a comment..."><i class="fa-regular fa-paper-plane"></i></div>
-                    </div>
-                </div>
-             </article>
+             <div class="feed-empty-state" style="text-align:center; padding:40px; color:var(--muted);">
+                 <i class="fa-regular fa-newspaper" style="font-size:3rem; opacity:0.3; margin-bottom:15px;"></i>
+                 <p>No posts to show</p>
+             </div>
           </div>
       </div>
 
@@ -142,35 +120,35 @@
             <div class="header-content" style="display:flex; align-items:center; gap:15px;">
                 <i class="fa-solid fa-arrow-left back-btn" onclick="document.getElementById('nav-link-home').click()" style="cursor:pointer; font-size:1.2rem;"></i>
                 <div style="display:flex; flex-direction:column;">
-                    <h2 style="margin:0; font-size:1.1rem; font-weight:700;">Aljur Abrenica</h2>
-                    <span style="font-size:0.8rem; color:var(--muted);">2 posts</span>
+                    <h2 style="margin:0; font-size:1.1rem; font-weight:700;">Your Name</h2>
+                    <span style="font-size:0.8rem; color:var(--muted);">0 posts</span>
                 </div>
             </div>
           </div>
           <div style="position: relative;">
-              <div style="height: 180px; background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); width: 100%;"></div>
+              <div style="height: 180px; background: linear-gradient(135deg, #1e1e1e 0%, #333 100%); width: 100%;"></div>
               
               <div style="padding: 0 20px;">
                   <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                       <div style="margin-top: -50px; position: relative; width: 100px; height: 100px;">
-                          <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23333%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width: 100%; height: 100%; border-radius: 50%; border: 4px solid var(--bg); object-fit:cover;">
+                          <img src="assets/images/truematch-mark.png" style="width: 100%; height: 100%; border-radius: 50%; border: 4px solid var(--bg); object-fit:cover; background:#000;">
                           <div style="position: absolute; bottom: 8px; right: 5px; width: 18px; height: 18px; background: #46e85e; border: 3px solid var(--bg); border-radius: 50%;"></div>
                       </div>
                       <div style="margin-top: 15px; display: flex; gap: 10px;">
-                           <button id="btn-edit-profile" style="background: transparent; border: 1px solid var(--border); color: var(--text); padding: 8px 16px; border-radius: 20px; font-weight: 700; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s;" onmouseover="this.style.borderColor='var(--primary-cyan)'; this.style.color='var(--primary-cyan)'" onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--text)'">
+                           <button id="btn-edit-profile" style="background: transparent; border: 1px solid var(--border); color: var(--text); padding: 8px 16px; border-radius: 20px; font-weight: 700; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s;">
                                <i class="fa-solid fa-gear"></i> EDIT PROFILE
                            </button>
-                           <button style="background: transparent; border: 1px solid var(--border); color: var(--text); width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;" onmouseover="this.style.borderColor='var(--primary-cyan)'; this.style.color='var(--primary-cyan)'" onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--text)'">
+                           <button style="background: transparent; border: 1px solid var(--border); color: var(--text); width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;">
                                <i class="fa-solid fa-arrow-up-from-bracket"></i>
                            </button>
                       </div>
                   </div>
                   
                   <div style="margin-top: 10px; margin-bottom: 25px;">
-                      <h1 style="margin: 0; font-size: 1.3rem; display: flex; align-items: center; gap: 6px;">Aljur Abrenica <i class="fa-solid fa-circle-check" style="color:var(--primary-cyan); font-size: 0.9rem;"></i></h1>
-                      <div style="color: var(--muted); font-size: 0.9rem; margin-top: 4px;">@aljur_official &bull; <span style="cursor: pointer;">Available <i class="fa-solid fa-chevron-down" style="font-size: 0.75rem;"></i></span></div>
+                      <h1 style="margin: 0; font-size: 1.3rem; display: flex; align-items: center; gap: 6px;">Your Name <i class="fa-solid fa-circle-check" style="color:var(--primary-cyan); font-size: 0.9rem;"></i></h1>
+                      <div style="color: var(--muted); font-size: 0.9rem; margin-top: 4px;">@username &bull; <span style="cursor: pointer;">Available <i class="fa-solid fa-chevron-down" style="font-size: 0.75rem;"></i></span></div>
                       <div style="color: var(--text); font-size: 0.9rem; margin-top: 10px; line-height: 1.4;">
-                          Professional actor and content creator. Subscribe for exclusive behind-the-scenes content! 🎥✨
+                          No bio yet. Tap "Edit Profile" to add one.
                       </div>
                   </div>
               </div>
@@ -182,50 +160,20 @@
           </div>
 
           <div id="profile-content-posts">
-             <article class="post-card">
-                <div class="post-header">
-                  <div class="ph-left">
-                    <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23333%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" class="ph-avatar"> 
-                    <div class="ph-info"><strong class="ph-name">Aljur Abrenica <i class="fa-solid fa-circle-check verify-badge"></i></strong><span class="ph-handle">@aljur_official</span></div>
-                  </div>
-                  <div class="ph-right"><span class="ph-time">2h</span><i class="fa-solid fa-ellipsis"></i></div>
-                </div>
-                <div class="post-body">
-                  <p>Just finished a great workout! 💪 Check out the full routine in my next video.</p>
-                </div>
-                <div class="post-media">
-                      <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23222%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" class="media-img" style="aspect-ratio: 16/9;">
-                </div>
-                <div class="post-actions">
-                  <div class="action-group">
-                      <i class="fa-regular fa-heart"></i>
-                      <i class="fa-regular fa-comment"></i> 
-                      <i class="fa-solid fa-dollar-sign"></i> 
-                  </div>
-                  <div class="action-group right"><i class="fa-regular fa-bookmark"></i></div>
-                </div>
-                <div class="post-comments-section hidden">
-                    <div class="comment-input-row">
-                        <img src="assets/images/truematch-mark.png" class="c-avatar-small" onerror="this.src='data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23333%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E'">
-                        <div class="c-input-wrapper"><input type="text" placeholder="Write a comment..."><i class="fa-regular fa-paper-plane"></i></div>
-                    </div>
-                </div>
-             </article>
+             <div class="rs-col-empty" style="margin-top:50px;">
+                 <div class="empty-icon-wrap"><i class="fa-regular fa-folder-open"></i></div>
+                 <span>No posts yet</span>
+             </div>
           </div>
 
           <div id="profile-content-media" class="hidden" style="padding: 5px;">
-              <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px;">
-                  <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23222%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width:100%; aspect-ratio:1/1; object-fit:cover;">
-                  <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23333%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width:100%; aspect-ratio:1/1; object-fit:cover;">
-                  <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23444%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width:100%; aspect-ratio:1/1; object-fit:cover;">
-                  <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23555%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width:100%; aspect-ratio:1/1; object-fit:cover;">
-                  <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23666%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width:100%; aspect-ratio:1/1; object-fit:cover;">
-                  <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23777%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width:100%; aspect-ratio:1/1; object-fit:cover;">
-                  <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23999%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E" style="width:100%; aspect-ratio:1/1; object-fit:cover;">
-              </div>
+             <div class="rs-col-empty" style="margin-top:50px;">
+                 <div class="empty-icon-wrap"><i class="fa-regular fa-images"></i></div>
+                 <span>No media found</span>
+             </div>
           </div>
       </div>
-
+      
       <div id="view-add-card" style="display: none;">
           <div class="feed-top-header">
             <div class="header-content" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
@@ -242,22 +190,22 @@
                   <p class="ac-desc">We are fully compliant with Payment Card Industry Data Security Standards.</p>
                   
                   <div class="ac-form-grid">
-                      <div class="ac-group"><label>Country</label><div class="custom-select-wrapper"><select><option>Germany</option></select><i class="fa-solid fa-chevron-down"></i></div></div>
-                      <div class="ac-group"><label>State / Province</label><div class="custom-select-wrapper"><select><option>Berlin</option></select><i class="fa-solid fa-chevron-down"></i></div></div>
+                      <div class="ac-group"><label>Country</label><div class="custom-select-wrapper"><select><option>Select Country</option></select><i class="fa-solid fa-chevron-down"></i></div></div>
+                      <div class="ac-group"><label>State / Province</label><div class="custom-select-wrapper"><select><option>Select State</option></select><i class="fa-solid fa-chevron-down"></i></div></div>
                   </div>
 
-                  <div class="ac-group"><label>Address</label><input type="text" placeholder="Musterstraße 1"></div>
+                  <div class="ac-group"><label>Address</label><input type="text" placeholder=""></div>
 
                   <div class="ac-form-grid">
-                      <div class="ac-group"><label>City</label><input type="text" value="Berlin"></div>
-                      <div class="ac-group"><label>ZIP / Postal Code</label><input type="text" value="10115"></div>
+                      <div class="ac-group"><label>City</label><input type="text" value=""></div>
+                      <div class="ac-group"><label>ZIP / Postal Code</label><input type="text" value=""></div>
                   </div>
               </div>
 
               <div class="ac-section">
                   <h4 class="ac-title">CARD DETAILS</h4>
                   <div class="ac-form-grid">
-                      <div class="ac-group"><label>Email</label><input type="email" value="jerw3345@gmail.com"></div>
+                      <div class="ac-group"><label>Email</label><input type="email" value=""></div>
                       <div class="ac-group"><label>Name on the card</label><input type="text"></div>
                   </div>
 
@@ -319,7 +267,7 @@
 
                   <div class="of-info-box">
                       <i class="fa-solid fa-circle-info"></i>
-                      <span>The charges on your credit card statement will appear as <strong>OnlyFans</strong></span>
+                      <span>The charges on your credit card statement will appear as <strong>iTrueMatch</strong></span>
                   </div>
 
                   <div class="of-card-logos">
@@ -411,14 +359,8 @@
         <div class="search-bar"><input type="text" name="global_search" placeholder="Search posts"><i class="fa-solid fa-magnifying-glass"></i></div>
         <div class="suggestions-header"><span class="title">SUGGESTIONS</span><div class="sugg-actions"><i class="fa-solid fa-rotate"></i></div></div>
         <div class="suggestion-list">
-            <div class="sugg-card">
-               <div class="sugg-banner" style="background-image: url('data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23333%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E');">
-                  <div class="sugg-badge">Free</div><div class="sugg-menu"><i class="fa-solid fa-ellipsis-vertical"></i></div>
-               </div>
-               <div class="sugg-details">
-                  <div class="sugg-avatar-wrap"><img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23444%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E"><div class="online-dot"></div></div>
-                  <div class="sugg-text"><div class="sugg-name">April Rayne <i class="fa-solid fa-circle-check"></i></div><div class="sugg-handle">@aprilraynectv</div></div>
-               </div>
+            <div style="text-align:center; padding:20px; color:var(--muted); font-size:0.9rem;">
+                No suggestions
             </div>
         </div>
         <div class="footer-links">Privacy · Cookie Notice · Terms of Service <br> © 2026 iTrueMatch Corp.</div>
@@ -495,11 +437,11 @@
   <div id="settings-popover" class="tm-popover-menu">
     <div class="pop-header">
       <div class="pop-user-section">
-        <div class="pop-avatar"><img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23333%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E"><div class="pop-online"></div></div>
-        <div class="pop-info"><strong>Aljur Abrenica <i class="fa-solid fa-circle-check"></i></strong><span>@aljur_official</span></div>
+        <div class="pop-avatar"><img src="assets/images/truematch-mark.png" style="background:#000;"><div class="pop-online"></div></div>
+        <div class="pop-info"><strong>Your Name <i class="fa-solid fa-circle-check"></i></strong><span>@username</span></div>
         <button id="btnClosePopover" class="btn-close-pop"><i class="fa-solid fa-xmark"></i></button>
       </div>
-      <div class="pop-stats"><div class="stat-item"><strong>1.2k</strong> <span>Fans</span></div><div class="stat-item"><strong>50</strong> <span>Following</span></div></div>
+      <div class="pop-stats"><div class="stat-item"><strong>0</strong> <span>Fans</span></div><div class="stat-item"><strong>0</strong> <span>Following</span></div></div>
     </div>
 
     <div class="pop-content-full">
@@ -546,14 +488,14 @@
                     <div class="ac-group">
                         <label>Country</label>
                         <div class="custom-select-wrapper">
-                            <select><option>Germany</option></select>
+                            <select><option>Select Country</option></select>
                             <i class="fa-solid fa-chevron-down"></i>
                         </div>
                     </div>
                     <div class="ac-group">
                         <label>State / Province</label>
                         <div class="custom-select-wrapper">
-                            <select><option>Berlin</option></select>
+                            <select><option>Select State</option></select>
                             <i class="fa-solid fa-chevron-down"></i>
                         </div>
                     </div>
@@ -567,11 +509,11 @@
                 <div class="ac-form-grid">
                     <div class="ac-group">
                         <label>City</label>
-                        <input type="text" value="Berlin">
+                        <input type="text">
                     </div>
                     <div class="ac-group">
                         <label>ZIP / Postal Code</label>
-                        <input type="text" value="10115">
+                        <input type="text">
                     </div>
                 </div>
             </div>
@@ -582,7 +524,7 @@
                 <div class="ac-form-grid">
                     <div class="ac-group">
                         <label>E-mail</label>
-                        <input type="email" value="jerw3345@gmail.com">
+                        <input type="email">
                     </div>
                     <div class="ac-group">
                         <label>Name on the card</label>

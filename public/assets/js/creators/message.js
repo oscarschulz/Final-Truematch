@@ -3,32 +3,128 @@ import { CHAT_DATA, DEFAULT_AVATAR } from './data.js';
 
 export function initMessages(TopToast) {
     
+    // --- HELPER: TELEPORT INPUT (FIXED POSITION & FORCE FOCUS) ---
+    const teleportInputToBody = () => {
+        const inputBox = document.querySelector('.chat-input-box');
+        
+        // Siguraduhing may input box at wala pa sa body
+        if (inputBox && inputBox.parentNode !== document.body) {
+            
+            // 1. Ilipat sa Body para walang makaharang
+            document.body.appendChild(inputBox);
+            
+            // 2. PWERSAHANG STYLE (Super High Z-Index)
+            inputBox.style.display = 'flex';
+            inputBox.style.position = 'fixed';
+            inputBox.style.bottom = '0';
+            inputBox.style.left = '0';
+            inputBox.style.right = '0';
+            inputBox.style.width = '100%';
+            inputBox.style.zIndex = '2147483650'; // Mas mataas pa sa SweetAlert
+            inputBox.style.backgroundColor = '#0d1423'; // Fallback color
+            inputBox.style.backgroundColor = 'var(--card-bg, #0d1423)';
+            inputBox.style.borderTop = '1px solid rgba(255,255,255,0.1)';
+            inputBox.style.padding = '10px 15px';
+            inputBox.style.paddingBottom = 'max(15px, env(safe-area-inset-bottom))'; // iPhone Home Bar padding
+            inputBox.style.boxShadow = '0 -5px 20px rgba(0,0,0,0.5)';
+            inputBox.style.pointerEvents = 'auto'; // Siguraduhing napipindot
+            
+            // 3. Magdagdag ng padding sa history para hindi matakpan ang messages
+            const history = document.getElementById('chat-history-container');
+            if (history) {
+                history.style.paddingBottom = '100px'; 
+                setTimeout(() => { history.scrollTop = history.scrollHeight; }, 50);
+            }
+
+            // 🔥 FORCE KEYBOARD TRIGGER 🔥
+            // Kapag tinapik ang box, siguradong fo-focus ang input
+            inputBox.onclick = (e) => {
+                // Kung hindi button ang pinindot (emoji/send), focus sa input
+                if(e.target.tagName !== 'I') {
+                    const field = document.getElementById('chat-message-input');
+                    if(field) field.focus();
+                }
+            };
+        }
+    };
+
+    const restoreInputToChat = () => {
+        const inputBox = document.querySelector('.chat-input-box');
+        const chatArea = document.querySelector('.msg-chat-area');
+        
+        // Ibalik lang kung nasa body at mobile mode
+        if (inputBox && chatArea && inputBox.parentNode === document.body) {
+            chatArea.appendChild(inputBox); // Ibalik sa original na pwesto
+            
+            // Reset Styles
+            inputBox.style.position = '';
+            inputBox.style.bottom = '';
+            inputBox.style.left = '';
+            inputBox.style.right = '';
+            inputBox.style.width = '';
+            inputBox.style.zIndex = '';
+            inputBox.style.boxShadow = '';
+            inputBox.style.paddingBottom = '';
+            inputBox.onclick = null; // Remove force focus listener
+            
+            const history = document.getElementById('chat-history-container');
+            if (history) history.style.paddingBottom = ''; // Reset padding
+        }
+    };
+
+    // --- AUTO-CLEANUP: Ibalik ang input pag umalis sa chat view ---
+    const viewMessages = document.getElementById('view-messages');
+    if (viewMessages) {
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (mutation.attributeName === 'class') {
+                    if (!viewMessages.classList.contains('mobile-chat-active')) {
+                        restoreInputToChat();
+                    }
+                }
+                if (mutation.attributeName === 'style') {
+                    if (viewMessages.style.display === 'none') {
+                        restoreInputToChat();
+                    }
+                }
+            });
+        });
+        observer.observe(viewMessages, { attributes: true });
+    }
+
     // 0. INIT BACK BUTTON FOR MOBILE/TABLET
     const initMobileBackBtn = () => {
         const chatUserDiv = document.querySelector('.ch-user');
-        // Check if button already exists AND if chatUserDiv exists
-        if (chatUserDiv && !document.querySelector('.back-to-list-btn')) {
-            const backBtn = document.createElement('i');
-            backBtn.className = 'fa-solid fa-arrow-left back-to-list-btn';
-            // Insert Before Avatar
-            chatUserDiv.insertBefore(backBtn, chatUserDiv.firstChild);
+        
+        if (chatUserDiv) {
+            const existingBtn = chatUserDiv.querySelector('.back-to-list-btn');
             
-            // LOGIC: Remove 'mobile-chat-active' class to go back to list
-            backBtn.addEventListener('click', (e) => {
-                e.stopPropagation(); // Prevent bubbling
-                if(DOM.viewMessages) DOM.viewMessages.classList.remove('mobile-chat-active');
-            });
+            if (!existingBtn) {
+                const backBtn = document.createElement('i');
+                backBtn.className = 'fa-solid fa-arrow-left back-to-list-btn';
+                backBtn.style.cursor = 'pointer';
+                backBtn.style.marginRight = '10px';
+                
+                chatUserDiv.prepend(backBtn);
+                
+                backBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if(DOM.viewMessages) {
+                        DOM.viewMessages.classList.remove('mobile-chat-active');
+                        restoreInputToChat();
+                    }
+                });
+            }
         }
     };
     
-    // Call immediately in case view is already loaded
     initMobileBackBtn();
 
-    // Resize Handler: Remove mobile-chat-active ONLY if resizing to Desktop
-    // 🔥 FIX: 1180px ang breakpoint natin sa CSS, kaya dapat match din dito
+    // Resize Handler
     window.addEventListener('resize', () => {
-        if (window.innerWidth > 1180 && DOM.viewMessages) {
+        if (window.innerWidth > 1024 && DOM.viewMessages) {
             DOM.viewMessages.classList.remove('mobile-chat-active');
+            restoreInputToChat();
         }
     });
 
@@ -52,65 +148,64 @@ export function initMessages(TopToast) {
             document.querySelectorAll('.msg-user-item').forEach(i => i.classList.remove('active'));
             item.classList.add('active');
             
-            // 🔥 GET DATA FROM HTML ATTRIBUTES (Ito yung kulang kanina)
             const userName = item.dataset.name || 'User';
             const userAvatar = item.dataset.avatar || DEFAULT_AVATAR;
             const userHandle = item.dataset.handle || '@user';
-            
             const hasVerify = item.querySelector('.fa-circle-check');
             const verifyHtml = hasVerify ? ' <i class="fa-solid fa-circle-check verify-badge" style="color: var(--primary-cyan);"></i>' : '';
 
-            // Update Header Name & Avatar
             if(DOM.activeChatName) DOM.activeChatName.innerHTML = `${userName}${verifyHtml}`;
             if(DOM.activeChatAvatar) DOM.activeChatAvatar.src = userAvatar;
             
-            // Update Info Panel
             if(DOM.infoNickname) DOM.infoNickname.value = userName;
             if(DOM.infoHandle) DOM.infoHandle.innerText = userHandle;
 
-            // Load Chat Messages
             loadChat(item.dataset.id || 1);
-            
-            // Re-initialize back button for the new chat header
             initMobileBackBtn(); 
             
-            // 🔥 OPEN CHAT ON TABLET & MOBILE (1180px and below)
-            if (window.innerWidth <= 1180 && DOM.viewMessages) {
+            // 🔥 TRIGGER MOBILE VIEW
+            if (window.innerWidth <= 1024 && DOM.viewMessages) {
                 DOM.viewMessages.classList.add('mobile-chat-active');
-            }
-        });
-    }
-
-    // 3. DOLLAR ($) & EMOJI BUTTON FIX
-    const chatInputBox = document.querySelector('.chat-input-box') || document.querySelector('.msg-chat-area');
-    
-    if (chatInputBox) {
-        chatInputBox.addEventListener('click', (e) => {
-            if (e.target.classList.contains('fa-dollar-sign') || e.target.id === 'btn-ppv-trigger') {
-                Swal.fire({
-                    title: 'Send Locked Message (PPV)',
-                    html: `<input type="number" id="ppv-price" class="swal2-input" placeholder="Price ($)"><textarea id="ppv-desc" class="swal2-textarea" placeholder="Description..."></textarea>`,
-                    showCancelButton: true, confirmButtonText: 'Attach Price', confirmButtonColor: '#2ecc71', background: '#0d1423', color: '#fff',
-                    preConfirm: () => document.getElementById('ppv-price').value
-                }).then((result) => {
-                    if(result.isConfirmed) {
-                        const input = document.getElementById('chat-message-input');
-                        if(input) {
-                            input.value = `[LOCKED: $${result.value}] `;
-                            input.focus();
-                        }
-                    }
+                
+                // 🔥 ILIPAT AGAD ANG INPUT SA BODY
+                requestAnimationFrame(() => {
+                    teleportInputToBody();
                 });
             }
-            if (e.target.classList.contains('fa-face-smile') || e.target.id === 'btn-emoji-trigger') {
-                e.stopPropagation();
-                const container = document.getElementById('emoji-picker-container');
-                if(container) container.classList.toggle('hidden');
-            }
         });
     }
 
-    // 4. Picmo
+    // 3. DOLLAR ($) & EMOJI BUTTONS
+    document.addEventListener('click', (e) => {
+        // Emoji Trigger
+        if (e.target.classList.contains('fa-face-smile') || e.target.id === 'btn-emoji-trigger') {
+            e.stopPropagation();
+            const container = document.getElementById('emoji-picker-container');
+            if(container) {
+                container.classList.toggle('hidden');
+            }
+        }
+        
+        // PPV Trigger
+        if (e.target.classList.contains('fa-dollar-sign') || e.target.id === 'btn-ppv-trigger') {
+            Swal.fire({
+                title: 'Send Locked Message (PPV)',
+                html: `<input type="number" id="ppv-price" class="swal2-input" placeholder="Price ($)"><textarea id="ppv-desc" class="swal2-textarea" placeholder="Description..."></textarea>`,
+                showCancelButton: true, confirmButtonText: 'Attach Price', confirmButtonColor: '#2ecc71', background: '#0d1423', color: '#fff',
+                preConfirm: () => document.getElementById('ppv-price').value
+            }).then((result) => {
+                if(result.isConfirmed) {
+                    const input = document.getElementById('chat-message-input');
+                    if(input) {
+                        input.value = `[LOCKED: $${result.value}] `;
+                        input.focus();
+                    }
+                }
+            });
+        }
+    });
+
+    // 4. Picmo Emoji Picker
     const emojiContainer = document.getElementById('emoji-picker-container');
     if (window.picmo && emojiContainer) {
         try {
@@ -127,17 +222,19 @@ export function initMessages(TopToast) {
         } catch (err) { console.log('Picmo init warning:', err); }
     }
 
+    // Hide Emoji on Outside Click
     document.addEventListener('click', (e) => {
         const container = document.getElementById('emoji-picker-container');
         if (container && !container.classList.contains('hidden')) {
             const isBtn = e.target.classList.contains('fa-face-smile') || e.target.id === 'btn-emoji-trigger';
-            if (!container.contains(e.target) && !isBtn) {
+            const isInsidePicker = container.contains(e.target);
+            if (!isInsidePicker && !isBtn) {
                 container.classList.add('hidden');
             }
         }
     });
 
-    // 5. Send Message
+    // 5. Send Message Logic
     const btnSend = document.getElementById('btn-send-message');
     const input = document.getElementById('chat-message-input');
     
@@ -155,6 +252,16 @@ export function initMessages(TopToast) {
         };
         btnSend.addEventListener('click', sendMsg);
         input.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMsg(); });
+
+        // 🔥 KEYBOARD FIX (SCROLL HISTORY UP WHEN TYPING)
+        input.addEventListener('focus', () => {
+            setTimeout(() => {
+                const history = document.getElementById('chat-history-container');
+                if (history) {
+                    history.scrollTo({ top: history.scrollHeight, behavior: 'smooth' });
+                }
+            }, 300); // Delay para maka-akyat ang keyboard
+        });
     }
 }
 

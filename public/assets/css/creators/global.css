@@ -34,19 +34,27 @@
   --z-loader: 99999;
 }
 
-/* LIGHT MODE OVERRIDES */
+/* LIGHT MODE OVERRIDES (FIXED FOR READABILITY) */
 body.tm-light {
-  --bg: #F0F2F5; 
-  --text: #050505;
-  --muted: #65676B;
-  --card-bg: #FFFFFF;
+  --bg: #F0F2F5;       /* Light Gray Background */
+  --text: #1c1e21;     /* Dark Text */
+  --muted: #65676B;    /* Muted Text */
+  --card-bg: #FFFFFF;  /* White Cards */
   --border-color: #CED0D4;
   --border: 1px solid var(--border-color);
   --hover-bg: #E4E6EB;
-  --input-bg: #F0F2F5;
-  --input-border: #CED0D4;
+  
+  /* 🔥 FIX: Ginawang White ang Input BG para lumutang sa Gray BG */
+  --input-bg: #FFFFFF; 
+  --input-border: #ccc;
   --input-text: #050505;
-  --search-bg: #E4E6EB;
+  --search-bg: #FFFFFF; 
+}
+
+/* 🔥 FIX: Siguraduhing nababasa ang dropdown options sa Light Mode */
+body.tm-light select option {
+    background-color: #fff;
+    color: #000;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -96,7 +104,7 @@ a { text-decoration: none; color: inherit; }
 /* ======================================================
    4. FORM UI (UPDATED FOR THEME SUPPORT)
    ====================================================== */
-#rs-settings-view { padding: 0 !important; }
+#rs-settings-view { padding: 0 !important; background: var(--bg); }
 
 .ac-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
 .ac-group label { font-size: 0.8rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
@@ -156,8 +164,7 @@ a { text-decoration: none; color: inherit; }
 .btn-modal.primary { background: var(--primary-cyan); border-color: var(--primary-cyan); }
 .btn-modal.ghost { background: transparent; border-color: var(--text); color: var(--text); }
 
-/* SweetAlert2 Theme Overrides */
-div:where(.swal2-container) div:where(.swal2-popup) { background: var(--card-bg) !important; border: 1px solid rgba(100, 233, 238, 0.3); border-radius: 24px !important; padding: 30px !important; color: var(--text) !important; }
+/* SweetAlert2 Theme Overrides (DEFAULT STYLES) */
 div:where(.swal2-container) h2:where(.swal2-title) { color: var(--text) !important; font-family: 'Montserrat', sans-serif; font-weight: 800; }
 div:where(.swal2-container) .swal2-html-container { color: var(--muted) !important; }
 div:where(.swal2-container) input:where(.swal2-input) { background: var(--input-bg) !important; border: 1px solid var(--input-border) !important; color: var(--input-text) !important; }
@@ -192,40 +199,6 @@ div:where(.swal2-container) button:where(.swal2-styled).swal2-cancel { backgroun
   .mobile-bottom-nav { display: flex; }
   .main-feed-column { width: 100%; border: none; margin-bottom: 70px; height: auto; overflow: visible; }
   .feed-top-header { padding: 10px 15px; }
-}
-
-/* ======================================================
-   MOBILE SLIDE-IN SIDEBAR FIX
-   ====================================================== */
-@media (max-width: 1024px) {
-    .right-sidebar.mobile-active {
-        display: flex !important;
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100% !important;
-        height: 100vh;
-        z-index: 2000;
-        background: var(--bg);
-        animation: slideInRight 0.3s ease-out forwards;
-    }
-
-    @keyframes slideInRight {
-        from { transform: translateX(100%); }
-        to { transform: translateX(0); }
-    }
-    
-    .settings-mobile-back {
-        padding: 15px;
-        border-bottom: var(--border);
-        font-weight: 700;
-        font-size: 1.1rem;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        cursor: pointer;
-        color: var(--text);
-    }
 }
 
 /* ================= ONLYFANS STYLE CARDS UI ================= */
@@ -326,3 +299,51 @@ div:where(.swal2-container) button:where(.swal2-styled).swal2-cancel { backgroun
 .step-info h4 { margin: 0; font-size: 1rem; }
 .step-info p { margin: 5px 0 0; font-size: 0.85rem; color: var(--muted); }
 .step-check { margin-left: auto; color: var(--primary-cyan); font-size: 1.2rem; }
+
+/* ================= SWEETALERT CENTER & Z-INDEX FIX ================= */
+/* 1. Container Fix: Piliting mag-center gamit ang Flexbox at sakupin ang buong screen */
+div.swal2-container {
+    display: flex !important;              /* Force Flexbox layout */
+    align-items: center !important;        /* Gitna Vertically */
+    justify-content: center !important;    /* Gitna Horizontally */
+    
+    position: fixed !important;            /* Laging naka-base sa screen/viewport */
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    
+    z-index: 2147483647 !important;        /* Pinakamataas na layer */
+    background: rgba(0, 0, 0, 0.8) !important; /* Dim background */
+    padding: 0 !important;                 /* Tanggalin ang padding na pwedeng tumulak */
+    overflow-y: auto !important;           /* Payagan mag-scroll kung sobrang haba ng modal */
+}
+
+/* 2. Popup Box Fix */
+div.swal2-popup {
+    margin: auto !important;               /* Safety net para mag-center */
+    max-height: 90vh !important;           /* Iwas lumagpas sa screen height */
+    overflow-y: auto !important;           /* Scroll sa loob ng box pag maliit ang screen */
+    
+    /* Design consistency */
+    background: var(--card-bg) !important;
+    border: 1px solid rgba(100, 233, 238, 0.3) !important;
+    border-radius: 24px !important;
+    padding: 30px !important;
+    color: var(--text) !important;
+}
+
+/* 3. Mobile Specific Adjustment */
+@media (max-width: 768px) {
+    div.swal2-popup {
+        width: 85% !important;             /* Tamang lapad sa mobile */
+        font-size: 0.9rem !important;
+    }
+    
+    /* Siguraduhin na hindi matatakpan ng keyboard ang input */
+    div.swal2-container {
+        align-items: center !important;    /* Manatili sa gitna */
+    }
+}

@@ -174,7 +174,9 @@ html, body {
     width: 100%; 
     min-height: 100%; 
     display: flex; 
-    flex-direction: column; 
+    flex-direction: column;
+    /* 🔥 FIX: Align stretch para sa mobile settings header */
+    align-items: stretch !important; 
 }
 
 #rs-settings-view { padding: 0 !important; overflow-x: hidden; }
@@ -194,6 +196,7 @@ html, body {
 }
 
 /* ================= POPOVER MENU (DESKTOP DEFAULT) ================= */
+/* Ito yung nagiging HAMBURGER MENU sa mobile */
 .tm-popover-menu {
     position: fixed;
     bottom: 80px; 
@@ -205,14 +208,13 @@ html, body {
     box-shadow: 0 5px 20px rgba(0,0,0,0.5);
     z-index: 9999;
     display: none; 
-    /* 🔥 Flexbox para ma-control ang footer */
     flex-direction: column; 
     overflow: hidden;
-    padding-bottom: 0; /* Tinanggal ang padding para sagad ang footer */
+    padding-bottom: 0; 
 }
 
 .tm-popover-menu.is-open {
-    display: flex; /* Changed from block to flex */
+    display: flex; 
     animation: popUp 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
@@ -230,12 +232,12 @@ html, body {
 .stat-item { display: flex; flex-direction: column; align-items: center; font-size: 0.85rem; }
 .stat-item span { color: var(--muted); font-size: 0.75rem; }
 
-/* 🔥 Content Area - Flex Grow para itulak ang footer pababa */
+/* Content Area */
 .pop-content-full { 
     padding: 10px 0; 
     overflow-y: auto; 
-    flex-grow: 1; /* Ito ang magtutulak sa footer pababa */
-    max-height: 400px; /* Limitahan sa desktop */
+    flex-grow: 1; 
+    max-height: 400px; 
 }
 
 .pop-item { display: flex; align-items: center; gap: 15px; padding: 12px 20px; color: var(--text); text-decoration: none; transition: 0.2s; font-size: 0.95rem; font-weight: 500; cursor: pointer; }
@@ -247,7 +249,6 @@ html, body {
 .pop-item.toggle-row { justify-content: space-between; }
 .flex-icon { display: flex; align-items: center; gap: 15px; }
 
-/* 🔥 FOOTER STYLES */
 .pop-footer {
     padding: 15px;
     border-top: var(--border);
@@ -308,12 +309,44 @@ html, body {
 }
 
 /* ==========================================================
-   LAPTOP (1025px - 1440px) - Retained Layout
+   🔥🔥🔥 LAPTOP (1025px - 1440px) 🔥🔥🔥
    ========================================================== */
 @media (min-width: 1025px) and (max-width: 1440px) {
     .left-sidebar { width: 220px !important; } 
     .left-sidebar .sidebar-inner { padding: 15px 10px !important; width: 100% !important; }
-    .tm-popover-menu { left: 20px !important; width: 260px !important; }
+    
+    /* 🔥 FIX 1: Position & Size */
+    .tm-popover-menu { 
+        left: 222px !important; 
+        width: 265px !important;  
+        top: 10px !important; 
+        bottom: auto !important; 
+        height: auto !important; 
+        min-height: 0 !important;
+        display: none; 
+    }
+
+    /* 🔥 FIX 2: Limit Content Height */
+    .pop-content-full {
+        flex-grow: 0 !important;
+        max-height: 350px !important; 
+        padding: 5px 0 !important;
+    }
+
+    /* 🔥 FIX 3: Compact Padding */
+    .tm-popover-menu .pop-item {
+        padding: 7px 15px !important;
+        font-size: 0.85rem !important;
+    }
+    .tm-popover-menu .pop-divider { margin: 2px 0 !important; }
+    .tm-popover-menu .pop-header { padding: 10px 15px !important; }
+    .tm-popover-menu .pop-footer { padding: 10px 15px !important; }
+
+    .tm-popover-menu.is-open {
+        display: flex !important;
+        flex-direction: column !important;
+    }
+    
     .right-sidebar { width: 260px !important; min-width: 260px !important; } 
     .right-sidebar .sidebar-inner { padding: 15px 15px !important; }
     .main-feed-column { max-width: 950px !important; } 
@@ -343,21 +376,25 @@ html, body {
   .header-tablet-only { display: flex !important; }
   .header-toggle-btn { display: inline-block !important; } 
 
-  /* 🔥 UPDATE: Flex display para sa footer push 🔥 */
+  /* 🔥 MOBILE POPOVER: FULL HEIGHT DRAWER with STICKY FOOTER */
   .tm-popover-menu {
-      display: flex !important; /* Changed from block to flex */
+      display: flex !important; 
       flex-direction: column !important;
       position: fixed !important;
-      top: 0 !important;
-      right: -320px; 
-      left: auto !important;
+      top: 0 !important; 
       bottom: 0 !important;
+      right: -320px; /* Start Off-Screen */
+      left: auto !important;
       width: 300px !important; 
-      height: 100vh !important; /* Full height */
-      max-height: none !important; /* Remove limit */
-      background: #0d1423 !important;
+      height: 100dvh !important; /* Dynamic Viewport Height */
+      max-height: none !important; 
+      
+      /* Solid Background */
+      background: var(--bg) !important;
+      
       border-left: 1px solid var(--border-color) !important;
       border-radius: 20px 0 0 20px !important;
+      
       z-index: 10000 !important;
       transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       box-shadow: -10px 0 50px rgba(0,0,0,0.8);
@@ -365,37 +402,46 @@ html, body {
       visibility: visible !important;
       padding-bottom: 0 !important;
   }
-
-  /* 🔥 Reset content max-height sa mobile 🔥 */
-  .pop-content-full {
-      max-height: none !important;
-  }
-
-  .btn-close-pop { display: block !important; }
+  
+  /* Slide In State */
   .tm-popover-menu.is-open { right: 0 !important; }
 
-  /* 🔥🔥🔥 DEFAULT STATE: NAKATAGO ANG SIDEBAR (Bye April Rayne) 🔥🔥🔥 */
+  /* Content Grows to Push Footer Down */
+  .pop-content-full { 
+      flex-grow: 1 !important; 
+      overflow-y: auto !important;
+      max-height: none !important; /* Remove desktop limit */
+  } 
+
+  /* Close Button Visibility */
+  .btn-close-pop { display: block !important; }
+
+  /* 🔥🔥🔥 SIDEBAR OVERLAY LOGIC - SWIPE ANIMATION FIX 🔥🔥🔥 */
+  /* Default State: Laging FLEX pero Nasa GILID (Off-screen) */
   .right-sidebar, 
   .right-sidebar.wide-view { 
-      display: none !important; 
-  }
-  
-  /* 🔥🔥🔥 ACTIVE STATE: KAPAG NAG-CLICK KA, LILITAW SIYA AS FULL PAGE 🔥🔥🔥 */
-  .right-sidebar.mobile-active {
-      display: flex !important;
+      display: flex !important; /* Always Rendered */
+      flex-direction: column !important;
       position: fixed !important;
       top: 0; left: 0; right: 0; bottom: 0;
       width: 100% !important;
       height: 100% !important;
-      background: var(--bg); /* Tatakpan niya ang buong screen */
+      background: var(--bg); 
       z-index: 5000 !important;
       padding-bottom: 60px;
-      animation: slideUp 0.3s ease-out; /* May pa-slide effect */
+      
+      /* Start Off-Screen (Right) */
+      transform: translateX(100%);
+      
+      /* Smooth Swipe Transition */
+      transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
   
-  @keyframes slideUp {
-      from { transform: translateY(100%); }
-      to { transform: translateY(0); }
+  /* 2. Active State: Slide In */
+  .right-sidebar.mobile-active {
+      transform: translateX(0); /* Pasok sa screen */
+      box-shadow: -10px 0 50px rgba(0,0,0,0.8);
+      animation: none !important; /* Tanggalin ang lumang slideUp animation */
   }
   
   .mobile-drawer-back { display: flex !important; }
@@ -404,21 +450,55 @@ html, body {
   .main-feed-column:has(#view-messages[style*="display: flex"]) { 
       height: 100dvh !important; overflow: hidden !important; padding-bottom: 0 !important; 
   }
-}
 
-@media (max-width: 768px) {
-    .settings-mobile-back {
-        display: flex; align-items: center; gap: 10px; padding: 15px; border-bottom: var(--border);
-        font-weight: 700; font-size: 1.1rem; cursor: pointer; color: var(--text);
+  /* 🔥 FIX: BACK BUTTON STYLING (UPDATED FOR LIGHT MODE) */
+  .settings-mobile-back {
+        padding: 15px 20px;
+        border-bottom: var(--border);
+        font-weight: 700;
+        font-size: 1.1rem;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 15px;
+        cursor: pointer;
+        color: var(--text);
+        
+        /* 🔥 FIX: Solid Background para hindi transparent sa Light Mode */
+        background: var(--card-bg); 
+        
+        width: 100%;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05); /* Konting shadow */
     }
 }
 
 /* ==========================================================
-   SAFETY NET: HIDE SUGGESTIONS ON MOBILE/TABLET
+   SAFETY NET
    ========================================================== */
 @media (max-width: 1024px) {
-    /* Ito ang pipigil kay April Rayne lumabas kahit bumukas ang sidebar */
-    #rs-suggestions-view {
-        display: none !important;
+    #rs-suggestions-view { display: none !important; }
+}
+/* ======================================================
+   MOBILE PAGE ANIMATIONS (ALL VIEWS)
+   ====================================================== */
+@media (max-width: 1024px) {
+    /* Ito ang class na ia-add natin gamit ang JS */
+    .view-animate-enter {
+        animation: pageSlideIn 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    }
+
+    /* Ang animation Keyframes */
+    @keyframes pageSlideIn {
+        from { 
+            opacity: 0; 
+            transform: translateY(15px) scale(0.98); /* Magsisimula sa baba nang kaunti */
+        }
+        to { 
+            opacity: 1; 
+            transform: translateY(0) scale(1); /* Pupunta sa pwesto */
+        }
     }
 }

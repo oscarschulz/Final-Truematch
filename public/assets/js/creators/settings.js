@@ -24,7 +24,11 @@ export function initSettings() {
                 // 🔥 MOBILE FIX: Buksan ang sidebar bilang Full Page Overlay
                 if (window.innerWidth <= 1024 && rightSidebar) {
                     rightSidebar.classList.remove('hidden-sidebar');
-                    rightSidebar.classList.add('mobile-active');
+                    
+                    // Small timeout to allow removing 'hidden-sidebar' first properly
+                    requestAnimationFrame(() => {
+                        rightSidebar.classList.add('mobile-active');
+                    });
                 }
             }
         });
@@ -49,7 +53,7 @@ export function initSettings() {
             const title = target.charAt(0).toUpperCase() + target.slice(1);
             backBtn.innerHTML = `<i class="fa-solid fa-arrow-left"></i> ${title}`;
             
-            // Pag kinlick ang Back, isasara ang overlay
+            // Pag kinlick ang Back, isasara ang overlay (SWIPE OUT)
             backBtn.addEventListener('click', () => {
                 if(rightSidebar) {
                     rightSidebar.classList.remove('mobile-active');
