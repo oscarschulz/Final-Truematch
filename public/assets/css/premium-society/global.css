@@ -1,0 +1,51 @@
+/* assets/css/premium-society/global.css */
+
+/* =========================================
+   PREMIUM SOCIETY - CORE & VARIABLES
+   ========================================= */
+:root {
+  --ps-bg-dark: #000000;
+  --ps-glass-bg: rgba(20, 20, 25, 0.6); 
+  --ps-sidebar-bg: rgba(5, 10, 20, 0.85);      
+  --ps-border-color: rgba(255, 255, 255, 0.12); 
+  --ps-brand-color: #00aff0; 
+  --ps-brand-grad: linear-gradient(135deg, #00aff0, #0072ff);
+  --ps-text-main: #e7e9ea;
+  --ps-text-muted: #8899a6;
+  
+  --ps-sidebar-left-width: 260px;
+  --ps-sidebar-right-width: 320px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body.ps-theme {
+    margin: 0; padding: 0; 
+    width: 100%; min-height: 100vh;
+    overflow-x: hidden; overflow-y: auto;
+    color: var(--ps-text-main); font-family: system-ui, -apple-system, sans-serif; 
+    background: radial-gradient(circle at 50% 20%, #1a1a2e 0%, #000000 100%);
+    background-color: #000;
+}
+
+#ps-bg-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; opacity: 0.6; }
+
+/* UTILITIES: TOAST */
+.ps-toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(100px); background: #1a1a1a; border: 1px solid var(--ps-brand-color); color: #fff; padding: 12px 24px; border-radius: 50px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); font-weight: 600; z-index: 5000; opacity: 0; transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); display: flex; align-items: center; gap: 10px; }
+.ps-toast.ps-visible { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+/* UTILITIES: LOADER */
+#app-loader { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 9999; display: flex; align-items: center; justify-content: center; flex-direction: column; transition: opacity 0.5s ease-out; }
+.loader-logo { width: 80px; height: 80px; border-radius: 50%; animation: pulseLogo 2s infinite; }
+.loader-text { margin-top: 15px; font-weight: 700; letter-spacing: 1px; font-size: 1.2rem; color: #fff; }
+
+/* COMMON ANIMATIONS */
+@keyframes pulseLogo { 0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 175, 240, 0.7); } 70% { transform: scale(1.1); box-shadow: 0 0 0 20px rgba(0, 175, 240, 0); } 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(0, 175, 240, 0); } }
+@keyframes psFadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+
+/* COMMON COMPONENTS */
+.ps-glass-card { background: var(--ps-glass-bg); border: 1px solid var(--ps-border-color); border-radius: 16px; padding: 20px; margin-bottom: 16px; backdrop-filter: blur(10px); }
+.ps-badge { background: linear-gradient(90deg, #FF3366, #ff758c); color: #fff; padding: 2px 8px; border-radius: 99px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; margin-left: 8px; }
+.ps-btn-white { background: #fff; color: #000; border: none; padding: 12px 16px; border-radius: 99px; font-weight: 800; width: 100%; cursor: pointer; margin-top: 10px; transition: 0.2s; }
+.ps-btn-white:hover { transform: scale(1.03); background: #f0f0f0; }
