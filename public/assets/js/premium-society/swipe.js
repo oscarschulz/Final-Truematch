@@ -18,6 +18,17 @@ export const SwipeController = (() => {
     let resetTime = 0;
     let isSwiping = false; 
 
+    // --- VARIABLES PARA SA SWIPE BACK ---
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchEndX = 0;
+    let touchEndY = 0;
+
+    // Mas pinalawak na detection area (0px to 60px galing kaliwa)
+    const EDGE_THRESHOLD = 60; 
+    // Mas maikling hila lang kailangan para gumana (50px)
+    const SWIPE_THRESHOLD = 50; 
+
     function init() {
         candidates = [...mockCandidates]; 
         index = 0;
@@ -28,17 +39,15 @@ export const SwipeController = (() => {
         const now = Date.now();
 
         if (savedTime && now < parseInt(savedTime)) {
-            // Timer is active, load saved data
             dailySwipes = parseInt(savedSwipes);
             resetTime = parseInt(savedTime);
         } else {
-            // Timer expired or first run: RESET TO 20
             dailySwipes = 20;
-            resetTime = now + (12 * 60 * 60 * 1000); // 12 Hours from now
+            resetTime = now + (12 * 60 * 60 * 1000); 
             saveData();
         }
 
-        startCountdown(); // Start the UI timer
+        startCountdown(); 
         
         if(PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove('active');
         if(PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = 'flex';
@@ -46,11 +55,124 @@ export const SwipeController = (() => {
         updateStats(dailySwipes, 20);
         renderCards();
         
-        // Refresh Button Click
         if(PS_DOM.btnRefreshDeck) {
             PS_DOM.btnRefreshDeck.onclick = () => tryRefresh();
         }
+
+        // 2. ACTIVATE AGGRESSIVE SWIPE BACK
+        initSmartEdgeSwipe();
     }
+
+    // --- SMART EDGE SWIPE LOGIC (UPDATED FIXED) ---
+    function initSmartEdgeSwipe() {
+        const body = document.body;
+
+        // A. START TOUCH (Fixed: Use clientX)
+        body.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].clientX;
+            touchStartY = e.changedTouches[0].clientY;
+        }, { passive: false });
+
+        // B. MOVING (Prevent Native Browser Back if swiping from edge)
+        body.addEventListener('touchmove', (e) => {
+            let currentX = e.changedTouches[0].clientX;
+            let currentY = e.changedTouches[0].clientY;
+
+            // Check if galing sa gilid
+            if (touchStartX <= EDGE_THRESHOLD) {
+                let xDiff = Math.abs(currentX - touchStartX);
+                let yDiff = Math.abs(currentY - touchStartY);
+
+                // Check kung horizontal swipe (at mas malakas sa vertical)
+                if (xDiff > yDiff && xDiff > 10) {
+                     // ITO ANG FIX: Pigilan ang browser native gesture
+                    if(e.cancelable) e.preventDefault(); 
+                }
+            }
+        }, { passive: false });
+
+        // C. END TOUCH (Check if swipe is valid)
+        body.addEventListener('touchend', (e) => {
+            touchEndX = e.changedTouches[0].clientX;
+            touchEndY = e.changedTouches[0].clientY;
+            handleEdgeSwipe();
+        }, { passive: false });
+    }
+
+    function handleEdgeSwipe() {
+        // 1. Dapat galing sa kaliwang gilid
+        if (touchStartX > EDGE_THRESHOLD) return;
+
+        // 2. Kalkulahin ang layo
+        const diffX = touchEndX - touchStartX;
+        const diffY = Math.abs(touchEndY - touchStartY);
+
+        // 3. Dapat Horizontal swipe (pakanan) at lagpas sa threshold
+        if (diffX > SWIPE_THRESHOLD && diffX > diffY) {
+            triggerHierarchyBack();
+        }
+    }
+
+    function triggerHierarchyBack() {
+        // --- PRIORITY 1: OVERLAYS & MODALS (Pinaka-ibabaw) ---
+        
+        // A. CHAT WINDOW (Chat -> Matches)
+        const chatWindow = document.getElementById('psChatWindow');
+        if (chatWindow && chatWindow.classList.contains('active')) {
+            if (window.closeChat) window.closeChat();
+            return; // STOP! Wag na tumuloy sa baba.
+        }
+
+        // B. STORY VIEWER
+        const storyViewer = document.getElementById('psStoryViewer');
+        if (storyViewer && storyViewer.classList.contains('active')) {
+            if (window.closeStory) window.closeStory();
+            return;
+        }
+
+        // C. MATCH OVERLAY (Confetti)
+        const matchOverlay = document.getElementById('psMatchOverlay');
+        if (matchOverlay && matchOverlay.classList.contains('active')) {
+            if (window.closeMatchOverlay) window.closeMatchOverlay();
+            return;
+        }
+
+        // D. EDIT PROFILE MODAL
+        const editModal = document.getElementById('psEditProfileModal');
+        if (editModal && editModal.classList.contains('active')) {
+            if (window.closeEditProfile) window.closeEditProfile();
+            return;
+        }
+
+        // E. CREATOR PROFILE
+        const creatorModal = document.getElementById('psCreatorProfileModal');
+        if (creatorModal && creatorModal.classList.contains('active')) {
+            if (window.closeCreatorProfile) window.closeCreatorProfile();
+            return;
+        }
+
+        // F. GIFT MODAL
+        const giftModal = document.getElementById('psGiftModal');
+        if (giftModal && giftModal.classList.contains('active')) {
+            if (window.closeGiftModal) window.closeGiftModal();
+            return;
+        }
+
+        // --- PRIORITY 2: TABS (Kung walang naka-open na modal) ---
+        
+        const activeTab = document.querySelector('.ps-nav-btn.ps-is-active');
+        
+        // Kung hindi ka nasa Home, balik sa Home
+        if (activeTab && activeTab.dataset.panel !== 'home') {
+            const homeBtn = document.querySelector('button[data-panel="home"]');
+            if(homeBtn) {
+                homeBtn.click();
+                showToast("Back to Home"); 
+            }
+        }
+    }
+
+    // --- EXISTING SWIPE LOGIC (CARDS) ---
 
     function saveData() {
         localStorage.setItem('ps_swipes_left', dailySwipes);
@@ -58,24 +180,19 @@ export const SwipeController = (() => {
     }
 
     function startCountdown() {
-        // Update timer every second
         setInterval(() => {
             const now = Date.now();
             const diff = resetTime - now;
 
             if (diff <= 0) {
-                // Time's up! Reset Logic
                 if (PS_DOM.timerDisplay) PS_DOM.timerDisplay.textContent = "Ready to reset!";
-                // Automatically reset if time passes
                 if (dailySwipes < 20) {
                     dailySwipes = 20;
                     resetTime = now + (12 * 60 * 60 * 1000);
                     saveData();
                     updateStats(dailySwipes, 20);
-                    // Optional: reload page or notify user
                 }
             } else {
-                // Format HHh MMm SSs
                 const hrs = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
                 const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
                 const secs = Math.floor((diff % (1000 * 60)) / 1000);
@@ -91,7 +208,6 @@ export const SwipeController = (() => {
         if (dailySwipes <= 0) {
             fireEmptyAlert();
         } else {
-            // Only refresh cards if they have swipes
             index = 0;
             if(PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove('active');
             if(PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = 'flex';
@@ -165,7 +281,6 @@ export const SwipeController = (() => {
     function handleSwipe(action) {
         if(isSwiping) return;
 
-        // BLOCK IF NO SWIPES LEFT
         if (dailySwipes <= 0) {
             fireEmptyAlert();
             return;
@@ -176,17 +291,27 @@ export const SwipeController = (() => {
 
         isSwiping = true; 
 
-        // Decrement and Save
         dailySwipes--;
-        saveData(); // Save new count to local storage
+        saveData(); 
         updateStats(dailySwipes, 20);
+
+        const currentPerson = candidates[index];
 
         if(action === 'like') {
             card.classList.add('anim-like');
-            showToast('Liked!');
+            if(Math.random() < 0.5) {
+                setTimeout(() => {
+                    if(window.triggerMatchOverlay) window.triggerMatchOverlay(currentPerson);
+                }, 500);
+            } else {
+                showToast('Liked!');
+            }
         } else if (action === 'super') {
             card.classList.add('anim-super');
             showToast('Super Liked!');
+            setTimeout(() => {
+                if(window.triggerMatchOverlay) window.triggerMatchOverlay(currentPerson);
+            }, 500);
         } else {
             card.classList.add('anim-pass');
             showToast('Passed');
@@ -201,6 +326,8 @@ export const SwipeController = (() => {
 
     function updateStats(curr, max) {
         if(PS_DOM.countDisplay) PS_DOM.countDisplay.textContent = curr;
+        if(PS_DOM.mobileSwipeBadge) PS_DOM.mobileSwipeBadge.textContent = curr;
+
         if(PS_DOM.ringCircle) {
             const percent = curr / max;
             PS_DOM.ringCircle.style.strokeDasharray = 314; 

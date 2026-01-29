@@ -2,15 +2,19 @@
 import { PS_DOM } from './core.js';
 import { initUI } from './ui.js';
 import { SwipeController } from './swipe.js';
+import { initSidebarLogic } from './sidebar.js'; // 1. IMPORT SIDEBAR
 
 window.addEventListener('DOMContentLoaded', () => {
-    // 1. Initialize Visuals & Interactions
+    // 1. Initialize Visuals & Main Interactions
     initUI();
 
-    // 2. Initialize Swipe Logic
+    // 2. Initialize Sidebar Logic (New Modular File)
+    initSidebarLogic();
+
+    // 3. Initialize Swipe Logic
     SwipeController.init();
 
-    // 3. Remove Loader smoothly
+    // 4. Remove Loader smoothly
     setTimeout(() => {
         if(PS_DOM.loader) {
             PS_DOM.loader.style.opacity = '0';

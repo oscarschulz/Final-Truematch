@@ -1,7 +1,10 @@
 // assets/js/premium-society/ui.js
 import { PS_DOM, getRandomColor, showToast } from './core.js';
 
-// --- GLOBAL STATE (LOAD FROM LOCAL STORAGE) ---
+// EXPOSE TOAST GLOBALLY
+window.showToast = showToast;
+
+// --- GLOBAL STATE ---
 let conversationHistory = JSON.parse(localStorage.getItem('ps_chat_history')) || {};
 
 function saveHistory() {
@@ -11,29 +14,267 @@ function saveHistory() {
 export function initUI() {
     initCanvasParticles();
     initNavigation();
-    initMobileMenu();
+    
+    // --- CONFLICT FIX: DISABLED THIS BECAUSE SIDEBAR.JS HANDLES IT ---
+    // initMobileMenu(); 
+    // ---------------------------------------------------------------
+
     initNotifications();
     initChat();         
     initStoryViewer(); 
     initCreatorProfileModal(); 
-    initCreatorsLogic(); // NEW: Logic for Filters & Subscribe
+    initCreatorsLogic();
+    initPremiumLogic();
+    initProfileEditLogic(); 
+    initSettingsLogic(); 
     
     populateMockContent();
     
     const lastTab = localStorage.getItem('ps_last_tab') || 'home';
     switchTab(lastTab);
+
+    if(PS_DOM.btnPPV) {
+        PS_DOM.btnPPV.onclick = () => {
+            if(PS_DOM.giftModal) PS_DOM.giftModal.classList.add('active');
+        };
+    }
 }
 
 // ---------------------------------------------------------------------
-// CREATORS LOGIC (FILTERS & SUBSCRIBE)
+// UPDATED: HELP, SUPPORT & INTERACTIVE SETTINGS
 // ---------------------------------------------------------------------
-function initCreatorsLogic() {
-    // 1. Subscribe Action
-    window.subscribeCreator = (name) => {
-        // Close modal first if open
-        window.closeCreatorProfile();
+function initSettingsLogic() {
+    
+    // 1. SLIDERS LOGIC (Distance & Age)
+    const distInput = document.getElementById('psRangeDist');
+    const distVal = document.getElementById('psDistVal');
+    
+    if(distInput && distVal) {
+        distInput.addEventListener('input', (e) => {
+            distVal.textContent = e.target.value;
+        });
+        distInput.addEventListener('change', () => showToast("Distance preference saved"));
+    }
 
-        // Simulate Payment/Subscription Process
+    const ageInput = document.getElementById('psRangeAge');
+    const ageVal = document.getElementById('psAgeVal');
+
+    if(ageInput && ageVal) {
+        ageInput.addEventListener('input', (e) => {
+            ageVal.textContent = e.target.value;
+        });
+        ageInput.addEventListener('change', () => showToast("Age range updated"));
+    }
+
+    // 2. TOGGLES LOGIC (Notifications, Sound, etc.)
+    const toggles = document.querySelectorAll('.ps-setting-toggle');
+    toggles.forEach(toggle => {
+        toggle.addEventListener('change', (e) => {
+            const settingName = e.target.dataset.name || "Setting";
+            const status = e.target.checked ? "Enabled" : "Disabled";
+            showToast(`${settingName} ${status}`);
+        });
+    });
+
+    // 3. HELP & SUPPORT POPUPS
+    window.openSafetyTips = () => {
+        Swal.fire({
+            title: '<i class="fa-solid fa-shield-cat"></i> Dating Safety',
+            html: `
+                <div style="text-align: left; font-size: 0.9rem; line-height: 1.6;">
+                    <ul style="list-style: none; padding: 0;">
+                        <li style="margin-bottom: 10px;">✅ <strong>Meet in Public:</strong> Always meet in a crowded place.</li>
+                        <li style="margin-bottom: 10px;">✅ <strong>Tell a Friend:</strong> Share your location.</li>
+                        <li style="margin-bottom: 10px;">❌ <strong>Don't Send Money:</strong> Never send money to strangers.</li>
+                    </ul>
+                </div>
+            `,
+            background: '#15151e',
+            color: '#fff',
+            confirmButtonText: 'Got it',
+            confirmButtonColor: '#00aff0'
+        });
+    };
+
+    window.openBillingInfo = () => {
+        Swal.fire({
+            title: '<i class="fa-solid fa-receipt"></i> Billing & Refunds',
+            html: `
+                <div style="text-align: left; font-size: 0.9rem; color: #ccc;">
+                    <p><strong>Subscription:</strong> Renews monthly.</p>
+                    <br>
+                    <p><strong>Refunds:</strong> Request within 48 hours via support.</p>
+                </div>
+            `,
+            background: '#15151e',
+            color: '#fff',
+            confirmButtonText: 'Close',
+            confirmButtonColor: '#333'
+        });
+    };
+
+    window.openContactSupport = () => {
+        Swal.fire({
+            title: 'Contact Support',
+            html: `
+                <input id="ticket-subject" class="swal2-input" placeholder="Subject" style="color:#fff; background:#222; border:1px solid #444;">
+                <textarea id="ticket-message" class="swal2-textarea" placeholder="Describe your issue..." style="color:#fff; background:#222; border:1px solid #444; height: 100px;"></textarea>
+            `,
+            background: '#15151e',
+            color: '#fff',
+            confirmButtonText: 'Send Ticket',
+            confirmButtonColor: '#00aff0',
+            showCancelButton: true,
+            cancelButtonColor: '#d33'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Ticket Sent!',
+                    background: '#15151e',
+                    color: '#fff',
+                    confirmButtonColor: '#00aff0'
+                });
+            }
+        });
+    };
+    
+    // Clear Cache Action
+    window.clearAppCache = () => {
+        showToast("Clearing Cache...");
+        setTimeout(() => {
+            showToast("Cache Cleared Successfully");
+        }, 1000);
+    };
+}
+
+// ---------------------------------------------------------------------
+// EDIT PROFILE LOGIC
+// ---------------------------------------------------------------------
+function initProfileEditLogic() {
+    const modal = document.getElementById('psEditProfileModal');
+    const btnEdit = document.getElementById('psBtnEditProfile');
+    
+    const inputName = document.getElementById('psInputName');
+    const inputEmail = document.getElementById('psInputEmail');
+    
+    const displayNames = [
+        document.getElementById('psSNameDisplay'),
+        document.getElementById('psMiniName'),
+        document.getElementById('psWelcomeName'),
+        document.getElementById('psEditNameDisplay')
+    ];
+    const displayEmails = [
+        document.getElementById('psSEmailDisplay'),
+        document.getElementById('psEditEmailDisplay')
+    ];
+
+    if(btnEdit) {
+        btnEdit.onclick = () => {
+            modal.classList.add('active');
+        };
+    }
+
+    window.closeEditProfile = () => {
+        if(modal) modal.classList.remove('active');
+    };
+
+    window.saveEditProfile = () => {
+        const newName = inputName.value.trim();
+        const newEmail = inputEmail.value.trim();
+
+        if(!newName) {
+            showToast("Name cannot be empty!");
+            return;
+        }
+
+        displayNames.forEach(el => { if(el) el.innerText = newName; });
+        displayEmails.forEach(el => { if(el) el.innerText = newEmail; });
+
+        showToast("Profile Updated Successfully!");
+        window.closeEditProfile();
+    };
+
+    window.openChangePassword = () => {
+        Swal.fire({
+            title: 'Change Password',
+            html: `
+                <input type="password" id="swal-curr-pass" class="swal2-input" placeholder="Current Password" style="color:#000;">
+                <input type="password" id="swal-new-pass" class="swal2-input" placeholder="New Password" style="color:#000;">
+                <input type="password" id="swal-conf-pass" class="swal2-input" placeholder="Confirm New Password" style="color:#000;">
+            `,
+            confirmButtonText: 'Update Password',
+            confirmButtonColor: '#00aff0',
+            showCancelButton: true,
+            background: '#15151e',
+            color: '#fff',
+            customClass: { container: 'ps-swal-on-top' },
+            preConfirm: () => {
+                const curr = document.getElementById('swal-curr-pass').value;
+                const newP = document.getElementById('swal-new-pass').value;
+                const confP = document.getElementById('swal-conf-pass').value;
+                
+                if (!curr || !newP || !confP) {
+                    Swal.showValidationMessage('Please fill all fields');
+                    return false;
+                }
+                if (newP !== confP) {
+                    Swal.showValidationMessage('Passwords do not match');
+                    return false;
+                }
+                return true;
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Password Updated',
+                    background: '#15151e',
+                    color: '#fff',
+                    confirmButtonColor: '#00aff0'
+                });
+            }
+        });
+    };
+}
+
+function initPremiumLogic() {
+    window.selectPlan = (element) => {
+        const plans = document.querySelectorAll('.ps-plan-card');
+        plans.forEach(plan => plan.classList.remove('active'));
+        element.classList.add('active');
+    };
+
+    window.subscribeGold = () => {
+        Swal.fire({
+            title: 'Confirm Subscription',
+            text: 'Unlock all Premium features now?',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#64E9EE', 
+            cancelButtonColor: '#d33',
+            confirmButtonText: 'Yes, Upgrade Me!',
+            background: '#15151e',
+            color: '#fff'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                Swal.fire({
+                    title: 'Welcome to Premium!',
+                    text: 'You are now a Premium Member.',
+                    icon: 'success',
+                    background: '#15151e',
+                    color: '#fff',
+                    confirmButtonColor: '#64E9EE'
+                });
+                if(PS_DOM.miniName) PS_DOM.miniName.innerHTML += ' <i class="fa-solid fa-gem" style="color:#64E9EE"></i>';
+            }
+        });
+    };
+}
+
+function initCreatorsLogic() {
+    window.subscribeCreator = (name) => {
+        window.closeCreatorProfile();
         Swal.fire({
             title: `Subscribe to ${name}?`,
             text: "Unlock exclusive content and direct messaging for $9.99/mo.",
@@ -54,26 +295,19 @@ function initCreatorsLogic() {
                     color: '#fff',
                     confirmButtonColor: '#00aff0'
                 });
-                // Optional: Change UI state here if needed
             }
         });
     };
 
-    // 2. Filter Action (Chips)
     window.filterCreators = (element, category) => {
-        // Remove 'active' class from all chips
         const chips = document.querySelectorAll('.ps-filter-chip');
         chips.forEach(chip => chip.classList.remove('active'));
-        
-        // Add 'active' to clicked chip
         element.classList.add('active');
 
-        // Simulate Filtering (Shuffle Cards)
         const grid = document.querySelector('.ps-creators-grid');
         if(grid) {
             grid.style.opacity = '0.5';
             setTimeout(() => {
-                // Shuffle children just for effect
                 for (let i = grid.children.length; i >= 0; i--) {
                     grid.appendChild(grid.children[Math.random() * i | 0]);
                 }
@@ -84,9 +318,6 @@ function initCreatorsLogic() {
     };
 }
 
-// ---------------------------------------------------------------------
-// CREATOR PROFILE MODAL LOGIC
-// ---------------------------------------------------------------------
 function initCreatorProfileModal() {
     const modal = document.getElementById('psCreatorProfileModal');
     
@@ -96,8 +327,6 @@ function initCreatorProfileModal() {
 
     window.openCreatorProfile = (name, cat, followers, color) => {
         if(!modal) return;
-        
-        // Update Modal Content
         document.getElementById('psProfModalName').textContent = name;
         document.getElementById('psProfModalCat').textContent = cat;
         document.getElementById('psProfModalFollowers').textContent = followers;
@@ -109,7 +338,6 @@ function initCreatorProfileModal() {
             cover.style.backgroundImage = "url('assets/images/truematch-mark.png')";
         }
 
-        // Attach Subscribe Event dynamically to the modal button
         const subBtn = modal.querySelector('.ps-btn-subscribe-lg');
         if(subBtn) {
             subBtn.onclick = () => window.subscribeCreator(name);
@@ -127,19 +355,14 @@ function initCreatorProfileModal() {
     window.messageFromProfile = () => {
         const name = document.getElementById('psProfModalName').textContent;
         window.closeCreatorProfile();
-        
         const matchesBtn = document.querySelector('button[data-panel="matches"]');
         if(matchesBtn) matchesBtn.click();
-        
         setTimeout(() => {
             window.openChat(name);
         }, 300);
     };
 }
 
-// ---------------------------------------------------------------------
-// NOTIFICATIONS LOGIC
-// ---------------------------------------------------------------------
 function initNotifications() {
     const btnNotif = document.getElementById('psBtnNotif');
     const popover = document.getElementById('psNotifPopover');
@@ -160,9 +383,6 @@ function initNotifications() {
     }
 }
 
-// ---------------------------------------------------------------------
-// CHAT LOGIC (With Persistence)
-// ---------------------------------------------------------------------
 function initChat() {
     const openChatAction = (name) => {
         if(!PS_DOM.chatWindow) return;
@@ -186,7 +406,14 @@ function initChat() {
         msgs.forEach(msg => {
             const msgDiv = document.createElement('div');
             msgDiv.className = `ps-msg-bubble ${msg.type}`; 
-            msgDiv.textContent = msg.text;
+            if(msg.text.includes('<i class="fa-solid fa-gift"></i>')) {
+                 msgDiv.innerHTML = msg.text;
+                 msgDiv.style.background = 'linear-gradient(135deg, #FFD700, #FFA500)';
+                 msgDiv.style.color = '#000';
+                 msgDiv.style.fontWeight = 'bold';
+            } else {
+                 msgDiv.textContent = msg.text;
+            }
             PS_DOM.chatBody.appendChild(msgDiv);
         });
         PS_DOM.chatBody.scrollTop = PS_DOM.chatBody.scrollHeight;
@@ -291,9 +518,6 @@ function initChat() {
     if(PS_DOM.btnCloseChat) PS_DOM.btnCloseChat.onclick = closeChatAction;
 }
 
-// ---------------------------------------------------------------------
-// STORY VIEWER LOGIC
-// ---------------------------------------------------------------------
 function initStoryViewer() {
     const closeStoryAction = () => {
         if(PS_DOM.storyViewer) {
@@ -368,9 +592,6 @@ function initStoryViewer() {
     if(PS_DOM.storyViewer) { PS_DOM.storyViewer.onclick = (e) => { if(e.target === PS_DOM.storyViewer) closeStoryAction(); }; }
 }
 
-// ---------------------------------------------------------------------
-// NAVIGATION
-// ---------------------------------------------------------------------
 function initNavigation() {
     PS_DOM.tabs.forEach(tab => {
         if(tab.dataset.panel) {
@@ -382,8 +603,15 @@ function initNavigation() {
     });
 }
 
+// --- UPDATED SWITCH TAB FUNCTION ---
 function switchTab(panelName) {
     localStorage.setItem('ps_last_tab', panelName);
+    
+    // REMOVE OLD TAB CLASSES & ADD CURRENT TAB CLASS TO BODY
+    // Ito ang magsasabi sa CSS kung anong tab ang active
+    document.body.classList.remove('ps-tab-home', 'ps-tab-swipe', 'ps-tab-matches', 'ps-tab-creators', 'ps-tab-premium', 'ps-tab-settings');
+    document.body.classList.add(`ps-tab-${panelName}`);
+
     PS_DOM.tabs.forEach(t => {
         if(t.dataset.panel === panelName) t.classList.add('ps-is-active');
         else t.classList.remove('ps-is-active');
@@ -402,18 +630,33 @@ function switchTab(panelName) {
 }
 
 function initMobileMenu() {
+    // FIX: Check if buttons exist before adding listeners
     if(PS_DOM.mobileMenuBtn) {
         PS_DOM.mobileMenuBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            PS_DOM.momentsPopup.classList.remove('ps-is-open');
-            PS_DOM.sidebar.classList.toggle('ps-is-open');
+            
+            // FIX: Check if momentsPopup exists before removing class
+            if(PS_DOM.momentsPopup) {
+                PS_DOM.momentsPopup.classList.remove('ps-is-open');
+            }
+            
+            if(PS_DOM.sidebar) {
+                PS_DOM.sidebar.classList.toggle('ps-is-open');
+            }
         });
     }
+
     if(PS_DOM.mobileMomentsBtn) {
         PS_DOM.mobileMomentsBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            PS_DOM.sidebar.classList.remove('ps-is-open');
-            PS_DOM.momentsPopup.classList.toggle('ps-is-open');
+            if(PS_DOM.sidebar) {
+                PS_DOM.sidebar.classList.remove('ps-is-open');
+            }
+            
+            // FIX: Check if momentsPopup exists before toggling
+            if(PS_DOM.momentsPopup) {
+                PS_DOM.momentsPopup.classList.toggle('ps-is-open');
+            }
         });
     }
 }
@@ -442,9 +685,6 @@ function initCanvasParticles() {
     window.addEventListener('resize', resize); resize(); loop();
 }
 
-// ---------------------------------------------------------------------
-// POPULATE CONTENT
-// ---------------------------------------------------------------------
 function populateMockContent() {
     const userName = "Member";
     const defaultAvatar = "assets/images/truematch-mark.png";
@@ -509,7 +749,11 @@ function populateMockContent() {
         historyNames.forEach(name => {
             const msgs = conversationHistory[name];
             const lastMsg = msgs[msgs.length - 1];
-            const preview = lastMsg.type === 'sent' ? `You: ${lastMsg.text}` : lastMsg.text;
+            // Fix preview for gift messages
+            const preview = lastMsg.type === 'sent' ? 
+                (lastMsg.text.includes('fa-gift') ? 'You: Sent a gift' : `You: ${lastMsg.text}`) : 
+                lastMsg.text;
+
             messagesHtml += `<div class="ps-message-item" onclick="openChat('${name}')"><div class="ps-msg-avatar-wrapper"><img class="ps-msg-avatar" src="${defaultAvatar}" style="background:${getRandomColor()}"><div class="ps-online-badge"></div></div><div class="ps-msg-content"><div class="ps-msg-header"><span class="ps-msg-name">${name}</span><span class="ps-msg-time">Active</span></div><div style="display:flex; align-items:center;"><span class="ps-msg-preview" style="color:#fff; font-weight:600;">${preview}</span></div></div></div>`;
         });
 
@@ -538,7 +782,7 @@ function populateMockContent() {
         PS_DOM.activeNearbyContainer.innerHTML = html;
     }
 
-    // --- UPDATED CREATORS TAB POPULATION (REMOVED HEADER, ADDED ACTIONS) ---
+    // --- CREATORS TAB POPULATION ---
     if(PS_DOM.panelCreatorsBody) {
         const creators = [
             { name: 'Sasha Grey', cat: 'Model & Gamer', followers: '5.2M', color: '#8e44ad' },
@@ -581,5 +825,160 @@ function populateMockContent() {
         PS_DOM.panelCreatorsBody.innerHTML = creatorsHtml;
     }
 
-    if(PS_DOM.panelPremiumBody) PS_DOM.panelPremiumBody.innerHTML = `<div class="ps-feed-header">Premium</div><div style="text-align:center; padding:30px; border:1px solid #00aff0; border-radius:16px; margin:20px; background:rgba(0, 175, 240, 0.1);"><i class="fa-solid fa-gem" style="font-size:3rem; color:#00aff0; margin-bottom:15px;"></i><h2>iTrueMatch GOLD</h2><p>Unlock swipes.</p><button class="ps-btn-white" style="background:#00aff0; color:#fff; margin-top:20px; width:100%;">Subscribe</button></div>`;
+    // --- PREMIUM TAB POPULATION (NEW DESIGN) ---
+    if(PS_DOM.panelPremiumBody) {
+        PS_DOM.panelPremiumBody.innerHTML = `
+            <div class="ps-premium-hero">
+                <div style="font-size:3rem; margin-bottom:10px; color:#ffd700;"><i class="fa-solid fa-crown"></i></div>
+                <h1 class="ps-premium-title">iTrueMatch<br><span class="ps-premium-brand-accent">PREMIUM</span></h1>
+                <p class="ps-premium-subtitle">Unlock exclusive features and find your match faster.</p>
+            </div>
+
+            <div class="ps-premium-benefits">
+                <div class="ps-benefit-item">
+                    <div class="ps-benefit-icon"><i class="fa-solid fa-heart"></i></div>
+                    <div class="ps-benefit-text">
+                        <h4>See Who Likes You</h4>
+                        <p>View your secret admirers immediately.</p>
+                    </div>
+                </div>
+                <div class="ps-benefit-item">
+                    <div class="ps-benefit-icon"><i class="fa-solid fa-bolt"></i></div>
+                    <div class="ps-benefit-text">
+                        <h4>Unlimited Swipes</h4>
+                        <p>No more daily limits. Swipe all day.</p>
+                    </div>
+                </div>
+                <div class="ps-benefit-item">
+                    <div class="ps-benefit-icon"><i class="fa-solid fa-earth-americas"></i></div>
+                    <div class="ps-benefit-text">
+                        <h4>Passport Mode</h4>
+                        <p>Match with people anywhere in the world.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ps-plan-selector">
+                <div class="ps-plan-card" onclick="selectPlan(this)" data-price="$14.99">
+                    <span class="ps-plan-duration">1 <small>Month</small></span>
+                    <div class="ps-plan-monthly">$14.99/mo</div>
+                    <span class="ps-plan-price">$14.99</span>
+                </div>
+                
+                <div class="ps-plan-card active" onclick="selectPlan(this)" data-price="$44.99">
+                    <span class="ps-plan-badge">Most Popular</span>
+                    <span class="ps-plan-duration">6 <small>Months</small></span>
+                    <div class="ps-plan-monthly">$7.50/mo</div>
+                    <span class="ps-plan-price">$44.99</span>
+                    <span class="ps-plan-savings">Save 50%</span>
+                </div>
+                
+                <div class="ps-plan-card" onclick="selectPlan(this)" data-price="$59.99">
+                    <span class="ps-plan-badge">Best Value</span>
+                    <span class="ps-plan-duration">12 <small>Months</small></span>
+                    <div class="ps-plan-monthly">$5.00/mo</div>
+                    <span class="ps-plan-price">$59.99</span>
+                    <span class="ps-plan-savings">Save 60%</span>
+                </div>
+            </div>
+
+            <div class="ps-premium-action">
+                <button class="ps-btn-gold" onclick="subscribeGold()">CONTINUE</button>
+                <p style="font-size:0.7rem; color:#666; margin-top:15px;">Recurring billing, cancel anytime.</p>
+            </div>
+        `;
+    }
 }
+
+// ==========================================
+// NEW FEATURES: MATCH & GIFT LOGIC
+// ==========================================
+
+// --- 1. GIFT SYSTEM LOGIC ---
+let selectedGiftPrice = 500;
+let selectedGiftName = "Diamond";
+
+window.closeGiftModal = () => {
+    if(PS_DOM.giftModal) PS_DOM.giftModal.classList.remove('active');
+};
+
+window.selectGift = (el, name, price) => {
+    // Remove active class from others
+    document.querySelectorAll('.ps-gift-item').forEach(i => i.classList.remove('active'));
+    // Add active to clicked
+    el.classList.add('active');
+    
+    selectedGiftPrice = price;
+    selectedGiftName = name;
+    
+    // Update button text
+    if(PS_DOM.giftPriceBtn) PS_DOM.giftPriceBtn.textContent = price;
+};
+
+window.sendSelectedGift = () => {
+    window.closeGiftModal();
+    
+    // Magpanggap na nag send sa chat
+    const targetUser = PS_DOM.chatName ? PS_DOM.chatName.textContent : "User";
+    
+    // 1. Show Toast
+    showToast(`Sent ${selectedGiftName} to ${targetUser}! (-${selectedGiftPrice}c)`);
+    
+    // 2. Add to Chat Bubble (Visual trick)
+    // Add logic to save this to history later if needed
+    
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'ps-msg-bubble sent';
+    msgDiv.style.background = 'linear-gradient(135deg, #FFD700, #FFA500)';
+    msgDiv.style.color = '#000';
+    msgDiv.style.fontWeight = 'bold';
+    msgDiv.innerHTML = `<i class="fa-solid fa-gift"></i> Sent a ${selectedGiftName}`;
+    
+    if(PS_DOM.chatBody) {
+        PS_DOM.chatBody.appendChild(msgDiv);
+        PS_DOM.chatBody.scrollTop = PS_DOM.chatBody.scrollHeight;
+    }
+    
+    // Also save to history for persistence
+    if (!conversationHistory[targetUser]) conversationHistory[targetUser] = [];
+    conversationHistory[targetUser].push({ type: 'sent', text: `<i class="fa-solid fa-gift"></i> Sent a ${selectedGiftName}` });
+    saveHistory();
+};
+
+// --- 2. MATCH OVERLAY LOGIC ---
+window.triggerMatchOverlay = (person) => {
+    if(!PS_DOM.matchOverlay) return;
+    
+    // Set Data
+    if(PS_DOM.matchName) PS_DOM.matchName.textContent = person.name;
+    
+    // Set Colors/Images (Random color for demo)
+    if(PS_DOM.matchTargetImg) {
+        PS_DOM.matchTargetImg.style.background = person.color;
+    }
+    if(PS_DOM.matchUserImg) {
+        // Mock user image color
+        PS_DOM.matchUserImg.style.background = '#00aff0'; 
+    }
+
+    // Show Overlay
+    PS_DOM.matchOverlay.classList.add('active');
+};
+
+window.closeMatchOverlay = () => {
+    if(PS_DOM.matchOverlay) PS_DOM.matchOverlay.classList.remove('active');
+};
+
+window.openChatFromMatch = () => {
+    const name = PS_DOM.matchName.textContent;
+    window.closeMatchOverlay();
+    
+    // Switch to Matches Tab
+    const matchesBtn = document.querySelector('button[data-panel="matches"]');
+    if(matchesBtn) matchesBtn.click();
+
+    // Open Chat
+    setTimeout(() => {
+        if(window.openChat) window.openChat(name);
+    }, 300);
+};

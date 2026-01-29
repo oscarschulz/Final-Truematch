@@ -10,8 +10,13 @@
 
 /* MOMENTS RAIL */
 .ps-moments-rail-section { background: transparent; padding-bottom: 15px; margin-top: -10px; border-bottom: 1px solid rgba(255,255,255,0.05); }
-.ps-moments-wrapper { display: flex; align-items: center; gap: 16px; }
-.ps-story-static { flex-shrink: 0; z-index: 10; padding-left: 5px; } 
+
+/* FIX: Align items to flex-start para pantay sa taas */
+.ps-moments-wrapper { display: flex; align-items: flex-start; gap: 16px; }
+
+/* FIX: Added padding-bottom to match the scroll container height */
+.ps-story-static { flex-shrink: 0; z-index: 10; padding-left: 5px; padding-bottom: 10px; } 
+
 .ps-stories-scroll { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 10px; scrollbar-width: none; }
 .ps-stories-scroll::-webkit-scrollbar { display: none; }
 
@@ -54,7 +59,6 @@
 .ps-story-input { width: 100%; height: 150px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 15px; color: #fff; font-size: 1.1rem; resize: none; outline: none; margin-bottom: 15px; font-family: inherit; }
 .ps-story-input::placeholder { color: #666; }
 
-/* FIX: REMOVED SCROLLBAR & ADDED WRAP */
 .ps-emoji-bar { 
     display: flex; 
     gap: 10px; 
@@ -150,8 +154,85 @@
 .ps-live-pulse { color: #ff3366; font-size: 0.7rem; font-weight: 800; animation: pulse 1s infinite; display: flex; align-items: center; gap: 5px; }
 @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
 
-.ps-premium-card { background: linear-gradient(135deg, #FFD700 0%, #FDB931 50%, #C08218 100%); border-radius: 16px; padding: 2px; box-shadow: 0 10px 30px rgba(253, 185, 49, 0.2); }
-.ps-premium-content { background: #000; border-radius: 14px; padding: 25px 20px; text-align: center; }
+/* --- UPDATED PREMIUM CARD (Compact & Gold Theme) --- */
+.ps-premium-card {
+    background: #000000;
+    border: 1px solid #FFD700;
+    border-radius: 20px;
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.05);
+    margin-top: 15px;
+    overflow: hidden;
+    position: relative;
+    flex-shrink: 0; /* Important: Prevents shrinking in flex layout */
+}
+
+.ps-premium-content {
+    background: transparent;
+    padding: 20px 15px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* Shining Gold Crown */
+.ps-premium-icon {
+    font-size: 1.6rem;
+    color: #FFD700;
+    margin-bottom: 8px;
+    filter: drop-shadow(0 0 5px rgba(255, 215, 0, 0.8));
+    animation: pulseGold 2s infinite;
+}
+
+@keyframes pulseGold {
+    0% { transform: scale(1); filter: drop-shadow(0 0 5px rgba(255, 215, 0, 0.8)); }
+    50% { transform: scale(1.1); filter: drop-shadow(0 0 12px rgba(255, 215, 0, 1)); }
+    100% { transform: scale(1); filter: drop-shadow(0 0 5px rgba(255, 215, 0, 0.8)); }
+}
+
+/* Stylish Gradient Title */
+.ps-premium-title {
+    font-size: 1.2rem;
+    font-weight: 800;
+    line-height: 1.1;
+    margin: 0 0 8px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: linear-gradient(to bottom, #fff, #FFD700);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 2px 5px rgba(0,0,0,0.5);
+}
+
+.ps-premium-desc {
+    color: #999;
+    font-size: 0.8rem;
+    line-height: 1.3;
+    margin: 0 0 15px 0;
+    font-weight: 500;
+}
+
+/* Compact Gold Button */
+.ps-btn-upgrade-now {
+    background: linear-gradient(135deg, #FFD700, #FFA500);
+    color: #000;
+    border: none;
+    padding: 10px 0;
+    width: 100%;
+    border-radius: 99px;
+    font-weight: 700;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ps-btn-upgrade-now:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(255, 215, 0, 0.4);
+    filter: brightness(1.1);
+}
 
 /* MOBILE RESPONSIVE OVERRIDE FOR REFRESH POPOVER */
 @media (max-width: 1100px) {
@@ -265,7 +346,7 @@
 .ps-notif-text p { margin: 0 0 4px; font-size: 0.85rem; color: #ddd; line-height: 1.3; }
 .ps-notif-text span { font-size: 0.7rem; color: #888; }
 
-/* --- CREATORS TAB STYLES (NEW) --- */
+/* --- CREATORS TAB STYLES --- */
 
 .ps-creators-filter {
     display: flex;
@@ -295,9 +376,9 @@
 
 .ps-creators-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); /* Responsive Grid */
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); 
     gap: 15px;
-    padding: 0 20px 100px; /* Padding bottom for scroll */
+    padding: 0 20px 100px; 
 }
 
 /* Updated Creator Card (No Avatar Overlap) */
@@ -326,8 +407,6 @@
     background-position: center;
     position: relative;
 }
-
-/* Removed avatar overlap styling here */
 
 .ps-creator-body {
     padding: 15px;
@@ -383,7 +462,7 @@
     border-color: var(--ps-brand-color);
 }
 
-/* --- NEW: CREATOR PROFILE MODAL (FULL VIEW) --- */
+/* --- CREATOR PROFILE MODAL --- */
 .ps-profile-modal {
     display: none;
     position: fixed;
@@ -447,3 +526,214 @@
 
 .ps-btn-subscribe-lg { flex: 1; background: linear-gradient(90deg, #FFD700, #FFA500); border: none; color: #000; padding: 12px; border-radius: 12px; font-weight: 800; cursor: pointer; transition: 0.2s; display:flex; align-items:center; justify-content:center; gap:8px;}
 .ps-btn-subscribe-lg:hover { transform: scale(1.05); box-shadow: 0 5px 20px rgba(255, 215, 0, 0.4); }
+
+/* --- PREMIUM TAB STYLES (CYAN THEME) --- */
+.ps-premium-hero {
+    text-align: center;
+    padding: 40px 20px 20px;
+    font-family: 'Montserrat', sans-serif;
+}
+.ps-premium-title {
+    font-size: 2.2rem;
+    font-weight: 900;
+    margin: 0;
+    color: #fff;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    line-height: 1.2;
+}
+.ps-premium-brand-accent { color: #fff; }
+.ps-premium-subtitle { color: #ccc; font-size: 0.9rem; margin-top: 10px; font-family: sans-serif; }
+
+.ps-premium-benefits { margin: 20px 0; padding: 0 20px; }
+.ps-benefit-item { display: flex; align-items: center; gap: 15px; padding: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+
+/* CYAN ICONS */
+.ps-benefit-icon { width: 40px; height: 40px; border-radius: 50%; background: rgba(100, 233, 238, 0.15); color: #64E9EE; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+.ps-benefit-text h4 { margin: 0; font-size: 1rem; color: #fff; font-family: 'Montserrat', sans-serif; font-weight: 600; }
+.ps-benefit-text p { margin: 3px 0 0; font-size: 0.8rem; color: #888; }
+
+.ps-plan-selector {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding: 20px;
+    scrollbar-width: none;
+    justify-content: center;
+}
+.ps-plan-selector::-webkit-scrollbar { display: none; }
+
+.ps-plan-card {
+    flex: 1;
+    min-width: 110px;
+    max-width: 160px;
+    background: rgba(255,255,255,0.05);
+    border: 2px solid transparent;
+    border-radius: 16px;
+    padding: 25px 10px 15px;
+    text-align: center;
+    cursor: pointer;
+    position: relative;
+    transition: 0.3s;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+/* ACTIVE CARD - CYAN GLOW */
+.ps-plan-card.active {
+    background: rgba(100, 233, 238, 0.15);
+    border-color: #64E9EE;
+    transform: scale(1.1);
+    box-shadow: 0 0 20px rgba(100, 233, 238, 0.2);
+    z-index: 10;
+}
+
+/* BADGE - CYAN BG */
+.ps-plan-badge {
+    position: absolute;
+    top: -12px; left: 50%; transform: translateX(-50%);
+    background: #64E9EE; color: #03151A;
+    font-size: 0.6rem; font-weight: 800;
+    padding: 4px 10px; border-radius: 99px;
+    text-transform: uppercase;
+    white-space: nowrap;
+    box-shadow: 0 5px 10px rgba(0,0,0,0.5);
+}
+
+.ps-plan-duration { 
+    font-size: 1.4rem; font-weight: 800; color: #fff; 
+    display: block; line-height: 1; font-family: 'Montserrat', sans-serif;
+}
+.ps-plan-duration small { font-size: 0.7rem; font-weight: 600; color: #aaa; text-transform: uppercase; }
+
+.ps-plan-price { font-size: 0.8rem; color: #888; margin-top: 5px; text-decoration: line-through; }
+
+/* MONTHLY PRICE - CYAN TEXT */
+.ps-plan-monthly {
+    color: #64E9EE;
+    font-weight: 700;
+    font-size: 0.95rem;
+    margin-top: 2px;
+}
+
+.ps-plan-savings { 
+    color: #00ff88; font-size: 0.7rem; font-weight: 700; margin-top: 8px; 
+    display: block; text-transform: uppercase; letter-spacing: 0.5px;
+}
+
+.ps-premium-action { padding: 30px 20px; text-align: center; }
+
+/* BUTTON - CYAN BG (COMPACT) */
+.ps-btn-gold {
+    background: #64E9EE; 
+    color: #03151A; 
+    font-weight: 800;
+    font-size: 1rem;
+    border: none;
+    width: auto;
+    padding: 12px 40px; /* Compact Size */
+    border-radius: 99px;
+    cursor: pointer;
+    box-shadow: 0 10px 30px rgba(100, 233, 238, 0.25);
+    transition: 0.3s;
+    display: inline-block;
+    font-family: 'Montserrat', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+.ps-btn-gold:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 15px 40px rgba(100, 233, 238, 0.4);
+    filter: brightness(1.1);
+}
+
+/* =========================================
+   NEW FEATURES: MATCH & GIFTS
+   ========================================= */
+
+/* --- MATCH OVERLAY STYLES --- */
+.ps-match-overlay {
+    display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.92); z-index: 9999;
+    flex-direction: column; align-items: center; justify-content: center;
+    backdrop-filter: blur(15px); animation: psFadeIn 0.3s ease;
+}
+.ps-match-overlay.active { display: flex; }
+
+.ps-match-title {
+    font-size: 3rem; font-weight: 900; line-height: 1; text-align: center; color: #fff;
+    font-style: italic; margin-bottom: 10px; transform: rotate(-5deg);
+    text-shadow: 0 5px 20px rgba(0,0,0,0.5);
+}
+.ps-text-gradient {
+    background: linear-gradient(to right, #00aff0, #00ff88);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.ps-match-subtitle { color: #ccc; margin-bottom: 40px; font-size: 1rem; }
+
+.ps-match-avatars {
+    display: flex; align-items: center; justify-content: center; position: relative;
+    width: 300px; height: 160px; margin-bottom: 50px;
+}
+.ps-avatar-container {
+    width: 140px; height: 140px; border-radius: 50%; border: 4px solid #fff;
+    overflow: hidden; position: absolute; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    transition: 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.ps-avatar-container img { width: 100%; height: 100%; object-fit: cover; }
+
+/* Animation States */
+.ps-match-overlay.active .ps-avatar-container.left { left: 0; animation: slideMatchLeft 0.8s forwards; }
+.ps-match-overlay.active .ps-avatar-container.right { right: 0; animation: slideMatchRight 0.8s forwards; }
+.ps-match-heart {
+    position: absolute; z-index: 10; font-size: 2.5rem; color: #ff3366;
+    background: #fff; width: 60px; height: 60px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.3); opacity: 0; transform: scale(0);
+}
+.ps-match-overlay.active .ps-match-heart { animation: popHeart 0.6s 0.6s forwards cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+
+@keyframes slideMatchLeft { from { transform: translateX(-100px) rotate(-20deg); opacity:0; } to { transform: translateX(20px) rotate(-10deg); opacity:1; } }
+@keyframes slideMatchRight { from { transform: translateX(100px) rotate(20deg); opacity:0; } to { transform: translateX(-20px) rotate(10deg); opacity:1; } }
+@keyframes popHeart { to { opacity: 1; transform: scale(1) rotate(10deg); } }
+
+.ps-match-actions { display: flex; flex-direction: column; gap: 15px; width: 80%; max-width: 300px; }
+.ps-btn-match-chat {
+    background: linear-gradient(90deg, #00aff0, #0072ff); color: #fff; border: none;
+    padding: 14px; border-radius: 99px; font-weight: 800; font-size: 1rem; cursor: pointer;
+    box-shadow: 0 10px 30px rgba(0, 175, 240, 0.4); transition: 0.2s;
+}
+.ps-btn-match-keep {
+    background: transparent; border: 2px solid rgba(255,255,255,0.2); color: #fff;
+    padding: 12px; border-radius: 99px; font-weight: 700; cursor: pointer; transition: 0.2s;
+}
+.ps-btn-match-keep:hover { border-color: #fff; background: rgba(255,255,255,0.05); }
+
+/* --- GIFT MODAL STYLES --- */
+.ps-gift-balance {
+    display: flex; justify-content: space-between; align-items: center;
+    background: rgba(255,255,255,0.05); padding: 12px 15px; border-radius: 12px; margin-bottom: 20px;
+}
+.ps-coin-text { color: #FFD700; font-weight: 800; font-size: 1.1rem; }
+
+.ps-gift-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 25px;
+}
+.ps-gift-item {
+    background: rgba(20,20,30,0.5); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px; padding: 15px 5px; text-align: center; cursor: pointer;
+    transition: 0.2s; display: flex; flex-direction: column; align-items: center;
+}
+.ps-gift-item:hover { transform: translateY(-3px); background: rgba(255,255,255,0.08); }
+.ps-gift-item.active { border-color: #00aff0; background: rgba(0, 175, 240, 0.1); box-shadow: 0 5px 15px rgba(0, 175, 240, 0.2); }
+
+.ps-gift-emoji { font-size: 2rem; margin-bottom: 5px; }
+.ps-gift-item span { font-size: 0.8rem; font-weight: 600; color: #fff; }
+.ps-gift-item small { font-size: 0.7rem; color: #888; margin-top: 2px; }
+
+/* Confetti Basics */
+.ps-confetti { position: absolute; width: 10px; height: 10px; background: #ffd700; top: -10px; z-index: 1; animation: fall 3s linear infinite; }
+.c1 { left: 10%; animation-delay: 0s; background: #00aff0; } .c2 { left: 30%; animation-delay: 0.5s; background: #ff3366; }
+.c3 { left: 50%; animation-delay: 1s; background: #00ff88; } .c4 { left: 70%; animation-delay: 0.2s; background: #ffd700; }
+@keyframes fall { to { transform: translateY(100vh) rotate(720deg); } }

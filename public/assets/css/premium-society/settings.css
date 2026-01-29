@@ -1,0 +1,302 @@
+/* assets/css/premium-society/settings.css */
+
+/* REFINED BENTO GRID LAYOUT */
+.ps-settings-dashboard {
+    padding: 20px 20px 80px; 
+    display: grid;
+    grid-template-columns: 1fr 1fr; /* Default: 2 Columns sa Desktop */
+    gap: 15px;
+    width: 100%;      
+    max-width: none;  
+    margin: 0;
+    align-content: start;
+}
+
+/* Base Card Style */
+.ps-bento-card {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 20px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    transition: 0.2s;
+    overflow: hidden;
+    min-height: 120px;
+}
+.ps-bento-card:hover {
+    background: rgba(255,255,255,0.08);
+    transform: translateY(-2px);
+    border-color: rgba(255,255,255,0.15);
+}
+
+/* --- PROFILE LAYOUT --- */
+.ps-profile-bento {
+    grid-column: span 2;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(135deg, rgba(30,30,40,0.8), rgba(20,20,30,0.9));
+    gap: 20px;
+    flex-wrap: wrap; 
+}
+
+.ps-bento-profile-info { 
+    display: flex; 
+    align-items: center; 
+    gap: 20px; 
+    flex: 1; 
+    min-width: 200px; 
+}
+
+.ps-bento-profile-info img { 
+    width: 70px; height: 70px; 
+    border-radius: 50%; 
+    border: 3px solid var(--ps-brand-color);
+    flex-shrink: 0;
+}
+
+.ps-bento-text h3 { margin: 0; font-size: 1.3rem; color: #fff; }
+.ps-bento-text p { margin: 0 0 5px; font-size: 0.9rem; color: #888; word-break: break-all; }
+.ps-badge-outline { border: 1px solid #666; color: #ccc; font-size: 0.7rem; padding: 3px 10px; border-radius: 10px; display: inline-block; }
+
+.ps-btn-edit-layout {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 99px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    white-space: nowrap;
+    font-family: inherit;
+}
+.ps-btn-edit-layout:hover { 
+    background: var(--ps-brand-color); 
+    color: #000;
+    border-color: var(--ps-brand-color);
+}
+
+.ps-icon-box {
+    width: 40px; height: 40px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem; color: #fff; margin-bottom: 10px;
+}
+.ps-icon-box.gold { background: rgba(0,0,0,0.2); color: #fff; }
+.ps-icon-box.blue { background: rgba(0, 175, 240, 0.2); color: #00aff0; }
+.ps-icon-box.pink { background: rgba(255, 51, 102, 0.2); color: #ff3366; }
+
+/* Discovery & Notifs */
+.ps-bento-header { display: flex; align-items: center; gap: 12px; margin-bottom: 15px; font-weight: 700; font-size: 1rem; color: #fff; }
+.ps-bento-body { display: flex; flex-direction: column; gap: 15px; }
+
+/* Mini Controls */
+.ps-control-row small { display: block; color: #888; font-size: 0.8rem; margin-bottom: 5px; }
+.ps-range-mini { width: 100%; height: 5px; border-radius: 2px; -webkit-appearance: none; background: rgba(255,255,255,0.1); }
+.ps-range-mini::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; background: var(--ps-brand-color); border-radius: 50%; cursor: pointer; }
+
+.ps-toggle-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; color: #ccc; }
+.ps-switch-mini { position: relative; display: inline-block; width: 40px; height: 22px; }
+.ps-switch-mini input { opacity: 0; width: 0; height: 0; }
+.ps-switch-mini .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #333; transition: .4s; border-radius: 20px; }
+.ps-switch-mini .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+.ps-switch-mini input:checked + .slider { background-color: var(--ps-brand-color); }
+.ps-switch-mini input:checked + .slider:before { transform: translateX(18px); }
+
+/* --- DROPDOWNS (Privacy & Help) --- */
+details.ps-settings-dropdown {
+    grid-column: span 2; 
+    cursor: pointer;
+    padding: 0; 
+    height: auto; 
+    min-height: auto;
+    display: block; 
+}
+
+summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    list-style: none;
+    font-weight: 700;
+    color: #e7e9ea;
+}
+summary::-webkit-details-marker { display: none; }
+
+.ps-dropdown-title { display: flex; align-items: center; gap: 12px; font-size: 1rem; }
+.ps-dropdown-title i { font-size: 1.2rem; width: 24px; text-align: center; }
+
+.ps-chevron { transition: 0.3s; color: #666; }
+details[open] .ps-chevron { transform: rotate(180deg); color: var(--ps-brand-color); }
+
+.ps-dropdown-content {
+    padding: 0 20px 20px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    background: rgba(0,0,0,0.2);
+}
+
+.ps-legal-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    font-size: 0.9rem;
+    color: #ccc;
+    transition: 0.2s;
+    cursor: pointer; 
+}
+.ps-legal-row:last-child { border-bottom: none; }
+.ps-legal-row:hover { color: #fff; padding-left: 5px; background: rgba(255,255,255,0.02); }
+.ps-legal-row i { font-size: 0.8rem; color: #555; }
+
+.ps-app-version { text-align: center; color: #444; font-size: 0.75rem; margin-top: 5px; grid-column: span 2; }
+
+.ps-settings-footer-area {
+    grid-column: span 2;
+    display: flex;
+    justify-content: center;
+    margin-top: 10px;
+}
+
+.ps-btn-gold-footer {
+    background: linear-gradient(135deg, #FFD700, #FFA500);
+    color: #000;
+    border: none;
+    font-weight: 800;
+    font-size: 0.95rem;
+    padding: 12px 30px;
+    border-radius: 99px;
+    cursor: pointer;
+    box-shadow: 0 5px 20px rgba(255, 215, 0, 0.25);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: 0.3s;
+}
+.ps-btn-gold-footer:hover {
+    transform: translateY(-3px) scale(1.05);
+    box-shadow: 0 10px 30px rgba(255, 215, 0, 0.4);
+}
+
+/* WIDE BENTO FORM MODAL */
+.ps-edit-modal-overlay {
+    display: none;
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.9); 
+    z-index: 9000; 
+    align-items: center; justify-content: center;
+    backdrop-filter: blur(10px); animation: psFadeIn 0.2s ease;
+}
+.ps-edit-modal-overlay.active { display: flex; }
+
+.ps-bento-edit-modal {
+    width: 90%; max-width: 800px;
+    background: #101015;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 20px;
+    box-shadow: 0 50px 100px rgba(0,0,0,0.8);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    max-height: 95vh;
+}
+
+.ps-bento-header {
+    padding: 20px 30px;
+    background: rgba(255,255,255,0.03);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    display: flex; justify-content: space-between; align-items: center;
+}
+.ps-bento-header h3 { margin: 0; font-size: 1.2rem; color: #fff; font-weight: 800; letter-spacing: 0.5px; }
+
+.ps-btn-save-bento {
+    background: var(--ps-brand-grad); color: #fff; border: none;
+    padding: 10px 25px; border-radius: 8px; font-weight: 700; cursor: pointer;
+    box-shadow: 0 5px 20px rgba(0, 175, 240, 0.3); transition: 0.2s;
+}
+.ps-btn-save-bento:hover { transform: scale(1.05); }
+
+.ps-bento-body {
+    padding: 30px;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 25px;
+}
+
+.ps-form-section.top-section { display: flex; gap: 25px; align-items: flex-start; }
+.ps-avatar-upload-zone { position: relative; width: 100px; height: 100px; flex-shrink: 0; cursor: pointer; }
+.ps-avatar-upload-zone img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; border: 3px solid var(--ps-brand-color); }
+.ps-upload-icon { position: absolute; bottom: 0; right: 0; background: #fff; color: #000; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; border: 3px solid #101015; }
+
+.ps-bio-zone { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.ps-form-textarea { width: 100%; height: 100px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 15px; color: #fff; font-family: inherit; font-size: 0.95rem; resize: none; outline: none; }
+.ps-form-textarea:focus { border-color: var(--ps-brand-color); background: rgba(0, 175, 240, 0.05); }
+
+.ps-form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.ps-input-group { display: flex; flex-direction: column; gap: 8px; }
+.ps-form-label { font-size: 0.8rem; color: #8899a6; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+.ps-input-wrapper { display: flex; align-items: center; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 0 15px; height: 50px; transition: 0.2s; }
+.ps-input-wrapper:focus-within { border-color: var(--ps-brand-color); background: rgba(0,0,0,0.3); }
+.ps-input-wrapper i { color: #666; margin-right: 12px; font-size: 1rem; }
+.ps-input-wrapper input, .ps-input-wrapper select { background: transparent; border: none; color: #fff; font-size: 1rem; width: 100%; outline: none; font-weight: 500; font-family: inherit; }
+.ps-input-wrapper select option { background: #15151e; }
+
+.ps-range-inputs { display: flex; align-items: center; gap: 10px; height: 50px; }
+.ps-range-inputs input { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; text-align: center; border-radius: 10px; height: 100%; width: 100%; font-size: 1rem; font-weight: 600; outline: none; }
+.ps-range-inputs span { color: #666; font-weight: 600; }
+
+.ps-security-zone { display: flex; justify-content: space-between; margin-top: 10px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); }
+.ps-btn-password-bento { background: rgba(255, 71, 87, 0.1); color: #ff4757; border: 1px solid rgba(255, 71, 87, 0.2); padding: 12px 20px; border-radius: 10px; cursor: pointer; font-weight: 600; transition: 0.2s; }
+.ps-btn-password-bento:hover { background: rgba(255, 71, 87, 0.2); }
+.ps-btn-cancel-bento { background: transparent; color: #888; border: none; font-weight: 600; cursor: pointer; font-size: 1rem; }
+.ps-btn-cancel-bento:hover { color: #fff; }
+
+
+/* ========================================================
+   FIXED MOBILE LAYOUT (Stacking List)
+   ======================================================== */
+@media (max-width: 768px) {
+    .ps-settings-dashboard { 
+        display: flex;           /* Force Flex instead of Grid */
+        flex-direction: column;  /* Stack items vertically */
+        gap: 15px; 
+    }
+
+    /* Reset columns for Profile Card so it fits nicely in flex */
+    .ps-profile-bento { 
+        width: 100%;
+        flex-direction: column; 
+        text-align: center; 
+        gap: 15px; 
+    }
+    
+    .ps-bento-profile-info { 
+        flex-direction: column; 
+        width: 100%; 
+    }
+    
+    .ps-btn-edit-layout { 
+        width: 100%; 
+        justify-content: center; 
+    }
+
+    /* Force dropdowns/wide cards to normal width */
+    details.ps-settings-dropdown,
+    .ps-settings-footer-area,
+    .ps-app-version {
+        width: 100%;
+        grid-column: auto; /* Reset grid properties */
+    }
+
+    /* Edit Modal Fixes */
+    .ps-form-grid-2 { grid-template-columns: 1fr; }
+    .ps-form-section.top-section { flex-direction: column; align-items: center; text-align: center; }
+    .ps-bento-edit-modal { width: 100%; height: 100%; border-radius: 0; max-height: none; }
+}

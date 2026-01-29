@@ -73,12 +73,27 @@ export const PS_DOM = {
     countDisplay: document.getElementById('psStatsCountDisplay'),
     toast: document.getElementById('ps-toast'),
     
+    // NEW: Mobile Specific Elements
+    mobileSwipeBadge: document.getElementById('psMobileSwipeCount'),
+    
     // Timer Display
     timerDisplay: document.querySelector('.ps-stats-body p.ps-tiny'),
 
     // Panels
     panelCreatorsBody: document.getElementById('ps-panel-creators'),
-    panelPremiumBody: document.getElementById('ps-panel-premium')
+    panelPremiumBody: document.getElementById('ps-panel-premium'),
+
+    // === NEW ADDITIONS ===
+    // Match Overlay Elements
+    matchOverlay: document.getElementById('psMatchOverlay'),
+    matchUserImg: document.getElementById('psMatchUserImg'),
+    matchTargetImg: document.getElementById('psMatchTargetImg'),
+    matchName: document.getElementById('psMatchName'),
+    
+    // Gift Modal Elements
+    giftModal: document.getElementById('psGiftModal'),
+    btnPPV: document.querySelector('.ps-btn-ppv'),
+    giftPriceBtn: document.getElementById('psGiftPriceBtn')
 };
 
 export function getRandomColor() {

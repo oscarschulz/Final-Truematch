@@ -4,8 +4,11 @@
 .ps-layout { 
     display: grid;
     grid-template-columns: var(--ps-sidebar-left-width) 1fr var(--ps-sidebar-right-width); 
-    width: 100%; min-height: 100vh;
-    position: relative; z-index: 10;
+    width: 100%; 
+    height: 100vh; /* HARD LOCK sa screen height */
+    overflow: hidden; /* PATAYIN ang scroll sa buong body */
+    position: relative; 
+    z-index: 10;
 }
 
 .ps-mobile-toggle, .ps-mobile-moments-toggle, .ps-moments-popup { display: none; }
@@ -14,12 +17,12 @@
 .ps-sidebar { 
     padding: 25px 20px; display: flex; flex-direction: column; justify-content: space-between; 
     border-right: 1px solid var(--ps-border-color); background: transparent; 
-    position: sticky; top: 0; height: 100vh; overflow-y: auto; z-index: 200;
+    height: 100vh; overflow-y: auto; z-index: 200;
 }
 .ps-right-sidebar { 
     padding: 24px; display: flex; flex-direction: column; gap: 16px; 
-    border-left: 1px solid var(--ps-border-color); background: transparent;
-    position: sticky; top: 0; height: 100vh; overflow-y: auto; z-index: 100; 
+    border-left: 1px solid var(--ps-border-color); background: transparent; 
+    height: 100vh; overflow-y: auto; z-index: 100; 
 }
 .ps-sidebar::-webkit-scrollbar, .ps-right-sidebar::-webkit-scrollbar { display: none; }
 .ps-sidebar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -49,13 +52,64 @@
 .ps-online-status { position: absolute; bottom: 0; right: 0; width: 11px; height: 11px; background: #00ff88; border: 2px solid #1a1a20; border-radius: 50%; box-shadow: 0 0 5px rgba(0, 255, 136, 0.5); }
 
 /* MAIN FEED CONTAINER */
-.ps-main-feed { grid-column: 2; border-right: 1px solid var(--ps-border-color); height: auto; min-height: 100vh; padding-bottom: 50px; position: relative; }
-.ps-feed-header { position: sticky; top: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(12px); border-bottom: 1px solid var(--ps-border-color); padding: 16px 24px; z-index: 50; font-weight: 800; font-size: 1.1rem; }
+.ps-main-feed { 
+    grid-column: 2; 
+    border-right: 1px solid var(--ps-border-color); 
+    height: 100vh;      /* Lock sa screen height */
+    overflow: hidden;   /* Bawal lumabas ang scrollbar dito */
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Header stays at top */
+.ps-feed-header { 
+    flex-shrink: 0; 
+    background: rgba(0,0,0,0.85); 
+    backdrop-filter: blur(12px); 
+    border-bottom: 1px solid var(--ps-border-color); 
+    padding: 16px 24px; 
+    z-index: 50; 
+    font-weight: 800; 
+    font-size: 1.1rem; 
+}
 
 /* PANEL SYSTEM */
-.ps-panel { display: none; padding: 24px 30px 0; animation: psFadeIn 0.4s ease-out; }
-.ps-panel.ps-is-active { display: flex; flex-direction: column; min-height: calc(100vh - 50px); }
-#ps-panel-home { display: flex; flex-direction: column; gap: 20px; }
+.ps-panel { 
+    display: none; 
+    padding: 24px 30px 50px; 
+    animation: psFadeIn 0.4s ease-out; 
+    overflow-y: auto; /* Scrollable content */
+    flex: 1; 
+
+    /* DITO ANG MAGIC: ITAGO ANG SCROLLBAR SA HOME AT IBANG TABS */
+    scrollbar-width: none;  /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+}
+
+/* Hide scrollbar for Chrome/Safari but keep scrolling */
+.ps-panel::-webkit-scrollbar {
+    display: none;
+}
+
+/* Active State */
+.ps-panel.ps-is-active { 
+    display: flex; 
+    flex-direction: column; 
+}
+
+/* HOME PANEL */
+#ps-panel-home { 
+    overflow-y: auto; 
+}
+
+/* MATCHES TAB: TOTAL LOCKDOWN */
+.ps-panel[data-panel="matches"] {
+    padding: 0;         
+    overflow: hidden;   
+    height: 100%;       
+    position: relative;
+}
 
 /* RESPONSIVE & MOBILE */
 @media (max-width: 1100px) {
@@ -74,7 +128,7 @@
     }
     .ps-sidebar.ps-is-open { display: flex; animation: slideRight 0.3s ease; }
     
-    .ps-main-feed { width: 100%; border-right: none; padding-bottom: 80px; }
+    .ps-main-feed { width: 100%; border-right: none; height: 100vh; overflow: hidden; padding-bottom: 0; }
 
     .ps-mobile-toggle, .ps-mobile-moments-toggle { 
         display: flex; position: fixed; bottom: 20px; width: 50px; height: 50px; 
@@ -96,3 +150,82 @@
     .ps-moments-popup h3 { margin: 0; font-size: 0.9rem; color: #ccc; }
 }
 @keyframes slideRight { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+
+/* --- USER MENU POPUP (FIXED) --- */
+.ps-sidebar-footer {
+    position: relative; /* Important para dito dumikit ang popup */
+    z-index: 1000;
+}
+
+.ps-user-menu-popup {
+    display: none;
+    position: absolute;
+    /* Pwesto: Nasa taas ng footer, sakto sa lapad */
+    bottom: 80px; 
+    left: 0;
+    width: 100%; /* FIX: Gawing 100% para hindi lumagpas */
+    
+    background: rgba(20, 20, 30, 0.95);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+    flex-direction: column;
+    overflow: hidden;
+    transform-origin: bottom center; /* Animation magsisimula sa gitna-ilalim */
+    animation: popUpMenu 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    z-index: 9999;
+}
+
+.ps-user-menu-popup.active {
+    display: flex;
+}
+
+@keyframes popUpMenu {
+    from { opacity: 0; transform: scale(0.9) translateY(10px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Menu Items */
+.ps-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 15px;
+    color: #ccc;
+    cursor: pointer;
+    transition: 0.2s;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    font-size: 0.9rem;
+}
+.ps-menu-item:hover {
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    padding-left: 20px; /* Slide effect */
+}
+.ps-menu-item:last-child { border-bottom: none; }
+
+.ps-menu-item i { width: 20px; text-align: center; font-size: 1.1rem; }
+
+/* Current Profile Style */
+.ps-menu-current {
+    background: rgba(0, 175, 240, 0.1);
+    color: #fff;
+    cursor: default;
+    padding: 15px;
+}
+.ps-menu-current:hover { background: rgba(0, 175, 240, 0.1); padding-left: 15px; }
+
+.ps-menu-current img {
+    width: 35px; height: 35px; border-radius: 50%; border: 2px solid var(--ps-brand-color);
+}
+
+.ps-menu-logout { color: #ff4757; }
+.ps-menu-logout:hover { background: rgba(255, 71, 87, 0.15); color: #ff6b81; }
+
+/* Active State for Mini Profile Button */
+.ps-mini-profile.active {
+    border-color: var(--ps-brand-color);
+    background: rgba(255,255,255,0.1);
+    box-shadow: 0 0 15px rgba(0, 175, 240, 0.3);
+}

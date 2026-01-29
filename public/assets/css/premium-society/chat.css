@@ -1,7 +1,15 @@
 /* assets/css/premium-society/chat.css */
 
 /* MATCHES CONTAINER & SEARCH */
-.ps-matches-container { padding: 0 20px; }
+.ps-matches-container { 
+    padding: 0 20px; 
+    /* Allow list scroll if chat is closed */
+    height: 100%;
+    overflow-y: auto; 
+    padding-bottom: 20px;
+    scrollbar-width: none;
+}
+.ps-matches-container::-webkit-scrollbar { display: none; }
 
 .ps-search-bar-wrapper { position: relative; margin-bottom: 25px; }
 .ps-search-bar-wrapper i { position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: #8899a6; }
@@ -37,7 +45,17 @@
 .ps-msg-unread-dot { width: 10px; height: 10px; background: var(--ps-brand-color); border-radius: 50%; margin-left: 10px; }
 
 /* CHAT WINDOW OVERLAY */
-.ps-chat-window { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 200; flex-direction: column; animation: slideUp 0.3s ease; }
+.ps-chat-window { 
+    display: none; 
+    position: absolute; 
+    top: 0; left: 0; 
+    width: 100%; 
+    height: 100%; /* Sasakupin nito ang Matches Panel Height */
+    background: #000; 
+    z-index: 200; 
+    flex-direction: column; 
+    animation: slideUp 0.3s ease; 
+}
 .ps-chat-window.active { display: flex; }
 @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 
@@ -47,7 +65,21 @@
 .ps-chat-user-info h4 { margin: 0; font-size: 1rem; color: #fff; }
 .ps-chat-status { font-size: 0.75rem; color: #00ff88; }
 
-.ps-chat-body { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; background: #000; }
+/* --- DITO ANG FIX PARA SA SCROLLING NG MESSAGES --- */
+.ps-chat-body { 
+    flex: 1;                /* Occupy remaining space */
+    padding: 20px; 
+    overflow-y: auto;       /* Dito lang mag-i-scroll */
+    display: flex; 
+    flex-direction: column; 
+    gap: 15px; 
+    background: #000; 
+    
+    /* HIDE SCROLLBAR */
+    scrollbar-width: none;  /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+}
+.ps-chat-body::-webkit-scrollbar { display: none; } /* Chrome/Safari */
 
 .ps-msg-bubble { max-width: 75%; padding: 12px 16px; border-radius: 18px; font-size: 0.95rem; line-height: 1.4; position: relative; }
 .ps-msg-bubble.received { background: rgba(255, 255, 255, 0.1); color: #e7e9ea; align-self: flex-start; border-bottom-left-radius: 4px; }
