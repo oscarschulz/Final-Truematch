@@ -7,20 +7,34 @@
           </div>
           <div style="display:flex; gap:20px; font-size:1.1rem; color:var(--text);">
               <i class="fa-solid fa-magnifying-glass" id="col-btn-search" style="cursor:pointer;" title="Search"></i>
+              
+              <i class="fa-solid fa-cloud-arrow-up" id="col-btn-upload" style="cursor:pointer; display:none;" title="Upload to Vault"></i>
+              
               <i class="fa-solid fa-plus" id="col-btn-add" style="cursor:pointer;" title="New List"></i>
           </div>
       </div>
+
       <div id="col-search-container" class="hidden" style="margin-top: 10px; padding-bottom:10px; border-bottom:var(--border);">
           <div class="search-input-wrapper" style="background:var(--search-bg); border-radius:8px; padding:8px 12px; display:flex; align-items:center;">
               <i class="fa-solid fa-magnifying-glass" style="color:var(--muted)"></i>
-              <input type="text" id="col-search-input" placeholder="Find a collection..." style="background:transparent; border:none; color:var(--text); width:100%; margin-left:10px; outline:none;">
+              <input type="text" id="col-search-input" placeholder="Find..." style="background:transparent; border:none; color:var(--text); width:100%; margin-left:10px; outline:none;">
               <i class="fa-solid fa-xmark" id="col-search-close" style="cursor:pointer; color:var(--muted);"></i>
           </div>
       </div>
     </div>
+
     <div class="collection-tabs-bar">
-        <div class="c-tab-item active" id="tab-col-users">USER LISTS</div>
-        <div class="c-tab-item" id="tab-col-bookmarks">BOOKMARKS</div>
+        <div class="c-tab-item active" id="tab-col-users">LISTS</div>
+        <div class="c-tab-item" id="tab-col-vault">VAULT (MEDIA)</div>
     </div>
+
+    <div id="vault-sub-tabs" class="hidden" style="padding: 10px 15px; display: flex; gap: 10px; border-bottom: 1px solid var(--border-color);">
+        <button class="n-pill active" data-type="all">All</button>
+        <button class="n-pill" data-type="image">Photos</button>
+        <button class="n-pill" data-type="video">Videos</button>
+    </div>
+
+    <input type="file" id="col-file-input" accept="image/*,video/*" hidden>
+
     <div class="collection-list-container" id="collection-list-wrapper"></div>
 </div>

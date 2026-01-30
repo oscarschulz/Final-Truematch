@@ -15,9 +15,7 @@ export function initUI() {
     initCanvasParticles();
     initNavigation();
     
-    // --- CONFLICT FIX: DISABLED THIS BECAUSE SIDEBAR.JS HANDLES IT ---
-    // initMobileMenu(); 
-    // ---------------------------------------------------------------
+    // Note: initMobileMenu is handled in sidebar.js now to avoid conflicts
 
     initNotifications();
     initChat();         
@@ -28,7 +26,11 @@ export function initUI() {
     initProfileEditLogic(); 
     initSettingsLogic(); 
     
-    populateMockContent();
+    // CLEANED: Inalis ang populateMockContent()
+    // TODO: Dito mo tatawagin ang:
+    // fetchUserData();
+    // fetchStories();
+    // fetchMatches();
     
     const lastTab = localStorage.getItem('ps_last_tab') || 'home';
     switchTab(lastTab);
@@ -188,6 +190,7 @@ function initProfileEditLogic() {
             return;
         }
 
+        // CLIENT-SIDE UPDATE ONLY. TODO: Send to Backend API
         displayNames.forEach(el => { if(el) el.innerText = newName; });
         displayEmails.forEach(el => { if(el) el.innerText = newEmail; });
 
@@ -226,6 +229,7 @@ function initProfileEditLogic() {
             }
         }).then((result) => {
             if (result.isConfirmed) {
+                // TODO: Call Backend API to change password
                 Swal.fire({
                     icon: 'success',
                     title: 'Password Updated',
@@ -239,6 +243,70 @@ function initProfileEditLogic() {
 }
 
 function initPremiumLogic() {
+    // --- PREMIUM TAB POPULATION (UI Structure Only, no mock data needed) ---
+    if(PS_DOM.panelPremiumBody) {
+        PS_DOM.panelPremiumBody.innerHTML = `
+            <div class="ps-premium-hero">
+                <div style="font-size:3rem; margin-bottom:10px; color:#ffd700;"><i class="fa-solid fa-crown"></i></div>
+                <h1 class="ps-premium-title">iTrueMatch<br><span class="ps-premium-brand-accent">PREMIUM</span></h1>
+                <p class="ps-premium-subtitle">Unlock exclusive features and find your match faster.</p>
+            </div>
+
+            <div class="ps-premium-benefits">
+                <div class="ps-benefit-item">
+                    <div class="ps-benefit-icon"><i class="fa-solid fa-heart"></i></div>
+                    <div class="ps-benefit-text">
+                        <h4>See Who Likes You</h4>
+                        <p>View your secret admirers immediately.</p>
+                    </div>
+                </div>
+                <div class="ps-benefit-item">
+                    <div class="ps-benefit-icon"><i class="fa-solid fa-bolt"></i></div>
+                    <div class="ps-benefit-text">
+                        <h4>Unlimited Swipes</h4>
+                        <p>No more daily limits. Swipe all day.</p>
+                    </div>
+                </div>
+                <div class="ps-benefit-item">
+                    <div class="ps-benefit-icon"><i class="fa-solid fa-earth-americas"></i></div>
+                    <div class="ps-benefit-text">
+                        <h4>Passport Mode</h4>
+                        <p>Match with people anywhere in the world.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ps-plan-selector">
+                <div class="ps-plan-card" onclick="selectPlan(this)" data-price="$14.99">
+                    <span class="ps-plan-duration">1 <small>Month</small></span>
+                    <div class="ps-plan-monthly">$14.99/mo</div>
+                    <span class="ps-plan-price">$14.99</span>
+                </div>
+                
+                <div class="ps-plan-card active" onclick="selectPlan(this)" data-price="$44.99">
+                    <span class="ps-plan-badge">Most Popular</span>
+                    <span class="ps-plan-duration">6 <small>Months</small></span>
+                    <div class="ps-plan-monthly">$7.50/mo</div>
+                    <span class="ps-plan-price">$44.99</span>
+                    <span class="ps-plan-savings">Save 50%</span>
+                </div>
+                
+                <div class="ps-plan-card" onclick="selectPlan(this)" data-price="$59.99">
+                    <span class="ps-plan-badge">Best Value</span>
+                    <span class="ps-plan-duration">12 <small>Months</small></span>
+                    <div class="ps-plan-monthly">$5.00/mo</div>
+                    <span class="ps-plan-price">$59.99</span>
+                    <span class="ps-plan-savings">Save 60%</span>
+                </div>
+            </div>
+
+            <div class="ps-premium-action">
+                <button class="ps-btn-gold" onclick="subscribeGold()">CONTINUE</button>
+                <p style="font-size:0.7rem; color:#666; margin-top:15px;">Recurring billing, cancel anytime.</p>
+            </div>
+        `;
+    }
+
     window.selectPlan = (element) => {
         const plans = document.querySelectorAll('.ps-plan-card');
         plans.forEach(plan => plan.classList.remove('active'));
@@ -304,18 +372,26 @@ function initCreatorsLogic() {
         chips.forEach(chip => chip.classList.remove('active'));
         element.classList.add('active');
 
-        const grid = document.querySelector('.ps-creators-grid');
-        if(grid) {
-            grid.style.opacity = '0.5';
-            setTimeout(() => {
-                for (let i = grid.children.length; i >= 0; i--) {
-                    grid.appendChild(grid.children[Math.random() * i | 0]);
-                }
-                grid.style.opacity = '1';
-                showToast(`Showing: ${category}`);
-            }, 300);
-        }
+        // TODO: Call Backend with Filter
+        // fetchCreators(category);
+        showToast(`Filtering by: ${category}`);
     };
+    
+    // NOTE: Inalis na ang hardcoded creators list dito. 
+    // Ang 'ps-creators-grid' ay dapat lamanin gamit ang fetch data.
+    if(PS_DOM.panelCreatorsBody) {
+        PS_DOM.panelCreatorsBody.innerHTML = `
+        <div class="ps-creators-filter">
+            <div class="ps-filter-chip active" onclick="filterCreators(this, 'All')">All</div>
+            <div class="ps-filter-chip" onclick="filterCreators(this, 'Trending')">Trending</div>
+            <div class="ps-filter-chip" onclick="filterCreators(this, 'New')">New</div>
+            <div class="ps-filter-chip" onclick="filterCreators(this, 'Near You')">Near You</div>
+            <div class="ps-filter-chip" onclick="filterCreators(this, 'Cosplay')">Cosplay</div>
+        </div>
+        <div class="ps-creators-grid">
+            <p style="grid-column: span 2; text-align: center; color: #666; margin-top: 50px;">Fetching Creators...</p>
+        </div>`;
+    }
 }
 
 function initCreatorProfileModal() {
@@ -330,7 +406,7 @@ function initCreatorProfileModal() {
         document.getElementById('psProfModalName').textContent = name;
         document.getElementById('psProfModalCat').textContent = cat;
         document.getElementById('psProfModalFollowers').textContent = followers;
-        document.getElementById('psProfModalLikes').textContent = Math.floor(Math.random() * 500) + 'K'; 
+        document.getElementById('psProfModalLikes').textContent = '0K'; 
         
         const cover = document.getElementById('psProfModalCover');
         if(cover) {
@@ -389,14 +465,12 @@ function initChat() {
         PS_DOM.chatName.textContent = name;
         PS_DOM.chatAvatar.src = "assets/images/truematch-mark.png";
         
-        if (!conversationHistory[name]) {
-            const defaultMsgs = [
-                { type: 'received', text: `Hey ${name} here! How's it going?` },
-                { type: 'received', text: 'Saw your profile, pretty cool!' }
-            ];
-            renderMessages(defaultMsgs);
-        } else {
+        // CLEANED: Wala nang default fake messages.
+        // Dapat mag-fetch ng conversation history galing backend dito.
+        if (conversationHistory[name]) {
             renderMessages(conversationHistory[name]);
+        } else {
+            PS_DOM.chatBody.innerHTML = `<div style="text-align:center; color:#555; margin-top:20px;">Start a conversation with ${name}</div>`;
         }
         PS_DOM.chatWindow.classList.add('active');
     };
@@ -426,16 +500,32 @@ function initChat() {
     window.openChat = openChatAction;
     window.closeChat = closeChatAction;
 
-    window.toggleChatEmoji = function() {
-        if(PS_DOM.chatEmojiPicker) PS_DOM.chatEmojiPicker.classList.toggle('active');
-    };
+    // --- UPDATED EMOJI PICKER LOGIC ---
+    const emojiPicker = document.getElementById('psEmojiPicker');
+    const btnEmoji = document.getElementById('psBtnToggleEmoji');
+    const chatInput = document.getElementById('psChatInput');
 
-    window.addChatEmoji = function(emoji) {
-        if(PS_DOM.chatInput) {
-            PS_DOM.chatInput.value += emoji;
-            PS_DOM.chatInput.focus();
-        }
-    };
+    if (btnEmoji && emojiPicker) {
+        btnEmoji.onclick = (e) => {
+            e.stopPropagation(); 
+            emojiPicker.classList.toggle('active');
+        };
+
+        // Close picker when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!emojiPicker.contains(e.target) && e.target !== btnEmoji) {
+                emojiPicker.classList.remove('active');
+            }
+        });
+    }
+
+    if (emojiPicker && chatInput) {
+        emojiPicker.addEventListener('emoji-click', (event) => {
+            const emoji = event.detail.unicode;
+            chatInput.value += emoji;
+            chatInput.focus();
+        });
+    }
 
     window.sendChatMessage = function() {
         const text = PS_DOM.chatInput ? PS_DOM.chatInput.value.trim() : "";
@@ -449,11 +539,9 @@ function initChat() {
         PS_DOM.chatBody.appendChild(msgDiv);
         PS_DOM.chatBody.scrollTop = PS_DOM.chatBody.scrollHeight;
 
+        // LOCAL HISTORY ONLY FOR NOW
         if (!conversationHistory[currentName]) {
-            conversationHistory[currentName] = [
-                { type: 'received', text: `Hey ${currentName} here! How's it going?` },
-                { type: 'received', text: 'Saw your profile, pretty cool!' }
-            ];
+            conversationHistory[currentName] = [];
         }
         conversationHistory[currentName].push({ type: 'sent', text: text });
         saveHistory();
@@ -461,7 +549,9 @@ function initChat() {
         moveMatchToMessages(currentName, text);
 
         PS_DOM.chatInput.value = "";
-        if(PS_DOM.chatEmojiPicker) PS_DOM.chatEmojiPicker.classList.remove('active');
+        
+        // Hide picker after sending
+        if(emojiPicker) emojiPicker.classList.remove('active');
     };
 
     function moveMatchToMessages(name, lastText) {
@@ -573,6 +663,7 @@ function initStoryViewer() {
     window.postNewStory = function() {
         const text = PS_DOM.storyInput ? PS_DOM.storyInput.value.trim() : "";
         if(!text) { showToast("Please write something!"); return; }
+        // CLEANED: This creates a local-only story. Connect to Backend to persist.
         const newStoryHtml = `<div class="ps-story-item" onclick="openStory('You', '#00aff0')"><div class="ps-story-ring" style="border-color: #00aff0;"><img class="ps-story-img" src="assets/images/truematch-mark.png" style="background:#00aff0"></div><span class="ps-story-name" style="font-size:0.7rem; font-weight:bold;">You</span></div>`;
         if(PS_DOM.storiesContainer) PS_DOM.storiesContainer.insertAdjacentHTML('afterbegin', newStoryHtml);
         const mobileContainer = document.getElementById('psMobileStoriesContainer');
@@ -686,208 +777,8 @@ function initCanvasParticles() {
 }
 
 function populateMockContent() {
-    const userName = "Member";
-    const defaultAvatar = "assets/images/truematch-mark.png";
-
-    if(PS_DOM.miniAvatar) PS_DOM.miniAvatar.src = defaultAvatar;
-    if(PS_DOM.miniName) PS_DOM.miniName.textContent = userName;
-    if(PS_DOM.headerAvatar) PS_DOM.headerAvatar.src = defaultAvatar;
-    if(PS_DOM.headerName) PS_DOM.headerName.textContent = userName;
-
-    if(PS_DOM.dailyPickContainer) {
-        const color = getRandomColor();
-        PS_DOM.dailyPickContainer.innerHTML = `
-            <div class="ps-hero-card" style="background-image: url('${defaultAvatar}'); background-color: ${color};">
-                <div class="ps-hero-content">
-                    <span class="ps-hero-badge">Daily Top Pick</span>
-                    <h2 style="margin:0; color:#fff; text-shadow:0 2px 5px rgba(0,0,0,0.8);">Anastasia, 23</h2>
-                    <p style="margin:0; color:#eee;">Model • 3km away</p>
-                </div>
-            </div>`;
-    }
-
-    if (PS_DOM.storiesContainer) {
-        const stories = ['Elena', 'Marco', 'Sarah', 'James', 'Pia'];
-        let html = '';
-        stories.forEach(name => {
-            const color = getRandomColor();
-            html += `<div class="ps-story-item" onclick="openStory('${name}', '${color}')"><div class="ps-story-ring"><img class="ps-story-img" src="${defaultAvatar}" style="background:${color}"></div><span class="ps-story-name" style="font-size:0.7rem;">${name}</span></div>`;
-        });
-        PS_DOM.storiesContainer.innerHTML = html;
-        if(PS_DOM.momentsPopup) document.getElementById('psMobileStoriesContainer').innerHTML = html;
-    }
-
-    if (PS_DOM.admirerContainer) {
-        const admirers = [{ name: 'Secret', loc: 'Nearby' }, { name: 'Secret', loc: '5km away' }, { name: 'Secret', loc: 'City Center' }, { name: 'Secret', loc: '10km away' }];
-        if(PS_DOM.admirerCount) PS_DOM.admirerCount.textContent = `${admirers.length} New`;
-        let html = '';
-        admirers.forEach(adm => {
-            html += `<div class="ps-admirer-card" onclick="document.querySelector('[data-panel=premium]').click()"><div class="ps-admirer-icon"><i class="fa-solid fa-lock"></i></div><img class="ps-admirer-img" src="${defaultAvatar}" style="background:${getRandomColor()}"><h4 style="margin:0; font-size:0.9rem;">${adm.name}</h4><p class="ps-tiny ps-muted" style="margin:2px 0 0;">${adm.loc}</p></div>`;
-        });
-        PS_DOM.admirerContainer.innerHTML = html;
-    }
-
-    // Matches & Messages
-    if (PS_DOM.matchesContainer && PS_DOM.newMatchesRail) {
-        let newMatches = [
-            { name: 'Kyla', imgColor: '#FFD700' },
-            { name: 'Chloe', imgColor: '#ff3366' },
-            { name: 'Bea', imgColor: '#00aff0' },
-            { name: 'Marga', imgColor: '#800080' },
-        ];
-        newMatches = newMatches.filter(m => !conversationHistory[m.name]);
-        
-        if(PS_DOM.newMatchCount) PS_DOM.newMatchCount.textContent = newMatches.length;
-        let railHtml = '';
-        newMatches.forEach(m => {
-            railHtml += `<div class="ps-new-match-item" onclick="openChat('${m.name}')"><div class="ps-match-ring"><img class="ps-match-avatar" src="${defaultAvatar}" style="background:${m.imgColor}"></div><span class="ps-match-name-sm">${m.name}</span></div>`;
-        });
-        PS_DOM.newMatchesRail.innerHTML = railHtml;
-
-        let messagesHtml = '';
-        const historyNames = Object.keys(conversationHistory).reverse();
-        historyNames.forEach(name => {
-            const msgs = conversationHistory[name];
-            const lastMsg = msgs[msgs.length - 1];
-            // Fix preview for gift messages
-            const preview = lastMsg.type === 'sent' ? 
-                (lastMsg.text.includes('fa-gift') ? 'You: Sent a gift' : `You: ${lastMsg.text}`) : 
-                lastMsg.text;
-
-            messagesHtml += `<div class="ps-message-item" onclick="openChat('${name}')"><div class="ps-msg-avatar-wrapper"><img class="ps-msg-avatar" src="${defaultAvatar}" style="background:${getRandomColor()}"><div class="ps-online-badge"></div></div><div class="ps-msg-content"><div class="ps-msg-header"><span class="ps-msg-name">${name}</span><span class="ps-msg-time">Active</span></div><div style="display:flex; align-items:center;"><span class="ps-msg-preview" style="color:#fff; font-weight:600;">${preview}</span></div></div></div>`;
-        });
-
-        const staticMessages = [
-            { name: 'Victoria', msg: 'See you later! 👋', time: '2m', unread: true },
-            { name: 'Alexander', msg: 'That sounds like a great plan.', time: '1h', unread: false },
-            { name: 'Sophia', msg: 'Sent a photo', time: '3h', unread: false },
-            { name: 'Liam', msg: 'Haha, exactly!', time: '1d', unread: false }
-        ];
-        staticMessages.forEach(m => {
-            if (!conversationHistory[m.name]) { 
-                const unreadClass = m.unread ? 'unread' : '';
-                const unreadDot = m.unread ? `<div class="ps-msg-unread-dot"></div>` : '';
-                messagesHtml += `<div class="ps-message-item ${unreadClass}" onclick="openChat('${m.name}')"><div class="ps-msg-avatar-wrapper"><img class="ps-msg-avatar" src="${defaultAvatar}" style="background:${getRandomColor()}"><div class="ps-online-badge"></div></div><div class="ps-msg-content"><div class="ps-msg-header"><span class="ps-msg-name">${m.name}</span><span class="ps-msg-time">${m.time}</span></div><div style="display:flex; align-items:center;"><span class="ps-msg-preview">${m.msg}</span>${unreadDot}</div></div></div>`;
-            }
-        });
-        PS_DOM.matchesContainer.innerHTML = messagesHtml;
-    }
-
-    if (PS_DOM.activeNearbyContainer) {
-        let html = '';
-        for(let i=0; i<6; i++) {
-            const color = getRandomColor();
-            html += `<div class="ps-active-item"><img class="ps-active-img" src="${defaultAvatar}" style="background:${color}"><div style="position:absolute; bottom:5px; right:5px; width:10px; height:10px; background:#00ff88; border-radius:50; border:2px solid #000;"></div></div>`;
-        }
-        PS_DOM.activeNearbyContainer.innerHTML = html;
-    }
-
-    // --- CREATORS TAB POPULATION ---
-    if(PS_DOM.panelCreatorsBody) {
-        const creators = [
-            { name: 'Sasha Grey', cat: 'Model & Gamer', followers: '5.2M', color: '#8e44ad' },
-            { name: 'Bella Fox', cat: 'Cosplay', followers: '2.1M', color: '#ff3366' },
-            { name: 'Fit with Jen', cat: 'Fitness', followers: '800K', color: '#00aff0' },
-            { name: 'Chef Marco', cat: 'Culinary', followers: '1.5M', color: '#e67e22' },
-            { name: 'Tech Rex', cat: 'Tech Reviews', followers: '3.1M', color: '#34495e' },
-            { name: 'Luna Art', cat: 'Digital Art', followers: '950K', color: '#16a085' }
-        ];
-
-        let creatorsHtml = `
-        <div class="ps-creators-filter">
-            <div class="ps-filter-chip active" onclick="filterCreators(this, 'All')">All</div>
-            <div class="ps-filter-chip" onclick="filterCreators(this, 'Trending')">Trending</div>
-            <div class="ps-filter-chip" onclick="filterCreators(this, 'New')">New</div>
-            <div class="ps-filter-chip" onclick="filterCreators(this, 'Near You')">Near You</div>
-            <div class="ps-filter-chip" onclick="filterCreators(this, 'Cosplay')">Cosplay</div>
-        </div>
-        <div class="ps-creators-grid">`;
-
-        creators.forEach(c => {
-            creatorsHtml += `
-            <div class="ps-creator-card-premium" onclick="openCreatorProfile('${c.name}', '${c.cat}', '${c.followers}', '${c.color}')">
-                <div class="ps-creator-cover" style="background-color: ${c.color}; background-image: url('assets/images/truematch-mark.png'); opacity: 0.8;"></div>
-                <div class="ps-creator-body">
-                    <div>
-                        <h3 class="ps-creator-name">${c.name} <i class="fa-solid fa-circle-check" style="color:#00aff0; font-size:0.8rem;"></i></h3>
-                        <span class="ps-creator-category">${c.cat}</span>
-                    </div>
-                    <div class="ps-creator-stats">
-                        <span><i class="fa-solid fa-users"></i> ${c.followers}</span>
-                        <span><i class="fa-solid fa-star"></i> 4.9</span>
-                    </div>
-                    <button class="ps-btn-view-profile">View Profile</button>
-                </div>
-            </div>`;
-        });
-
-        creatorsHtml += `</div>`;
-        PS_DOM.panelCreatorsBody.innerHTML = creatorsHtml;
-    }
-
-    // --- PREMIUM TAB POPULATION (NEW DESIGN) ---
-    if(PS_DOM.panelPremiumBody) {
-        PS_DOM.panelPremiumBody.innerHTML = `
-            <div class="ps-premium-hero">
-                <div style="font-size:3rem; margin-bottom:10px; color:#ffd700;"><i class="fa-solid fa-crown"></i></div>
-                <h1 class="ps-premium-title">iTrueMatch<br><span class="ps-premium-brand-accent">PREMIUM</span></h1>
-                <p class="ps-premium-subtitle">Unlock exclusive features and find your match faster.</p>
-            </div>
-
-            <div class="ps-premium-benefits">
-                <div class="ps-benefit-item">
-                    <div class="ps-benefit-icon"><i class="fa-solid fa-heart"></i></div>
-                    <div class="ps-benefit-text">
-                        <h4>See Who Likes You</h4>
-                        <p>View your secret admirers immediately.</p>
-                    </div>
-                </div>
-                <div class="ps-benefit-item">
-                    <div class="ps-benefit-icon"><i class="fa-solid fa-bolt"></i></div>
-                    <div class="ps-benefit-text">
-                        <h4>Unlimited Swipes</h4>
-                        <p>No more daily limits. Swipe all day.</p>
-                    </div>
-                </div>
-                <div class="ps-benefit-item">
-                    <div class="ps-benefit-icon"><i class="fa-solid fa-earth-americas"></i></div>
-                    <div class="ps-benefit-text">
-                        <h4>Passport Mode</h4>
-                        <p>Match with people anywhere in the world.</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="ps-plan-selector">
-                <div class="ps-plan-card" onclick="selectPlan(this)" data-price="$14.99">
-                    <span class="ps-plan-duration">1 <small>Month</small></span>
-                    <div class="ps-plan-monthly">$14.99/mo</div>
-                    <span class="ps-plan-price">$14.99</span>
-                </div>
-                
-                <div class="ps-plan-card active" onclick="selectPlan(this)" data-price="$44.99">
-                    <span class="ps-plan-badge">Most Popular</span>
-                    <span class="ps-plan-duration">6 <small>Months</small></span>
-                    <div class="ps-plan-monthly">$7.50/mo</div>
-                    <span class="ps-plan-price">$44.99</span>
-                    <span class="ps-plan-savings">Save 50%</span>
-                </div>
-                
-                <div class="ps-plan-card" onclick="selectPlan(this)" data-price="$59.99">
-                    <span class="ps-plan-badge">Best Value</span>
-                    <span class="ps-plan-duration">12 <small>Months</small></span>
-                    <div class="ps-plan-monthly">$5.00/mo</div>
-                    <span class="ps-plan-price">$59.99</span>
-                    <span class="ps-plan-savings">Save 60%</span>
-                </div>
-            </div>
-
-            <div class="ps-premium-action">
-                <button class="ps-btn-gold" onclick="subscribeGold()">CONTINUE</button>
-                <p style="font-size:0.7rem; color:#666; margin-top:15px;">Recurring billing, cancel anytime.</p>
-            </div>
-        `;
-    }
+    // FUNCTION EMPTIED FOR CLEANUP
+    // Dito mo ilalagay ang API calls sa future.
 }
 
 // ==========================================
@@ -918,14 +809,9 @@ window.selectGift = (el, name, price) => {
 window.sendSelectedGift = () => {
     window.closeGiftModal();
     
-    // Magpanggap na nag send sa chat
     const targetUser = PS_DOM.chatName ? PS_DOM.chatName.textContent : "User";
     
-    // 1. Show Toast
     showToast(`Sent ${selectedGiftName} to ${targetUser}! (-${selectedGiftPrice}c)`);
-    
-    // 2. Add to Chat Bubble (Visual trick)
-    // Add logic to save this to history later if needed
     
     const msgDiv = document.createElement('div');
     msgDiv.className = 'ps-msg-bubble sent';
@@ -939,7 +825,6 @@ window.sendSelectedGift = () => {
         PS_DOM.chatBody.scrollTop = PS_DOM.chatBody.scrollHeight;
     }
     
-    // Also save to history for persistence
     if (!conversationHistory[targetUser]) conversationHistory[targetUser] = [];
     conversationHistory[targetUser].push({ type: 'sent', text: `<i class="fa-solid fa-gift"></i> Sent a ${selectedGiftName}` });
     saveHistory();
@@ -949,19 +834,15 @@ window.sendSelectedGift = () => {
 window.triggerMatchOverlay = (person) => {
     if(!PS_DOM.matchOverlay) return;
     
-    // Set Data
     if(PS_DOM.matchName) PS_DOM.matchName.textContent = person.name;
     
-    // Set Colors/Images (Random color for demo)
     if(PS_DOM.matchTargetImg) {
-        PS_DOM.matchTargetImg.style.background = person.color;
+        PS_DOM.matchTargetImg.style.background = person.color || '#00aff0';
     }
     if(PS_DOM.matchUserImg) {
-        // Mock user image color
         PS_DOM.matchUserImg.style.background = '#00aff0'; 
     }
 
-    // Show Overlay
     PS_DOM.matchOverlay.classList.add('active');
 };
 
@@ -973,11 +854,9 @@ window.openChatFromMatch = () => {
     const name = PS_DOM.matchName.textContent;
     window.closeMatchOverlay();
     
-    // Switch to Matches Tab
     const matchesBtn = document.querySelector('button[data-panel="matches"]');
     if(matchesBtn) matchesBtn.click();
 
-    // Open Chat
     setTimeout(() => {
         if(window.openChat) window.openChat(name);
     }, 300);

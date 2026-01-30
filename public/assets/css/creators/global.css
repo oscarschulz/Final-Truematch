@@ -23,35 +23,34 @@
   --input-text: #fff;
   --search-bg: #242529;
 
-  /* Z-INDEX LAYERS */
+  /* Z-INDEX LAYERS (FIXED HIERARCHY) */
   --z-back: -1;
   --z-normal: 1;
   --z-sticky: 50; 
   --z-header: 60; 
-  --z-dropdown: 100;
-  --z-popover: 2000;
-  --z-modal: 5000;
+  --z-chat-overlay: 4000;    /* Mobile Chat View */
+  --z-sidebar-overlay: 5000; /* Right Sidebar Mobile */
+  --z-menu-overlay: 6000;    /* Left Drawer/Popover Mobile */
+  --z-modal: 8000;           /* Custom Modals (Add Card) */
+  --z-alert: 9000;           /* SweetAlert2 */
   --z-loader: 99999;
 }
 
-/* LIGHT MODE OVERRIDES (FIXED FOR READABILITY) */
+/* LIGHT MODE OVERRIDES */
 body.tm-light {
-  --bg: #F0F2F5;       /* Light Gray Background */
-  --text: #1c1e21;     /* Dark Text */
-  --muted: #65676B;    /* Muted Text */
-  --card-bg: #FFFFFF;  /* White Cards */
+  --bg: #F0F2F5;       
+  --text: #1c1e21;     
+  --muted: #65676B;    
+  --card-bg: #FFFFFF;  
   --border-color: #CED0D4;
   --border: 1px solid var(--border-color);
   --hover-bg: #E4E6EB;
-  
-  /* 🔥 FIX: Ginawang White ang Input BG para lumutang sa Gray BG */
   --input-bg: #FFFFFF; 
   --input-border: #ccc;
   --input-text: #050505;
   --search-bg: #FFFFFF; 
 }
 
-/* 🔥 FIX: Siguraduhing nababasa ang dropdown options sa Light Mode */
 body.tm-light select option {
     background-color: #fff;
     color: #000;
@@ -64,17 +63,9 @@ body {
   background-color: var(--bg) !important;
   color: var(--text);
   font-family: 'Montserrat', sans-serif;
-  height: 100vh;
+  height: 100dvh; /* Mobile Fix */
   overflow: hidden; 
-  transition: background-color 0.3s, color 0.3s; /* Smooth Transition */
-}
-
-/* Allow scrolling on normal pages */
-body:not(:has(#view-messages[style*="display: flex"])) {
-  height: auto !important;
-  min-height: 100vh;
-  overflow-y: auto !important;
-  overflow-x: hidden;
+  transition: background-color 0.3s, color 0.3s;
 }
 
 input, textarea, select { color: var(--input-text) !important; font-family: 'Montserrat', sans-serif; }
@@ -82,7 +73,13 @@ input, textarea, select { color: var(--input-text) !important; font-family: 'Mon
 a { text-decoration: none; color: inherit; }
 .hidden { display: none !important; }
 
-/* Custom Scrollbars */
+/* FIX: Remove default arrow for custom select wrappers */
+select {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+}
+
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
@@ -101,15 +98,18 @@ a { text-decoration: none; color: inherit; }
 .set-info span { font-size: 0.95rem; font-weight: 600; }
 .set-info small { font-size: 0.75rem; color: var(--muted); }
 
+/* Crypto Pill Style (Moved from Inline) */
+.crypto-pill { display: inline-flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 6px 12px; border-radius: 20px; font-size: 0.8rem; color: var(--muted); }
+body.tm-light .crypto-pill { background: #e4e6eb; border-color: #ccc; color: #333; }
+
 /* ======================================================
-   4. FORM UI (UPDATED FOR THEME SUPPORT)
+   4. FORM UI
    ====================================================== */
 #rs-settings-view { padding: 0 !important; background: var(--bg); }
 
 .ac-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
 .ac-group label { font-size: 0.8rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
 
-/* FIXED: Using variables instead of hardcoded colors */
 .ac-group input, 
 .ac-group textarea, 
 .ac-group select { 
@@ -155,8 +155,7 @@ a { text-decoration: none; color: inherit; }
     100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(100, 233, 238, 0); }
 }
 
-/* Payment Modal */
-.payment-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: var(--z-popover); display: none; align-items: center; justify-content: center; backdrop-filter: blur(5px); }
+.payment-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: var(--z-modal); display: none; align-items: center; justify-content: center; backdrop-filter: blur(5px); }
 .payment-overlay.is-visible { display: flex !important; }
 .payment-card { background: var(--card-bg); padding: 40px; border-radius: 20px; width: 90%; max-width: 400px; border: 1px solid var(--primary-cyan); text-align: center; }
 .btn-group-modal { display: flex; gap: 10px; margin-top: 20px; }
@@ -164,16 +163,15 @@ a { text-decoration: none; color: inherit; }
 .btn-modal.primary { background: var(--primary-cyan); border-color: var(--primary-cyan); }
 .btn-modal.ghost { background: transparent; border-color: var(--text); color: var(--text); }
 
-/* SweetAlert2 Theme Overrides (DEFAULT STYLES) */
+/* SweetAlert Global Styles */
+div:where(.swal2-container) { z-index: var(--z-alert) !important; }
 div:where(.swal2-container) h2:where(.swal2-title) { color: var(--text) !important; font-family: 'Montserrat', sans-serif; font-weight: 800; }
 div:where(.swal2-container) .swal2-html-container { color: var(--muted) !important; }
 div:where(.swal2-container) input:where(.swal2-input) { background: var(--input-bg) !important; border: 1px solid var(--input-border) !important; color: var(--input-text) !important; }
 div:where(.swal2-container) button:where(.swal2-styled).swal2-confirm { background: linear-gradient(135deg, #64E9EE 0%, #4bc5ca 100%) !important; color: #000 !important; border-radius: 50px !important; }
 div:where(.swal2-container) button:where(.swal2-styled).swal2-cancel { background: transparent !important; color: var(--muted) !important; border: 1px solid var(--border-color) !important; border-radius: 50px !important; }
 
-/* ======================================================
-   6. RESPONSIVE MEDIA QUERIES
-   ====================================================== */
+/* ================= RESPONSIVE FIXES ================= */
 @media (max-width: 1024px) { 
   .right-sidebar { display: none; }
   .right-sidebar.wide-view { display: none; }
@@ -187,10 +185,6 @@ div:where(.swal2-container) button:where(.swal2-styled).swal2-cancel { backgroun
   .nav-item { justify-content: center; padding: 15px; }
   .nav-icon { font-size: 1.6rem; width: auto; }
   .btn-new-post { width: 50px; height: 50px; border-radius: 50%; padding: 0; margin-top: 20px; }
-  .msg-sidebar { width: 80px; min-width: 80px; }
-  .msg-user-item { padding: 15px 5px; justify-content: center; }
-  .u-info, .u-meta, .mh-top h3, .msg-tabs { display: none; }
-  .msg-info-panel { display: none; }
 }
 
 @media (max-width: 768px) {
@@ -202,132 +196,48 @@ div:where(.swal2-container) button:where(.swal2-styled).swal2-cancel { backgroun
 }
 
 /* ================= ONLYFANS STYLE CARDS UI ================= */
-
-.of-alert-box {
-    background: rgba(255, 71, 87, 0.1);
-    border: 1px solid #ff4757;
-    color: var(--text);
-    padding: 15px;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    gap: 15px;
-    font-size: 0.95rem;
-    line-height: 1.4;
-}
+.of-alert-box { background: rgba(255, 71, 87, 0.1); border: 1px solid #ff4757; color: var(--text); padding: 15px; border-radius: 4px; display: flex; align-items: center; gap: 15px; font-size: 0.95rem; line-height: 1.4; }
 .of-alert-box i { color: #ff4757; font-size: 1.2rem; flex-shrink: 0; }
 .of-alert-box a { color: var(--primary-cyan); text-decoration: none; font-weight: 600; }
-.of-alert-box a:hover { text-decoration: underline; }
-
-.of-info-box {
-    background: rgba(0, 145, 234, 0.1);
-    border: 1px solid #0091ea; /* OF Blueish */
-    color: var(--text);
-    padding: 15px;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    gap: 15px;
-    font-size: 0.95rem;
-}
+.of-info-box { background: rgba(0, 145, 234, 0.1); border: 1px solid #0091ea; color: var(--text); padding: 15px; border-radius: 4px; display: flex; align-items: center; gap: 15px; font-size: 0.95rem; }
 .of-info-box i { color: #0091ea; font-size: 1.2rem; flex-shrink: 0; }
-
-.of-card-logos {
-    display: flex;
-    gap: 15px;
-    justify-content: center;
-    margin: 30px 0;
-    font-size: 2rem;
-    color: var(--text);
-    opacity: 0.8;
-}
-
-.of-footer-address {
-    text-align: center;
-    color: var(--muted);
-    font-size: 0.75rem;
-    line-height: 1.6;
-    margin-top: 40px;
-    padding: 0 20px;
-}
+.of-card-logos { display: flex; gap: 15px; justify-content: center; margin: 30px 0; font-size: 2rem; color: var(--text); opacity: 0.8; }
+.of-footer-address { text-align: center; color: var(--muted); font-size: 0.75rem; line-height: 1.6; margin-top: 40px; padding: 0 20px; }
 .of-footer-address p { margin: 5px 0; }
-
-/* Override for sidebar button color to match screenshot blue */
-.right-sidebar .btn-add-payment-card {
-    background: #00baec !important; /* OF Blue/Cyan */
-    color: #fff !important;
-    text-transform: uppercase;
-}
+.right-sidebar .btn-add-payment-card { background: #00baec !important; color: #fff !important; text-transform: uppercase; }
 
 /* ================= CREATOR VERIFICATION STEPS ================= */
-.creator-steps {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-}
-.step-item {
-    background: var(--card-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 20px;
-    display: flex;
-    align-items: center;
-    gap: 15px;
-    opacity: 0.5;
-    transition: 0.3s;
-}
-.step-item.active {
-    opacity: 1;
-    border-color: var(--primary-cyan);
-    box-shadow: 0 0 15px rgba(100, 233, 238, 0.1);
-}
-.step-num {
-    width: 35px;
-    height: 35px;
-    background: var(--input-bg);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 800;
-    flex-shrink: 0;
-}
-.step-item.active .step-num {
-    background: var(--primary-cyan);
-    color: #000;
-}
+.creator-steps { display: flex; flex-direction: column; gap: 20px; }
+.step-item { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; display: flex; align-items: center; gap: 15px; opacity: 0.5; transition: 0.3s; }
+.step-item.active { opacity: 1; border-color: var(--primary-cyan); box-shadow: 0 0 15px rgba(100, 233, 238, 0.1); }
+.step-num { width: 35px; height: 35px; background: var(--input-bg); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; flex-shrink: 0; }
+.step-item.active .step-num { background: var(--primary-cyan); color: #000; }
 .step-info h4 { margin: 0; font-size: 1rem; }
 .step-info p { margin: 5px 0 0; font-size: 0.85rem; color: var(--muted); }
 .step-check { margin-left: auto; color: var(--primary-cyan); font-size: 1.2rem; }
 
-/* ================= SWEETALERT CENTER & Z-INDEX FIX ================= */
-/* 1. Container Fix: Piliting mag-center gamit ang Flexbox at sakupin ang buong screen */
-div.swal2-container {
-    display: flex !important;              /* Force Flexbox layout */
-    align-items: center !important;        /* Gitna Vertically */
-    justify-content: center !important;    /* Gitna Horizontally */
-    
-    position: fixed !important;            /* Laging naka-base sa screen/viewport */
+/* ==========================================================
+   🔥🔥🔥 FIX: SWEETALERT LAYOUTING (MODAL vs TOAST) 🔥🔥🔥
+   ========================================================== */
+
+/* 1. DEFAULT MODAL (Dark Background, Centered) */
+div:where(.swal2-container):not(.swal2-top-end):not(.swal2-top-right) {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    position: fixed !important;
     top: 0 !important;
     left: 0 !important;
     right: 0 !important;
     bottom: 0 !important;
     width: 100% !important;
     height: 100% !important;
-    
-    z-index: 2147483647 !important;        /* Pinakamataas na layer */
-    background: rgba(0, 0, 0, 0.8) !important; /* Dim background */
-    padding: 0 !important;                 /* Tanggalin ang padding na pwedeng tumulak */
-    overflow-y: auto !important;           /* Payagan mag-scroll kung sobrang haba ng modal */
+    background: rgba(0, 0, 0, 0.8) !important;
+    z-index: var(--z-alert) !important;
 }
 
-/* 2. Popup Box Fix */
-div.swal2-popup {
-    margin: auto !important;               /* Safety net para mag-center */
-    max-height: 90vh !important;           /* Iwas lumagpas sa screen height */
-    overflow-y: auto !important;           /* Scroll sa loob ng box pag maliit ang screen */
-    
-    /* Design consistency */
+div:where(.swal2-container):not(.swal2-top-end):not(.swal2-top-right) .swal2-popup {
+    margin: auto !important;
     background: var(--card-bg) !important;
     border: 1px solid rgba(100, 233, 238, 0.3) !important;
     border-radius: 24px !important;
@@ -335,15 +245,25 @@ div.swal2-popup {
     color: var(--text) !important;
 }
 
-/* 3. Mobile Specific Adjustment */
-@media (max-width: 768px) {
-    div.swal2-popup {
-        width: 85% !important;             /* Tamang lapad sa mobile */
-        font-size: 0.9rem !important;
-    }
-    
-    /* Siguraduhin na hindi matatakpan ng keyboard ang input */
-    div.swal2-container {
-        align-items: center !important;    /* Manatili sa gitna */
-    }
+/* 2. TOAST FIX (Transparent Background, Top Right) */
+div:where(.swal2-container).swal2-top-end,
+div:where(.swal2-container).swal2-top-right {
+    background-color: transparent !important;
+    width: auto !important;
+    height: auto !important;
+    inset: auto !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: auto !important;
+    left: auto !important;
+    pointer-events: none !important;
+    z-index: var(--z-alert) !important;
+}
+
+div:where(.swal2-container).swal2-top-end .swal2-popup {
+    pointer-events: auto !important;
+    margin: 15px !important;
+    background: var(--card-bg) !important;
+    border: 1px solid var(--border-color) !important;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.5);
 }

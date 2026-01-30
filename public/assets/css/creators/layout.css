@@ -20,7 +20,7 @@ html, body {
 .of-layout-container {
   display: flex; 
   width: 100%; 
-  height: 100vh; 
+  height: 100dvh; /* Mobile Fix */
   align-items: stretch; 
   overflow: hidden;
 }
@@ -34,7 +34,7 @@ html, body {
   border-right: var(--border); 
   background: var(--bg); 
   z-index: var(--z-sticky);
-  height: 100vh; 
+  height: 100dvh; 
   overflow-y: auto; 
 }
 
@@ -125,7 +125,7 @@ html, body {
   width: auto; 
   border-right: var(--border); 
   position: relative; 
-  height: 100vh; 
+  height: 100dvh; 
   overflow-y: auto; 
   overflow-x: hidden; 
   padding-bottom: 100px;
@@ -164,7 +164,7 @@ html, body {
     flex-direction: column; 
     background: var(--bg); 
     border-left: none; 
-    height: 100vh; 
+    height: 100dvh; 
     overflow-y: auto; 
     z-index: var(--z-sticky);
 }
@@ -175,7 +175,6 @@ html, body {
     min-height: 100%; 
     display: flex; 
     flex-direction: column;
-    /* 🔥 FIX: Align stretch para sa mobile settings header */
     align-items: stretch !important; 
 }
 
@@ -196,7 +195,6 @@ html, body {
 }
 
 /* ================= POPOVER MENU (DESKTOP DEFAULT) ================= */
-/* Ito yung nagiging HAMBURGER MENU sa mobile */
 .tm-popover-menu {
     position: fixed;
     bottom: 80px; 
@@ -315,7 +313,6 @@ html, body {
     .left-sidebar { width: 220px !important; } 
     .left-sidebar .sidebar-inner { padding: 15px 10px !important; width: 100% !important; }
     
-    /* 🔥 FIX 1: Position & Size */
     .tm-popover-menu { 
         left: 222px !important; 
         width: 265px !important;  
@@ -326,14 +323,12 @@ html, body {
         display: none; 
     }
 
-    /* 🔥 FIX 2: Limit Content Height */
     .pop-content-full {
         flex-grow: 0 !important;
         max-height: 350px !important; 
         padding: 5px 0 !important;
     }
 
-    /* 🔥 FIX 3: Compact Padding */
     .tm-popover-menu .pop-item {
         padding: 7px 15px !important;
         font-size: 0.85rem !important;
@@ -372,6 +367,13 @@ html, body {
       height: auto !important; overflow: visible !important; padding-bottom: 80px !important; 
   }
 
+  /* 🔥 SAFETY SCROLL FIX: Force scroll if not hidden */
+  .main-feed-column:not(.hidden) {
+      overflow-y: auto !important;
+      height: auto !important;
+      padding-bottom: 80px;
+  }
+
   .header-desktop-only { display: none !important; }
   .header-tablet-only { display: flex !important; }
   .header-toggle-btn { display: inline-block !important; } 
@@ -389,13 +391,11 @@ html, body {
       height: 100dvh !important; /* Dynamic Viewport Height */
       max-height: none !important; 
       
-      /* Solid Background */
       background: var(--bg) !important;
-      
       border-left: 1px solid var(--border-color) !important;
       border-radius: 20px 0 0 20px !important;
       
-      z-index: 10000 !important;
+      z-index: var(--z-menu-overlay) !important; /* FIXED Z-INDEX */
       transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       box-shadow: -10px 0 50px rgba(0,0,0,0.8);
       opacity: 1 !important;
@@ -403,45 +403,41 @@ html, body {
       padding-bottom: 0 !important;
   }
   
-  /* Slide In State */
   .tm-popover-menu.is-open { right: 0 !important; }
 
-  /* Content Grows to Push Footer Down */
   .pop-content-full { 
       flex-grow: 1 !important; 
       overflow-y: auto !important;
-      max-height: none !important; /* Remove desktop limit */
+      max-height: none !important; 
   } 
 
-  /* Close Button Visibility */
   .btn-close-pop { display: block !important; }
 
   /* 🔥🔥🔥 SIDEBAR OVERLAY LOGIC - SWIPE ANIMATION FIX 🔥🔥🔥 */
-  /* Default State: Laging FLEX pero Nasa GILID (Off-screen) */
   .right-sidebar, 
   .right-sidebar.wide-view { 
-      display: flex !important; /* Always Rendered */
+      display: flex !important;
       flex-direction: column !important;
       position: fixed !important;
       top: 0; left: 0; right: 0; bottom: 0;
       width: 100% !important;
       height: 100% !important;
       background: var(--bg); 
-      z-index: 5000 !important;
+      z-index: var(--z-sidebar-overlay) !important; /* FIXED Z-INDEX */
       padding-bottom: 60px;
       
-      /* Start Off-Screen (Right) */
       transform: translateX(100%);
-      
-      /* Smooth Swipe Transition */
       transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
   
-  /* 2. Active State: Slide In */
   .right-sidebar.mobile-active {
-      transform: translateX(0); /* Pasok sa screen */
+      transform: translateX(0); 
       box-shadow: -10px 0 50px rgba(0,0,0,0.8);
-      animation: none !important; /* Tanggalin ang lumang slideUp animation */
+      animation: none !important;
+  }
+  
+  #rs-settings-view .rs-col-header { 
+      display: none !important; 
   }
   
   .mobile-drawer-back { display: flex !important; }
@@ -463,15 +459,12 @@ html, body {
         gap: 15px;
         cursor: pointer;
         color: var(--text);
-        
-        /* 🔥 FIX: Solid Background para hindi transparent sa Light Mode */
         background: var(--card-bg); 
-        
         width: 100%;
         position: sticky;
         top: 0;
         z-index: 10;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05); /* Konting shadow */
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05); 
     }
 }
 
@@ -485,20 +478,12 @@ html, body {
    MOBILE PAGE ANIMATIONS (ALL VIEWS)
    ====================================================== */
 @media (max-width: 1024px) {
-    /* Ito ang class na ia-add natin gamit ang JS */
     .view-animate-enter {
         animation: pageSlideIn 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
     }
 
-    /* Ang animation Keyframes */
     @keyframes pageSlideIn {
-        from { 
-            opacity: 0; 
-            transform: translateY(15px) scale(0.98); /* Magsisimula sa baba nang kaunti */
-        }
-        to { 
-            opacity: 1; 
-            transform: translateY(0) scale(1); /* Pupunta sa pwesto */
-        }
+        from { opacity: 0; transform: translateY(15px) scale(0.98); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
     }
 }

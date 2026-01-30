@@ -6,9 +6,9 @@
   <title>iTrueMatch — Premium Society</title>
 
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
 
   <link rel="stylesheet" href="assets/css/premium-society/global.css" />
   <link rel="stylesheet" href="assets/css/premium-society/layout.css" />
@@ -56,7 +56,7 @@
             <div class="ps-menu-item ps-menu-current">
                 <img src="assets/images/truematch-mark.png" alt="User">
                 <div style="display:flex; flex-direction:column; line-height:1.2;">
-                    <span style="font-weight:700; font-size:0.9rem;">Member</span>
+                    <span style="font-weight:700; font-size:0.9rem;" id="psMenuName">...</span>
                     <span style="font-size:0.7rem; color:#00ff88;">● Active</span>
                 </div>
                 <i class="fa-solid fa-check" style="margin-left:auto; color:#00ff88;"></i>
@@ -69,7 +69,7 @@
 
             <div class="ps-menu-item ps-menu-logout" onclick="handleLogout()">
                 <i class="fa-solid fa-right-from-bracket"></i>
-                <span>Log out @Member</span>
+                <span>Log out</span>
             </div>
         </div>
 
@@ -79,7 +79,7 @@
                 <div class="ps-online-status"></div>
             </div>
             <div class="ps-mini-info">
-                <span class="ps-mini-name" id="psMiniName">Member</span>
+                <span class="ps-mini-name" id="psMiniName">Loading...</span>
                 <span class="ps-mini-plan">Free Account</span>
             </div>
             <i class="fa-solid fa-ellipsis" style="color:#666; font-size: 1.2rem;"></i>
@@ -94,7 +94,7 @@
             <div class="ps-header-left">
                 <img id="psHeaderAvatar" src="assets/images/truematch-mark.png" class="ps-header-avatar">
                 <div class="ps-header-info">
-                    <h2 class="ps-header-name">Hi, <span id="psWelcomeName">Member</span>!</h2>
+                    <h2 class="ps-header-name">Hi, <span id="psWelcomeName">...</span>!</h2>
                     <span class="ps-header-status"><span class="ps-dot-green"></span> Active Now</span>
                 </div>
             </div>
@@ -103,7 +103,7 @@
                 
                 <button id="psBtnNotif" class="ps-btn-notif">
                     <i class="fa-solid fa-bell"></i>
-                    <span class="ps-notif-badge">3</span>
+                    <span class="ps-notif-badge" id="psNotifCount">0</span>
                 </button>
 
                 <div id="psNotifPopover" class="ps-notif-popover">
@@ -111,27 +111,16 @@
                         <h4>Notifications</h4>
                         <button class="ps-btn-text">Mark all read</button>
                     </div>
-                    <div class="ps-notif-list">
-                        <div class="ps-notif-item unread">
-                            <div class="ps-notif-icon"><i class="fa-solid fa-heart"></i></div>
-                            <div class="ps-notif-text">
-                                <p><strong>Sophia</strong> liked your profile.</p>
-                                <span>2 mins ago</span>
-                            </div>
-                        </div>
-                        <div class="ps-notif-item">
-                            <div class="ps-notif-icon color-gold"><i class="fa-solid fa-gem"></i></div>
-                            <div class="ps-notif-text">
-                                <p>Welcome to <strong>Premium Society</strong>!</p>
-                                <span>1 hour ago</span>
-                            </div>
+                    <div class="ps-notif-list" id="psNotifList">
+                        <div style="padding:20px; text-align:center; color:#666; font-size:0.85rem;">
+                            No new notifications
                         </div>
                     </div>
                 </div>
 
                 <button id="psBtnMobileActive" class="ps-btn-notif ps-mobile-only-btn" style="display: none;">
                     <i class="fa-solid fa-radar"></i>
-                    <span class="ps-notif-badge" style="background: #00ff88; color: #000;">8</span>
+                    <span class="ps-notif-badge" style="background: #00ff88; color: #000;">0</span>
                 </button>
 
                 <div id="psMobileActiveDropdown" class="ps-notif-popover" style="right: 0; width: 280px;">
@@ -155,15 +144,18 @@
                     </div>
                     <span class="ps-story-name" style="font-size:0.7rem;">Add</span>
                 </div>
-                <div class="ps-stories-scroll" id="psStoriesContainer"></div>
+                <div class="ps-stories-scroll" id="psStoriesContainer">
+                    </div>
             </div>
         </div>
 
-        <div id="psDailyPickContainer" class="ps-hero-container"></div>
+        <div id="psDailyPickContainer" class="ps-hero-container">
+             </div>
         
         <div class="ps-admirer-section">
             <h3 class="ps-section-title">Who Liked You <span class="ps-badge" id="psAdmirerCount">0 New</span></h3>
-            <div class="ps-admirer-grid" id="psAdmirerContainer"></div>
+            <div class="ps-admirer-grid" id="psAdmirerContainer">
+                 </div>
         </div>
       </section>
 
@@ -172,7 +164,7 @@
           
           <div class="ps-mobile-swipes-badge">
               <i class="fa-solid fa-bolt" style="color: #ffd700;"></i> 
-              <span id="psMobileSwipeCount">20</span> Left
+              <span id="psMobileSwipeCount">-</span> Left
           </div>
 
           <div class="ps-swipe-stack" id="psSwipeStack"></div>
@@ -235,18 +227,12 @@
                 <button class="ps-btn-chat-tool ps-btn-ppv" title="Send PPV"><i class="fa-solid fa-fire"></i></button>
                 <div class="ps-chat-input-wrapper">
                     <input type="text" id="psChatInput" placeholder="Type a message...">
-                    <button class="ps-btn-chat-emoji" onclick="toggleChatEmoji()"><i class="fa-regular fa-face-smile"></i></button>
+                    <button class="ps-btn-chat-emoji" id="psBtnToggleEmoji"><i class="fa-regular fa-face-smile"></i></button>
                 </div>
                 <button class="ps-btn-chat-send" onclick="sendChatMessage()"><i class="fa-solid fa-paper-plane"></i></button>
             </div>
             
-            <div id="psChatEmojiPicker" class="ps-story-emoji-picker" style="bottom: 80px; left: 20px;">
-                <span onclick="addChatEmoji('❤️')">❤️</span>
-                <span onclick="addChatEmoji('😂')">😂</span>
-                <span onclick="addChatEmoji('🔥')">🔥</span>
-                <span onclick="addChatEmoji('🍆')">🍆</span>
-                <span onclick="addChatEmoji('🍑')">🍑</span>
-            </div>
+            <emoji-picker class="dark" id="psEmojiPicker"></emoji-picker>
         </div>
       </section>
 
@@ -262,8 +248,8 @@
                   <div class="ps-bento-profile-info">
                       <img id="psSAvatar" src="assets/images/truematch-mark.png" alt="Avatar">
                       <div class="ps-bento-text">
-                          <h3 id="psSNameDisplay">Member</h3>
-                          <p id="psSEmailDisplay">user@example.com</p>
+                          <h3 id="psSNameDisplay">...</h3>
+                          <p id="psSEmailDisplay">...</p>
                           <span class="ps-badge-outline">Free Account</span>
                       </div>
                   </div>
@@ -374,11 +360,11 @@
                   <circle class="ps-fg-ring" id="psStatsRingCircle" cx="60" cy="60" r="50"></circle>
               </svg>
               <div class="ps-progress-text">
-                  <h2 id="psStatsCountDisplay">20</h2>
+                  <h2 id="psStatsCountDisplay">-</h2>
                   <span>LEFT</span>
               </div>
           </div>
-          <p class="ps-tiny ps-muted" style="margin-top:10px;">Resets in 12h 30m</p>
+          <p class="ps-tiny ps-muted" style="margin-top:10px;">Resets in --:--</p>
         </div>
       </div>
 
@@ -413,7 +399,7 @@
           <div class="ps-story-header">
               <img id="psStoryAvatar" src="assets/images/truematch-mark.png" class="ps-story-avatar-small">
               <span id="psStoryName">User</span>
-              <span class="ps-story-time">2h</span>
+              <span class="ps-story-time">...</span>
           </div>
           <div id="psStoryImageDisplay" class="ps-story-full-img"></div>
           
@@ -542,14 +528,14 @@
                       <label class="ps-form-label">Full Name</label>
                       <div class="ps-input-wrapper">
                           <i class="fa-solid fa-user"></i>
-                          <input type="text" id="psInputName" value="Member">
+                          <input type="text" id="psInputName" value="">
                       </div>
                   </div>
                   <div class="ps-input-group">
                       <label class="ps-form-label">Email Address</label>
                       <div class="ps-input-wrapper">
                           <i class="fa-solid fa-envelope"></i>
-                          <input type="text" id="psInputEmail" value="user@example.com">
+                          <input type="text" id="psInputEmail" value="">
                       </div>
                   </div>
                   
@@ -557,14 +543,14 @@
                       <label class="ps-form-label">Location (City, Country)</label>
                       <div class="ps-input-wrapper">
                           <i class="fa-solid fa-map-pin"></i>
-                          <input type="text" value="San Miguel">
+                          <input type="text" value="">
                       </div>
                   </div>
                   <div class="ps-input-group">
                       <label class="ps-form-label">Age</label>
                       <div class="ps-input-wrapper">
                           <i class="fa-solid fa-cake-candles"></i>
-                          <input type="number" value="29">
+                          <input type="number" value="">
                       </div>
                   </div>
 
@@ -582,9 +568,9 @@
                   <div class="ps-input-group">
                       <label class="ps-form-label">Age Preference</label>
                       <div class="ps-range-inputs">
-                          <input type="number" value="25">
+                          <input type="number" value="18">
                           <span>to</span>
-                          <input type="number" value="35">
+                          <input type="number" value="30">
                       </div>
                   </div>
               </div>
@@ -605,22 +591,10 @@
   <script>
     document.addEventListener('DOMContentLoaded', () => {
         
-        // 1. POPULATE MOBILE ACTIVE NEARBY (Mock Data)
-        const mobileGrid = document.getElementById('psMobileActiveGrid');
-        if(mobileGrid) {
-            let html = '';
-            for(let i=0; i<8; i++) {
-                const colors = ['#00aff0', '#ff3366', '#3ad4ff', '#800080', '#00ff88'];
-                const color = colors[Math.floor(Math.random() * colors.length)];
-                html += `<div class="ps-active-item" style="height: 50px; border-radius: 8px; overflow: hidden; position: relative;">
-                            <img src="assets/images/truematch-mark.png" style="width:100%; height:100%; object-fit:cover; background:${color};">
-                            <div style="position:absolute; bottom:2px; right:2px; width:8px; height:8px; background:#00ff88; border-radius:50%; border:1px solid #000;"></div>
-                         </div>`;
-            }
-            mobileGrid.innerHTML = html;
-        }
+        // 1. CLEANED: Removed mock data population loop
+        // The Mobile Active Grid will now be populated by app.js -> ui.js
 
-        // 2. TOGGLE LOGIC FOR MOBILE ACTIVE DROPDOWN
+        // 2. TOGGLE LOGIC FOR MOBILE ACTIVE DROPDOWN (Kept for UI functionality)
         const btnActive = document.getElementById('psBtnMobileActive');
         const dropActive = document.getElementById('psMobileActiveDropdown');
         if(btnActive && dropActive) {

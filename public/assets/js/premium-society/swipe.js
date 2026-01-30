@@ -2,15 +2,8 @@
 import { PS_DOM, showToast } from './core.js';
 
 export const SwipeController = (() => {
-    const mockCandidates = [
-        { name: 'Isabella', age: 24, loc: 'Manila', color: '#8e44ad', tags: ['Travel', 'Music'] },
-        { name: 'Christian', age: 29, loc: 'Cebu', color: '#2c3e50', tags: ['Tech', 'Coffee'] },
-        { name: 'Natalia', age: 26, loc: 'Davao', color: '#c0392b', tags: ['Art', 'Movies'] },
-        { name: 'Sophia', age: 22, loc: 'Baguio', color: '#16a085', tags: ['Nature', 'Hiking'] },
-        { name: 'Marco', age: 27, loc: 'Makati', color: '#e67e22', tags: ['Food', 'Gym'] }
-    ];
-    
-    let candidates = [...mockCandidates]; 
+    // CLEANED: Wala na ang mockCandidates. Magsisimula sa empty array.
+    let candidates = []; 
     let index = 0;
     
     // Persistent Variables
@@ -24,13 +17,10 @@ export const SwipeController = (() => {
     let touchEndX = 0;
     let touchEndY = 0;
 
-    // Mas pinalawak na detection area (0px to 60px galing kaliwa)
     const EDGE_THRESHOLD = 60; 
-    // Mas maikling hila lang kailangan para gumana (50px)
     const SWIPE_THRESHOLD = 50; 
 
     function init() {
-        candidates = [...mockCandidates]; 
         index = 0;
 
         // 1. CHECK LOCAL STORAGE
@@ -53,45 +43,54 @@ export const SwipeController = (() => {
         if(PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = 'flex';
         
         updateStats(dailySwipes, 20);
-        renderCards();
         
-        if(PS_DOM.btnRefreshDeck) {
-            PS_DOM.btnRefreshDeck.onclick = () => tryRefresh();
-        }
+        // 2. FETCH DATA FROM BACKEND
+        fetchCandidates(); 
 
-        // 2. ACTIVATE AGGRESSIVE SWIPE BACK
+        // 3. ACTIVATE AGGRESSIVE SWIPE BACK
         initSmartEdgeSwipe();
     }
 
-    // --- SMART EDGE SWIPE LOGIC (UPDATED FIXED) ---
+    // --- TODO: DITO MO IKOKONEK SA BACKEND ---
+    async function fetchCandidates() {
+        try {
+            // HALIMBAWA: const response = await fetch('/api/get-candidates');
+            // const data = await response.json();
+            // candidates = data;
+            
+            // PANSAMANTALA: Empty muna habang wala pang backend endpoint
+            candidates = []; 
+
+            renderCards();
+        } catch (error) {
+            console.error("Failed to fetch candidates:", error);
+            showToast("Error loading profiles");
+        }
+    }
+
+    // --- SMART EDGE SWIPE LOGIC ---
     function initSmartEdgeSwipe() {
         const body = document.body;
 
-        // A. START TOUCH (Fixed: Use clientX)
         body.addEventListener('touchstart', (e) => {
             touchStartX = e.changedTouches[0].clientX;
             touchStartY = e.changedTouches[0].clientY;
         }, { passive: false });
 
-        // B. MOVING (Prevent Native Browser Back if swiping from edge)
         body.addEventListener('touchmove', (e) => {
             let currentX = e.changedTouches[0].clientX;
             let currentY = e.changedTouches[0].clientY;
 
-            // Check if galing sa gilid
             if (touchStartX <= EDGE_THRESHOLD) {
                 let xDiff = Math.abs(currentX - touchStartX);
                 let yDiff = Math.abs(currentY - touchStartY);
 
-                // Check kung horizontal swipe (at mas malakas sa vertical)
                 if (xDiff > yDiff && xDiff > 10) {
-                     // ITO ANG FIX: Pigilan ang browser native gesture
                     if(e.cancelable) e.preventDefault(); 
                 }
             }
         }, { passive: false });
 
-        // C. END TOUCH (Check if swipe is valid)
         body.addEventListener('touchend', (e) => {
             touchEndX = e.changedTouches[0].clientX;
             touchEndY = e.changedTouches[0].clientY;
@@ -100,69 +99,50 @@ export const SwipeController = (() => {
     }
 
     function handleEdgeSwipe() {
-        // 1. Dapat galing sa kaliwang gilid
         if (touchStartX > EDGE_THRESHOLD) return;
-
-        // 2. Kalkulahin ang layo
         const diffX = touchEndX - touchStartX;
         const diffY = Math.abs(touchEndY - touchStartY);
 
-        // 3. Dapat Horizontal swipe (pakanan) at lagpas sa threshold
         if (diffX > SWIPE_THRESHOLD && diffX > diffY) {
             triggerHierarchyBack();
         }
     }
 
     function triggerHierarchyBack() {
-        // --- PRIORITY 1: OVERLAYS & MODALS (Pinaka-ibabaw) ---
-        
-        // A. CHAT WINDOW (Chat -> Matches)
+        // PRIORITY 1: OVERLAYS
         const chatWindow = document.getElementById('psChatWindow');
         if (chatWindow && chatWindow.classList.contains('active')) {
             if (window.closeChat) window.closeChat();
-            return; // STOP! Wag na tumuloy sa baba.
+            return;
         }
-
-        // B. STORY VIEWER
         const storyViewer = document.getElementById('psStoryViewer');
         if (storyViewer && storyViewer.classList.contains('active')) {
             if (window.closeStory) window.closeStory();
             return;
         }
-
-        // C. MATCH OVERLAY (Confetti)
         const matchOverlay = document.getElementById('psMatchOverlay');
         if (matchOverlay && matchOverlay.classList.contains('active')) {
             if (window.closeMatchOverlay) window.closeMatchOverlay();
             return;
         }
-
-        // D. EDIT PROFILE MODAL
         const editModal = document.getElementById('psEditProfileModal');
         if (editModal && editModal.classList.contains('active')) {
             if (window.closeEditProfile) window.closeEditProfile();
             return;
         }
-
-        // E. CREATOR PROFILE
         const creatorModal = document.getElementById('psCreatorProfileModal');
         if (creatorModal && creatorModal.classList.contains('active')) {
             if (window.closeCreatorProfile) window.closeCreatorProfile();
             return;
         }
-
-        // F. GIFT MODAL
         const giftModal = document.getElementById('psGiftModal');
         if (giftModal && giftModal.classList.contains('active')) {
             if (window.closeGiftModal) window.closeGiftModal();
             return;
         }
 
-        // --- PRIORITY 2: TABS (Kung walang naka-open na modal) ---
-        
+        // PRIORITY 2: TABS
         const activeTab = document.querySelector('.ps-nav-btn.ps-is-active');
-        
-        // Kung hindi ka nasa Home, balik sa Home
         if (activeTab && activeTab.dataset.panel !== 'home') {
             const homeBtn = document.querySelector('button[data-panel="home"]');
             if(homeBtn) {
@@ -171,8 +151,6 @@ export const SwipeController = (() => {
             }
         }
     }
-
-    // --- EXISTING SWIPE LOGIC (CARDS) ---
 
     function saveData() {
         localStorage.setItem('ps_swipes_left', dailySwipes);
@@ -205,14 +183,12 @@ export const SwipeController = (() => {
     }
 
     function tryRefresh() {
+        // TODO: Call backend fetchCandidates() here instead of just resetting index
         if (dailySwipes <= 0) {
             fireEmptyAlert();
         } else {
-            index = 0;
-            if(PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove('active');
-            if(PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = 'flex';
-            renderCards();
-            showToast("Deck Refreshed");
+            // fetchCandidates(); // Uncomment pag may backend na
+            showToast("No new profiles yet");
         }
     }
 
@@ -234,10 +210,12 @@ export const SwipeController = (() => {
         card.className = 'ps-swipe-card';
         card.setAttribute('data-pos', position);
         if (position === 'center') card.id = 'activeSwipeCard';
-        card.style.background = `linear-gradient(to bottom, ${person.color}, #000)`;
+        card.style.background = `linear-gradient(to bottom, ${person.color || '#333'}, #000)`;
         
         let tagsHtml = `<div class="ps-swipe-tags">`;
-        person.tags.forEach(t => tagsHtml += `<span class="ps-tag">${t}</span>`);
+        if(person.tags) {
+            person.tags.forEach(t => tagsHtml += `<span class="ps-tag">${t}</span>`);
+        }
         tagsHtml += `</div>`;
 
         card.innerHTML = `
@@ -254,7 +232,8 @@ export const SwipeController = (() => {
         if (!PS_DOM.swipeStack) return;
         PS_DOM.swipeStack.innerHTML = '';
         
-        if(index >= candidates.length) {
+        // CHECK IF EMPTY
+        if(candidates.length === 0 || index >= candidates.length) {
             showEmptyState();
             return;
         }
@@ -299,19 +278,12 @@ export const SwipeController = (() => {
 
         if(action === 'like') {
             card.classList.add('anim-like');
-            if(Math.random() < 0.5) {
-                setTimeout(() => {
-                    if(window.triggerMatchOverlay) window.triggerMatchOverlay(currentPerson);
-                }, 500);
-            } else {
-                showToast('Liked!');
-            }
+            // CLEANED: Inalis ang random match logic. Dito mo lalagay ang API call for like.
+            // API.likeUser(currentPerson.id).then(...)
+            showToast('Liked!');
         } else if (action === 'super') {
             card.classList.add('anim-super');
             showToast('Super Liked!');
-            setTimeout(() => {
-                if(window.triggerMatchOverlay) window.triggerMatchOverlay(currentPerson);
-            }, 500);
         } else {
             card.classList.add('anim-pass');
             showToast('Passed');

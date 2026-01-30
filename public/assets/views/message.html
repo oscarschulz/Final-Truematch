@@ -2,6 +2,7 @@
     <div class="msg-container" style="display: flex; height: 100%; width: 100%; overflow: hidden; position: relative;">
         
         <div class="msg-sidebar" style="width: 320px; display: flex; flex-direction: column; border-right: var(--border); flex-shrink: 0;">
+            
             <div class="msg-header-tools" style="padding: 15px;">
                 <div class="mh-top" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <i class="fa-solid fa-arrow-left back-btn" onclick="document.getElementById('nav-link-home').click()" style="cursor: pointer;"></i>
@@ -18,18 +19,34 @@
                         <i class="fa-solid fa-circle-xmark" id="close-msg-search" style="cursor: pointer;"></i>
                     </div>
                 </div>
-                <div class="msg-tabs" id="msg-tabs" style="display: flex; gap: 15px; border-bottom: var(--border); padding-bottom: 5px;">
-                    <span class="active" style="border-bottom: 2px solid var(--primary-cyan); font-weight: bold; cursor: pointer;">All</span>
-                    <span style="color: var(--muted); cursor: pointer;">Priority</span>
-                    <span style="color: var(--muted); cursor: pointer;">Unread</span>
-                    <span style="color: var(--muted); cursor: pointer;">$$$</span>
+                <div class="msg-tabs" id="msg-tabs" style="display: flex; gap: 5px; justify-content: space-between; border-bottom: var(--border); padding-bottom: 5px;">
+                    <span class="active">All</span>
+                    <span>Priority</span>
+                    <span>Unread</span>
+                    <span>$$$</span>
                 </div>
             </div>
             
-            <div class="msg-user-list" id="msg-user-list" style="flex: 1; overflow-y: auto; display: flex; align-items: center; justify-content: center; color: var(--muted); flex-direction: column;">
-                <i class="fa-regular fa-comments" style="font-size: 2rem; margin-bottom: 10px; opacity: 0.3;"></i>
-                <div style="font-size: 0.9rem;">No messages found</div>
+            <div class="msg-user-list" id="msg-user-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; justify-content: flex-start; padding-top: 10px;">
+                <div style="text-align:center; padding-top: 50px; color: var(--muted);">
+                     <i class="fa-solid fa-circle-notch fa-spin"></i> Loading...
+                </div>
             </div>
+
+            <div class="new-msg-overlay hidden" id="new-msg-overlay">
+                <div class="new-msg-header">
+                    <i class="fa-solid fa-arrow-left" id="btn-close-new-msg"></i>
+                    <span>New Message</span>
+                </div>
+                <div class="new-msg-search">
+                    <span>To:</span>
+                    <input type="text" placeholder="Search people...">
+                </div>
+                <div class="nm-label">SUGGESTED</div>
+                <div class="new-msg-results" id="new-msg-results">
+                    </div>
+            </div>
+
         </div>
 
         <div class="msg-chat-area" style="flex: 1; display: flex; flex-direction: column; background: rgba(0,0,0,0.2);">
@@ -40,19 +57,21 @@
                 </div>
                 <div class="ch-actions" style="display: flex; gap: 15px; font-size: 1.2rem; color: var(--primary-cyan); opacity: 0.3; pointer-events: none;">
                     <i class="fa-solid fa-magnifying-glass" id="btn-chat-search"></i>
-                    <i class="fa-regular fa-image"></i>
+                    <i class="fa-regular fa-image" id="btn-chat-media-top" style="cursor: pointer; pointer-events: auto;" title="View Gallery"></i>
                     <i class="fa-regular fa-star" id="btn-chat-star"></i>
                 </div>
             </div>
             
             <div class="chat-history" id="chat-history-container" style="flex: 1; overflow-y: auto; padding: 20px;">
-                </div>
+            </div>
             
             <div class="emoji-picker hidden" id="emoji-picker-container" style="position: absolute; bottom: 70px; right: 20px;"></div>
             
-            <div class="chat-input-box" style="padding: 15px; display: flex; align-items: center; gap: 10px; border-top: var(--border); opacity: 0.5; pointer-events: none;">
-                <i class="fa-regular fa-image" style="font-size: 1.5rem; color: var(--primary-cyan);"></i>
-                <input type="text" id="chat-message-input" placeholder="Start a conversation..." autocomplete="off" style="flex: 1; background: var(--hover-bg); border: none; padding: 10px 15px; border-radius: 20px; color: #fff; outline: none;" disabled>
+            <div class="chat-input-box" style="padding: 15px; display: flex; align-items: center; gap: 10px; border-top: var(--border);">
+                
+                <i class="fa-regular fa-image" id="btn-chat-media-bottom" style="font-size: 1.5rem; color: var(--primary-cyan); cursor: pointer;" title="View Gallery"></i>
+                
+                <input type="text" id="chat-message-input" placeholder="Start a conversation..." autocomplete="off" style="flex: 1; background: var(--hover-bg); border: none; padding: 10px 15px; border-radius: 20px; color: #fff; outline: none;">
                 <i class="fa-regular fa-face-smile" id="btn-emoji-trigger" style="font-size: 1.3rem; cursor: pointer;"></i>
                 <i class="fa-solid fa-dollar-sign" id="btn-ppv-trigger" style="font-size: 1.3rem; cursor: pointer;"></i>
                 <i class="fa-regular fa-paper-plane send-icon" id="btn-send-message" style="font-size: 1.3rem; color: var(--primary-cyan); cursor: pointer;"></i>
@@ -74,7 +93,7 @@
             </div>
             <div class="info-form-group">
                 <label style="color: var(--muted); font-size: 0.8rem; font-weight: bold;">NOTES</label>
-                <textarea placeholder="Add note..." style="width: 100%; background: var(--hover-bg); border: none; color: #fff; padding: 10px; margin-top: 5px; border-radius: 5px;"></textarea>
+                <textarea id="chat-user-note" placeholder="Add note (Auto-saved)..." style="width: 100%; background: var(--hover-bg); border: none; color: #fff; padding: 10px; margin-top: 5px; border-radius: 5px; height: 100px; resize: none;"></textarea>
             </div>
         </div>
     </div>

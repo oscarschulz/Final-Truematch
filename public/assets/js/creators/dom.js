@@ -1,45 +1,53 @@
 export const DOM = {
     // --- LAYOUT ---
-    mainFeedColumn: document.querySelector('.main-feed-column'),
-    rightSidebar: document.getElementById('right-sidebar'),
-    appLoader: document.getElementById('app-loader'),
+    get mainFeedColumn() { return document.querySelector('.main-feed-column'); },
+    get rightSidebar() { return document.getElementById('right-sidebar'); },
+    get appLoader() { return document.getElementById('app-loader'); },
 
-    // --- VIEWS ---
-    viewHome: document.getElementById('view-home'),
-    viewAddCard: document.getElementById('view-add-card'),     // Form View (Sidebar)
-    viewYourCards: document.getElementById('view-your-cards'), // OnlyFans Style View (Popover)
-    viewBecomeCreator: document.getElementById('view-become-creator'), // New Creator View
-    viewMyProfile: document.getElementById('view-my-profile'),
+    // --- VIEWS (Static & Dynamic) ---
+    get viewHome() { return document.getElementById('view-home'); },
+    get viewAddCard() { return document.getElementById('view-add-card'); },
+    get viewYourCards() { return document.getElementById('view-your-cards'); },
+    get viewBecomeCreator() { return document.getElementById('view-become-creator'); },
+    get viewMyProfile() { return document.getElementById('view-my-profile'); },
     
-    // FETCHED VIEWS (USE GETTERS)
+    // FETCHED VIEWS
     get viewMessages() { return document.getElementById('view-messages'); },
     get viewSettings() { return document.getElementById('view-settings'); },
     get viewNotif() { return document.getElementById('view-notifications'); },
     get viewCollections() { return document.getElementById('view-collections'); },
 
-    // --- PROFILE ELEMENTS ---
-    profileTabPosts: document.getElementById('tab-profile-posts'),
-    profileTabMedia: document.getElementById('tab-profile-media'),
-    profileContentPosts: document.getElementById('profile-content-posts'),
-    profileContentMedia: document.getElementById('profile-content-media'),
+    // --- PROFILE ELEMENTS (Dynamic Updates) ---
+    get profileName() { return document.querySelector('#view-my-profile h1'); },
+    get profileHandle() { return document.querySelector('#view-my-profile .ph-handle-text'); }, 
+    get profileBio() { return document.querySelector('#view-my-profile .profile-bio-text'); }, 
+    get profileHeaderImg() { return document.querySelector('#view-my-profile .profile-header-bg'); },
+    get profileAvatar() { return document.querySelector('#view-my-profile .profile-avatar-main'); }, 
+    get btnEditProfile() { return document.getElementById('btn-edit-profile'); },
+    get backToHomeBtn() { return document.querySelector('#view-my-profile .back-btn'); },
 
-    // --- CARD TABS (YOUR CARDS VIEW) ---
-    btnTabCards: document.getElementById('btn-tab-cards'),
-    btnTabPayments: document.getElementById('btn-tab-payments'),
-    tabContentCards: document.getElementById('tab-content-cards'),
-    tabContentPayments: document.getElementById('tab-content-payments'),
+    get profileTabPosts() { return document.getElementById('tab-profile-posts'); },
+    get profileTabMedia() { return document.getElementById('tab-profile-media'); },
+    get profileContentPosts() { return document.getElementById('profile-content-posts'); },
+    get profileContentMedia() { return document.getElementById('profile-content-media'); },
+
+    // --- CARD TABS ---
+    get btnTabCards() { return document.getElementById('btn-tab-cards'); },
+    get btnTabPayments() { return document.getElementById('btn-tab-payments'); },
+    get tabContentCards() { return document.getElementById('tab-content-cards'); },
+    get tabContentPayments() { return document.getElementById('tab-content-payments'); },
 
     // --- SIDEBAR WIDGETS ---
-    rsSuggestions: document.getElementById('rs-suggestions-view'),
-    rsCollections: document.getElementById('rs-collections-view'),
-    rsWalletView: document.getElementById('rs-wallet-view'),
-    rsSettingsView: document.getElementById('rs-settings-view'),
+    get rsSuggestions() { return document.getElementById('rs-suggestions-view'); },
+    get rsCollections() { return document.getElementById('rs-collections-view'); },
+    get rsWalletView() { return document.getElementById('rs-wallet-view'); },
+    get rsSettingsView() { return document.getElementById('rs-settings-view'); },
     
-    rsTitle: document.getElementById('rs-col-title'),
-    rsViewUsers: document.getElementById('rs-view-type-users'),
-    rsViewMedia: document.getElementById('rs-view-type-media'),
-    rsMediaGrid: document.getElementById('rs-media-grid-content'),
-    rsMediaEmpty: document.getElementById('rs-media-empty-state'),
+    get rsTitle() { return document.getElementById('rs-col-title'); },
+    get rsViewUsers() { return document.getElementById('rs-view-type-users'); },
+    get rsViewMedia() { return document.getElementById('rs-view-type-media'); },
+    get rsMediaGrid() { return document.getElementById('rs-media-grid-content'); },
+    get rsMediaEmpty() { return document.getElementById('rs-media-empty-state'); },
 
     // --- SETTINGS ELEMENTS ---
     get settingsItems() { return document.querySelectorAll('.set-item'); },
@@ -56,46 +64,47 @@ export const DOM = {
         get help() { return document.getElementById('set-content-help'); }
     },
 
-    // --- NAVIGATION (DESKTOP) ---
-    navHome: document.getElementById('nav-link-home'),
-    navNotif: document.getElementById('nav-link-notif'),
-    navMessages: document.getElementById('nav-link-messages'),
-    navCollections: document.getElementById('nav-link-collections'),
-    navSubs: document.getElementById('nav-link-subs'),
-    navAddCard: document.getElementById('nav-link-add-card'),
-    navProfile: document.getElementById('nav-link-profile'),
+    // --- NAVIGATION ---
+    get navHome() { return document.getElementById('nav-link-home'); },
+    get navNotif() { return document.getElementById('nav-link-notif'); },
+    get navMessages() { return document.getElementById('nav-link-messages'); },
+    get navCollections() { return document.getElementById('nav-link-collections'); },
+    get navSubs() { return document.getElementById('nav-link-subs'); },
+    get navAddCard() { return document.getElementById('nav-link-add-card'); },
+    get navProfile() { return document.getElementById('nav-link-profile'); },
     
     // --- MOBILE NAVIGATION ---
-    mobHome: document.getElementById('mob-nav-home'),
-    mobExplore: document.getElementById('mob-nav-explore'),
-    mobAdd: document.getElementById('mob-nav-add'),
-    mobNotif: document.getElementById('mob-nav-notif'),
-    mobMessages: document.getElementById('mob-nav-messages'),
+    get mobHome() { return document.getElementById('mob-nav-home'); },
+    get mobExplore() { return document.getElementById('mob-nav-explore'); },
+    get mobAdd() { return document.getElementById('mob-nav-add'); },
+    get mobNotif() { return document.getElementById('mob-nav-notif'); },
+    get mobMessages() { return document.getElementById('mob-nav-messages'); },
 
-    // --- GLOBAL POPOVERS & BUTTONS ---
-    themeToggle: document.getElementById('themeToggle'),
-    popover: document.getElementById('settings-popover'),
-    closePopoverBtn: document.getElementById('btnClosePopover'),
-    btnSettingsPop: document.getElementById('btn-settings-pop'),
+    // --- GLOBAL POPOVERS ---
+    get themeToggle() { return document.getElementById('themeToggle'); },
+    get popover() { return document.getElementById('settings-popover'); },
+    get closePopoverBtn() { return document.getElementById('btnClosePopover'); },
+    get btnSettingsPop() { return document.getElementById('btn-settings-pop'); },
     
     get popoverLinks() { return document.querySelectorAll('.pop-item'); },
-
     get btnMore() { return document.getElementById('trigger-more-btn'); },
     get profileCard() { return document.getElementById('trigger-profile-card'); },
 
-    paymentModal: document.getElementById('payment-modal'),
-    btnPayConfirm: document.getElementById('btnPayConfirm'),
-    btnPayCancel: document.getElementById('btnPayCancel'),
-    btnSubscribe: document.getElementById('btnSubscribe'),
+    get paymentModal() { return document.getElementById('payment-modal'); },
+    get btnPayConfirm() { return document.getElementById('btnPayConfirm'); },
+    get btnPayCancel() { return document.getElementById('btnPayCancel'); },
+    get btnSubscribe() { return document.getElementById('btnSubscribe'); },
 
     // --- HOME / COMPOSE ---
-    composeActions: document.querySelector('.compose-actions'),
-    mediaUploadInput: document.getElementById('media-upload-input'),
-    pollUI: document.getElementById('poll-creator-ui'),
-    textTools: document.getElementById('text-format-toolbar'),
-    closePollBtn: document.querySelector('.close-poll-btn'),
-    
-    get composeInput() { return document.querySelector('.compose-top input'); }, 
+    get composeActions() { return document.querySelector('.compose-actions'); },
+    get mediaUploadInput() { return document.getElementById('media-upload-input'); },
+    get pollUI() { return document.getElementById('poll-creator-ui'); },
+    get textTools() { return document.getElementById('text-format-toolbar'); },
+    get closePollBtn() { return document.querySelector('.close-poll-btn'); },
+    get composeInput() { return document.getElementById('compose-input'); }, 
+    get btnPostSubmit() { return document.getElementById('btn-post-submit'); },
+    get creatorFeed() { return document.getElementById('creator-feed'); },
+    get feedEmptyState() { return document.querySelector('.feed-empty-state'); },
 
     // --- MESSAGES ---
     get btnNewMsg() { return document.getElementById('btn-new-msg'); },
@@ -107,6 +116,12 @@ export const DOM = {
     get msgUserList() { return document.getElementById('msg-user-list'); }, 
     get msgUserItems() { return document.querySelectorAll('.msg-user-item'); },
     
+    // 🔥 NEW MESSAGE UI SELECTORS 🔥
+    get newMsgOverlay() { return document.getElementById('new-msg-overlay'); },
+    get btnCloseNewMsg() { return document.getElementById('btn-close-new-msg'); },
+    get newMsgResults() { return document.getElementById('new-msg-results'); },
+    get newMsgInput() { return document.querySelector('.new-msg-search input'); },
+
     // Chat Area
     get activeChatAvatar() { return document.getElementById('active-chat-avatar'); },
     get activeChatName() { return document.getElementById('active-chat-name'); },
@@ -139,8 +154,12 @@ export const DOM = {
     get colTabBookmarks() { return document.getElementById('tab-col-bookmarks'); },
 
     // --- NOTIFICATIONS ---
+    get notifGearBtn() { return document.getElementById('notif-btn-settings'); },
+    get notifSearchBtn() { return document.getElementById('notif-btn-search'); },
+    get notifSearchContainer() { return document.getElementById('notif-search-container'); },
+    get notifSearchInput() { return document.getElementById('notif-search-input'); },
     get notifPills() { return document.querySelectorAll('.notif-tabs-bar .n-pill'); },
 
     // --- WALLET ---
-    btnAddPaymentCard: document.querySelector('.btn-add-payment-card')
+    get btnAddPaymentCard() { return document.querySelector('.btn-add-payment-card'); }
 };

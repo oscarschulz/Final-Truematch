@@ -106,3 +106,46 @@
 .ps-match-card:hover { transform: translateY(-3px); background: rgba(255,255,255,0.1); }
 .ps-match-img { width: 100%; aspect-ratio: 1; object-fit: cover; }
 .ps-match-info { padding: 12px; }
+
+/* =======================================
+   MODERN EMOJI PICKER STYLES
+   ======================================= */
+emoji-picker {
+    display: none; /* Hidden by default */
+    position: absolute;
+    bottom: 80px;
+    right: 20px;
+    width: 320px;
+    height: 400px;
+    z-index: 500;
+    
+    /* Dark Theme Variables para bumagay sa App */
+    --background: rgba(20, 20, 25, 0.95);
+    --border-color: rgba(255, 255, 255, 0.1);
+    --input-border-color: rgba(255, 255, 255, 0.2);
+    --input-font-color: #fff;
+    --button-hover-background: rgba(255, 255, 255, 0.1);
+    --category-emoji-size: 1.2rem;
+    --indicator-color: var(--ps-brand-color); /* Cyan indicator */
+    
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    backdrop-filter: blur(20px);
+    animation: psFadeIn 0.2s ease;
+}
+
+/* Class para ipakita ang picker */
+emoji-picker.active {
+    display: flex;
+}
+
+/* Mobile Adjustments */
+@media (max-width: 480px) {
+    emoji-picker {
+        width: 90%; /* Halos full width sa mobile */
+        right: 5%;  /* Center */
+        bottom: 75px;
+        height: 350px;
+    }
+}

@@ -1,13 +1,24 @@
 <div id="view-notifications" style="display: none;">
-    <div class="feed-top-header notif-header-flex">
-      <div class="nh-left">
-           <div class="back-btn" onclick="document.getElementById('nav-link-home').click()"><i class="fa-solid fa-arrow-left"></i></div>
-           <h2>NOTIFICATIONS</h2>
+    <div class="feed-top-header notif-header-flex" style="flex-direction: column; align-items: stretch; gap: 0;">
+      
+      <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+          <div class="nh-left">
+               <div class="back-btn" onclick="document.getElementById('nav-link-home').click()"><i class="fa-solid fa-arrow-left"></i></div>
+               <h2>NOTIFICATIONS</h2>
+          </div>
+          <div class="nh-right">
+               <i class="fa-solid fa-magnifying-glass" id="notif-btn-search" style="cursor: pointer;"></i>
+               <i class="fa-solid fa-gear" id="notif-btn-settings" style="cursor: pointer;"></i>
+          </div>
       </div>
-      <div class="nh-right">
-           <i class="fa-solid fa-magnifying-glass"></i>
-           <i class="fa-solid fa-gear" style="cursor: pointer;"></i>
+
+      <div id="notif-search-container" class="hidden" style="margin-top: 15px; animation: fadeIn 0.2s;">
+          <div class="search-input-wrapper" style="background:var(--search-bg); border-radius:8px; padding:8px 12px; display:flex; align-items:center;">
+              <i class="fa-solid fa-magnifying-glass" style="color:var(--muted)"></i>
+              <input type="text" id="notif-search-input" placeholder="Search notifications..." style="background:transparent; border:none; color:var(--text); width:100%; margin-left:10px; outline:none; font-family:'Montserrat', sans-serif;">
+          </div>
       </div>
+
     </div>
     
     <div class="notif-tabs-bar">
@@ -21,7 +32,6 @@
 
     <div class="notif-list" style="padding: 40px 20px; text-align: center; color: var(--muted); display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 50vh;">
         <i class="fa-regular fa-bell" style="font-size: 3rem; margin-bottom: 20px; opacity: 0.3;"></i>
-        <div style="font-size: 1.1rem; font-weight: 600;">No notifications yet</div>
-        <div style="font-size: 0.9rem; opacity: 0.7; margin-top: 5px;">We'll let you know when something arrives.</div>
+        <p>No notifications yet</p>
     </div>
 </div>

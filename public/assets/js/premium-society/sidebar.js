@@ -7,10 +7,10 @@ export function initSidebarLogic() {
     initProfileMenu();
     initRightSidebarInteractions();
     initMobileToggles();
-    initOverlayObservers(); // <-- DITO NATIN IBABANTAI ANG CHAT AT CREATORS
+    initOverlayObservers(); 
 }
 
-// --- NEW: OVERLAY OBSERVERS (Hides Hamburger on Chat & Creator Profile) ---
+// --- OVERLAY OBSERVERS ---
 function initOverlayObservers() {
     const body = document.body;
 
@@ -49,20 +49,18 @@ function initOverlayObservers() {
     }
 }
 
-// --- LEFT SIDEBAR: PROFILE MENU (UPWARD POPUP) ---
+// --- LEFT SIDEBAR: PROFILE MENU ---
 function initProfileMenu() {
     const profileBtn = document.querySelector('.ps-mini-profile');
     const menuPopup = document.getElementById('psUserMenuPopup');
 
     if (profileBtn && menuPopup) {
-        // Toggle Menu on Click
         profileBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             menuPopup.classList.toggle('active');
             profileBtn.classList.toggle('active');
         });
 
-        // Close Menu when clicking outside
         document.addEventListener('click', (e) => {
             if (!menuPopup.contains(e.target) && !profileBtn.contains(e.target)) {
                 menuPopup.classList.remove('active');
@@ -71,7 +69,7 @@ function initProfileMenu() {
         });
     }
 
-    // Logout Logic
+    // CLEANED: Ready for Backend Integration
     window.handleLogout = () => {
         Swal.fire({
             title: 'Log out?',
@@ -85,22 +83,24 @@ function initProfileMenu() {
             color: '#fff'
         }).then((result) => {
             if (result.isConfirmed) {
-                showToast("Logging out...");
-                setTimeout(() => location.reload(), 1500); // Simulate Logout
+                // TODO: Call Logout API here
+                // Example: await fetch('/api/logout');
+                showToast("Logging out... (Backend needed)");
+                // window.location.href = 'login.html';
             }
         });
     };
 
-    // Add Account Logic
+    // CLEANED: Ready for Backend Integration
     window.handleAddAccount = () => {
-        if(menuPopup) menuPopup.classList.remove('active'); // Close menu
+        if(menuPopup) menuPopup.classList.remove('active'); 
         
         Swal.fire({
             title: 'Add Account',
             html: `
                 <p style="font-size:0.9rem; color:#ccc; margin-bottom:15px;">Switch easily between multiple profiles.</p>
-                <input type="text" class="swal2-input" placeholder="Username / Email" style="color:#fff; background:#222; border:1px solid #444;">
-                <input type="password" class="swal2-input" placeholder="Password" style="color:#fff; background:#222; border:1px solid #444;">
+                <input type="text" id="add-user" class="swal2-input" placeholder="Username / Email" style="color:#fff; background:#222; border:1px solid #444;">
+                <input type="password" id="add-pass" class="swal2-input" placeholder="Password" style="color:#fff; background:#222; border:1px solid #444;">
             `,
             confirmButtonText: 'Login & Add',
             confirmButtonColor: '#00aff0',
@@ -109,22 +109,16 @@ function initProfileMenu() {
             color: '#fff'
         }).then((result) => {
             if (result.isConfirmed) {
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Account Added',
-                    text: 'You can now switch between accounts.',
-                    background: '#15151e',
-                    color: '#fff',
-                    confirmButtonColor: '#00aff0'
-                });
+                // TODO: Call Login/Add Account API here
+                showToast("Account adding logic goes here");
             }
         });
     };
 }
 
-// --- RIGHT SIDEBAR INTERACTIONS ---
+// --- RIGHT SIDEBAR INTERACTIONS (UPDATED) ---
 function initRightSidebarInteractions() {
-    // Search Bar Focus Effect
+    // 1. Search Bar Focus Effect
     const searchInput = document.querySelector('.ps-search-input');
     const searchBox = document.querySelector('.ps-search-box');
     
@@ -138,6 +132,20 @@ function initRightSidebarInteractions() {
             searchBox.style.background = 'rgba(255,255,255,0.05)';
         });
     }
+
+    // 2. UPGRADE BUTTON FIX (Links to Premium Tab)
+    const upgradeBtn = document.getElementById('psBtnSidebarSubscribe');
+    if (upgradeBtn) {
+        upgradeBtn.addEventListener('click', () => {
+            // Find the Premium Tab Button and click it
+            const premiumTab = document.querySelector('button[data-panel="premium"]');
+            if (premiumTab) {
+                premiumTab.click(); 
+                // Optional: Scroll to top of premium content if needed
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        });
+    }
 }
 
 // --- MOBILE TOGGLES ---
@@ -149,7 +157,6 @@ function initMobileToggles() {
         };
     }
 
-    // Close sidebar on outside click
     document.addEventListener('click', (e) => {
         if(PS_DOM.sidebar && PS_DOM.sidebar.classList.contains('ps-is-open')) {
             if(!PS_DOM.sidebar.contains(e.target) && e.target !== PS_DOM.mobileMenuBtn) {

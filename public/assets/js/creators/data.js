@@ -1,7 +1,7 @@
 export const BLANK_IMG = 'data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20fill%3D%22%23222%22%20width%3D%22100%22%20height%3D%22100%22%2F%3E%3C%2Fsvg%3E';
 export const DEFAULT_AVATAR = 'assets/images/truematch-mark.png';
 
-// RESET COLLECTIONS (System defaults only, 0 counts)
+// --- SYSTEM DEFAULTS ---
 export let COLLECTIONS_DB = [
     { id: 'fans', name: 'Fans', type: 'user', count: 0, system: true },
     { id: 'following', name: 'Following', type: 'user', count: 0, system: true },
@@ -11,10 +11,16 @@ export let COLLECTIONS_DB = [
     { id: 'watch_later', name: 'Watch Later', type: 'post', count: 0, system: false }
 ];
 
-// EMPTY CHAT DATA
+// --- CLEAN: EMPTY USERS LIST ---
+export const MSG_USERS = [];
+
+// --- CLEAN: EMPTY CHAT HISTORY ---
 export const CHAT_DATA = {};
 
-// --- LANGUAGE DICTIONARY ---
+// --- 🔥 NEW: CLEAN NOTIFICATIONS (Para sa Backend) ---
+export const NOTIFICATIONS_DATA = []; 
+
+// --- UI TRANSLATIONS ---
 export const TRANSLATIONS = {
     'en': {
         name: 'English',

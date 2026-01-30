@@ -6,34 +6,60 @@ import { initCollections, renderCollections, updateRightSidebarContent } from '.
 import { initWallet } from './wallet.js';
 import { loadView } from './loader.js';
 import { initSettings } from './settings.js';
+import { initProfilePage } from './profile.js'; // Import logic
 import { COLLECTIONS_DB } from './data.js';
 
+// 🔥 TOAST CONFIGURATION 🔥
 const TopToast = Swal.mixin({
-  toast: true, position: 'top', showConfirmButton: false, timer: 3000, timerProgressBar: true, background: '#0d1423', color: '#fff'
+  toast: true, 
+  position: 'top-end', 
+  showConfirmButton: false, 
+  timer: 3000, 
+  timerProgressBar: true, 
+  background: '#0d1423', 
+  color: '#fff',
+  didOpen: (toast) => {
+    toast.style.marginTop = '15px';
+    toast.style.marginRight = '15px';
+  }
 });
 
-// 🔥🔥🔥 GLOBAL SWEETALERT FIX (MOBILE/TABLET Z-INDEX) 🔥🔥🔥
-// Ito ang solusyon para lumutang ang SweetAlert sa ibabaw ng Sidebar at manatili sa gitna
+// 🔥 SWEETALERT FIX 🔥
 const originalSwalFire = Swal.fire;
 Swal.fire = function(args) {
-    return originalSwalFire.call(this, {
-        heightAuto: false,       // IMPORTANT: Pinipigilan ang pag-jump ng layout sa mobile
-        scrollbarPadding: false, // Pinipigilan ang pag-wiggle ng screen
-        ...args,                 // Kinukuha ang original settings mo
-        // Force Z-Index via JS para sigurado
-        didOpen: (popup) => {
-            const container = Swal.getContainer();
-            if(container) {
-                container.style.zIndex = '2147483647'; // Maximum Z-Index Value
+    const isToast = args.toast === true; 
+
+    const config = { ...args };
+    if (!isToast) {
+        config.heightAuto = false;
+        config.scrollbarPadding = false;
+    }
+
+    config.didOpen = (popup) => {
+        const container = Swal.getContainer();
+        if(container) {
+            container.style.zIndex = '2147483647'; 
+            
+            if (isToast) {
+                container.style.setProperty('background-color', 'transparent', 'important');
+                container.style.setProperty('width', 'auto', 'important');
+                container.style.setProperty('height', 'auto', 'important');
+                container.style.setProperty('inset', 'auto', 'important'); 
+                container.style.setProperty('pointer-events', 'none', 'important'); 
+                popup.style.pointerEvents = 'auto'; 
+            } else {
                 container.style.position = 'fixed';
                 container.style.inset = '0';
-                container.style.display = 'flex';       // Force Flex
-                container.style.alignItems = 'center';  // Center Vertical
-                container.style.justifyContent = 'center'; // Center Horizontal
+                container.style.display = 'flex';
+                container.style.alignItems = 'center';
+                container.style.justifyContent = 'center';
+                container.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
             }
-            if(args.didOpen) args.didOpen(popup);
         }
-    });
+        if (args.didOpen) args.didOpen(popup);
+    };
+
+    return originalSwalFire.call(this, config);
 };
 
 async function init() {
@@ -46,6 +72,7 @@ async function init() {
       loadView('container-collections', 'assets/views/collections.html')
   ]);
   
+  // Initialize Modules
   initHome(TopToast);
   initNotifications();
   initMessages(TopToast);
@@ -53,7 +80,10 @@ async function init() {
   initWallet(TopToast);
   initSettings();
   initCardTabs(); 
-  initProfile(); 
+  
+  // 🔥 RENAMED TO AVOID CONFLICT 🔥
+  initProfileTabs(); 
+  
   initNewPostButton();
   initSwipeGestures(); 
   
@@ -81,6 +111,9 @@ async function init() {
           setTimeout(() => { if(DOM.appLoader.parentNode) DOM.appLoader.parentNode.removeChild(DOM.appLoader); }, 500); 
       } 
   }, 500);
+
+  const lastView = localStorage.getItem('tm_last_view') || 'home';
+  switchView(lastView);
 }
 
 function initSwipeGestures() {
@@ -99,30 +132,21 @@ function initSwipeGestures() {
 
     function handleSwipe() {
         if (touchEndX > touchStartX + minSwipeDistance) {
-            // Swipe Right (Back)
-            
-            // 1. Close Popover if open
             if (DOM.popover && DOM.popover.classList.contains('is-open')) {
                 DOM.popover.classList.remove('is-open');
                 return;
             }
-            
-            // 2. Close Sidebar Overlay (Settings/Collections Details)
             if (DOM.rightSidebar && DOM.rightSidebar.classList.contains('mobile-active')) {
                 DOM.rightSidebar.classList.remove('mobile-active');
                 return;
             }
-
-            // 3. Close Messages Chat
             const msgView = document.getElementById('view-messages');
             if (msgView && msgView.classList.contains('mobile-chat-active')) {
                 msgView.classList.remove('mobile-chat-active');
                 return;
             }
-            
-            // 4. Back to Home if on other views
-            const homeView = document.getElementById('view-home');
-            if (homeView && homeView.style.display === 'none') {
+            const current = localStorage.getItem('tm_last_view');
+            if (current && current !== 'home') {
                 switchView('home');
                 return;
             }
@@ -131,7 +155,6 @@ function initSwipeGestures() {
 }
 
 function setupGlobalEvents() {
-    // Hamburger (Tablet/Mobile)
     document.addEventListener('click', (e) => {
         const toggleBtn = e.target.closest('.header-toggle-btn');
         if (toggleBtn) {
@@ -142,7 +165,6 @@ function setupGlobalEvents() {
         }
     });
 
-    // More Button (Desktop)
     if (DOM.btnMore) {
         DOM.btnMore.addEventListener('click', (e) => {
             e.preventDefault();
@@ -152,7 +174,6 @@ function setupGlobalEvents() {
         });
     }
 
-    // Close Button (X)
     const btnClose = document.getElementById('btnClosePopover');
     if(btnClose) {
         btnClose.addEventListener('click', (e) => {
@@ -163,7 +184,6 @@ function setupGlobalEvents() {
         });
     }
 
-    // Click Outside
     document.addEventListener('click', (e) => {
         const popover = document.getElementById('settings-popover');
         const toggleBtn = e.target.closest('.header-toggle-btn');
@@ -206,7 +226,8 @@ function initCardTabs() {
     }
 }
 
-function initProfile() {
+// 🔥 RENAMED FUNCTION TO AVOID CONFLICT 🔥
+function initProfileTabs() {
     const tabPosts = document.getElementById('tab-profile-posts');
     const tabMedia = document.getElementById('tab-profile-media');
     const contentPosts = document.getElementById('profile-content-posts');
@@ -248,19 +269,15 @@ function setupNavigation() {
     if (DOM.navProfile) DOM.navProfile.addEventListener('click', (e) => { e.preventDefault(); switchView('profile'); });
     if (DOM.navAddCard) DOM.navAddCard.addEventListener('click', (e) => { e.preventDefault(); switchView('add-card'); });
 
-    // --- FIX: PROFILE CARD CLICK HANDLER ---
     if (DOM.profileCard) {
         DOM.profileCard.addEventListener('click', (e) => {
-            // If the specific gear icon is clicked, open settings
             if (e.target.closest('.ph-settings')) {
                 switchView('settings');
             } else {
-                // Otherwise open profile
                 switchView('profile');
             }
         });
     }
-    // ----------------------------------------
 
     if (DOM.navSubs) {
         DOM.navSubs.addEventListener('click', (e) => { 
@@ -309,26 +326,18 @@ function setupNavigation() {
     });
 }
 
-// 🔥 UPDATED SWITCHVIEW: WITH GLOBAL ANIMATION 🔥
 function switchView(viewName) {
-    // 1. Get all main views
+    localStorage.setItem('tm_last_view', viewName);
+
     const views = [
-        DOM.viewHome, 
-        DOM.viewNotif, 
-        DOM.viewMessages, 
-        DOM.viewCollections, 
-        DOM.viewAddCard, 
-        DOM.viewYourCards, 
-        DOM.viewBecomeCreator, 
-        DOM.viewMyProfile, 
-        DOM.viewSettings
+        DOM.viewHome, DOM.viewNotif, DOM.viewMessages, DOM.viewCollections, 
+        DOM.viewAddCard, DOM.viewYourCards, DOM.viewBecomeCreator, 
+        DOM.viewMyProfile, DOM.viewSettings
     ];
 
-    // 2. Hide all and RESET animation class
     views.forEach(el => { 
         if(el) {
             el.style.display = 'none';
-            // Important: Reset class so animation can play again later
             el.classList.remove('view-animate-enter');
         }
     });
@@ -338,19 +347,16 @@ function switchView(viewName) {
         DOM.mainFeedColumn.style.removeProperty('display'); 
     }
     
-    // 🔥 1. FORCE CLOSE SIDEBAR OVERLAY ON MOBILE WHEN SWITCHING VIEWS
     if (DOM.rightSidebar) {
         DOM.rightSidebar.classList.remove('mobile-active');
     }
 
-    // 2. RESTORE SIDEBAR ON DESKTOP IF HIDDEN (BUT KEEP IT HIDDEN ON MOBILE)
     if (window.innerWidth > 1024 && DOM.rightSidebar) {
         DOM.rightSidebar.style.display = 'flex';
         DOM.rightSidebar.classList.remove('wide-view'); 
         DOM.rightSidebar.classList.remove('hidden-sidebar');
     }
 
-    // 3. FORCE HIDE ALL SIDEBAR CONTENTS FIRST
     if(DOM.rsSuggestions) DOM.rsSuggestions.classList.add('hidden');
     if(DOM.rsCollections) DOM.rsCollections.classList.add('hidden');
     if(DOM.rsWalletView) DOM.rsWalletView.classList.add('hidden');
@@ -360,23 +366,16 @@ function switchView(viewName) {
     const msgContainer = document.getElementById('container-messages');
     if(msgContainer) msgContainer.style.display = (viewName === 'messages') ? 'block' : 'none';
 
-    // Variable to track which view is being opened
     let targetView = null;
 
-    // --- VIEW SPECIFIC LOGIC ---
     if (viewName === 'home') {
         targetView = DOM.viewHome;
-        // ONLY SHOW SUGGESTIONS IF NOT MOBILE
-        if(DOM.rsSuggestions && window.innerWidth > 1024) {
-            DOM.rsSuggestions.classList.remove('hidden');
-        }
+        if(DOM.rsSuggestions && window.innerWidth > 1024) DOM.rsSuggestions.classList.remove('hidden');
         updateActiveNav('nav-link-home', 'mob-nav-home');
     } 
     else if (viewName === 'notifications') {
         targetView = DOM.viewNotif;
-        if(DOM.rsSuggestions && window.innerWidth > 1024) {
-            DOM.rsSuggestions.classList.remove('hidden');
-        }
+        if(DOM.rsSuggestions && window.innerWidth > 1024) DOM.rsSuggestions.classList.remove('hidden');
         updateActiveNav('nav-link-notif', 'mob-nav-notif');
     }
     else if (viewName === 'messages') {
@@ -389,16 +388,20 @@ function switchView(viewName) {
     } 
     else if (viewName === 'profile') {
         targetView = DOM.viewMyProfile;
-        if(DOM.rsSuggestions && window.innerWidth > 1024) {
-             DOM.rsSuggestions.classList.remove('hidden');
-        }
+        if(DOM.rsSuggestions && window.innerWidth > 1024) DOM.rsSuggestions.classList.remove('hidden');
         updateActiveNav('nav-link-profile', null);
+        
+        // 🔥 SAFE CALL: RELOAD PROFILE CONTENT ON VIEW 🔥
+        try {
+            initProfilePage(); 
+        } catch(err) {
+            console.error("Error loading profile content:", err);
+        }
     }
     else if (viewName === 'collections') {
         targetView = DOM.viewCollections;
         if (DOM.mainFeedColumn) DOM.mainFeedColumn.classList.add('narrow-view');
         if (DOM.rightSidebar) DOM.rightSidebar.classList.add('wide-view');
-        
         if (DOM.rsCollections) DOM.rsCollections.classList.remove('hidden');
         updateActiveNav('nav-link-collections', 'mob-nav-collections'); 
         renderCollections(); 
@@ -407,7 +410,6 @@ function switchView(viewName) {
         targetView = DOM.viewSettings;
         if (DOM.mainFeedColumn) DOM.mainFeedColumn.classList.add('narrow-view');
         if (DOM.rightSidebar) DOM.rightSidebar.classList.add('wide-view');
-        
         if (DOM.rsSettingsView) DOM.rsSettingsView.classList.remove('hidden'); 
         updateActiveNav(null, null); 
     }
@@ -426,12 +428,8 @@ function switchView(viewName) {
         if(bankingSidebar) bankingSidebar.classList.remove('hidden');
     }
     
-    // 🔥 APPLY DISPLAY & ANIMATION 🔥
     if (targetView) {
-        // Show the view (except messages which is handled above as flex)
         if (viewName !== 'messages') targetView.style.display = 'block';
-
-        // Apply Animation ONLY on Mobile/Tablet
         if (window.innerWidth <= 1024) {
             requestAnimationFrame(() => {
                 targetView.classList.add('view-animate-enter');
@@ -466,7 +464,6 @@ function injectSidebarToggles() {
                 btn = document.createElement('i');
                 btn.className = 'fa-solid fa-bars header-toggle-btn';
                 btn.style.cursor = 'pointer';
-                // Click handled in setupGlobalEvents
                 iconContainer.appendChild(btn);
             }
         }
