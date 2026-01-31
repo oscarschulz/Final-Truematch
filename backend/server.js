@@ -525,6 +525,8 @@ app.get('/api/config', (req, res) => {
   res.json({
     googleClientId: process.env.GOOGLE_CLIENT_ID || ''
   });
+});
+
 
 // ---------------- FOMO (fake social proof) ----------------
 // Returns occasional fake activity notifications for the landing page.
@@ -590,8 +592,6 @@ app.get('/api/fomo', (req, res) => {
 });
 
 // ---------------- End FOMO ----------------
-
-});
 
 
 // ---------------- Opt-in endpoint (Google Sheets) ----------------
