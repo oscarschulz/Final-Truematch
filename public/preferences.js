@@ -437,9 +437,9 @@ return {
       return false;
     }
 
-    if (ageMin < 18 || ageMin > ageMax) {
+    if (ageMin < 18 || ageMin > ageMax || ageMax > 70) {
       toast(
-        'Please enter an age range starting at 18 where min is not greater than max.',
+        'Please enter an age range between 18 and 70 where min is not greater than max.',
         'error'
       );
       return false;
