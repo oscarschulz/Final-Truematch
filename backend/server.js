@@ -408,6 +408,28 @@ function getSessionEmail(req) {
   return ((req.cookies || {})[SESSION_COOKIE] || '').toString().trim().toLowerCase();
 }
 
+// 🔹 Auth middleware (shared)
+// Used by routes that expect req.user.
+// NOTE: Session-attacher middleware (below) hydrates DB.user based on tm_email cookie.
+function authMiddleware(req, res, next) {
+  try {
+    const email = getSessionEmail(req);
+    if (!email) return res.status(401).json({ ok: false, message: 'not logged in' });
+
+    // DB.user should already be set for this request by the session-attacher app.use() middleware.
+    if (!DB || !DB.user || !DB.user.email) {
+      return res.status(401).json({ ok: false, message: 'not logged in' });
+    }
+
+    // Attach a stable snapshot to req.user so downstream code can read it safely.
+    req.user = { ...DB.user };
+    return next();
+  } catch (e) {
+    return res.status(401).json({ ok: false, message: 'not logged in' });
+  }
+}
+
+
 function setAnonState() {
   DB.user = {
     ...DB.user,
