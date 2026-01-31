@@ -684,26 +684,14 @@ dialog::backdrop { background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-in
    ========================================= */
 
 /* MOBILE BUTTONS */
-.mobile-nav-toggle, .mobile-moments-toggle { 
+.mobile-nav-toggle { 
     display: none; position: fixed; bottom: 20px; width: 50px; height: 50px; 
     border-radius: 50%; background: var(--brand-color); color: white; border: none; 
     box-shadow: 0 5px 20px rgba(0,0,0,0.5); z-index: 5000; font-size: 1.2rem; cursor: pointer; 
     transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 .mobile-nav-toggle { left: 20px; }
-.mobile-moments-toggle { right: 20px; background: #222; border: 1px solid rgba(255,255,255,0.2); }
-
-/* =========================================================
-   LAPTOP & TABLET LANDSCAPE ADJUSTMENTS (NEW)
-   ========================================================= */
-
-/* 1280px - Laptop Standard (Reduce Right Sidebar) */
-@media (max-width: 1280px) {
-    :root {
-        --sidebar-right-width: 290px;
-    }
-    .right-sidebar { padding: 20px 15px; }
-}
+.right-sidebar { padding: 20px 15px; }
 
 /* 1160px - Smaller Laptop/Tablet (Shrink Everything) */
 @media (max-width: 1160px) {
@@ -753,7 +741,7 @@ dialog::backdrop { background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-in
         background: transparent !important;
     } 
 
-    .mobile-nav-toggle, .mobile-moments-toggle { display: flex; align-items: center; justify-content: center; }
+    .mobile-nav-toggle { display: flex; align-items: center; justify-content: center; }
 
     .sidebar { 
         display: none; 
