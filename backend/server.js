@@ -470,6 +470,39 @@ app.use(async (req, res, next) => {
 
   return next();
 });
+
+
+// ============================================================
+// Auth middleware (cookie-based)
+// NOTE: Some API routes (e.g. /api/matches) use this to ensure user is logged in.
+// This does NOT change existing session logic; it only reads the same tm_email cookie
+// and exposes the resolved user on req.user.
+// ============================================================
+function authMiddleware(req, res, next) {
+  try {
+    const email = (typeof getSessionEmail === 'function' ? getSessionEmail(req) : '') ||
+                  String((DB.user && DB.user.email) || '').trim().toLowerCase();
+
+    if (!email) {
+      return res.status(401).json({ ok: false, error: 'Not authenticated' });
+    }
+
+    // DB.user is already hydrated by the session-attaching middleware above.
+    // As extra safety, re-hydrate from cache if needed.
+    if (!DB.user || String(DB.user.email || '').trim().toLowerCase() !== email) {
+      const cached = (DB.users && DB.users[email]) ? DB.users[email] : null;
+      if (cached) DB.user = { ...cached };
+    }
+
+    req.user = DB.user ? { ...DB.user } : { email };
+    req.user.email = String(req.user.email || email).trim().toLowerCase();
+    return next();
+  } catch (e) {
+    console.error('authMiddleware error:', e);
+    return res.status(401).json({ ok: false, error: 'Not authenticated' });
+  }
+}
+
 // ============================================================
 // [INSERT 1] ADMIN MIDDLEWARE (Ilagay sa taas, bago ang routes)
 // ============================================================
