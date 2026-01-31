@@ -365,6 +365,7 @@ select option{ background:#02040a; color:#fff; padding:10px; }
   box-shadow:
     inset 0 0 0 1px rgba(255,255,255,0.04),
     0 14px 35px rgba(0,0,0,0.35);
+  cursor:pointer;
   overflow:hidden;
   position:relative;
   display:flex;

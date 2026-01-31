@@ -98,10 +98,10 @@
                 <label class="static-label">Profile picture</label>
 
                 <div class="avatar-row">
-                  <div class="avatar-preview" id="avatarPreview" aria-hidden="true">
+                  <label class="avatar-preview" id="avatarPreview" for="avatarFile" aria-label="Upload profile picture">
                     <img id="avatarPreviewImg" alt="Profile picture preview" />
                     <div class="avatar-placeholder" id="avatarPlaceholder">Upload</div>
-                  </div>
+                  </label>
 
                   <div class="avatar-actions">
                     <input type="file" id="avatarFile" name="avatarFile" accept="image/*" />
@@ -122,9 +122,9 @@
               <div class="pref-group">
                 <label class="static-label">Age Range</label>
                 <div class="age-range-capsule">
-                  <input type="number" id="ageMin" name="ageMin" placeholder="18" value="18" min="18" max="70" required inputmode="numeric">
+                  <input type="number" id="ageMin" name="ageMin" placeholder="18" value="18" min="18" max="80" required inputmode="numeric">
                   <span class="sep">-</span>
-                  <input type="number" id="ageMax" name="ageMax" placeholder="70" value="70" min="18" max="70" required inputmode="numeric">
+                  <input type="number" id="ageMax" name="ageMax" placeholder="70" value="70" min="18" max="80" required inputmode="numeric">
                 </div>
               </div>
 
