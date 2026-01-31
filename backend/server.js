@@ -525,6 +525,72 @@ app.get('/api/config', (req, res) => {
   res.json({
     googleClientId: process.env.GOOGLE_CLIENT_ID || ''
   });
+
+// ---------------- FOMO (fake social proof) ----------------
+// Returns occasional fake activity notifications for the landing page.
+// Frontend polls every 5s (public/fomo.js) and shows only when the returned `id` changes.
+const FOMO_NAMES = [
+  'Ayo','Tobi','Chi','Kemi','Zara','Mika','Nina','Aria','Jay','Santi','Noah','Liam','Ethan','Maya','Ivy','Aisha','Fatima','Amaka','Ola','Rina'
+];
+
+const FOMO_LOCATIONS = [
+  'Lagos','Abuja','Ibadan','Port Harcourt','Accra','Nairobi','Johannesburg','Cape Town',
+  'Manila','Cebu','Davao','BGC','Quezon City','Makati','Dubai','London','Toronto'
+];
+
+const FOMO_ACTIONS = [
+  'just signed up',
+  'just joined',
+  'just completed onboarding',
+  'just upgraded to Plus',
+  'just upgraded to Elite',
+  'just unlocked Concierge',
+  'just purchased a plan',
+  'just applied to become a Creator',
+  'just applied to join Premium Society',
+  'just got matched',
+  'just booked a curated date'
+];
+
+function _pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function _randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
+let _fomoState = { current: null, nextRotateAt: 0 };
+
+function _makeFomoEvent() {
+  const now = Date.now();
+  return {
+    id: `${now}-${Math.floor(Math.random() * 1e9)}`,
+    name: _pick(FOMO_NAMES),
+    location: _pick(FOMO_LOCATIONS),
+    action: _pick(FOMO_ACTIONS),
+    // Keep within the last hour so the frontend won't ignore it.
+    timestamp: now - (_randInt(5, 55) * 60 * 1000) // 5–55 minutes ago
+  };
+}
+
+function _scheduleNextRotate(now) {
+  // "Occasional": new event every 3–6 minutes (frontend polls every 5s).
+  return now + (_randInt(180, 360) * 1000);
+}
+
+app.get('/api/fomo', (req, res) => {
+  const now = Date.now();
+
+  if (!_fomoState.current) {
+    _fomoState.current = _makeFomoEvent();
+    _fomoState.nextRotateAt = _scheduleNextRotate(now);
+  } else if (now >= _fomoState.nextRotateAt) {
+    _fomoState.current = _makeFomoEvent();
+    _fomoState.nextRotateAt = _scheduleNextRotate(now);
+  }
+
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(_fomoState.current);
+});
+
+// ---------------- End FOMO ----------------
+
 });
 
 
