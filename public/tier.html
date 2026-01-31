@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=1200" />
-  <title>TrueMatch — Select Your Plan</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>iTrueMatch — Select Your Plan</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -262,19 +262,15 @@
 
   <header class="tier-header">
     <div class="brand-area">
-      <img src="./assets/images/truematch-mark.png" alt="TrueMatch" class="brand-logo" />
-      <span class="brand-text">TrueMatch</span>
+      <img src="../../assets/images/truematch-mark.png" alt="TrueMatch" class="brand-logo" />
+      <span class="brand-text">iTrueMatch</span>
     </div>
     <div class="nav-actions">
       <a href="./dashboard.html" class="btn-nav">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
         <span>Dashboard</span>
       </a>
-      <button id="btnLogout" class="btn-nav" type="button">
-        <span>Logout</span>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-      </button>
-    </div>
+</div>
   </header>
 
   <div class="tier-wrapper">
@@ -284,6 +280,13 @@
     </div>
 
     <div id="tierNotice"><span id="tierNoticeText"></span></div>
+
+    <!-- Mobile brand (shows above carousel cards) -->
+    <div class="tier-mobile-brand" aria-label="iTrueMatch">
+      <img src="../assets/images/truematch-mark.png" class="tier-mobile-logo" alt="iTrueMatch logo">
+      <span class="tier-mobile-text">iTrueMatch</span>
+    </div>
+
 
     <div class="pricing-grid">
       <article class="price-card" data-tier="free" data-plan-card="free">
@@ -346,6 +349,15 @@
         <button class="btn-select btn-concierge" type="button" data-plan="tier3">Apply Now</button>
       </article>
     </div>
+
+    <!-- Mobile carousel pills (4 tiers) -->
+    <div class="tier-carousel-pills" aria-label="Plan carousel controls">
+      <button class="tier-pill is-active" type="button" data-tier-target="free" aria-label="Member plan" title="Member"></button>
+      <button class="tier-pill" type="button" data-tier-target="plus" aria-label="Plus plan" title="Plus"></button>
+      <button class="tier-pill" type="button" data-tier-target="elite" aria-label="Elite plan" title="Elite"></button>
+      <button class="tier-pill" type="button" data-tier-target="concierge" aria-label="Concierge plan" title="Concierge"></button>
+    </div>
+
   </div>
 
   <script>

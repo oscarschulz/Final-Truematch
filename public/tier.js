@@ -370,4 +370,114 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 3. Setup UI
   attachPlanButtons();
   renderUpgradeView();
+
+    // Mobile-only: turn the tier cards into a swipe carousel with 4 pills
+    initTierCarousel(userPlanTier);
 });
+
+function initTierCarousel(userPlanTier) {
+  const grid = document.querySelector('.pricing-grid');
+  const pillsWrap = document.querySelector('.tier-carousel-pills');
+  if (!grid || !pillsWrap) return;
+
+  const cards = Array.from(grid.querySelectorAll('.price-card[data-tier]'));
+  const pills = Array.from(pillsWrap.querySelectorAll('.tier-pill[data-tier-target]'));
+  if (!cards.length || !pills.length) return;
+
+  const mq = window.matchMedia ? window.matchMedia('(max-width: 900px)') : { matches: false };
+
+  const setActiveByTier = (tier) => {
+    pills.forEach((p) => p.classList.toggle('is-active', p.dataset.tierTarget === tier));
+  };
+
+  const scrollToTier = (tier, behavior = 'smooth') => {
+    const card = cards.find((c) => c.dataset.tier === tier);
+    if (!card) return;
+    card.scrollIntoView({ behavior, block: 'nearest', inline: 'center' });
+  };
+
+  pills.forEach((p) => {
+    p.addEventListener('click', () => scrollToTier(p.dataset.tierTarget, 'smooth'));
+  });
+
+  // Initial: focus the user's current plan card (if present), else first card
+  const initialCard = userPlanTier
+    ? grid.querySelector(`.price-card[data-plan-card="${userPlanTier}"]`)
+    : null;
+
+  const initialTier = (initialCard && initialCard.dataset.tier) ? initialCard.dataset.tier : cards[0].dataset.tier;
+  setActiveByTier(initialTier);
+
+  if (mq.matches) {
+    // Wait a tick so layout + scroll-snap are ready
+    setTimeout(() => scrollToTier(initialTier, 'auto'), 0);
+  }
+
+  // Keep pills in sync with swipes
+  let observer = null;
+
+  const setupObserver = () => {
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
+
+    if (!mq.matches) return;
+
+    if ('IntersectionObserver' in window) {
+      observer = new IntersectionObserver(
+        (entries) => {
+          // Pick the most visible intersecting card
+          let best = null;
+          for (const e of entries) {
+            if (!e.isIntersecting) continue;
+            if (!best || e.intersectionRatio > best.intersectionRatio) best = e;
+          }
+          if (best && best.target && best.target.dataset && best.target.dataset.tier) {
+            setActiveByTier(best.target.dataset.tier);
+          }
+        },
+        { root: grid, threshold: [0.55, 0.7, 0.85] }
+      );
+
+      cards.forEach((c) => observer.observe(c));
+      return;
+    }
+
+    // Fallback: scroll listener (no IntersectionObserver)
+    let raf = null;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = null;
+        if (!mq.matches) return;
+
+        const center = grid.scrollLeft + grid.clientWidth / 2;
+        let bestTier = cards[0].dataset.tier;
+        let bestDist = Infinity;
+
+        for (const c of cards) {
+          const cx = c.offsetLeft + c.offsetWidth / 2;
+          const d = Math.abs(cx - center);
+          if (d < bestDist) {
+            bestDist = d;
+            bestTier = c.dataset.tier;
+          }
+        }
+
+        setActiveByTier(bestTier);
+      });
+    };
+
+    grid.addEventListener('scroll', onScroll, { passive: true });
+  };
+
+  setupObserver();
+
+  // Re-init if screen size changes
+  if (mq.addEventListener) {
+    mq.addEventListener('change', setupObserver);
+  } else if (mq.addListener) {
+    mq.addListener(setupObserver);
+  }
+}
