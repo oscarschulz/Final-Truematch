@@ -110,6 +110,16 @@ app.use(express.json({
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 
+// Handle body-parser errors (e.g., payload too large) with JSON so the frontend can show a clean message.
+app.use((err, req, res, next) => {
+  if (!err) return next();
+  // body-parser uses 'entity.too.large' when request exceeds the limit
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ ok: false, message: 'payload too large' });
+  }
+  return next(err);
+});
+
 app.use(cookieParser());
 // =========================
 // Public vs protected HTML gating (Variant B)
@@ -691,6 +701,13 @@ try {
   // Option 1: ENV variable FIREBASE_SERVICE_ACCOUNT (JSON string)
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    // Railway/env vars often store the private_key with literal 
+ sequences.
+    // Normalize so Google auth/Storage signing works reliably.
+    if (serviceAccount && typeof serviceAccount.private_key === 'string' && serviceAccount.private_key.includes('\n')) {
+      serviceAccount.private_key = serviceAccount.private_key.replace(/\n/g, '
+');
+    }
   } else {
     // Option 2: local JSON file (firebase-service-account.json)
     serviceAccount = require('./firebase-service-account.json');
@@ -1993,46 +2010,80 @@ app.post('/api/moments/create', async (req, res) => {
       const safeEmail = email.replace(/[^a-z0-9@._-]/gi, '_');
       const storagePath = `moments/${safeEmail}/${id}.${ext}`;
       const file = storageBucket.file(storagePath);
-      await file.save(buf, {
-        contentType: mime,
-        resumable: false,
-        metadata: { cacheControl: 'private, max-age=3600' }
-      });
 
-      moment.storagePath = storagePath;
+      try {
+        await file.save(buf, {
+          contentType: mime,
+          resumable: false,
+          metadata: { cacheControl: 'private, max-age=3600' }
+        });
 
-      // We store a placeholder; list endpoint will generate a fresh signed URL.
-      moment.mediaUrl = '';
+        moment.storagePath = storagePath;
 
+        // We store a placeholder; list endpoint will generate a fresh signed URL.
+        moment.mediaUrl = '';
+
+        try {
+          await firestore.collection('moments').doc(id).set({
+            ownerId,
+            ownerEmail: email,
+            ownerName,
+            ownerAvatarUrl,
+            storagePath,
+            mediaUrl: '',
+            mediaType: mime,
+            caption,
+            createdAtMs: moment.createdAtMs,
+            expiresAtMs: moment.expiresAtMs
+          });
+        } catch (e) {
+          console.warn('Failed to store moment metadata in Firestore:', e?.message || e);
+        }
+
+        return res.json({ ok: true, moment: { id, ownerId, ownerName, ownerAvatarUrl, mediaType: mime, createdAtMs: moment.createdAtMs, expiresAtMs: moment.expiresAtMs } });
+      } catch (e) {
+        // If Storage upload fails in production (common: IAM / bucket permissions / bad private_key newlines),
+        // fall back to local filesystem so the feature still works.
+        console.error('moments/create storage upload failed:', e?.message || e);
+        // continue to local fallback below
+      }
+    }
+
+// Fallback: save file to local public/uploads/moments
+    const uploadDir = path.join(__dirname, '..', 'public', 'uploads', 'moments');
+    try { fs.mkdirSync(uploadDir, { recursive: true }); } catch {}
+
+    const filename = `${id}.${ext}`;
+    const filePath = path.join(uploadDir, filename);
+    try {
+      fs.writeFileSync(filePath, buf);
+    } catch (e) {
+      console.error('moments/create local write failed:', e?.message || e);
+      return res.status(500).json({ ok: false, message: 'failed to save upload' });
+    }
+
+    moment.mediaUrl = `/uploads/moments/${filename}`;
+
+    // If Firebase is enabled but Storage is not (or failed), persist metadata to Firestore
+    // so /api/moments/list (Firestore-backed) will still return this moment.
+    if (hasFirebase && firestore) {
       try {
         await firestore.collection('moments').doc(id).set({
           ownerId,
           ownerEmail: email,
           ownerName,
           ownerAvatarUrl,
-          storagePath,
-          mediaUrl: '',
+          storagePath: '',
+          mediaUrl: moment.mediaUrl,
           mediaType: mime,
           caption,
           createdAtMs: moment.createdAtMs,
           expiresAtMs: moment.expiresAtMs
         });
       } catch (e) {
-        console.warn('Failed to store moment metadata in Firestore:', e?.message || e);
+        console.warn('Failed to store local moment metadata in Firestore:', e?.message || e);
       }
-
-      return res.json({ ok: true, moment: { id, ownerId, ownerName, ownerAvatarUrl, mediaType: mime, createdAtMs: moment.createdAtMs, expiresAtMs: moment.expiresAtMs } });
     }
-
-    // Fallback: save file to local public/uploads/moments
-    const uploadDir = path.join(__dirname, '..', 'public', 'uploads', 'moments');
-    try { fs.mkdirSync(uploadDir, { recursive: true }); } catch {}
-
-    const filename = `${id}.${ext}`;
-    const filePath = path.join(uploadDir, filename);
-    fs.writeFileSync(filePath, buf);
-
-    moment.mediaUrl = `/uploads/moments/${filename}`;
 
     DB.moments = Array.isArray(DB.moments) ? DB.moments : [];
     DB.moments.push(moment);
