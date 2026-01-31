@@ -709,6 +709,237 @@ try {
   );
 }
 
+
+
+// ---------------- Swipe + Match persistence (Firestore-aware) ----------------
+// Goal: pass = never show again, like/superlike = stored actions, mutual (like|superlike) => match
+const SWIPES_COLLECTION = process.env.SWIPES_COLLECTION || 'iTrueMatchSwipes';
+const MATCHES_COLLECTION = process.env.MATCHES_COLLECTION || 'iTrueMatchMatches';
+
+function _b64url(str) {
+  return Buffer.from(String(str || ''), 'utf8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function _swipeDocId(fromEmail, toEmail) {
+  return `${_b64url(fromEmail)}__${_b64url(toEmail)}`;
+}
+
+function _matchDocId(emailA, emailB) {
+  const a = String(emailA || '').toLowerCase();
+  const b = String(emailB || '').toLowerCase();
+  const x = a <= b ? a : b;
+  const y = a <= b ? b : a;
+  return `${_b64url(x)}__${_b64url(y)}`;
+}
+
+function _isPositiveSwipe(t) {
+  return t === 'like' || t === 'superlike';
+}
+
+// Lightweight in-memory caches (avoid hammering Firestore)
+const _swipeCache = new Map(); // email -> { ts, map }
+// Cache of a user's match emails to reduce reads.
+// email -> { ts, emails: string[] }
+const _matchEmailsCache = new Map();
+const _CACHE_TTL_MS = 15 * 1000;
+
+async function _getSwipeMapFor(email) {
+  const e = String(email || '').toLowerCase();
+  if (!e) return {};
+
+  if (!hasFirebase || !firestore) {
+    return (DB.swipes && DB.swipes[e]) ? DB.swipes[e] : {};
+  }
+
+  const cached = _swipeCache.get(e);
+  if (cached && (Date.now() - cached.ts) < _CACHE_TTL_MS) return cached.map;
+
+  const snap = await firestore
+    .collection(SWIPES_COLLECTION)
+    .where('from', '==', e)
+    .limit(5000)
+    .get();
+
+  const map = {};
+  for (const d of snap.docs) {
+    const v = d.data() || {};
+    const to = String(v.to || '').toLowerCase();
+    const type = String(v.type || '').toLowerCase();
+    if (!to || !type) continue;
+    map[to] = { type, ts: Number(v.ts) || Date.now() };
+  }
+
+  _swipeCache.set(e, { ts: Date.now(), map });
+  return map;
+}
+
+function _setSwipeCache(fromEmail, toEmail, type) {
+  const from = String(fromEmail || '').toLowerCase();
+  const to = String(toEmail || '').toLowerCase();
+  if (!from || !to) return;
+
+  const cached = _swipeCache.get(from);
+  if (cached && cached.map) {
+    cached.map[to] = { type: String(type || '').toLowerCase(), ts: Date.now() };
+    cached.ts = Date.now();
+  }
+}
+
+async function _getSwipeType(fromEmail, toEmail) {
+  const from = String(fromEmail || '').toLowerCase();
+  const to = String(toEmail || '').toLowerCase();
+  if (!from || !to) return null;
+
+  if (!hasFirebase || !firestore) {
+    const sw = DB.swipes && DB.swipes[from] ? DB.swipes[from][to] : null;
+    return sw && sw.type ? String(sw.type) : null;
+  }
+
+  const doc = await firestore.collection(SWIPES_COLLECTION).doc(_swipeDocId(from, to)).get();
+  if (!doc.exists) return null;
+  const v = doc.data() || {};
+  const t = String(v.type || '').toLowerCase();
+  return t || null;
+}
+
+async function _saveSwipe(fromEmail, toEmail, type) {
+  const from = String(fromEmail || '').toLowerCase();
+  const to = String(toEmail || '').toLowerCase();
+  const t = String(type || '').toLowerCase();
+  if (!from || !to || !t) return;
+
+  // Memory store (always)
+  if (!DB.swipes) DB.swipes = {};
+  if (!DB.swipes[from]) DB.swipes[from] = {};
+  DB.swipes[from][to] = { type: t, ts: Date.now() };
+  _setSwipeCache(from, to, t);
+
+  // Persist to Firestore when enabled
+  if (hasFirebase && firestore) {
+    await firestore.collection(SWIPES_COLLECTION).doc(_swipeDocId(from, to)).set(
+      { from, to, type: t, ts: Date.now() },
+      { merge: true }
+    );
+  }
+}
+
+
+async function _saveMatch(emailA, emailB, actionA, actionB) {
+  const a = String(emailA || '').toLowerCase();
+  const b = String(emailB || '').toLowerCase();
+  if (!a || !b || a === b) return false;
+
+  // Always keep an in-memory adjacency list (used by Moments scope and non-Firebase mode)
+  DB.matches[a] = Array.isArray(DB.matches[a]) ? DB.matches[a] : [];
+  DB.matches[b] = Array.isArray(DB.matches[b]) ? DB.matches[b] : [];
+  if (!DB.matches[a].includes(b)) DB.matches[a].push(b);
+  if (!DB.matches[b].includes(a)) DB.matches[b].push(a);
+
+  // Invalidate caches
+  _matchEmailsCache.delete(a);
+  _matchEmailsCache.delete(b);
+
+  if (!hasFirebase) return true;
+
+  // Persist a canonical match doc (pair-sorted) with both actions
+  const createdAtMs = Date.now();
+  const [x, y] = [a, b].sort();
+  const xAction = (x === a) ? actionA : actionB;
+  const yAction = (y === b) ? actionB : actionA;
+
+  const docId = _matchDocId(x, y);
+  await firestore.collection(MATCHES_COLLECTION).doc(docId).set({
+    a: x,
+    b: y,
+    aAction: xAction,
+    bAction: yAction,
+    createdAtMs,
+    updatedAtMs: createdAtMs,
+  }, { merge: true });
+
+  return true;
+}
+
+async function _getMatchEmails(email) {
+  const e = String(email || '').toLowerCase();
+  if (!e) return [];
+
+  if (!hasFirebase) {
+    return Array.isArray(DB.matches[e]) ? DB.matches[e].slice() : [];
+  }
+
+  const cached = _matchEmailsCache.get(e);
+  if (cached && (Date.now() - cached.ts) < _CACHE_TTL_MS) return cached.emails;
+
+  const [snapA, snapB] = await Promise.all([
+    firestore.collection(MATCHES_COLLECTION).where('a', '==', e).get(),
+    firestore.collection(MATCHES_COLLECTION).where('b', '==', e).get(),
+  ]);
+
+  const out = [];
+  snapA.forEach((d) => { const v = d.data(); if (v && v.b) out.push(String(v.b).toLowerCase()); });
+  snapB.forEach((d) => { const v = d.data(); if (v && v.a) out.push(String(v.a).toLowerCase()); });
+
+  const uniq = Array.from(new Set(out));
+  _matchEmailsCache.set(e, { ts: Date.now(), emails: uniq });
+  return uniq;
+}
+
+async function _getMatchesFor(email) {
+  const e = String(email || '').toLowerCase();
+  if (!e) return [];
+
+  if (!hasFirebase) {
+    const others = Array.isArray(DB.matches[e]) ? DB.matches[e] : [];
+    const out = [];
+    for (const other of others) {
+      const otherEmail = String(other || '').toLowerCase();
+      if (!otherEmail) continue;
+      const myType = await _getSwipeType(e, otherEmail);
+      const theirType = await _getSwipeType(otherEmail, e);
+      out.push({ otherEmail, meAction: myType, themAction: theirType, createdAtMs: null });
+    }
+    return out;
+  }
+
+  const [snapA, snapB] = await Promise.all([
+    firestore.collection(MATCHES_COLLECTION).where('a', '==', e).get(),
+    firestore.collection(MATCHES_COLLECTION).where('b', '==', e).get(),
+  ]);
+
+  const out = [];
+
+  snapA.forEach((doc) => {
+    const v = doc.data() || {};
+    const otherEmail = String(v.b || '').toLowerCase();
+    if (!otherEmail) return;
+    out.push({
+      otherEmail,
+      meAction: v.aAction || null,
+      themAction: v.bAction || null,
+      createdAtMs: v.createdAtMs || null,
+    });
+  });
+
+  snapB.forEach((doc) => {
+    const v = doc.data() || {};
+    const otherEmail = String(v.a || '').toLowerCase();
+    if (!otherEmail) return;
+    out.push({
+      otherEmail,
+      meAction: v.bAction || null,
+      themAction: v.aAction || null,
+      createdAtMs: v.createdAtMs || null,
+    });
+  });
+
+  return out;
+}
+
 // Load persisted prefs cache at boot (only when Firebase is OFF)
 if (!hasFirebase) {
   loadPrefsStore();
@@ -1599,7 +1830,7 @@ app.get('/api/moments/list', async (req, res) => {
       if (!email) {
         return res.json({ ok: true, moments: [] });
       }
-      const matchEmails = (DB.matches && DB.matches[email]) ? DB.matches[email] : [];
+      const matchEmails = await _getMatchEmails(email);
       allowedEmails = new Set([email, ...matchEmails.map(e => String(e || '').toLowerCase())]);
     }
 
@@ -1841,9 +2072,6 @@ app.post('/api/me/preferences', async (req, res) => {
     const ageMaxRaw = (typeof body.ageMax !== 'undefined') ? body.ageMax : body.maxAge;
     const lookingRaw = (typeof body.lookingFor !== 'undefined') ? body.lookingFor : body.looking_for;
     const ethRaw = body.ethnicity;
-    const intentRaw = body.intent;
-    const dealbreakersRaw = body.dealbreakers;
-    const sharedValuesRaw = body.sharedValues;
 
     const city = (cityRaw || '').toString().trim();
     const min = Number(ageMinRaw);
@@ -1901,43 +2129,13 @@ app.post('/api/me/preferences', async (req, res) => {
       return res.status(400).json({ ok: false, message: 'lookingFor required' });
     }
 
-    // normalize + validate intent (optional)
-    const allowedIntent = new Set(['long-term','short-term','open']);
-    let intent = undefined;
-    if (typeof intentRaw !== 'undefined' && intentRaw !== null) {
-      const cand = String(intentRaw).trim().toLowerCase();
-      if (cand && allowedIntent.has(cand)) intent = cand;
-    }
-
-    // normalize dealbreakers (optional)
-    let dealbreakers = undefined;
-    if (typeof dealbreakersRaw !== 'undefined' && dealbreakersRaw !== null) {
-      const cand = String(dealbreakersRaw).trim();
-      if (cand) {
-        dealbreakers = cand.slice(0, 500);
-      }
-    }
-
-    // normalize sharedValues (optional)
-    const allowedSV = new Set(['family','career','faith','fitness','travel']);
-    let sharedValues = [];
-    if (Array.isArray(sharedValuesRaw)) {
-      sharedValues = sharedValuesRaw.map(v => String(v).trim().toLowerCase()).filter(Boolean);
-    } else if (typeof sharedValuesRaw === 'string') {
-      sharedValues = sharedValuesRaw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-    }
-    sharedValues = sharedValues.filter(v => allowedSV.has(v));
-
     // Save in memory
     DB.prefs = {
       city,
       ageMin: min,
       ageMax: max,
       lookingFor: lf,
-      ...(eth ? { ethnicity: eth } : {}),
-      ...(intent ? { intent } : {}),
-      ...(dealbreakers ? { dealbreakers } : {}),
-      sharedValues
+      ...(eth ? { ethnicity: eth } : {})
     };
     DB.user.prefsSaved = true;
 
@@ -3571,25 +3769,47 @@ app.post('/api/admin/premium/decision', async (req, res) => {
 });
 // [UPDATED] Get Matches Route
 // [UPDATED] Get Real Matches
-app.get('/api/matches', (req, res) => {
-  if (!DB.user || !DB.user.email) return res.status(401).json({ ok: false });
-  
-  const myEmail = DB.user.email;
-  const matchEmails = DB.matches[myEmail] || [];
 
-  // Kunin ang profile details ng mga ka-match
-  const matches = matchEmails.map(email => {
-    const u = DB.users[email];
-    if (!u) return null;
-    return {
-      id: u.email,
-      name: u.name,
-      age: 25, 
-      photoUrl: u.avatarUrl || 'assets/images/truematch-mark.png'
-    };
-  }).filter(Boolean);
+app.get('/api/matches', authMiddleware, async (req, res) => {
+  try {
+    const myEmail = String(((req.user && req.user.email) || (DB.user && DB.user.email) || '')).toLowerCase();
+    if (!myEmail) return res.status(401).json({ ok: false, error: 'Not authenticated' });
 
-  res.json({ ok: true, matches });
+    const rawMatches = await _getMatchesFor(myEmail);
+    const out = [];
+
+    for (const m of rawMatches) {
+      const otherEmail = String(m.otherEmail || '').toLowerCase();
+      if (!otherEmail) continue;
+
+      let other = null;
+      if (hasFirebase) {
+        other = await findUserByEmail(otherEmail);
+      } else {
+        other = (DB.users && DB.users[otherEmail]) ? DB.users[otherEmail] : null;
+      }
+
+      const name = (other && other.name) ? other.name : (otherEmail.split('@')[0] || 'Member');
+      const city = (other && other.city) ? other.city : 'Global';
+      const photoUrl = (other && (other.avatarUrl || other.photoUrl)) ? (other.avatarUrl || other.photoUrl) : 'assets/images/truematch-mark.png';
+
+      out.push({
+        id: otherEmail,
+        email: otherEmail,
+        name,
+        city,
+        photoUrl,
+        meAction: m.meAction || null,
+        themAction: m.themAction || null,
+        since: m.createdAtMs || null,
+      });
+    }
+
+    res.json({ ok: true, matches: out });
+  } catch (err) {
+    console.error('matches error:', err);
+    res.status(500).json({ ok: false, error: 'Server error' });
+  }
 });
 // Public config to expose client IDs (safe values only)
 app.get('/api/config', (req, res) => {
@@ -3766,28 +3986,34 @@ app.get('/api/swipe/candidates', async (req, res) => {
   // 1. Basic Auth Check
   if (!DB.user || !DB.user.email) return res.status(401).json({ ok: false });
   
-  const myEmail = DB.user.email;
+  const myEmail = String(((req.user && req.user.email) || (DB.user && DB.user.email) || '')).toLowerCase();
+    if (!myEmail) return res.status(401).json({ ok: false, error: 'Not authenticated' });
+
+    const mySwipes = await _getSwipeMapFor(myEmail);
   const planName = DB.user.plan || 'free';
 
-  // 2. CHECK STRICT LIMIT (Server Memory)
-  if (planName === 'free') {
-    // Kung wala pang record, simulan sa 0
-    if (!SERVER_SWIPE_COUNTS[myEmail]) {
-      SERVER_SWIPE_COUNTS[myEmail] = 0;
-    }
+  // 2. CHECK STRICT LIMIT (Server Memory) – keep a per-day counter
+  const today = new Date().toISOString().slice(0, 10);
+  let rec = SERVER_SWIPE_COUNTS[myEmail];
+  if (!rec || typeof rec !== 'object' || !('count' in rec) || !('date' in rec)) {
+    rec = { date: today, count: 0 };
+  }
+  if (rec.date !== today) rec = { date: today, count: 0 };
+  SERVER_SWIPE_COUNTS[myEmail] = rec;
 
-    const currentCount = SERVER_SWIPE_COUNTS[myEmail];
+  const currentCount = rec.count || 0;
+  const remainingNow = Math.max(0, STRICT_DAILY_LIMIT - currentCount);
 
-    // Kung umabot na sa 20, BLOCK NA AGAD.
-    if (currentCount >= STRICT_DAILY_LIMIT) {
-      console.log(`[Limit Block] User ${myEmail} has reached ${currentCount}/${STRICT_DAILY_LIMIT}`);
-      return res.json({ 
-        ok: true, 
-        candidates: [], 
-        limitReached: true, 
-        message: "Server limit reached. Restart server to reset." 
-      });
-    }
+  if (planName === 'free' && currentCount >= STRICT_DAILY_LIMIT) {
+    console.log(`[Limit Block] User ${myEmail} has reached ${currentCount}/${STRICT_DAILY_LIMIT}`);
+    return res.json({
+      ok: true,
+      candidates: [],
+      limitReached: true,
+      remaining: 0,
+      limit: STRICT_DAILY_LIMIT,
+      message: 'Daily limit reached.'
+    });
   }
 
   // 3. Load Candidates (Kapag hindi pa limit reached)
@@ -3797,14 +4023,13 @@ app.get('/api/swipe/candidates', async (req, res) => {
     if (hasFirebase && usersCollection) {
       const snap = await usersCollection.limit(50).get();
       snap.forEach(doc => {
-        const u = doc.data();
-        if (u.email === myEmail) return;
-        // Check kung na-swipe na dati (optional history check)
-        const mySwipes = DB.swipes[myEmail] || {};
-        if (mySwipes[u.email]) return;
-        
+        const u = doc.data() || {};
+        const candEmail = String(u.email || '').toLowerCase();
+        if (!candEmail || candEmail === myEmail) return;
+        if (mySwipes[candEmail]) return;
+
         candidates.push({
-          id: u.email,
+          id: candEmail,
           name: u.name || 'Member',
           age: u.age || 25,
           city: u.city || 'Global',
@@ -3815,12 +4040,11 @@ app.get('/api/swipe/candidates', async (req, res) => {
     // (B) Kung Local Demo Mode
     else {
       const allUsers = Object.values(DB.users);
-      const mySwipes = DB.swipes[myEmail] || {};
-      
+
       candidates = allUsers
-        .filter(u => u.email !== myEmail && !mySwipes[u.email])
+        .filter(u => String(u.email||'').toLowerCase() !== myEmail && !mySwipes[String(u.email||'').toLowerCase()])
         .map(u => ({
-          id: u.email,
+          id: String(u.email||'').toLowerCase(),
           name: u.name || 'Member',
           age: 25,
           city: u.city || 'Global',
@@ -3830,9 +4054,12 @@ app.get('/api/swipe/candidates', async (req, res) => {
 
     // Limitahan ang ibibigay na cards base sa natitirang swipes
     let limitReached = false;
+    let remaining = null;
+    let limit = null;
 
     if (planName === 'free') {
-      const remaining = STRICT_DAILY_LIMIT - (SERVER_SWIPE_COUNTS[myEmail] || 0);
+      limit = STRICT_DAILY_LIMIT;
+      remaining = Math.max(0, STRICT_DAILY_LIMIT - (SERVER_SWIPE_COUNTS[myEmail]?.count || 0));
       if (remaining <= 0) {
         candidates = [];
         limitReached = true;
@@ -3841,7 +4068,7 @@ app.get('/api/swipe/candidates', async (req, res) => {
       }
     }
 
-    res.json({ ok: true, candidates, limitReached });
+    res.json({ ok: true, candidates, limitReached, remaining, limit });
 
 
   } catch (err) {
@@ -3854,66 +4081,57 @@ app.get('/api/swipe/candidates', async (req, res) => {
 // =======================================================================
 // [PALITAN ANG BUONG "app.post('/api/swipe/action'...)"]
 // =======================================================================
-app.post('/api/swipe/action', (req, res) => {
-  if (!DB.user || !DB.user.email) return res.status(401).json({ ok: false });
 
-  const myEmail = DB.user.email;
-  const { targetId, type } = req.body; 
-  const planName = DB.user.plan || 'free';
+app.post('/api/swipe/action', async (req, res) => {
+  try {
+    const myEmail = String(((req.user && req.user.email) || (DB.user && DB.user.email) || '')).toLowerCase();
+    if (!myEmail) return res.status(401).json({ ok: false, error: 'Not authenticated' });
 
-  // 1. UPDATE SERVER COUNTER (Strict)
-  if (planName === 'free') {
-    if (!SERVER_SWIPE_COUNTS[myEmail]) SERVER_SWIPE_COUNTS[myEmail] = 0;
+    const { targetId, type } = req.body || {};
+    const tId = String(targetId || '').toLowerCase();
+    const actionType = String(type || '').toLowerCase();
 
-    // Check ulit bago mag-process (Security)
-    if (SERVER_SWIPE_COUNTS[myEmail] >= STRICT_DAILY_LIMIT) {
-      return res.json({ ok: false, limitReached: true });
+    if (!tId) return res.status(400).json({ ok: false, error: 'Missing targetId' });
+    if (!['pass', 'like', 'superlike'].includes(actionType)) {
+      return res.status(400).json({ ok: false, error: 'Invalid swipe type' });
     }
 
-    // DAGDAGAN ANG BILANG!
-    SERVER_SWIPE_COUNTS[myEmail]++;
-    console.log(`[Swipe Action] ${myEmail} Count: ${SERVER_SWIPE_COUNTS[myEmail]}`);
-  }
-
-  // 2. Record Swipe Logic (Tulad ng dati)
-  if (!DB.swipes[myEmail]) DB.swipes[myEmail] = {};
-  DB.swipes[myEmail][targetId] = { type, ts: Date.now() };
-
-    // Persist swipe history to disk in local/demo mode
-    if (!hasFirebase) {
-    saveSwipesStore();
-  }
-
-  // 3. Match Logic
-  let isMatch = false;
-  if (type === 'like') {
-    const theirSwipes = DB.swipes[targetId] || {};
-    const theirAction = theirSwipes[myEmail];
-    // Check match (support object or string format)
-    const theyLiked = (typeof theirAction === 'string' && theirAction === 'like') ||
-                      (typeof theirAction === 'object' && theirAction.type === 'like');
-
-    if (theyLiked) {
-      isMatch = true;
-      if (!DB.matches[myEmail]) DB.matches[myEmail] = [];
-      if (!DB.matches[myEmail].includes(targetId)) DB.matches[myEmail].push(targetId);
-      
-      if (!DB.matches[targetId]) DB.matches[targetId] = [];
-      if (!DB.matches[targetId].includes(myEmail)) DB.matches[targetId].push(myEmail);
+    // Strict daily limit (server-side)
+    const today = new Date().toISOString().slice(0, 10);
+    SERVER_SWIPE_COUNTS[myEmail] = SERVER_SWIPE_COUNTS[myEmail] || { date: today, count: 0 };
+    if (SERVER_SWIPE_COUNTS[myEmail].date !== today) {
+      SERVER_SWIPE_COUNTS[myEmail] = { date: today, count: 0 };
     }
+    if (SERVER_SWIPE_COUNTS[myEmail].count >= STRICT_DAILY_LIMIT) {
+      return res.json({ ok: true, remaining: 0, limit: STRICT_DAILY_LIMIT, limitReached: true, isMatch: false });
+    }
+
+    // Save swipe (pass counts too; pass means "never show again")
+    await _saveSwipe(myEmail, tId, actionType);
+
+    // Consume a swipe
+    SERVER_SWIPE_COUNTS[myEmail].count += 1;
+    const remaining = Math.max(0, STRICT_DAILY_LIMIT - SERVER_SWIPE_COUNTS[myEmail].count);
+
+    // Pass never creates a match
+    if (actionType === 'pass') {
+      return res.json({ ok: true, remaining, limit: STRICT_DAILY_LIMIT, limitReached: remaining <= 0, isMatch: false });
+    }
+
+    // Mutual like/superlike -> match
+    const otherType = await _getSwipeType(tId, myEmail);
+    const isMutual = _isPositiveSwipe(actionType) && _isPositiveSwipe(otherType);
+
+    if (isMutual) {
+      await _saveMatch(myEmail, tId, actionType, otherType);
+      return res.json({ ok: true, remaining, limit: STRICT_DAILY_LIMIT, limitReached: remaining <= 0, isMatch: true, matchWithEmail: tId });
+    }
+
+    return res.json({ ok: true, remaining, limit: STRICT_DAILY_LIMIT, limitReached: remaining <= 0, isMatch: false });
+  } catch (err) {
+    console.error('Swipe action error:', err);
+    res.status(500).json({ ok: false, error: 'Server error' });
   }
-
-  // 4. Return Remaining Count
-  const currentCount = SERVER_SWIPE_COUNTS[myEmail] || 0;
-  const remaining = Math.max(0, STRICT_DAILY_LIMIT - currentCount);
-
-  res.json({ 
-    ok: true, 
-    match: isMatch,
-    remaining: remaining,
-    // Sabihin sa frontend kung limit reached na para mag-stop ang UI
-    limitReached: planName === 'free' && remaining === 0 
-  });
 });
 
 // ---------------- Google Sign-In (GIS ID token) ----------------

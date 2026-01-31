@@ -197,6 +197,24 @@ function cacheDom() {
   DOM.btnOpenPremiumApply = document.getElementById('btnOpenPremiumApplyMain');
   DOM.dlgPremiumApply = document.getElementById('dlgPremiumApply');
   DOM.btnPremiumCancel = document.getElementById('btnPremiumCancel');
+
+  // Application forms
+  DOM.frmCreatorApply = document.getElementById('frmCreatorApply');
+  DOM.frmPremiumApply = document.getElementById('frmPremiumApply');
+
+  // Creators / Premium Society entry cards
+  DOM.creatorEntryCard = document.getElementById('creatorEntryCard');
+  DOM.creatorStatusRow = document.getElementById('creatorStatusRow');
+  DOM.creatorStatusChip = document.getElementById('creatorStatusChip');
+  DOM.creatorStatusHint = document.getElementById('creatorStatusHint');
+  DOM.btnGoCreatorsPage = document.getElementById('btnGoCreatorsPage');
+
+  DOM.premiumEntryCard = document.getElementById('premiumEntryCard');
+  DOM.premiumStatusRow = document.getElementById('premiumStatusRow');
+  DOM.premiumStatusChip = document.getElementById('premiumStatusChip');
+  DOM.premiumStatusHint = document.getElementById('premiumStatusHint');
+  DOM.btnGoPremiumPage = document.getElementById('btnGoPremiumPage');
+
   
   DOM.toast = document.getElementById('tm-toast');
 }
@@ -215,6 +233,118 @@ function normalizePlanKey(rawPlan) {
   if (p.includes('elite') || p.includes('tier2')) return 'tier2';
   if (p.includes('concierge') || p.includes('tier3')) return 'tier3';
   return 'free';
+}
+
+function normalizeStatus(rawStatus) {
+  if (!rawStatus) return '';
+  const s = String(rawStatus).trim().toLowerCase();
+  if (s === 'pending' || s === 'approved' || s === 'rejected') return s;
+  return s; // fallback
+}
+
+function renderCreatorPremiumEntryCards() {
+  renderCreatorEntryCard();
+  renderPremiumEntryCard();
+}
+
+function renderCreatorEntryCard() {
+  if (!DOM.creatorEntryCard) return;
+
+  const status = normalizeStatus(state.me && state.me.creatorStatus);
+  const row = DOM.creatorStatusRow;
+  const chip = DOM.creatorStatusChip;
+  const hint = DOM.creatorStatusHint;
+  const btnApply = DOM.btnOpenCreatorApply;
+  const btnGo = DOM.btnGoCreatorsPage;
+
+  // Defaults
+  if (row) row.style.display = 'none';
+  if (btnGo) btnGo.style.display = 'none';
+  if (btnApply) {
+    btnApply.disabled = false;
+    btnApply.textContent = 'Apply';
+    btnApply.style.opacity = '1';
+  }
+
+  if (status === 'pending') {
+    if (row) row.style.display = 'flex';
+    if (chip) chip.textContent = 'Pending';
+    if (hint) hint.textContent = 'Your application is under review.';
+    if (btnApply) {
+      btnApply.disabled = true;
+      btnApply.textContent = 'Application Pending';
+      btnApply.style.opacity = '0.6';
+    }
+  } else if (status === 'rejected') {
+    if (row) row.style.display = 'flex';
+    if (chip) chip.textContent = 'Rejected';
+    if (hint) hint.textContent = 'You can edit and re-apply anytime.';
+    if (btnApply) {
+      btnApply.disabled = false;
+      btnApply.textContent = 'Re-Apply';
+      btnApply.style.opacity = '1';
+    }
+  } else if (status === 'approved') {
+    // In case user lands here (e.g., deep link / back button), show a go button.
+    if (row) row.style.display = 'flex';
+    if (chip) chip.textContent = 'Approved';
+    if (hint) hint.textContent = 'You can now access the Creators page.';
+    if (btnApply) btnApply.style.display = 'none';
+    if (btnGo) btnGo.style.display = 'inline-flex';
+  } else {
+    // no status yet
+    if (btnApply) btnApply.style.display = 'inline-flex';
+  }
+}
+
+function renderPremiumEntryCard() {
+  if (!DOM.premiumEntryCard) return;
+
+  const status = normalizeStatus(state.me && state.me.premiumStatus);
+  const row = DOM.premiumStatusRow;
+  const chip = DOM.premiumStatusChip;
+  const hint = DOM.premiumStatusHint;
+  const btnApply = DOM.btnOpenPremiumApply;
+  const btnGo = DOM.btnGoPremiumPage;
+
+  // Defaults
+  if (row) row.style.display = 'none';
+  if (btnGo) btnGo.style.display = 'none';
+  if (btnApply) {
+    btnApply.disabled = false;
+    btnApply.textContent = 'Apply';
+    btnApply.style.opacity = '1';
+    btnApply.style.display = 'inline-flex';
+  }
+
+  if (status === 'pending') {
+    if (row) row.style.display = 'flex';
+    if (chip) chip.textContent = 'Pending';
+    if (hint) hint.textContent = 'Your application is under review.';
+    if (btnApply) {
+      btnApply.disabled = true;
+      btnApply.textContent = 'Application Pending';
+      btnApply.style.opacity = '0.6';
+    }
+  } else if (status === 'rejected') {
+    if (row) row.style.display = 'flex';
+    if (chip) chip.textContent = 'Rejected';
+    if (hint) hint.textContent = 'You can re-apply anytime.';
+    if (btnApply) {
+      btnApply.disabled = false;
+      btnApply.textContent = 'Re-Apply';
+      btnApply.style.opacity = '1';
+    }
+  } else if (status === 'approved') {
+    if (row) row.style.display = 'flex';
+    if (chip) chip.textContent = 'Approved';
+    if (hint) hint.textContent = 'You can now access Premium Society.';
+    if (btnApply) btnApply.style.display = 'none';
+    if (btnGo) btnGo.style.display = 'inline-flex';
+  } else {
+    // no status yet
+    if (btnApply) btnApply.style.display = 'inline-flex';
+  }
 }
 
 function getRandomColor() {
@@ -432,6 +562,28 @@ function setupEventListeners() {
       await handleProfileSave();
     });
   }
+  if (DOM.frmCreatorApply) {
+    DOM.frmCreatorApply.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await handleCreatorApplicationSubmit();
+    });
+  }
+
+  if (DOM.frmPremiumApply) {
+    DOM.frmPremiumApply.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await handlePremiumApplicationSubmit();
+    });
+  }
+
+  if (DOM.btnGoCreatorsPage) DOM.btnGoCreatorsPage.addEventListener('click', () => {
+    window.location.href = 'creators.html';
+  });
+
+  if (DOM.btnGoPremiumPage) DOM.btnGoPremiumPage.addEventListener('click', () => {
+    window.location.href = 'premium-society.html';
+  });
+
 
   // 11. Backdrop Closing
   enableBackdropClose(DOM.dlgProfile);
@@ -527,6 +679,20 @@ function setupMobileMenu() {
 // ---------------------------------------------------------------------
 
 function setActiveTab(tabName) {
+
+  // Access redirect (when approved by admin)
+  if (!DEV_MODE && state && state.me) {
+    const cst = normalizeStatus(state.me.creatorStatus);
+    const pst = normalizeStatus(state.me.premiumStatus);
+    if (tabName === 'creators' && cst === 'approved') {
+      window.location.href = 'creators.html';
+      return;
+    }
+    if (tabName === 'premium' && pst === 'approved') {
+      window.location.href = 'premium-society.html';
+      return;
+    }
+  }
   state.activeTab = tabName;
   
   // 1. Update Navigation State
@@ -1365,6 +1531,9 @@ async function loadMe() {
     applyPlanNavGating();
     applyAdvancedPrefsLock();
 
+    // Creators & Premium Society entry cards
+    if (!DEV_MODE) renderCreatorPremiumEntryCards();
+
   } catch (err) {
     console.error("Error loading user:", err);
   }
@@ -1530,6 +1699,180 @@ function syncFormToState() {
   if (DOM.inpIntent) DOM.inpIntent.value = p.intent || '';
   if (DOM.inpDealbreakers) DOM.inpDealbreakers.value = p.dealbreakers || '';
   setSharedValuesInUI(p.sharedValues || []);
+}
+
+
+async function handleCreatorApplicationSubmit() {
+  if (!state.me || !state.me.email) {
+    showToast('Please log in first.', 'error');
+    window.location.href = 'auth.html?mode=login';
+    return;
+  }
+
+  const status = normalizeStatus(state.me.creatorStatus);
+  if (status === 'pending') {
+    showToast('Creator application is already pending.', 'error');
+    return;
+  }
+
+  const form = DOM.frmCreatorApply;
+  if (!form) return;
+
+  const submitBtn = form.querySelector('button[type="submit"]');
+  const oldTxt = submitBtn ? submitBtn.textContent : '';
+  try {
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Submitting...';
+    }
+
+    const fd = new FormData(form);
+
+    // Respect HTML required fields (so the form feels native and solid).
+    if (typeof form.reportValidity === 'function' && !form.reportValidity()) return;
+
+    const handle = String(fd.get('handle') || '').trim();
+    const price = String(fd.get('price') || '').trim();
+
+    // New (OnlyFans-style) fields (UI-only, but we still persist them safely)
+    const displayName = String(fd.get('creatorDisplayName') || '').trim();
+    const country = String(fd.get('creatorCountry') || '').trim();
+    const languages = String(fd.get('creatorLanguages') || '').trim();
+    const bio = String(fd.get('creatorBio') || '').trim();
+    const category = String(fd.get('creatorCategory') || '').trim();
+    const niche = String(fd.get('creatorNiche') || '').trim();
+    const schedule = String(fd.get('creatorPostingSchedule') || '').trim();
+    const boundaries = String(fd.get('creatorContentBoundaries') || '').trim();
+    const currency = String(fd.get('creatorCurrency') || 'USD').trim();
+
+    // Links (optional)
+    const ig = String(fd.get('creatorInstagram') || '').trim();
+    const tt = String(fd.get('creatorTikTok') || '').trim();
+    const x = String(fd.get('creatorX') || '').trim();
+    const web = String(fd.get('creatorWebsite') || '').trim();
+
+    const contentStyleRaw = String(fd.get('contentStyle') || '').trim();
+    const gender = String(fd.get('gender') || '').trim();
+
+    const linksParts = [];
+    if (ig) linksParts.push(`Instagram: ${ig}`);
+    if (tt) linksParts.push(`TikTok: ${tt}`);
+    if (x) linksParts.push(`X: ${x}`);
+    if (web) linksParts.push(`Website: ${web}`);
+    const linksCompiled = linksParts.join(" | ");
+
+    // NOTE: Current backend stores only {handle, gender, contentStyle, price, links}.
+    // To avoid touching server logic, we safely "pack" the new fields into contentStyle/links.
+    const packedContentStyle = [
+      displayName ? `Display name: ${displayName}` : '',
+      country ? `Location: ${country}` : '',
+      languages ? `Languages: ${languages}` : '',
+      category ? `Category: ${category}` : '',
+      niche ? `Niche: ${niche}` : '',
+      schedule ? `Posting schedule: ${schedule}` : '',
+      bio ? `Bio: ${bio}` : '',
+      boundaries ? `Boundaries: ${boundaries}` : '',
+      currency ? `Currency: ${currency}` : '',
+      contentStyleRaw ? `Style notes: ${contentStyleRaw}` : ''
+    ].filter(Boolean).join(" | ");
+
+    const payload = {
+      handle,
+      price,
+      contentStyle: packedContentStyle,
+      gender,
+      links: linksCompiled
+    };
+
+    if (!payload.handle || !payload.price) {
+      showToast('Please fill in your handle and monthly price.', 'error');
+      return;
+    }
+
+    // Extra "OnlyFans-style" required checks (kept lightweight)
+    if (!displayName || !country || !languages || !bio || !category || !schedule) {
+      showToast('Please complete the required Creator Application fields.', 'error');
+      return;
+    }
+
+    const res = await apiPost('/api/me/creator/apply', payload);
+    if (!res || !res.ok) throw new Error(res && res.error ? res.error : 'Failed to submit application.');
+
+    showToast('Creator application submitted. Status: pending.');
+    if (DOM.dlgCreatorApply) DOM.dlgCreatorApply.close();
+
+    // Update local state (so UI reflects pending immediately)
+    state.me.creatorStatus = 'pending';
+    state.me.creatorApplication = { ...payload, submittedAt: Date.now() };
+
+    renderCreatorPremiumEntryCards();
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || 'Failed to submit creator application.', 'error');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = oldTxt || 'Submit Application';
+    }
+  }
+}
+
+async function handlePremiumApplicationSubmit() {
+  if (!state.me || !state.me.email) {
+    showToast('Please log in first.', 'error');
+    window.location.href = 'auth.html?mode=login';
+    return;
+  }
+
+  const status = normalizeStatus(state.me.premiumStatus);
+  if (status === 'pending') {
+    showToast('Premium Society application is already pending.', 'error');
+    return;
+  }
+
+  const form = DOM.frmPremiumApply;
+  if (!form) return;
+
+  const submitBtn = form.querySelector('button[type="submit"]');
+  const oldTxt = submitBtn ? submitBtn.textContent : '';
+  try {
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Submitting...';
+    }
+
+    const fd = new FormData(form);
+    const payload = {
+      fullName: String(fd.get('fullName') || '').trim(),
+      age: String(fd.get('age') || '').trim(),
+      occupation: String(fd.get('occupation') || '').trim(),
+      finance: String(fd.get('finance') || '').trim()
+    };
+
+    if (!payload.fullName || !payload.occupation) {
+      showToast('Please fill in your full name and occupation.', 'error');
+      return;
+    }
+
+    const res = await apiPost('/api/me/premium/apply', payload);
+    if (!res || !res.ok) throw new Error(res && res.error ? res.error : 'Failed to submit application.');
+
+    showToast('Premium Society application submitted. Status: pending.');
+    if (DOM.dlgPremiumApply) DOM.dlgPremiumApply.close();
+
+    state.me.premiumStatus = 'pending';
+    state.me.premiumApplication = { ...payload, submittedAt: Date.now() };
+
+    renderCreatorPremiumEntryCards();
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || 'Failed to submit Premium Society application.', 'error');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = oldTxt || 'Submit Application';
+    }
+  }
 }
 
 async function handleProfileSave() {
@@ -1725,7 +2068,7 @@ const SwipeController = (() => {
     }
 
     if (!DEV_MODE) {
-       const apiType = (type === 'superlike') ? 'like' : type;
+       const apiType = (type === 'superlike') ? 'star' : type;
        apiPost('/api/swipe/action', { targetId: profiles[currentIndex].id, type: apiType });
     }
     

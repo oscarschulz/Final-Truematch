@@ -75,6 +75,7 @@
             <h3 class="tiny muted" style="margin-bottom:15px; letter-spacing:1px; text-align:left; padding-left: 5px;">RECENT MOMENTS</h3>
             <div class="stories-rail-container glass-card" style="margin:0; border:none; background:transparent; box-shadow:none; padding:0;">
               <div class="stories-scroll left-align" id="storiesContainer"></div>
+              <input type="file" id="momentFileInput" accept="image/*,video/*" hidden>
             </div>
         </div>
       </section>
@@ -117,10 +118,52 @@
 
       <section class="panel" data-panel="creators" id="panel-creators">
           <div class="feed-header">Creators</div>
+
+          <!-- Creators application / access card (wired in dashboard.js) -->
+          <div class="glass-card" id="creatorEntryCard" style="max-width:650px; margin: 20px auto 0; padding: 26px; text-align:center;">
+            <div style="display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:8px;">
+              <i class="fa-solid fa-fire" style="color:#00aff0;"></i>
+              <h2 style="margin:0; font-size:1.35rem;">Become a Creator</h2>
+            </div>
+            <p class="tiny muted" style="margin:0 0 14px;">Apply to become a Creator and monetize your audience (OnlyFans-style).</p>
+
+            <div id="creatorStatusRow" style="display:none; align-items:center; justify-content:center; gap:10px; margin: 0 0 14px;">
+              <span class="badge-pill" id="creatorStatusChip">Pending</span>
+              <span class="tiny muted" id="creatorStatusHint"></span>
+            </div>
+
+            <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+              <button class="btn btn--white" id="btnOpenCreatorApply" style="border-radius:99px; padding: 10px 26px; font-weight:800;">Apply</button>
+              <button class="btn btn--primary" id="btnGoCreatorsPage" style="display:none; border-radius:99px; padding: 10px 26px; font-weight:800;">Open Creators Page</button>
+            </div>
+
+            <div class="tiny muted" style="margin-top:12px;">Once approved by admin, this tab will automatically open the Creators page.</div>
+          </div>
       </section>
 
       <section class="panel" data-panel="premium" id="panel-premium">
-          <div class="feed-header">Premium</div>
+          <div class="feed-header">Premium Society</div>
+
+          <!-- Premium Society application / access card (wired in dashboard.js) -->
+          <div class="glass-card" id="premiumEntryCard" style="max-width:650px; margin: 20px auto 0; padding: 26px; text-align:center; border: 1px solid rgba(255, 215, 0, 0.25);">
+            <div style="display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:8px;">
+              <i class="fa-solid fa-crown" style="color:#ffd700;"></i>
+              <h2 style="margin:0; font-size:1.35rem;">Premium Society</h2>
+            </div>
+            <p class="tiny muted" style="margin:0 0 14px;">Apply to become a Premium Society member. Your application will be reviewed by admin.</p>
+
+            <div id="premiumStatusRow" style="display:none; align-items:center; justify-content:center; gap:10px; margin: 0 0 14px;">
+              <span class="badge-pill" id="premiumStatusChip" style="border-color: rgba(255,215,0,0.35);">Pending</span>
+              <span class="tiny muted" id="premiumStatusHint"></span>
+            </div>
+
+            <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+              <button class="btn btn--gold" id="btnOpenPremiumApply" style="border-radius:99px; padding: 10px 26px; font-weight:800;">Apply</button>
+              <button class="btn btn--primary" id="btnGoPremiumPage" style="display:none; border-radius:99px; padding: 10px 26px; font-weight:800;">Open Premium Society</button>
+            </div>
+
+            <div class="tiny muted" style="margin-top:12px;">Once approved by admin, this tab will automatically open Premium Society.</div>
+          </div>
       </section>
 
       <section class="panel" data-panel="settings" id="panel-settings">
@@ -215,7 +258,7 @@
         <div class="active-grid" id="activeNearbyContainer"></div>
       </div>
       <div class="premium-card">
-        <div class="premium-content"><i class="fa-solid fa-crown" style="font-size:2rem; margin-bottom:10px;"></i><h3>Get more features</h3><p>See who likes you & unlimited swipes.</p><button class="btn btn--white" id="btnSidebarSubscribe">Upgrade Now</button></div>
+        <div class="premium-content"><i class="fa-solid fa-crown" style="font-size:2rem; margin-bottom:10px;"></i><h3>Unlock More Features</h3><p>See who likes you & unlimited swipes.</p><button class="btn btn--white" id="btnSidebarSubscribe">Upgrade Now</button></div>
       </div>
     </aside>
   </div>
@@ -399,11 +442,99 @@
 <dialog id="dlgPremiumApply" class="tm-dialog premium-dialog">
     <div class="premium-header-bg"><i class="fa-solid fa-gem premium-icon-large" style="font-size:2rem; margin-bottom:5px; animation:float 3s infinite;"></i><h2>iTrueMatch <span style="color:#FFF;">GOLD</span></h2><p>Unlock the ultimate experience.</p></div>
     <div class="premium-benefits-list"><div class="p-benefit"><i class="fa-solid fa-check"></i> Unlimited Swipes</div><div class="p-benefit"><i class="fa-solid fa-check"></i> See Who Liked You</div><div class="p-benefit"><i class="fa-solid fa-check"></i> Priority Matching</div></div>
-    <form method="dialog" id="frmPremiumApply" class="tm-form" style="padding: 0 20px 20px;"><div class="dialog__body" style="padding: 5px 0;"><label class="tiny muted" style="margin-top:10px;">APPLICATION FORM</label><input type="text" name="fullName" class="tm-input input-gold" placeholder="Full Name"><input type="text" name="occupation" class="tm-input input-gold" placeholder="Occupation"><textarea name="finance" class="tm-input input-gold" placeholder="Annual Income Source" style="height:80px; resize:none;"></textarea></div><div class="dialog__footer" style="border:none; padding-top:10px;"><button type="button" id="btnPremiumCancel" class="btn btn--ghost">Cancel</button><button type="submit" class="btn btn--gold" style="flex:1;">Submit Application</button></div></form>
+    <form method="dialog" id="frmPremiumApply" class="tm-form" style="padding: 0 20px 20px;"><div class="dialog__body" style="padding: 5px 0;"><label class="tiny muted" style="margin-top:10px;">APPLICATION FORM</label><input type="text" name="fullName" class="tm-input input-gold" placeholder="Full Name"><input type="number" name="age" class="tm-input input-gold" placeholder="Age" min="18" step="1"><input type="text" name="occupation" class="tm-input input-gold" placeholder="Occupation"><textarea name="finance" class="tm-input input-gold" placeholder="Annual Income Source" style="height:80px; resize:none;"></textarea></div><div class="dialog__footer" style="border:none; padding-top:10px;"><button type="button" id="btnPremiumCancel" class="btn btn--ghost">Cancel</button><button type="submit" class="btn btn--gold" style="flex:1;">Submit Application</button></div></form>
   </dialog>
 
   <dialog id="dlgCreatorApply" class="tm-dialog">
-    <form method="dialog" id="frmCreatorApply" class="tm-form"><div class="dialog__header"><h3>Creator Application</h3></div><div class="dialog__body"><input type="text" name="handle" class="tm-input" placeholder="@handle"><input type="number" name="price" class="tm-input" placeholder="Price"><textarea name="contentStyle" class="tm-input" placeholder="Style"></textarea></div><div class="dialog__footer"><button type="button" id="btnCloseCreatorApply" class="btn btn--ghost">Cancel</button><button type="submit" class="btn btn--primary">Submit</button></div></form>
+    <form method="dialog" id="frmCreatorApply" class="tm-form">
+      <div class="dialog__header">
+        <h3>Creator Application</h3>
+      </div>
+
+      <div class="dialog__body">
+        <label class="tiny">PROFILE</label>
+
+        <input type="text" name="creatorDisplayName" class="tm-input" placeholder="Display name (public)" required>
+
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+          <input type="text" name="handle" class="tm-input" placeholder="@handle" style="flex:1; min-width: 170px;" required>
+
+          <select name="gender" class="tm-input" style="flex:1; min-width: 170px;">
+            <option value="" selected>Gender (optional)</option>
+            <option value="woman">Woman</option>
+            <option value="man">Man</option>
+            <option value="non-binary">Non-binary</option>
+            <option value="prefer_not_to_say">Prefer not to say</option>
+          </select>
+        </div>
+
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+          <input type="text" name="creatorCountry" class="tm-input" placeholder="Country / Region" style="flex:1; min-width: 170px;" required>
+          <input type="text" name="creatorLanguages" class="tm-input" placeholder="Languages (e.g., English, Spanish)" style="flex:1; min-width: 170px;" required>
+        </div>
+
+        <label class="tiny">ABOUT</label>
+        <textarea name="creatorBio" class="tm-input" placeholder="Short bio. What can fans expect from you?" style="height: 90px; resize:none;" required></textarea>
+
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+          <select name="creatorCategory" class="tm-input" style="flex:1; min-width: 170px;" required>
+            <option value="" selected>Main category</option>
+            <option value="lifestyle">Lifestyle</option>
+            <option value="fitness">Fitness</option>
+            <option value="fashion">Fashion</option>
+            <option value="modeling">Modeling</option>
+            <option value="cosplay">Cosplay</option>
+            <option value="music">Music</option>
+            <option value="gaming">Gaming</option>
+            <option value="dance">Dance</option>
+            <option value="education">Education</option>
+            <option value="other">Other</option>
+          </select>
+          <input type="text" name="creatorNiche" class="tm-input" placeholder="Niche (optional)" style="flex:1; min-width: 170px;">
+        </div>
+
+        <textarea name="creatorPostingSchedule" class="tm-input" placeholder="Posting schedule (e.g., 4x/week, daily stories)" style="height: 70px; resize:none;" required></textarea>
+
+        <label class="tiny">PRICING</label>
+        <div class="hint">Set a monthly subscription price. You can change it later.</div>
+
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+          <input type="number" name="price" class="tm-input" placeholder="Monthly price" min="1" step="1" style="flex:1; min-width: 170px;" required>
+          <select name="creatorCurrency" class="tm-input" style="flex:1; min-width: 170px;">
+            <option value="USD" selected>USD</option>
+            <option value="EUR">EUR</option>
+            <option value="GBP">GBP</option>
+            <option value="PHP">PHP</option>
+            <option value="NGN">NGN</option>
+          </select>
+        </div>
+
+        <label class="tiny">CONTENT</label>
+        <textarea name="creatorContentBoundaries" class="tm-input" placeholder="Content boundaries (optional). What you do / don’t do." style="height: 80px; resize:none;"></textarea>
+        <textarea name="contentStyle" class="tm-input" placeholder="Content style (e.g., aesthetic, themes, vibe, formats)" style="height: 90px; resize:none;"></textarea>
+
+        <label class="tiny">LINKS</label>
+        <div class="hint">Optional, but helps reviewers verify your identity and brand.</div>
+
+        <input type="url" name="creatorInstagram" class="tm-input" placeholder="Instagram link (optional)">
+        <input type="url" name="creatorTikTok" class="tm-input" placeholder="TikTok link (optional)">
+        <input type="url" name="creatorX" class="tm-input" placeholder="X / Twitter link (optional)">
+        <input type="url" name="creatorWebsite" class="tm-input" placeholder="Website / Portfolio link (optional)">
+
+        <label class="tiny">CONFIRMATION</label>
+        <label style="display:flex; gap:10px; align-items:flex-start; font-size: 0.9rem; color: rgba(255,255,255,0.85); line-height:1.35;">
+          <input type="checkbox" name="creatorConfirm18" required style="margin-top:4px;">
+          <span>I confirm I meet the platform requirements and my application details are accurate.</span>
+        </label>
+
+        <input type="hidden" name="links" value="">
+      </div>
+
+      <div class="dialog__footer">
+        <button type="button" id="btnCloseCreatorApply" class="btn btn--ghost">Cancel</button>
+        <button type="submit" class="btn btn--primary">Submit</button>
+      </div>
+    </form>
   </dialog>
 
   <dialog id="dlgStory" class="tm-dialog" style="padding:0; overflow:hidden; background: #000; border: 1px solid #333; max-width: 380px; height: 70vh; border-radius: 20px;">
