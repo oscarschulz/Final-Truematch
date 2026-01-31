@@ -1997,6 +1997,9 @@ const SwipeController = (() => {
       if (data && data.candidates && data.candidates.length > 0) {
         profiles = data.candidates;
         currentIndex = 0;
+        // Ensure the empty-state is hidden when we actually have candidates.
+        // (This also prevents a rare "flash" if CSS or previous state made it visible.)
+        if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = true;
         renderCards();
         if (DOM.swipeControls) DOM.swipeControls.style.display = 'flex';
       } else {
