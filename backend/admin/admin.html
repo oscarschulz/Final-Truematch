@@ -188,7 +188,50 @@
           </div>
         </div>
       </div>
-    </section>
+          <div class="card" id="mm-subscribers-card" style="margin-top:16px;">
+        <div class="card-head">
+          <h2 class="h2">Elite & Concierge Subscribers</h2>
+          <div class="muted" id="mm-counts">—</div>
+        </div>
+
+        <div class="filters-bar" id="mm-filters">
+          <div class="filter">
+            <div class="filter-label">Tier</div>
+            <select id="mm-tier-filter">
+              <option value="all">All</option>
+              <option value="tier2">Elite (Tier 2)</option>
+              <option value="tier3">Concierge (Tier 3)</option>
+            </select>
+          </div>
+
+          <div class="filter">
+            <div class="filter-label">Status</div>
+            <select id="mm-status-filter">
+              <option value="all">All</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
+
+          <div class="filter grow">
+            <div class="filter-label">Search</div>
+            <input id="mm-search" type="text" placeholder="email or name" />
+          </div>
+
+          <button class="btn btn-sm" id="mm-refresh" type="button">Refresh</button>
+        </div>
+
+        <div class="table-container mm-table" id="mm-table">
+          <div class="table-header">
+            <div>Email</div>
+            <div>Tier</div>
+            <div>Status</div>
+          </div>
+          <div class="table-body" id="mm-users-body"></div>
+        </div>
+
+        <div class="muted" style="margin-top:10px;">Tip: Click a row to auto-fill the <b>Target Email</b> field above.</div>
+      </div></section>
 
     <section id="panel-creators" class="admin-panel hidden">
       <div class="panel-head">

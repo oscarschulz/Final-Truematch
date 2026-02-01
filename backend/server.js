@@ -1221,31 +1221,31 @@ function cleanupExpiredMoments() {
 function publicUser(doc) {
   if (!doc) return null;
 
-  const plan = typeof doc.plan !== 'undefined' ? doc.plan : null;
-  const planStart = doc.planStart || null;
-  const planEnd = doc.planEnd || null;
+  const email = doc.email || doc.userEmail || '';
+  const planRaw = doc.plan || doc.tier || 'free';
+  const plan = normalizePlanKey(planRaw);
 
-  let planActive = (typeof doc.planActive === 'boolean') ? doc.planActive : false;
-  if (plan && planEnd) {
-    const endTs = new Date(planEnd).getTime();
-    if (!Number.isNaN(endTs) && Date.now() > endTs) {
-      planActive = false;
-    }
-  }
+  const planEnd = doc.planEnd ?? doc.subscriptionEnd ?? doc.subEnd ?? null;
+  const planStart = doc.planStart ?? doc.subscriptionStart ?? doc.subStart ?? null;
+
+  const planActive = _computePlanActiveForDoc(plan, planEnd, doc.planActive);
+
+  // Normalize "createdAt" for sorting/debug (keeps original field on response too)
+  const createdAt = doc.createdAt ?? doc.created_at ?? null;
 
   return {
-    id: doc.id || 'demo-1',
-    email: doc.email || '',
-    name: doc.name || '',
-    age: doc.age || '', // <--- IDAGDAG ITO (Para lumabas sa modal)
-    city: doc.city || '', // Siguraduhing walang default na '—' para malinis sa input
-    plan,
+    id: doc.id || doc.uid || doc.userId || null,
+    uid: doc.uid || doc.id || doc.userId || null,
+    email,
+    name: doc.name || doc.fullName || '',
+    verified: Boolean(doc.verified),
+    plan,                 // free | tier1 | tier2 | tier3
+    planActive,           // boolean computed
     planStart,
     planEnd,
-    avatarUrl: doc.avatarUrl || '',
-    prefsSaved: !!doc.prefsSaved,
-    emailVerified: !!doc.emailVerified,
-    planActive
+    createdAt,
+    lastLoginAt: doc.lastLoginAt ?? doc.last_login_at ?? null,
+    lastSeenAt: doc.lastSeenAt ?? doc.last_seen_at ?? null,
   };
 }
 
@@ -1427,56 +1427,60 @@ function generateDemoProfiles(count, prefs = {}) {
 
 
 async function serveShortlistForToday(email) {
+  const today = formatYYYYMMDD(new Date());
+
   const state = await loadShortlistState(email);
-  const plan = state.plan || DB.user.plan || 'tier1';
-  const rule = PLAN_RULES[plan] || PLAN_RULES.tier1;
+  const stateShortlist = Array.isArray(state.shortlist) ? state.shortlist : [];
 
-  // Check if plan is active (based on DB.user.planEnd if available)
-  let isActive = false;
-  if (typeof DB.user?.planActive === 'boolean') isActive = DB.user.planActive;
-  if (DB.user && DB.user.plan && DB.user.planEnd) {
-    const endTs = new Date(DB.user.planEnd).getTime();
-    if (!Number.isNaN(endTs) && Date.now() > endTs) {
-      isActive = false;
-    }
+  // Determine plan + activeness (prefer stored state; fallback to DB.user when available)
+  const planKey = normalizePlanKey(state.plan || (DB.user && DB.user.plan) || 'free');
+
+  // Only Elite + Concierge can receive served shortlists
+  const eligible = (planKey === 'tier2' || planKey === 'tier3');
+
+  let inferredEnd = state.planEnd || (DB.user && DB.user.planEnd) || null;
+  let inferredFlag = (typeof state.planActive === 'boolean') ? state.planActive : (DB.user && typeof DB.user.planActive === 'boolean' ? DB.user.planActive : undefined);
+  const active = _computePlanActiveForDoc(planKey, inferredEnd, inferredFlag);
+
+  const rule = PLAN_RULES[planKey] || { dailyCap: 0, canShortlist: false };
+  const dailyCap = (eligible && active) ? (rule.dailyCap || 0) : 0;
+
+  if (!eligible) {
+    return { ok: true, date: today, plan: planKey, dailyCap, servedToday: 0, items: [], reason: 'not_eligible' };
+  }
+  if (!active) {
+    return { ok: true, date: today, plan: planKey, dailyCap, servedToday: 0, items: [], reason: 'inactive' };
   }
 
-  const today = todayKey();
+  // Reset daily count when the date changes
+  const lastDate = state.shortlistLastDate || null;
+  const servedToday = (lastDate === today) ? (state.shortlistServedToday || 0) : 0;
 
-  if (!isActive) {
-    return { items: [], plan, dailyCap: rule.dailyCap, date: today };
+  // If already served today, just return stored shortlist
+  if (servedToday >= 1 && stateShortlist.length) {
+    return {
+      ok: true,
+      date: today,
+      plan: planKey,
+      dailyCap,
+      servedToday,
+      items: stateShortlist,
+      fromCache: true
+    };
   }
 
-  let shortlist = Array.isArray(state.shortlist) ? state.shortlist : [];
-  const pending = shortlist.filter(p => p.status === 'pending' || !p.status);
-
-  // If we already served today's batch, do NOT add new profiles again.
-  if (state.shortlistLastDate === today) {
-    shortlist = pending;
-  } else {
-    const pendingCount = pending.length;
-    const slotsFree = Math.max(0, rule.dailyCap - pendingCount);
-
-    shortlist = pending;
-    if (slotsFree > 0) {
-      const newOnes = generateDemoProfiles(slotsFree, state.prefs || DB.prefs || {});
-      shortlist = pending.concat(newOnes);
-    }
+  // If no shortlist exists in state, nothing to serve
+  if (!stateShortlist.length) {
+    return { ok: true, date: today, plan: planKey, dailyCap, servedToday, items: [] };
   }
 
-  const nextState = {
-    shortlist,
-    shortlistLastDate: today
-  };
+  // Mark as served
+  await saveShortlistState(email, {
+    shortlistLastDate: today,
+    shortlistServedToday: 1
+  });
 
-  await saveShortlistState(email, nextState);
-
-  return {
-    items: shortlist,
-    plan,
-    dailyCap: rule.dailyCap,
-    date: today
-  };
+  return { ok: true, date: today, plan: planKey, dailyCap, servedToday: 1, items: stateShortlist };
 }
 
 async function addScheduledDate(email, profile) {
@@ -2772,42 +2776,54 @@ app.post('/api/admin/logout', (req, res) => {
 // 1) List active users per tier
 app.get('/api/admin/users', requireAdmin, async (req, res) => {
   try {
-    let { tier } = req.query || {};
-    const allowed = ['tier1', 'tier2', 'tier3', 'all'];
-    tier = String(tier || 'tier1').toLowerCase();
-    if (!allowed.includes(tier)) tier = 'tier1';
+    const tierRaw = String(req.query.tier || 'all').toLowerCase().trim();
+    const includeInactiveRaw = String(req.query.include_inactive || '').toLowerCase().trim();
+    const includeInactive = (includeInactiveRaw === '1' || includeInactiveRaw === 'true' || includeInactiveRaw === 'yes');
 
-    const items = [];
+    const tier = (tierRaw === 'all') ? 'all' : normalizePlanKey(tierRaw);
+    const allowed = new Set(['all', 'free', 'tier1', 'tier2', 'tier3']);
+    const finalTier = allowed.has(tier) ? tier : 'all';
 
-    if (hasFirebase && usersCollection) {
-      if (tier === 'all') {
-        const snap = await usersCollection.get();
-        snap.forEach((docSnap) => {
-          const user = publicUser({ id: docSnap.id, ...docSnap.data() });
-          if (user && user.planActive) items.push(user);
-        });
-      } else {
-        const snap = await usersCollection.where('plan', '==', tier).get();
-        snap.forEach((docSnap) => {
-          const user = publicUser({ id: docSnap.id, ...docSnap.data() });
-          if (user && user.planActive) items.push(user);
-        });
-      }
-    } else {
-      // Fallback: in-memory store
-      const list = Object.values(DB.users || {});
-      list.forEach((u) => {
-        const planKey = normalizePlanKey(u.plan);
-        if (tier !== 'all' && planKey !== tier) return;
-        const pu = publicUser(u);
-        if (pu && pu.planActive) items.push(pu);
+    let usersArr = [];
+
+    if (admin && admin.firestore) {
+      const snap = await admin.firestore().collection('users').get();
+      usersArr = snap.docs.map(d => publicUser({ id: d.id, ...d.data() })).filter(Boolean);
+    } else if (Array.isArray(DB.users)) {
+      usersArr = DB.users.map(u => publicUser(u)).filter(Boolean);
+    }
+
+    if (finalTier !== 'all') {
+      usersArr = usersArr.filter(u => normalizePlanKey(u.plan || 'free') === finalTier);
+    }
+
+    if (!includeInactive) {
+      usersArr = usersArr.filter(u => {
+        const pk = normalizePlanKey(u.plan || 'free');
+        if (pk === 'free') return true;
+        return !!u.planActive;
       });
     }
 
-    return res.json({ ok: true, tier, items });
+    // Sort by tier (Concierge > Elite > Plus > Free), then email
+    const rank = { tier3: 3, tier2: 2, tier1: 1, free: 0 };
+    usersArr.sort((a, b) => {
+      const ra = rank[normalizePlanKey(a.plan || 'free')] ?? 0;
+      const rb = rank[normalizePlanKey(b.plan || 'free')] ?? 0;
+      if (rb !== ra) return rb - ra;
+      return String(a.email || '').localeCompare(String(b.email || ''));
+    });
+
+    return res.json({
+      ok: true,
+      tier: finalTier,
+      include_inactive: includeInactive,
+      count: usersArr.length,
+      users: usersArr
+    });
   } catch (err) {
     console.error('admin users error:', err);
-    return res.status(500).json({ ok: false, message: 'server error' });
+    return res.status(500).json({ ok: false, error: 'admin_users_failed' });
   }
 });
 
@@ -2878,75 +2894,76 @@ app.get('/api/admin/state', async (req, res) => {
 // 3) Serve shortlist for today (STRICT: one batch per user per day, plan-based cap)
 app.post('/api/admin/shortlist', async (req, res) => {
   try {
-    const providedKey = getProvidedAdminKey(req);
-    if (!isValidAdminKey(providedKey)) {
-      return res
-        .status(401)
-        .json({ ok: false, message: 'admin_unauthorized' });
+    const adminKey = req.headers['x-admin-key'] || req.headers['x-admin-token'] || '';
+    if (!isValidAdminKey(adminKey)) {
+      return res.status(401).json({ ok: false, error: 'unauthorized' });
     }
 
-    let { email, profiles } = req.body || {};
-    if (!email || !Array.isArray(profiles)) {
-      return res.status(400).json({
-        ok: false,
-        message: 'email and profiles[] required'
-      });
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const profiles = Array.isArray(req.body.profiles) ? req.body.profiles : [];
+
+    if (!email) {
+      return res.status(400).json({ ok: false, error: 'missing_email' });
+    }
+    if (!profiles.length) {
+      return res.status(400).json({ ok: false, error: 'no_profiles' });
     }
 
-    const emailNorm = String(email).trim().toLowerCase();
-    if (!emailNorm) {
-      return res
-        .status(400)
-        .json({ ok: false, message: 'invalid email' });
-    }
+    const emailNorm = email.toLowerCase();
+    const today = formatYYYYMMDD(new Date());
+    const nowIso = new Date().toISOString();
 
-    // ✅ Load state first so we can enforce "once per day"
-    const today = todayKey();
+    // Load existing shortlist state
     const state = await loadShortlistState(emailNorm);
 
-    if (state.shortlistLastDate === today) {
-      const existingCount = Array.isArray(state.shortlist) ? state.shortlist.length : 0;
-      return res.status(409).json({
-        ok: false,
-        message: 'already_served_today',
-        email: emailNorm,
-        date: today,
-        existingCount
-      });
-    }
-
-    // If Firebase mode, make sure user exists (and optionally use doc for plan)
+    // Try to fetch the user's plan from the users collection (source of truth)
     let userDoc = null;
-    if (hasFirebase && usersCollection) {
-      userDoc = await findUserByEmail(emailNorm);
-      if (!userDoc) {
-        return res
-          .status(404)
-          .json({ ok: false, message: 'user_not_found' });
+    if (admin && admin.firestore) {
+      try {
+        userDoc = await findUserByEmail(emailNorm);
+      } catch (e) {
+        userDoc = null;
       }
     }
 
-    // ✅ Determine plan + cap server-side (do not trust frontend)
-    const planCandidate =
-      state.plan ||
-      (userDoc && userDoc.plan) ||
-      (DB.users[emailNorm] && DB.users[emailNorm].plan) ||
-      'tier1';
+    const planKey = normalizePlanKey(
+      (userDoc && userDoc.plan) || state.plan || (DB.user && DB.user.plan) || 'free'
+    );
 
-    const plan = (planCandidate && PLAN_RULES[planCandidate]) ? planCandidate : 'tier1';
-    const rule = PLAN_RULES[plan] || PLAN_RULES.tier1;
-    const dailyCap = Number(rule.dailyCap || 20);
+    // Only Elite + Concierge can be served
+    const eligible = (planKey === 'tier2' || planKey === 'tier3');
+    if (!eligible) {
+      return res.status(403).json({
+        ok: false,
+        error: 'not_eligible',
+        plan: planKey,
+        message: 'Shortlist serving is only available for Elite and Concierge subscribers.'
+      });
+    }
 
-    // Limit profiles based on plan cap (default 20)
-    const maxCount = dailyCap;
-    const input = profiles.slice(0, maxCount);
+    const planEnd = (userDoc && (userDoc.planEnd ?? userDoc.subscriptionEnd)) || state.planEnd || null;
+    const planActiveFlag =
+      (userDoc && typeof userDoc.planActive === 'boolean') ? userDoc.planActive :
+      (typeof state.planActive === 'boolean' ? state.planActive : undefined);
 
-    const base = Date.now();
-    const nowIso = new Date().toISOString();
+    const active = _computePlanActiveForDoc(planKey, planEnd, planActiveFlag);
+    if (!active) {
+      return res.status(403).json({
+        ok: false,
+        error: 'subscription_inactive',
+        plan: planKey,
+        message: 'Subscription is inactive or expired.'
+      });
+    }
 
-    const normalized = input.map((p, idx) => {
+    const rule = PLAN_RULES[planKey] || { dailyCap: 0, canShortlist: false };
+    const dailyCap = rule.dailyCap || 0;
+
+    // Normalize profiles into a consistent schema
+    const normalized = profiles.slice(0, 30).map((p, idx) => {
+      const base = (emailNorm || 'user').split('@')[0];
       const name =
-        p && p.name ? String(p.name).trim() : `Candidate ${idx + 1}`;
+        p && p.name ? String(p.name).trim() : `Match #${idx + 1}`;
       const city =
         p && p.city ? String(p.city).trim() : 'Lagos';
       const igUrl =
@@ -2990,6 +3007,9 @@ app.post('/api/admin/shortlist', async (req, res) => {
 
     const nextState = {
       ...state,
+      plan: planKey,
+      planEnd: planEnd || state.planEnd || null,
+      planActive: true,
       shortlist: normalized,
       shortlistLastDate: today
     };
@@ -2999,14 +3019,14 @@ app.post('/api/admin/shortlist', async (req, res) => {
     return res.json({
       ok: true,
       email: emailNorm,
-      plan,
+      plan: planKey,
       dailyCap,
       date: today,
       count: normalized.length
     });
   } catch (err) {
     console.error('admin shortlist error:', err);
-    return res.status(500).json({ ok: false, message: 'server error' });
+    return res.status(500).json({ ok: false, error: 'server_error' });
   }
 });
 
@@ -3891,15 +3911,42 @@ app.post('/api/me/premium/apply', async (req, res) => {
 // ------------------------------------------------------------------
 
 // Compute "active" similar to publicUser() but without requiring full doc.
-function _computePlanActiveForDoc(plan, planEnd, planActiveFlag) {
-  let active = (typeof planActiveFlag === 'boolean') ? planActiveFlag : false;
-  if (plan && planEnd) {
-    const endTs = new Date(planEnd).getTime();
-    if (!Number.isNaN(endTs) && Date.now() > endTs) {
-      active = false;
-    }
+function _toMillis(value) {
+  if (!value) return null;
+  if (typeof value === 'number') return value;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'string') {
+    const t = new Date(value).getTime();
+    return Number.isFinite(t) ? t : null;
   }
-  return active;
+  // Firestore Timestamp shape: { seconds, nanoseconds }
+  if (typeof value === 'object' && typeof value.seconds === 'number') {
+    return value.seconds * 1000;
+  }
+  // Some libs expose toDate()
+  if (typeof value === 'object' && typeof value.toDate === 'function') {
+    const d = value.toDate();
+    return d instanceof Date ? d.getTime() : null;
+  }
+  return null;
+}
+
+function _computePlanActiveForDoc(plan, planEnd, planActiveFlag) {
+  const planKey = normalizePlanKey(plan);
+  if (planKey === 'free') return true;
+
+  const endTs = _toMillis(planEnd);
+  if (endTs && Date.now() > endTs) return false;
+
+  const hasFlag = (typeof planActiveFlag === 'boolean');
+  if (!hasFlag) {
+    // If we don't have an explicit flag, infer from planEnd when available.
+    if (endTs) return Date.now() <= endTs;
+    return false;
+  }
+
+  if (planActiveFlag === false) return false;
+  return true;
 }
 
 // Active + total users per tier (computed from Firestore so it's accurate)

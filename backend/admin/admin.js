@@ -50,6 +50,7 @@ function switchTab(tabId) {
 
   // Lazy load data based on tab
   if (tabId === 'users') loadUsers();
+  if (tabId === 'matchmaking') loadMatchmakingSubscribers();
   if (tabId === 'creators') loadPendingCreators();
   if (tabId === 'overview') loadOverviewStats();
 }
@@ -199,7 +200,7 @@ async function fetchUsersAll() {
 
   USERS_FETCH_INFLIGHT = (async () => {
     // 1) Try "all" style
-    const firstTry = await apiCall('/api/admin/users?tier=all');
+    const firstTry = await apiCall('/api/admin/users?tier=all&include_inactive=1');
     let items = extractUsersPayload(firstTry).map(normalizeUser);
 
     // Heuristic: if server coerces invalid tier to tier1, we may only get one plan.
@@ -523,6 +524,145 @@ document.getElementById('btn-serve').addEventListener('click', async () => {
     document.getElementById('admin-status').style.color = 'red';
   }
 });
+
+
+
+  // -------------------------------
+  // Matchmaking: Elite/Concierge subscriber list
+  // -------------------------------
+  let MM_CACHE = [];
+  let MM_FILTERED = [];
+
+  const mmBody = document.getElementById('mm-users-body');
+  const mmCounts = document.getElementById('mm-counts');
+  const mmTierFilter = document.getElementById('mm-tier-filter');
+  const mmStatusFilter = document.getElementById('mm-status-filter');
+  const mmSearch = document.getElementById('mm-search');
+  const mmRefresh = document.getElementById('mm-refresh');
+
+  function mmPlanLabel(plan) {
+    const p = String(plan || 'free').toLowerCase();
+    if (p === 'tier3') return 'Concierge';
+    if (p === 'tier2') return 'Elite';
+    if (p === 'tier1') return 'Plus';
+    return 'Free';
+  }
+
+  function mmEscape(str) {
+    return String(str || '').replace(/[&<>"']/g, (ch) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+  }
+
+  function mmUpdateCounts() {
+    if (!mmCounts) return;
+    const total = MM_CACHE.length;
+    const active = MM_CACHE.filter(u => !!u.subActive).length;
+    const inactive = total - active;
+    mmCounts.textContent = `${total} total • ${active} active • ${inactive} inactive`;
+  }
+
+  function mmRenderRows() {
+    if (!mmBody) return;
+
+    if (!MM_FILTERED.length) {
+      mmBody.innerHTML = `
+        <div class="row">
+          <div class="muted">No Elite/Concierge subscribers found.</div>
+          <div></div>
+          <div></div>
+        </div>
+      `;
+      return;
+    }
+
+    mmBody.innerHTML = MM_FILTERED.map(u => {
+      const email = mmEscape(u.email);
+      const name = mmEscape(u.name);
+      const planLabel = mmPlanLabel(u.plan);
+      const planClass = (u.plan === 'tier3') ? 'badge--warn' : 'badge--ok';
+
+      const statusText = u.subActive ? 'Active' : 'Inactive';
+      const statusClass = u.subActive ? 'badge--ok' : 'badge--bad';
+
+      const emailCell = name
+        ? `<div><div class="cell-main">${email}</div><div class="cell-sub muted">${name}</div></div>`
+        : `<div>${email}</div>`;
+
+      return `
+        <div class="row mm-row" data-email="${email}">
+          ${emailCell}
+          <div><span class="badge ${planClass}">${planLabel}</span></div>
+          <div><span class="badge ${statusClass}">${statusText}</span></div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function applyMatchmakingFilters() {
+    if (!mmBody) return;
+
+    const tierVal = mmTierFilter ? mmTierFilter.value : 'all';
+    const statusVal = mmStatusFilter ? mmStatusFilter.value : 'all';
+    const q = (mmSearch ? mmSearch.value : '').trim().toLowerCase();
+
+    let list = MM_CACHE.slice();
+
+    if (tierVal !== 'all') {
+      list = list.filter(u => u.plan === tierVal);
+    }
+    if (statusVal !== 'all') {
+      list = list.filter(u => statusVal === 'active' ? !!u.subActive : !u.subActive);
+    }
+    if (q) {
+      list = list.filter(u =>
+        String(u.email || '').toLowerCase().includes(q) ||
+        String(u.name || '').toLowerCase().includes(q)
+      );
+    }
+
+    MM_FILTERED = list;
+    mmRenderRows();
+    mmUpdateCounts();
+  }
+
+  async function loadMatchmakingSubscribers(force = false) {
+    if (!mmBody) return;
+
+    if (!USERS_CACHE_ALL.length || force) {
+      await fetchUsersAll();
+    }
+
+    MM_CACHE = USERS_CACHE_ALL.filter(u => u.plan === 'tier2' || u.plan === 'tier3');
+    applyMatchmakingFilters();
+  }
+
+  // Hook up UI events (only if the markup exists)
+  if (mmBody) {
+    if (mmTierFilter) mmTierFilter.addEventListener('change', applyMatchmakingFilters);
+    if (mmStatusFilter) mmStatusFilter.addEventListener('change', applyMatchmakingFilters);
+
+    if (mmSearch) {
+      const mmSearchDebounced = debounce(applyMatchmakingFilters, 150);
+      mmSearch.addEventListener('input', mmSearchDebounced);
+    }
+
+    if (mmRefresh) {
+      mmRefresh.addEventListener('click', () => loadMatchmakingSubscribers(true));
+    }
+
+    // Row click -> auto fill email in the Serve Shortlist form
+    mmBody.addEventListener('click', (e) => {
+      const row = e.target.closest('.mm-row');
+      if (!row) return;
+
+      const email = row.getAttribute('data-email') || '';
+      if (emailInput) {
+        emailInput.value = email;
+        emailInput.focus();
+      }
+    });
+  }
 
 /* =========================================
    6. CONCIERGE (Confirmed Dates)
