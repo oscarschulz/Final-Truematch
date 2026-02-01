@@ -2,6 +2,9 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
+// ✅ DITO MO IDIKIT
+console.log('[env-check] ADMIN_USERNAME exists?', !!process.env.ADMIN_USERNAME);
+console.log('[env-check] PUBLIC_BASE_URL exists?', !!process.env.PUBLIC_BASE_URL);
 
 const express = require('express');
 const fs = require('fs');
