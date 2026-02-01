@@ -150,6 +150,70 @@ app.use((req, res, next) => {
 });
 
 // Serve frontend and assets (after gating)
+
+// =========================
+// Admin UI files (served from backend/admin)
+// =========================
+const ADMIN_DIR = path.join(__dirname, 'admin');
+console.log('[admin] routes enabled. ADMIN_DIR =', ADMIN_DIR);
+
+function sendAdminFile(filename) {
+  return (req, res) => {
+    try {
+      const f = path.join(ADMIN_DIR, filename);
+      if (!fs.existsSync(f)) return res.status(404).send('Not found');
+
+      // Avoid stale browser cache after moving files around
+      res.setHeader('Cache-Control', 'no-store');
+      // Quick way to verify in DevTools > Network > Headers
+      res.setHeader('X-TM-Admin-Source', 'backend/admin');
+
+      return res.sendFile(f);
+    } catch (e) {
+      return res.status(500).send('Server error');
+    }
+  };
+}
+
+// Friendly admin shortcut
+// ---------------- Admin UI route guard ----------------
+// This prevents direct public access to admin pages/assets.
+// Users must login first so cookie tm_admin is set.
+function isAdminAuthed(req) {
+  try {
+    return isValidAdminKey(getProvidedAdminKey(req));
+  } catch (e) {
+    return false;
+  }
+}
+
+function adminGate(req, res, next) {
+  if (isAdminAuthed(req)) return next();
+
+  // Allow the login page + its JS (public)
+  if (req.path === '/admin-login.html' || req.path === '/admin-login.js' || req.path === '/admin.css' || req.path === '/admin-landing.html') return next();
+
+  // Redirect HTML requests to login; block other assets
+  if (req.path.endsWith('.html') || req.path === '/admin') {
+    const nextUrl = encodeURIComponent(req.originalUrl || '/admin.html');
+    return res.redirect(`/admin-login.html?next=${nextUrl}`);
+  }
+
+  return res.status(403).send('Forbidden');
+}
+
+app.get('/admin', adminGate, (req, res) => res.redirect('/admin-landing.html'));
+
+// Admin pages
+app.get('/admin-landing.html', adminGate, sendAdminFile('admin-landing.html'));
+app.get('/admin-login.html', sendAdminFile('admin-login.html'));
+app.get('/admin.html', adminGate, sendAdminFile('admin.html'));
+
+// Admin static (served from backend/admin)
+app.get('/admin.css', adminGate, sendAdminFile('admin.css'));
+app.get('/admin.js', adminGate, sendAdminFile('admin.js'));
+app.get('/admin-login.js', sendAdminFile('admin-login.js'));
+
 app.use(express.static(PUBLIC_DIR));
 app.use('/public', express.static(PUBLIC_DIR));
 
@@ -722,11 +786,27 @@ const ADMIN_LOGIN_USERNAME =
 const ADMIN_LOGIN_PASSWORD =
   process.env.ADMIN_PASSWORD || 'truematchadminbyOS!';
 
+const ADMIN_COOKIE_NAME = 'tm_admin';
+
+// Cookie options for admin session.
+// - httpOnly: JS can't read it (safer)
+// - sameSite Lax: works for normal navigation
+// - secure in production (Railway uses HTTPS)
+const ADMIN_COOKIE_OPTS = {
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: IS_PROD,
+  path: '/',
+  // 8 hours
+  maxAge: 1000 * 60 * 60 * 8
+};
+
 function getProvidedAdminKey(req) {
   const headerKey = req.headers['x-admin-key'];
   const bodyKey = req.body && req.body.adminKey;
   const queryKey = req.query && req.query.adminKey;
-  return headerKey || bodyKey || queryKey || '';
+  const cookieKey = req.cookies && req.cookies[ADMIN_COOKIE_NAME];
+  return headerKey || bodyKey || queryKey || cookieKey || '';
 }
 
 function isValidAdminKey(key) {
@@ -2635,7 +2715,10 @@ app.post('/api/admin/login', (req, res) => {
         .json({ ok: false, message: 'invalid_admin_credentials' });
     }
 
-    // Frontend will store this key in localStorage and send as x-admin-key
+    // Set httpOnly cookie so admin pages + API can work without exposing the key in URLs
+    res.cookie(ADMIN_COOKIE_NAME, ADMIN_ACCESS_KEY, ADMIN_COOKIE_OPTS);
+
+    // Keep returning the key too (backward compatible with older admin JS)
     return res.json({ ok: true, adminKey: ADMIN_ACCESS_KEY });
   } catch (err) {
     console.error('admin login error:', err);
@@ -2661,6 +2744,9 @@ app.get('/api/admin/me', (req, res) => {
 
 // Stateless logout – frontend lang maglilinis ng localStorage
 app.post('/api/admin/logout', (req, res) => {
+  try {
+    res.clearCookie(ADMIN_COOKIE_NAME, { ...ADMIN_COOKIE_OPTS, maxAge: 0 });
+  } catch (e) {}
   return res.json({ ok: true });
 });
 

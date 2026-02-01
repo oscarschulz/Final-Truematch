@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>TrueMatch • Admin Login</title>
+  <link rel="stylesheet" href="/style.css?v=20260201-1">
+  <link rel="stylesheet" href="/responsive.css?v=20260201-1">
+  <link rel="stylesheet" href="/auth.css?v=20260201-1">
+  <style>
+    .auth-dialog{max-width:420px;margin-inline:auto}
+  </style>
+  <link rel="stylesheet" href="/admin.css?v=20260201-2">
+</head>
+<body class="tm-dark">
+  <main class="auth-wrap">
+    <div class="auth-card auth-dialog">
+      <img src="/assets/images/truematch-hero-logo.png?v=20260201-1" alt="TrueMatch" class="auth-logo"/>
+      <h1>Admin Login</h1>
+      <form id="form-admin-login" class="auth-form" style="margin-top:12px">
+        <label>
+          <span>Username</span>
+          <input
+            id="admin-username"
+            type="text"
+            placeholder="@tmadmin2025!"
+            required
+          >
+        </label>
+        <label>
+          <span>Password</span>
+          <input
+            id="admin-pass"
+            type="password"
+            placeholder="••••••••"
+            required
+          >
+        </label>
+        <div class="auth-actions" style="margin-top:.5rem">
+          <button class="btn btn--primary" type="submit">Sign in</button>
+          <a class="btn btn--ghost" href="/admin-landing.html">Back</a>
+        </div>
+      </form>
+      <p id="login-status" class="auth-status" style="margin-top:.75rem"></p>
+    </div>
+  </main>
+  <script type="module" src="/admin-login.js?v=20260201-1"></script>
+</body>
+</html>
