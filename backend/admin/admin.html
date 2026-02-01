@@ -9,7 +9,7 @@
   <link rel="icon" href="/assets/images/truematch-mark.png?v=20260201-1" />
   <link rel="stylesheet" href="/font.css?v=20260201-1" />
   <link rel="stylesheet" href="/style.css?v=20260201-1" />
-  <link rel="stylesheet" href="/admin.css?v=20260201-2" />
+  <link rel="stylesheet" href="/admin.css?v=20260201-0643" />
   
   <style>
     /* Admin-specific inline overrides if needed */
@@ -117,6 +117,40 @@
         <h2 class="panel-title">User Management</h2>
         <button id="btn-refresh-users" class="btn btn--sm btn--ghost">Refresh List</button>
       </div>
+
+      <div class="filters-bar" id="users-filters">
+        <div class="filter">
+          <label class="filter-label" for="users-filter-plan">Plan</label>
+          <select id="users-filter-plan" class="filter-select">
+            <option value="all" selected>All</option>
+            <option value="free">Free</option>
+            <option value="tier1">Tier 1</option>
+            <option value="tier2">Tier 2</option>
+            <option value="tier3">Tier 3</option>
+          </select>
+        </div>
+
+        <div class="filter">
+          <label class="filter-label" for="users-filter-status">Status</label>
+          <select id="users-filter-status" class="filter-select">
+            <option value="all" selected>All</option>
+            <option value="active">Active subscription</option>
+            <option value="inactive">Inactive/expired</option>
+            <option value="verified">Email verified</option>
+            <option value="unverified">Email unverified</option>
+          </select>
+        </div>
+
+        <div class="filter filter-grow">
+          <label class="filter-label" for="users-filter-search">Search</label>
+          <input id="users-filter-search" class="filter-input" type="text" placeholder="Search email or user id..." autocomplete="off" />
+        </div>
+
+        <div class="filter filter-actions">
+          <button id="btn-clear-user-filters" class="btn btn--sm btn--ghost" type="button">Clear</button>
+        </div>
+      </div>
+      <div id="users-filter-meta" class="tiny muted" style="margin:-6px 0 10px;"></div>
       <div class="table-container">
         <div class="table-header">
           <div>User / Email</div>
@@ -232,6 +266,6 @@
 
   </main>
 
-  <script src="/tm-api.js?v=20260201-1"></script> <script type="module" src="/admin.js?v=20260201-2"></script>
+  <script src="/tm-api.js?v=20260201-1"></script> <script type="module" src="/admin.js?v=20260201-0643"></script>
 </body>
 </html>

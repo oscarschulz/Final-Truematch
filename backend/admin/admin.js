@@ -103,58 +103,261 @@ async function loadOverviewStats() {
    3. USER MANAGEMENT
    ========================================= */
 const usersBody = document.getElementById('users-table-body');
-document.getElementById('btn-refresh-users').addEventListener('click', loadUsers);
+const btnRefreshUsers = document.getElementById('btn-refresh-users');
 
-// Optional: auto-refresh user list when tier selector changes (if present)
-(() => {
-  const tierEl =
-    document.getElementById('users-tier') ||
-    document.getElementById('tier-select') ||
-    null;
-  if (tierEl) tierEl.addEventListener('change', loadUsers);
-})();
+const usersPlanFilter = document.getElementById('users-filter-plan');
+const usersStatusFilter = document.getElementById('users-filter-status');
+const usersSearchFilter = document.getElementById('users-filter-search');
+const usersFilterMeta = document.getElementById('users-filter-meta');
+const btnClearUserFilters = document.getElementById('btn-clear-user-filters');
 
-async function loadUsers() {
-  usersBody.innerHTML = '<p class="muted p-4">Loading...</p>';
+let USERS_CACHE_ALL = [];
+let USERS_CACHE_LAST = 0;
+let USERS_FETCH_INFLIGHT = null;
 
-  // If you have a tier selector in admin.html, we auto-detect it:
-  const tierEl =
-    document.getElementById('users-tier') ||
-    document.getElementById('tier-select') ||
-    null;
+function debounce(fn, wait = 220) {
+  let t = null;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), wait);
+  };
+}
 
-  let tier =
-    (tierEl && String(tierEl.value || '').trim()) ||
-    (localStorage.getItem('tm_admin_users_tier') || 'all');
+function extractUsersPayload(data) {
+  if (!data) return [];
+  if (Array.isArray(data.items)) return data.items;
+  if (Array.isArray(data.users)) return data.users;
+  if (data.users && typeof data.users === 'object') return Object.values(data.users);
+  if (Array.isArray(data.applicants)) return data.applicants;
+  return [];
+}
 
-  tier = String(tier || 'all').toLowerCase();
+function safeLower(v) {
+  return String(v || '').trim().toLowerCase();
+}
 
-  // Persist last choice
-  try { localStorage.setItem('tm_admin_users_tier', tier); } catch {}
+function parseDateMaybe(v) {
+  try {
+    if (v == null) return null;
+    // Firestore Timestamp-like { seconds, nanoseconds }
+    if (typeof v === 'object' && typeof v.seconds === 'number') {
+      return new Date(v.seconds * 1000);
+    }
+    // millis epoch
+    if (typeof v === 'number') return new Date(v);
+    const d = new Date(String(v));
+    return isNaN(d.getTime()) ? null : d;
+  } catch {
+    return null;
+  }
+}
 
-  const data = await apiCall(`/api/admin/users?tier=${encodeURIComponent(tier)}`);
-  const items = Array.isArray(data?.items) ? data.items : [];
+function normalizeUser(u) {
+  const email = (u && (u.email || u.userEmail || u.mail)) ? String(u.email || u.userEmail || u.mail).trim() : '';
+  const id = (u && (u.id || u.uid || u.userId || u._id)) ? String(u.id || u.uid || u.userId || u._id).trim() : '';
+  const planRaw =
+    (u && (u.plan || u.tier || u.subscriptionTier || u.planName)) ? (u.plan || u.tier || u.subscriptionTier || u.planName) : 'free';
+  const plan = safeLower(planRaw) || 'free';
 
-  if (items.length === 0) {
-    usersBody.innerHTML = '<p class="muted p-4">No active users found for this tier.</p>';
+  const emailVerified = Boolean(
+    u && (u.emailVerified ?? u.verified ?? u.isVerified ?? u.isEmailVerified)
+  );
+
+  const planActiveRaw = (u && (u.planActive ?? u.active ?? u.isActive ?? u.subscriptionActive));
+  const planActive = (typeof planActiveRaw === 'boolean') ? planActiveRaw : null;
+
+  const planEnd =
+    (u && (u.planEnd || u.planEndAt || u.plan_end || u.planExpiry || u.planExpiresAt || u.planExpireAt)) || null;
+
+  const endDate = parseDateMaybe(planEnd);
+
+  let subActive = null;
+
+  if (plan === 'free') {
+    subActive = false;
+  } else if (typeof planActive === 'boolean') {
+    subActive = planActive;
+  } else if (endDate) {
+    subActive = endDate.getTime() > Date.now();
+  }
+
+  return {
+    ...u,
+    email,
+    id,
+    plan,
+    emailVerified,
+    planActive,
+    planEnd: planEnd,
+    subActive
+  };
+}
+
+async function fetchUsersAll() {
+  // Prevent duplicate in-flight requests
+  if (USERS_FETCH_INFLIGHT) return USERS_FETCH_INFLIGHT;
+
+  USERS_FETCH_INFLIGHT = (async () => {
+    // 1) Try "all" style
+    const firstTry = await apiCall('/api/admin/users?tier=all');
+    let items = extractUsersPayload(firstTry).map(normalizeUser);
+
+    // Heuristic: if server coerces invalid tier to tier1, we may only get one plan.
+    const plans1 = new Set(items.map(x => x.plan).filter(Boolean));
+    const coercedTier = safeLower(firstTry && firstTry.tier);
+
+    const looksLikeOnlyOneTier =
+      (coercedTier && coercedTier !== 'all' && plans1.size === 1);
+
+    if (!items.length || looksLikeOnlyOneTier) {
+      // 2) Try legacy/all endpoint without query
+      const legacy = await apiCall('/api/admin/users');
+      const legacyItems = extractUsersPayload(legacy).map(normalizeUser);
+      const legacyPlans = new Set(legacyItems.map(x => x.plan).filter(Boolean));
+
+      // If legacy returns a mixed plan list, prefer it
+      if (legacyItems.length && legacyPlans.size > 1) {
+        items = legacyItems;
+      } else if (!legacyItems.length && looksLikeOnlyOneTier) {
+        // 3) Fallback: merge per tier (active users per tier)
+        const tiersToTry = ['free', 'tier1', 'tier2', 'tier3'];
+        const merged = [];
+        for (const t of tiersToTry) {
+          const r = await apiCall(`/api/admin/users?tier=${encodeURIComponent(t)}`);
+          // If server returns "tier" and it doesn't match what we asked, skip (prevents duplicates)
+          const effective = safeLower(r && r.tier);
+          if (effective && effective !== safeLower(t)) continue;
+
+          const xs = extractUsersPayload(r).map(normalizeUser);
+          merged.push(...xs);
+        }
+
+        // De-dupe by email (preferred) then id
+        const seen = new Map();
+        for (const u of merged) {
+          const key = safeLower(u.email) || safeLower(u.id);
+          if (!key) continue;
+          if (!seen.has(key)) seen.set(key, u);
+        }
+        items = Array.from(seen.values());
+      } else if (legacyItems.length) {
+        items = legacyItems;
+      }
+    }
+
+    // Final de-dupe
+    const seen2 = new Map();
+    for (const u of items) {
+      const key = safeLower(u.email) || safeLower(u.id);
+      if (!key) continue;
+      if (!seen2.has(key)) seen2.set(key, u);
+    }
+    return Array.from(seen2.values());
+  })();
+
+  try {
+    const users = await USERS_FETCH_INFLIGHT;
+    return users;
+  } finally {
+    USERS_FETCH_INFLIGHT = null;
+  }
+}
+
+function applyUserFilters(list) {
+  let out = Array.isArray(list) ? [...list] : [];
+
+  const planVal = usersPlanFilter ? safeLower(usersPlanFilter.value) : 'all';
+  const statusVal = usersStatusFilter ? safeLower(usersStatusFilter.value) : 'all';
+  const q = usersSearchFilter ? safeLower(usersSearchFilter.value) : '';
+
+  if (planVal && planVal !== 'all') {
+    out = out.filter(u => safeLower(u.plan) === planVal);
+  }
+
+  if (statusVal && statusVal !== 'all') {
+    if (statusVal === 'verified') out = out.filter(u => u.emailVerified === true);
+    if (statusVal === 'unverified') out = out.filter(u => u.emailVerified === false);
+    if (statusVal === 'active') out = out.filter(u => u.subActive === true);
+    if (statusVal === 'inactive') out = out.filter(u => u.subActive === false);
+  }
+
+  if (q) {
+    out = out.filter(u => {
+      const hay = `${safeLower(u.email)} ${safeLower(u.id)} ${safeLower(u.plan)}`;
+      return hay.includes(q);
+    });
+  }
+
+  // Stable sort: newest-like first if we have updatedAt/createdAt, else email
+  out.sort((a, b) => {
+    const da = parseDateMaybe(a.updatedAt || a.updated_at || a.createdAt || a.created_at);
+    const db = parseDateMaybe(b.updatedAt || b.updated_at || b.createdAt || b.created_at);
+    const ta = da ? da.getTime() : 0;
+    const tb = db ? db.getTime() : 0;
+    if (ta !== tb) return tb - ta;
+    return safeLower(a.email).localeCompare(safeLower(b.email));
+  });
+
+  return out;
+}
+
+function renderUsers() {
+  const filtered = applyUserFilters(USERS_CACHE_ALL);
+
+  // Meta line
+  if (usersFilterMeta) {
+    const total = USERS_CACHE_ALL.length;
+    const shown = filtered.length;
+
+    const planVal = usersPlanFilter ? safeLower(usersPlanFilter.value) : 'all';
+    const statusVal = usersStatusFilter ? safeLower(usersStatusFilter.value) : 'all';
+
+    const labelPlan = planVal === 'all' ? 'All plans' : planVal.toUpperCase();
+    const labelStatus = statusVal === 'all' ? 'All statuses' : statusVal.replace('_', ' ');
+
+    usersFilterMeta.textContent = `Showing ${shown} of ${total} users • ${labelPlan} • ${labelStatus}`;
+  }
+
+  if (!filtered.length) {
+    usersBody.innerHTML = '<p class="muted p-4">No users matched your filters.</p>';
     return;
   }
 
   usersBody.innerHTML = '';
-  items.forEach(u => {
+  filtered.forEach(u => {
     const row = document.createElement('div');
     row.className = 'row';
+
+    const badgeVerified = u.emailVerified
+      ? `<span class="badge badge--ok">Verified</span>`
+      : `<span class="badge badge--bad">Unverified</span>`;
+
+    const badgeSub =
+      (u.plan && u.plan !== 'free')
+        ? (u.subActive === true
+          ? `<span class="badge badge--ok">Active</span>`
+          : (u.subActive === false
+            ? `<span class="badge badge--warn">Inactive</span>`
+            : `<span class="badge">Unknown</span>`))
+        : `<span class="badge">Free</span>`;
+
     row.innerHTML = `
       <div>
         <strong style="display:block; color:#fff;">${u.email || ''}</strong>
         <span class="tiny muted">${u.id || ''}</span>
       </div>
+
       <div>
         <span class="tiny" style="border:1px solid #444; padding:2px 6px; border-radius:4px;">
           ${(u.plan || 'free')}
         </span>
       </div>
-      <div>${u.emailVerified ? '✅ Verified' : '❌ Unverified'}</div>
+
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        ${badgeVerified}
+        ${badgeSub}
+      </div>
+
       <div style="text-align:right;">
         <button class="btn btn--sm btn--ghost" onclick="alert('Manage user: ${u.email || ''}')">Edit</button>
       </div>
@@ -162,6 +365,55 @@ async function loadUsers() {
     usersBody.appendChild(row);
   });
 }
+
+async function loadUsers(forceFetch = false) {
+  usersBody.innerHTML = '<p class="muted p-4">Loading...</p>';
+
+  // Restore persisted filter values (once)
+  try {
+    if (usersPlanFilter && !usersPlanFilter.dataset.hydrated) {
+      const v = localStorage.getItem('tm_admin_filter_plan');
+      if (v) usersPlanFilter.value = v;
+      usersPlanFilter.dataset.hydrated = '1';
+    }
+    if (usersStatusFilter && !usersStatusFilter.dataset.hydrated) {
+      const v = localStorage.getItem('tm_admin_filter_status');
+      if (v) usersStatusFilter.value = v;
+      usersStatusFilter.dataset.hydrated = '1';
+    }
+  } catch {}
+
+  // Fetch once (or on refresh)
+  if (forceFetch || !USERS_CACHE_ALL.length) {
+    const users = await fetchUsersAll();
+    USERS_CACHE_ALL = Array.isArray(users) ? users : [];
+    USERS_CACHE_LAST = Date.now();
+  }
+
+  // Persist current filter values
+  try {
+    if (usersPlanFilter) localStorage.setItem('tm_admin_filter_plan', usersPlanFilter.value);
+    if (usersStatusFilter) localStorage.setItem('tm_admin_filter_status', usersStatusFilter.value);
+  } catch {}
+
+  renderUsers();
+}
+
+// Events
+if (btnRefreshUsers) btnRefreshUsers.addEventListener('click', () => loadUsers(true));
+if (usersPlanFilter) usersPlanFilter.addEventListener('change', () => renderUsers());
+if (usersStatusFilter) usersStatusFilter.addEventListener('change', () => renderUsers());
+if (usersSearchFilter) usersSearchFilter.addEventListener('input', debounce(renderUsers, 220));
+
+if (btnClearUserFilters) {
+  btnClearUserFilters.addEventListener('click', () => {
+    if (usersPlanFilter) usersPlanFilter.value = 'all';
+    if (usersStatusFilter) usersStatusFilter.value = 'all';
+    if (usersSearchFilter) usersSearchFilter.value = '';
+    renderUsers();
+  });
+}
+
 
 /* =========================================
    4. CREATOR APPLICATIONS
