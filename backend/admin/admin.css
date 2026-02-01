@@ -256,3 +256,45 @@ body { margin: 0; font-family: 'Inter', sans-serif; background-color: #05070d; c
   font-size:12px;
   margin-top:2px;
 }
+
+
+/* =========================================================
+   Dropdown / Select readability (all tabs)
+   Fixes white-on-white option lists in Windows/Chromium.
+   ========================================================= */
+html { color-scheme: dark; }
+select { color-scheme: dark; }
+
+select,
+.filter-bar select,
+.panel select {
+  background-color: rgba(12, 16, 24, 0.92);
+  color: #e8f1ff;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+select option {
+  background-color: #0b0f14;
+  color: #e8f1ff;
+}
+
+/* Some browsers render the dropdown list using system UI; this still improves the control itself */
+select:focus {
+  outline: none;
+  border-color: rgba(58, 175, 185, 0.55);
+  box-shadow: 0 0 0 3px rgba(58, 175, 185, 0.18);
+}
+
+select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* If any dropdowns are inside dark tables/cards, keep consistent */
+.table-wrap select,
+.card select {
+  background-color: rgba(12, 16, 24, 0.92);
+  color: #e8f1ff;
+}
