@@ -817,6 +817,20 @@ function isValidAdminKey(key) {
   return String(key) === String(ADMIN_ACCESS_KEY);
 }
 
+
+// Small middleware helper: require a valid admin key (header/body/query/cookie)
+function requireAdmin(req, res, next) {
+  try {
+    const providedKey = getProvidedAdminKey(req);
+    if (!isValidAdminKey(providedKey)) {
+      return res.status(401).json({ ok: false, message: 'admin_unauthorized' });
+    }
+    return next();
+  } catch (e) {
+    return res.status(401).json({ ok: false, message: 'admin_unauthorized' });
+  }
+}
+
 function extractIgUsername(igUrlOrUser) {
   if (!igUrlOrUser) return '';
   try {
@@ -2756,42 +2770,38 @@ app.post('/api/admin/logout', (req, res) => {
 // ---------------- Admin helpers (secured by admin key) -------------------
 
 // 1) List active users per tier
-app.get('/api/admin/users', async (req, res) => {
+app.get('/api/admin/users', requireAdmin, async (req, res) => {
   try {
-    const providedKey = getProvidedAdminKey(req);
-    if (!isValidAdminKey(providedKey)) {
-      return res
-        .status(401)
-        .json({ ok: false, message: 'admin_unauthorized' });
-    }
-
     let { tier } = req.query || {};
-    const allowed = ['tier1', 'tier2', 'tier3'];
+    const allowed = ['tier1', 'tier2', 'tier3', 'all'];
     tier = String(tier || 'tier1').toLowerCase();
     if (!allowed.includes(tier)) tier = 'tier1';
 
     const items = [];
 
     if (hasFirebase && usersCollection) {
-      const snap = await usersCollection
-        .where('plan', '==', tier)
-        .get();
-
-      snap.forEach((docSnap) => {
-        const user = publicUser({ id: docSnap.id, ...docSnap.data() });
-        if (user && user.planActive) {
-          items.push(user);
-        }
-      });
-    } else {
-      // Demo / fallback: only DB.user
-      if (
-        DB.user &&
-        DB.user.plan === tier &&
-        Boolean(DB.user.planActive)
-      ) {
-        items.push(publicUser(DB.user));
+      if (tier === 'all') {
+        const snap = await usersCollection.get();
+        snap.forEach((docSnap) => {
+          const user = publicUser({ id: docSnap.id, ...docSnap.data() });
+          if (user && user.planActive) items.push(user);
+        });
+      } else {
+        const snap = await usersCollection.where('plan', '==', tier).get();
+        snap.forEach((docSnap) => {
+          const user = publicUser({ id: docSnap.id, ...docSnap.data() });
+          if (user && user.planActive) items.push(user);
+        });
       }
+    } else {
+      // Fallback: in-memory store
+      const list = Object.values(DB.users || {});
+      list.forEach((u) => {
+        const planKey = normalizePlanKey(u.plan);
+        if (tier !== 'all' && planKey !== tier) return;
+        const pu = publicUser(u);
+        if (pu && pu.planActive) items.push(pu);
+      });
     }
 
     return res.json({ ok: true, tier, items });
@@ -2801,7 +2811,6 @@ app.get('/api/admin/users', async (req, res) => {
   }
 });
 
-// 2) Load shortlist state for a given user
 app.get('/api/admin/state', async (req, res) => {
   try {
     const providedKey = getProvidedAdminKey(req);
@@ -3876,92 +3885,339 @@ app.post('/api/me/premium/apply', async (req, res) => {
     return res.status(500).json({ ok: false, message: 'Server error' });
   }
 });
+
 // ------------------------------------------------------------------
-// ADMIN ROUTES (Simple Implementation)
+// ADMIN: APPLICATIONS + TIER STATS (SECURED)
 // ------------------------------------------------------------------
 
-// 1. Get ALL Pending Applications
-app.get('/api/admin/creators/pending', (req, res) => {
-  // NOTE: Sa real app, maglagay ka ng security check dito (e.g. require admin password)
-  
-  // Hanapin lahat ng users na 'pending' ang creatorStatus
-  // Dahil memory DB lang gamit natin sa example (DB.users), iterate natin:
-  const pendingUsers = Object.values(DB.users).filter(u => u.creatorStatus === 'pending');
-  
-  res.json({ count: pendingUsers.length, applicants: pendingUsers });
-});
-
-// 2. Approve a Creator
-app.post('/api/admin/creators/approve', async (req, res) => {
-  const { email } = req.body;
-  if (!email || !DB.users[email]) return res.json({ ok: false, message: 'User not found' });
-
-  const user = DB.users[email];
-  
-  // Update status
-  user.creatorStatus = 'approved';
-  user.creatorSince = new Date().toISOString();
-  saveUsersStore();
-  // Optional: Update Firestore if connected
-  if (hasFirebase) {
-     await updateUserByEmail(email, { creatorStatus: 'approved' });
+// Compute "active" similar to publicUser() but without requiring full doc.
+function _computePlanActiveForDoc(plan, planEnd, planActiveFlag) {
+  let active = (typeof planActiveFlag === 'boolean') ? planActiveFlag : false;
+  if (plan && planEnd) {
+    const endTs = new Date(planEnd).getTime();
+    if (!Number.isNaN(endTs) && Date.now() > endTs) {
+      active = false;
+    }
   }
+  return active;
+}
 
-  res.json({ ok: true, message: `User ${email} is now a Creator!` });
-});
+// Active + total users per tier (computed from Firestore so it's accurate)
+app.get('/api/admin/tier-stats', requireAdmin, async (req, res) => {
+  try {
+    const tiers = {
+      free: { total: 0, active: 0 },
+      tier1: { total: 0, active: 0 },
+      tier2: { total: 0, active: 0 },
+      tier3: { total: 0, active: 0 }
+    };
 
-// 3. Reject a Creator
-app.post('/api/admin/creators/reject', async (req, res) => {
-  const { email } = req.body;
-  if (!email || !DB.users[email]) return res.json({ ok: false, message: 'User not found' });
+    if (hasFirebase && usersCollection) {
+      // NOTE: This is an admin-only endpoint; occasional full scan is acceptable for small/medium datasets.
+      const snap = await usersCollection
+        .select('plan', 'planEnd', 'planActive')
+        .get();
 
-  const user = DB.users[email];
-  
-  // Update status back to none or rejected
-  user.creatorStatus = 'rejected';
-  saveUsersStore();
-  if (hasFirebase) {
-     await updateUserByEmail(email, { creatorStatus: 'rejected' });
+      snap.forEach((docSnap) => {
+        const d = docSnap.data() || {};
+        const planKey = normalizePlanKey(d.plan);
+        if (!tiers[planKey]) tiers[planKey] = { total: 0, active: 0 };
+
+        tiers[planKey].total += 1;
+
+        const active = _computePlanActiveForDoc(d.plan, d.planEnd, d.planActive);
+        if (active) tiers[planKey].active += 1;
+      });
+    } else {
+      const list = Object.values(DB.users || {});
+      list.forEach((u) => {
+        const planKey = normalizePlanKey(u.plan);
+        if (!tiers[planKey]) tiers[planKey] = { total: 0, active: 0 };
+        tiers[planKey].total += 1;
+        const active = _computePlanActiveForDoc(u.plan, u.planEnd, u.planActive);
+        if (active) tiers[planKey].active += 1;
+      });
+    }
+
+    const totalUsers = Object.values(tiers).reduce((s, t) => s + (t.total || 0), 0);
+    const activeUsers = Object.values(tiers).reduce((s, t) => s + (t.active || 0), 0);
+
+    return res.json({ ok: true, tiers, totalUsers, activeUsers });
+  } catch (err) {
+    console.error('tier-stats error:', err);
+    return res.status(500).json({ ok: false, message: 'server error' });
   }
-
-  res.json({ ok: true, message: `User ${email} application rejected.` });
 });
 
-// ---------------- ADMIN: PREMIUM SOCIETY ----------------
+// ---------------- ADMIN: CREATOR APPLICATIONS ----------------
 
-// 1. Get Pending Premium Applications
-app.get('/api/admin/premium/pending', (req, res) => {
-  // Kunin lahat ng users na 'pending' ang premiumStatus
-  const applicants = Object.values(DB.users).filter(u => u.premiumStatus === 'pending');
-  res.json({ count: applicants.length, applicants });
-});
+// 1) Get pending Creator applications
+app.get('/api/admin/creators/pending', requireAdmin, async (req, res) => {
+  try {
+    const applicants = [];
 
-// 2. Decide on Premium Application (Approve/Reject)
-app.post('/api/admin/premium/decision', async (req, res) => {
-  const { email, decision } = req.body; // decision = 'approved' or 'rejected'
-  
-  if (!email || !DB.users[email]) return res.json({ ok: false, message: 'User not found' });
-  if (!['approved', 'rejected'].includes(decision)) return res.json({ ok: false, message: 'Invalid decision' });
+    if (hasFirebase && usersCollection) {
+      const snap = await usersCollection
+        .where('creatorStatus', '==', 'pending')
+        .get();
 
-  const user = DB.users[email];
-  user.premiumStatus = decision;
-  
-  if (decision === 'approved') {
-    // Kung approved, set na rin natin ang plan nila sa tier3 (Concierge) bilang bonus/setup
-    user.plan = 'tier3';
-    user.planActive = true;
-    user.planStart = new Date().toISOString();
+      snap.forEach((docSnap) => {
+        const d = docSnap.data() || {};
+        const pub = publicUser({ id: docSnap.id, ...d });
+
+        applicants.push({
+          ...pub,
+          creatorStatus: d.creatorStatus || null,
+          creatorApplication: d.creatorApplication || null,
+          premiumStatus: d.premiumStatus || null,
+          premiumApplication: d.premiumApplication || null
+        });
+      });
+    } else {
+      const list = Object.values(DB.users || {}).filter(
+        (u) => u && u.creatorStatus === 'pending'
+      );
+
+      list.forEach((u) => {
+        applicants.push({
+          id: u.id || '',
+          email: u.email || '',
+          name: u.name || '',
+          plan: u.plan || 'free',
+          planStart: u.planStart || null,
+          planEnd: u.planEnd || null,
+          avatarUrl: u.avatarUrl || '',
+          prefsSaved: !!u.prefsSaved,
+          emailVerified: !!u.emailVerified,
+          planActive: !!u.planActive,
+          creatorStatus: u.creatorStatus || null,
+          creatorApplication: u.creatorApplication || null,
+          premiumStatus: u.premiumStatus || null,
+          premiumApplication: u.premiumApplication || null
+        });
+      });
+    }
+
+    return res.json({ ok: true, count: applicants.length, applicants });
+  } catch (err) {
+    console.error('creators/pending error:', err);
+    return res.status(500).json({ ok: false, message: 'server error' });
   }
-
-  saveUsersStore(); // Save to disk
-
-  // Optional: Update Firestore
-  if (hasFirebase) {
-     try { await updateUserByEmail(email, { premiumStatus: decision, plan: user.plan }); } catch(e){}
-  }
-
-  res.json({ ok: true, message: `User ${email} marked as ${decision}.` });
 });
+
+// 2) Approve a Creator
+app.post('/api/admin/creators/approve', requireAdmin, async (req, res) => {
+  try {
+    const email = String((req.body && req.body.email) || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ ok: false, message: 'email required' });
+
+    const decidedAt = new Date().toISOString();
+
+    // Firestore (source of truth)
+    if (hasFirebase && usersCollection) {
+      const existing = await findUserByEmail(email);
+      if (!existing) return res.status(404).json({ ok: false, message: 'User not found' });
+
+      const prevApp = existing.creatorApplication || {};
+      const nextApp = { ...prevApp, status: 'approved', decidedAt };
+
+      await updateUserByEmail(email, {
+        creatorStatus: 'approved',
+        creatorSince: decidedAt,
+        creatorApplication: nextApp
+      });
+    }
+
+    // Fallback / local cache
+    if (DB.users && DB.users[email]) {
+      DB.users[email].creatorStatus = 'approved';
+      DB.users[email].creatorSince = decidedAt;
+      const prev = DB.users[email].creatorApplication || {};
+      DB.users[email].creatorApplication = { ...prev, status: 'approved', decidedAt };
+      if (typeof saveUsersStore === 'function') saveUsersStore();
+    }
+
+    // session user mirror (if same)
+    if (DB.user && String(DB.user.email || '').toLowerCase() === email) {
+      DB.user.creatorStatus = 'approved';
+      DB.user.creatorSince = decidedAt;
+      const prev = DB.user.creatorApplication || {};
+      DB.user.creatorApplication = { ...prev, status: 'approved', decidedAt };
+    }
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('creators/approve error:', err);
+    return res.status(500).json({ ok: false, message: 'server error' });
+  }
+});
+
+// 3) Reject a Creator
+app.post('/api/admin/creators/reject', requireAdmin, async (req, res) => {
+  try {
+    const email = String((req.body && req.body.email) || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ ok: false, message: 'email required' });
+
+    const decidedAt = new Date().toISOString();
+
+    if (hasFirebase && usersCollection) {
+      const existing = await findUserByEmail(email);
+      if (!existing) return res.status(404).json({ ok: false, message: 'User not found' });
+
+      const prevApp = existing.creatorApplication || {};
+      const nextApp = { ...prevApp, status: 'rejected', decidedAt };
+
+      await updateUserByEmail(email, {
+        creatorStatus: 'rejected',
+        creatorApplication: nextApp
+      });
+    }
+
+    if (DB.users && DB.users[email]) {
+      DB.users[email].creatorStatus = 'rejected';
+      const prev = DB.users[email].creatorApplication || {};
+      DB.users[email].creatorApplication = { ...prev, status: 'rejected', decidedAt };
+      if (typeof saveUsersStore === 'function') saveUsersStore();
+    }
+
+    if (DB.user && String(DB.user.email || '').toLowerCase() === email) {
+      DB.user.creatorStatus = 'rejected';
+      const prev = DB.user.creatorApplication || {};
+      DB.user.creatorApplication = { ...prev, status: 'rejected', decidedAt };
+    }
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('creators/reject error:', err);
+    return res.status(500).json({ ok: false, message: 'server error' });
+  }
+});
+
+// ---------------- ADMIN: PREMIUM SOCIETY APPLICATIONS ----------------
+
+// 1) Get pending Premium applications
+app.get('/api/admin/premium/pending', requireAdmin, async (req, res) => {
+  try {
+    const applicants = [];
+
+    if (hasFirebase && usersCollection) {
+      const snap = await usersCollection
+        .where('premiumStatus', '==', 'pending')
+        .get();
+
+      snap.forEach((docSnap) => {
+        const d = docSnap.data() || {};
+        const pub = publicUser({ id: docSnap.id, ...d });
+
+        applicants.push({
+          ...pub,
+          premiumStatus: d.premiumStatus || null,
+          premiumApplication: d.premiumApplication || null,
+          creatorStatus: d.creatorStatus || null,
+          creatorApplication: d.creatorApplication || null
+        });
+      });
+    } else {
+      const list = Object.values(DB.users || {}).filter(
+        (u) => u && u.premiumStatus === 'pending'
+      );
+
+      list.forEach((u) => {
+        applicants.push({
+          id: u.id || '',
+          email: u.email || '',
+          name: u.name || '',
+          plan: u.plan || 'free',
+          planStart: u.planStart || null,
+          planEnd: u.planEnd || null,
+          avatarUrl: u.avatarUrl || '',
+          prefsSaved: !!u.prefsSaved,
+          emailVerified: !!u.emailVerified,
+          planActive: !!u.planActive,
+          premiumStatus: u.premiumStatus || null,
+          premiumApplication: u.premiumApplication || null,
+          creatorStatus: u.creatorStatus || null,
+          creatorApplication: u.creatorApplication || null
+        });
+      });
+    }
+
+    return res.json({ ok: true, count: applicants.length, applicants });
+  } catch (err) {
+    console.error('premium/pending error:', err);
+    return res.status(500).json({ ok: false, message: 'server error' });
+  }
+});
+
+// 2) Decide on Premium Application (approved / rejected)
+app.post('/api/admin/premium/decision', requireAdmin, async (req, res) => {
+  try {
+    const email = String((req.body && req.body.email) || '').trim().toLowerCase();
+    const decision = String((req.body && req.body.decision) || '').trim().toLowerCase();
+
+    if (!email) return res.status(400).json({ ok: false, message: 'email required' });
+    if (!['approved', 'rejected'].includes(decision)) {
+      return res.status(400).json({ ok: false, message: 'Invalid decision' });
+    }
+
+    const decidedAt = new Date().toISOString();
+
+    if (hasFirebase && usersCollection) {
+      const existing = await findUserByEmail(email);
+      if (!existing) return res.status(404).json({ ok: false, message: 'User not found' });
+
+      const prevApp = existing.premiumApplication || {};
+      const nextApp = { ...prevApp, status: decision, decidedAt };
+
+      if (decision === 'approved') {
+        // Upgrade plan using the central plan activator (sets planStart/planEnd/planActive correctly)
+        await activatePlanForEmail(email, 'tier3', {
+          premiumStatus: 'approved',
+          premiumSince: decidedAt,
+          premiumApplication: nextApp
+        });
+      } else {
+        await updateUserByEmail(email, {
+          premiumStatus: 'rejected',
+          premiumApplication: nextApp
+        });
+      }
+    }
+
+    // Fallback / local cache
+    if (DB.users && DB.users[email]) {
+      DB.users[email].premiumStatus = decision;
+      const prev = DB.users[email].premiumApplication || {};
+      DB.users[email].premiumApplication = { ...prev, status: decision, decidedAt };
+
+      if (decision === 'approved' && !hasFirebase) {
+        // Local-only fallback: upgrade plan using the central plan activator
+        try {
+          await activatePlanForEmail(email, 'tier3', {
+            premiumStatus: 'approved',
+            premiumSince: decidedAt,
+            premiumApplication: DB.users[email].premiumApplication
+          });
+        } catch {}
+      }
+
+      if (typeof saveUsersStore === 'function') saveUsersStore();
+    }
+
+    if (DB.user && String(DB.user.email || '').toLowerCase() === email) {
+      DB.user.premiumStatus = decision;
+      const prev = DB.user.premiumApplication || {};
+      DB.user.premiumApplication = { ...prev, status: decision, decidedAt };
+    }
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('premium/decision error:', err);
+    return res.status(500).json({ ok: false, message: 'server error' });
+  }
+});
+
+
 // [UPDATED] Get Matches Route
 // [UPDATED] Get Real Matches
 

@@ -26,6 +26,12 @@ async function apiCall(endpoint, method = 'GET', body = null) {
 }
 
 
+function setTextIfExists(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = String(value);
+}
+
+
 /* =========================================
    1. NAVIGATION TABS
    ========================================= */
@@ -56,21 +62,33 @@ tabs.forEach(btn => {
    2. OVERVIEW STATS
    ========================================= */
 async function loadOverviewStats() {
-  // In a real app, you'd have a specific stats endpoint.
-  // For now, we fetch lists and count.
-  
-  // Count Users
-  const userRes = await apiCall('/api/admin/users');
-  const userCount = userRes.users ? Object.keys(userRes.users).length : 0;
-  document.getElementById('stat-users-count').textContent = userCount;
+  // Server-side stats per tier (active + total)
+  const statsRes = await apiCall('/api/admin/tier-stats');
 
-  // Count Pending Creators
+  const tiers = (statsRes && statsRes.tiers) ? statsRes.tiers : {};
+  const totalUsers =
+    Number(statsRes?.totalUsers) ||
+    Object.values(tiers).reduce((s, t) => s + (Number(t?.total) || 0), 0);
+
+  setTextIfExists('stat-users-count', totalUsers);
+
+  // Optional per-tier elements (only updates if these IDs exist in your HTML)
+  ['free', 'tier1', 'tier2', 'tier3'].forEach((k) => {
+    const t = tiers[k] || {};
+    setTextIfExists(`stat-${k}-total`, Number(t.total) || 0);
+    setTextIfExists(`stat-${k}-active`, Number(t.active) || 0);
+  });
+
+  // Pending Creator applications
   const creatorRes = await apiCall('/api/admin/creators/pending');
-  const pendingCount = creatorRes.applicants ? creatorRes.applicants.length : 0;
-  document.getElementById('stat-creators-pending').textContent = pendingCount;
+  const pendingCount =
+    Number(creatorRes?.count) ||
+    (Array.isArray(creatorRes?.applicants) ? creatorRes.applicants.length : 0);
 
-  // Mock Dates (No endpoint yet)
-  document.getElementById('stat-dates-active').textContent = '0'; 
+  setTextIfExists('stat-creators-pending', pendingCount);
+
+  // Confirmed dates (no endpoint yet)
+  setTextIfExists('stat-dates-active', 0);
 }
 
 /* =========================================
@@ -79,28 +97,58 @@ async function loadOverviewStats() {
 const usersBody = document.getElementById('users-table-body');
 document.getElementById('btn-refresh-users').addEventListener('click', loadUsers);
 
+// Optional: auto-refresh user list when tier selector changes (if present)
+(() => {
+  const tierEl =
+    document.getElementById('users-tier') ||
+    document.getElementById('tier-select') ||
+    null;
+  if (tierEl) tierEl.addEventListener('change', loadUsers);
+})();
+
 async function loadUsers() {
   usersBody.innerHTML = '<p class="muted p-4">Loading...</p>';
-  const data = await apiCall('/api/admin/users');
-  
-  if (!data.users || Object.keys(data.users).length === 0) {
-    usersBody.innerHTML = '<p class="muted p-4">No users found.</p>';
+
+  // If you have a tier selector in admin.html, we auto-detect it:
+  const tierEl =
+    document.getElementById('users-tier') ||
+    document.getElementById('tier-select') ||
+    null;
+
+  let tier =
+    (tierEl && String(tierEl.value || '').trim()) ||
+    (localStorage.getItem('tm_admin_users_tier') || 'all');
+
+  tier = String(tier || 'all').toLowerCase();
+
+  // Persist last choice
+  try { localStorage.setItem('tm_admin_users_tier', tier); } catch {}
+
+  const data = await apiCall(`/api/admin/users?tier=${encodeURIComponent(tier)}`);
+  const items = Array.isArray(data?.items) ? data.items : [];
+
+  if (items.length === 0) {
+    usersBody.innerHTML = '<p class="muted p-4">No active users found for this tier.</p>';
     return;
   }
 
   usersBody.innerHTML = '';
-  Object.values(data.users).forEach(u => {
+  items.forEach(u => {
     const row = document.createElement('div');
     row.className = 'row';
     row.innerHTML = `
       <div>
-        <strong style="display:block; color:#fff;">${u.email}</strong>
+        <strong style="display:block; color:#fff;">${u.email || ''}</strong>
         <span class="tiny muted">${u.id || ''}</span>
       </div>
-      <div><span class="tiny" style="border:1px solid #444; padding:2px 6px; border-radius:4px;">${u.plan || 'free'}</span></div>
+      <div>
+        <span class="tiny" style="border:1px solid #444; padding:2px 6px; border-radius:4px;">
+          ${(u.plan || 'free')}
+        </span>
+      </div>
       <div>${u.emailVerified ? '✅ Verified' : '❌ Unverified'}</div>
       <div style="text-align:right;">
-        <button class="btn btn--sm btn--ghost" onclick="alert('Manage user: ${u.email}')">Edit</button>
+        <button class="btn btn--sm btn--ghost" onclick="alert('Manage user: ${u.email || ''}')">Edit</button>
       </div>
     `;
     usersBody.appendChild(row);
