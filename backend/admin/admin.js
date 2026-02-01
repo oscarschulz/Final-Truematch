@@ -86,6 +86,14 @@ async function loadOverviewStats() {
     (Array.isArray(creatorRes?.applicants) ? creatorRes.applicants.length : 0);
 
   setTextIfExists('stat-creators-pending', pendingCount);
+  // Pending Premium Society requests
+  const premiumRes = await apiCall('/api/admin/premium/pending');
+  const pendingPremium =
+    Number(premiumRes?.count) ||
+    (Array.isArray(premiumRes?.applicants) ? premiumRes.applicants.length : 0);
+
+  setTextIfExists('stat-premium-pending', pendingPremium);
+
 
   // Confirmed dates (no endpoint yet)
   setTextIfExists('stat-dates-active', 0);

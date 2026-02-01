@@ -9,7 +9,7 @@
   <link rel="icon" href="/assets/images/truematch-mark.png?v=20260201-1" />
   <link rel="stylesheet" href="/font.css?v=20260201-1" />
   <link rel="stylesheet" href="/style.css?v=20260201-1" />
-  <link rel="stylesheet" href="/admin.css?v=20260201-1" />
+  <link rel="stylesheet" href="/admin.css?v=20260201-2" />
   
   <style>
     /* Admin-specific inline overrides if needed */
@@ -47,16 +47,69 @@
         <div class="stat-card">
           <span class="stat-label">Total Users</span>
           <strong class="stat-val" id="stat-users-count">-</strong>
+          <div class="stat-sub muted">All accounts in Firestore</div>
         </div>
+
+        <div class="stat-card stat-card--tier">
+          <span class="stat-label">Free</span>
+          <div class="stat-split">
+            <strong class="stat-val" id="stat-free-active">-</strong>
+            <span class="stat-split-sep">/</span>
+            <span class="stat-total" id="stat-free-total">-</span>
+          </div>
+          <div class="stat-sub">Active / Total</div>
+        </div>
+
+        <div class="stat-card stat-card--tier">
+          <span class="stat-label">Tier 1</span>
+          <div class="stat-split">
+            <strong class="stat-val" id="stat-tier1-active">-</strong>
+            <span class="stat-split-sep">/</span>
+            <span class="stat-total" id="stat-tier1-total">-</span>
+          </div>
+          <div class="stat-sub">Active / Total</div>
+        </div>
+
+        <div class="stat-card stat-card--tier">
+          <span class="stat-label">Tier 2</span>
+          <div class="stat-split">
+            <strong class="stat-val" id="stat-tier2-active">-</strong>
+            <span class="stat-split-sep">/</span>
+            <span class="stat-total" id="stat-tier2-total">-</span>
+          </div>
+          <div class="stat-sub">Active / Total</div>
+        </div>
+
+        <div class="stat-card stat-card--tier">
+          <span class="stat-label">Tier 3</span>
+          <div class="stat-split">
+            <strong class="stat-val" id="stat-tier3-active">-</strong>
+            <span class="stat-split-sep">/</span>
+            <span class="stat-total" id="stat-tier3-total">-</span>
+          </div>
+          <div class="stat-sub">Active / Total</div>
+        </div>
+
         <div class="stat-card">
           <span class="stat-label">Pending Creators</span>
           <strong class="stat-val text-accent" id="stat-creators-pending">-</strong>
+          <div class="stat-sub">Awaiting decision</div>
         </div>
+
+        <div class="stat-card">
+          <span class="stat-label">Pending Premium</span>
+          <strong class="stat-val text-accent" id="stat-premium-pending">-</strong>
+          <div class="stat-sub">Awaiting decision</div>
+        </div>
+
         <div class="stat-card">
           <span class="stat-label">Active Dates</span>
           <strong class="stat-val" id="stat-dates-active">-</strong>
+          <div class="stat-sub">Coming soon</div>
         </div>
-      </div>
+</div>
+      <p class="muted tiny mt-2">Note: <b>Active</b> is computed as <code>planActive</code> + not expired via <code>planEnd</code>. Total is all users in that tier.</p>
+
     </section>
 
     <section id="panel-users" class="admin-panel hidden">
@@ -179,6 +232,6 @@
 
   </main>
 
-  <script src="/tm-api.js?v=20260201-1"></script> <script type="module" src="/admin.js?v=20260201-1"></script>
+  <script src="/tm-api.js?v=20260201-1"></script> <script type="module" src="/admin.js?v=20260201-2"></script>
 </body>
 </html>
