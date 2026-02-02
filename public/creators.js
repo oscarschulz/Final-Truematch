@@ -5,7 +5,112 @@ const TMAPI = {};
 const DEFAULT_AVATAR = 'assets/images/truematch-mark.png';
 
 // Blank Image for Grid
-const BLANK_IMG = "data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22200%22%20height%3D%22200%22%20viewBox%3D%220%200%20200%20200%22%3E%3Crect%20fill%3D%22%23222%22%20width%3D%22200%22%20height%3D%22200%22%2F%3E%3C%2Fsvg%3E";
+const BLANK_IMG = "data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22200%22%20height%3D%22200%22%20viewBox%3D%220%200%20200%20200%22%3E%3Crect%20fill%3D%22%2311141c%22%20width%3D%22200%22%20height%3D%22200%22%2F%3E%3Ccircle%20cx%3D%22100%22%20cy%3D%2280%22%20r%3D%2235%22%20fill%3D%22%2320293a%22%2F%3E%3Cpath%20d%3D%22M35%20180c10-35%2030-55%2065-55s55%2020%2065%2055%22%20fill%3D%22%2320293a%22%2F%3E%3C%2Fsvg%3E";
+// ============================================================
+// Current user identity (Creator Application -> Name + Handle)
+// We read the logged-in user via /api/me (cookie session) and
+// hydrate the Creators UI placeholders ("Your Name", "@username").
+// ============================================================
+async function apiGet(path) {
+  try {
+    const res = await fetch(path, { method: 'GET', credentials: 'include' });
+    const data = await res.json().catch(() => null);
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+
+function normalizeHandle(handle) {
+  const raw = (handle || '').toString().trim();
+  if (!raw) return '';
+  return raw.startsWith('@') ? raw : `@${raw}`;
+}
+
+function extractPackedField(packed, label) {
+  // packed example: "Display name: Aries | Location: ..."
+  if (!packed) return '';
+  const str = String(packed);
+  const re = new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ":\\s*([^|]+)", 'i');
+  const m = str.match(re);
+  return m ? String(m[1]).trim() : '';
+}
+
+function setNameWithCheckIcon(containerEl, name) {
+  if (!containerEl) return;
+  const icon = containerEl.querySelector('i');
+  const iconClone = icon ? icon.cloneNode(true) : null;
+
+  // If markup uses an inner span, prefer updating that.
+  const span = containerEl.querySelector('#creatorProfileName, #creatorHeaderName, #creatorPopoverName');
+  if (span) {
+    span.textContent = name || span.textContent;
+    return;
+  }
+
+  // Fallback: overwrite text while preserving the check icon.
+  containerEl.textContent = (name || '').toString();
+  if (iconClone) {
+    containerEl.appendChild(document.createTextNode(' '));
+    containerEl.appendChild(iconClone);
+  }
+}
+
+function setText(el, value) {
+  if (!el) return;
+  el.textContent = value;
+}
+
+async function hydrateCreatorIdentity() {
+  const me = await apiGet('/api/me');
+  if (!me || !me.ok || !me.user) return;
+
+  const user = me.user || {};
+  const app = user.creatorApplication || null;
+
+  // Determine name + handle (prefer creator application values)
+  const fallbackName = (user.name || '').toString().trim() || 'User';
+  const fallbackHandle = normalizeHandle(user.username || user.handle || (user.email ? user.email.split('@')[0] : ''));
+
+  let name = fallbackName;
+  let handle = fallbackHandle;
+
+  if (app) {
+    // handle is explicit
+    if (app.handle) handle = normalizeHandle(app.handle);
+
+    // display name is packed into contentStyle by dashboard.js
+    const packedName = extractPackedField(app.contentStyle, 'Display name');
+    if (packedName) name = packedName;
+  }
+
+  // Targets across the page
+  const nameTargets = [
+    document.getElementById('creatorProfileName'),
+    document.getElementById('creatorHeaderName'),
+    document.getElementById('creatorPopoverName'),
+    document.querySelector('.ph-name') // fallback for older markup
+  ].filter(Boolean);
+
+  const handleTargets = [
+    document.getElementById('creatorProfileHandle'),
+    document.getElementById('creatorHeaderHandle'),
+    document.getElementById('creatorPopoverHandle'),
+    document.querySelector('.ph-handle') // fallback for older markup
+  ].filter(Boolean);
+
+  nameTargets.forEach(el => {
+    // If it's a span, just set text; if it's container with icon, preserve icon.
+    if (el.tagName && el.tagName.toLowerCase() === 'span') {
+      el.textContent = name;
+    } else {
+      setNameWithCheckIcon(el, name);
+    }
+  });
+
+  handleTargets.forEach(el => setText(el, handle));
+}
+
 
 const DOM = {
   feed: document.getElementById('creator-feed'),
@@ -159,6 +264,9 @@ if (document.readyState === 'complete') { setTimeout(removeLoader, 500); }
 setTimeout(removeLoader, 3000);
 
 async function init() {
+  // Hydrate name/username from Creator Application
+  hydrateCreatorIdentity();
+
   // Global Event Listeners
   if (DOM.btnSubscribe) DOM.btnSubscribe.onclick = openPaymentModal; 
   if (DOM.btnPayCancel) DOM.btnPayCancel.onclick = closePaymentModal;

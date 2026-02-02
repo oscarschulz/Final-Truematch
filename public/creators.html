@@ -33,8 +33,8 @@
             <div class="status-indicator"></div>
           </div>
           <div class="ph-user-details">
-            <div class="ph-name">Your Name <i class="fa-solid fa-circle-check"></i></div>
-            <div class="ph-handle">@username</div>
+            <div class="ph-name"><span id="creatorProfileName">Your Name</span> <i class="fa-solid fa-circle-check"></i></div>
+            <div class="ph-handle" id="creatorProfileHandle">@username</div>
           </div>
           <div class="ph-settings"><i class="fa-solid fa-gear"></i></div>
         </div>
@@ -150,8 +150,8 @@
                   </div>
                   
                   <div style="margin-top: 10px; margin-bottom: 25px;">
-                      <h1 style="margin: 0; font-size: 1.3rem; display: flex; align-items: center; gap: 6px;">Your Name <i class="fa-solid fa-circle-check" style="color:var(--primary-cyan); font-size: 0.9rem;"></i></h1>
-                      <div style="color: var(--muted); font-size: 0.9rem; margin-top: 4px;" class="ph-handle-text">@username &bull; <span style="cursor: pointer;">Available <i class="fa-solid fa-chevron-down" style="font-size: 0.75rem;"></i></span></div>
+                      <h1 style="margin: 0; font-size: 1.3rem; display: flex; align-items: center; gap: 6px;"><span id="creatorHeaderName">Your Name</span> <i class="fa-solid fa-circle-check" style="color:var(--primary-cyan); font-size: 0.9rem;"></i></h1>
+                      <div style="color: var(--muted); font-size: 0.9rem; margin-top: 4px;" class="ph-handle-text"><span id="creatorHeaderHandle">@username</span> &bull; <span style="cursor: pointer;">Available <i class="fa-solid fa-chevron-down" style="font-size: 0.75rem;"></i></span></div>
                       <div class="profile-bio-text" style="color: var(--text); font-size: 0.9rem; margin-top: 10px; line-height: 1.4;">
                           No bio yet. Tap "Edit Profile" to add one.
                       </div>
@@ -443,7 +443,7 @@
     <div class="pop-header">
       <div class="pop-user-section">
         <div class="pop-avatar"><img src="assets/images/truematch-mark.png" style="background:#000;"><div class="pop-online"></div></div>
-        <div class="pop-info"><strong>Your Name <i class="fa-solid fa-circle-check"></i></strong><span>@username</span></div>
+        <div class="pop-info"><strong><span id="creatorPopoverName">Your Name</span> <i class="fa-solid fa-circle-check"></i></strong><span id="creatorPopoverHandle">@username</span></div>
         <button id="btnClosePopover" class="btn-close-pop"><i class="fa-solid fa-xmark"></i></button>
       </div>
       <div class="pop-stats"><div class="stat-item"><strong>0</strong> <span>Fans</span></div><div class="stat-item"><strong>0</strong> <span>Following</span></div></div>
