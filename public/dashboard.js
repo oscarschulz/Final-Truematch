@@ -10,18 +10,6 @@ const DEV_MODE = false;
 
 const DAILY_SWIPE_LIMIT = 20; 
 
-// --- Email helper: shorten + mask to avoid UI overlap (Settings header) ---
-function maskEmail(email) {
-  if (!email || typeof email !== 'string') return '';
-  const at = email.indexOf('@');
-  if (at <= 0) return email;
-  const local = email.slice(0, at);
-  const domain = email.slice(at + 1);
-  const first = local[0] || '';
-  const stars = '*'.repeat(8);
-  return `${first}${stars}@${domain}`;
-}
-
 // --- Image helper (same behavior as Preferences page: crop to square + compress) ---
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -265,10 +253,9 @@ function cacheDom() {
   DOM.btnOpenCreatorApply = document.getElementById('btnOpenCreatorApply');
   DOM.dlgCreatorApply = document.getElementById('dlgCreatorApply');
   DOM.btnCloseCreatorApply = document.getElementById('btnCloseCreatorApply');
-  DOM.btnOpenPremiumApply = document.getElementById('btnOpenPremiumApply') || document.getElementById('btnOpenPremiumApplyMain');
+  DOM.btnOpenPremiumApply = document.getElementById('btnOpenPremiumApplyMain');
   DOM.dlgPremiumApply = document.getElementById('dlgPremiumApply');
   DOM.btnPremiumCancel = document.getElementById('btnPremiumCancel');
-  DOM.btnPremiumSubmit = document.getElementById('btnPremiumSubmit');
 
   // Application forms
   DOM.frmCreatorApply = document.getElementById('frmCreatorApply');
@@ -652,20 +639,6 @@ function setupEventListeners() {
       e.preventDefault();
       await handlePremiumApplicationSubmit();
     });
-
-    // Extra safety: handle direct click on the submit button (dialog forms can be flaky in some browsers)
-    if (DOM.btnPremiumSubmit) {
-      DOM.btnPremiumSubmit.addEventListener('click', async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const form = DOM.frmPremiumApply;
-        if (form && !form.checkValidity()) {
-          form.reportValidity();
-          return;
-        }
-        await handlePremiumApplicationSubmit();
-      });
-    }
   }
 
   if (DOM.btnGoCreatorsPage) DOM.btnGoCreatorsPage.addEventListener('click', () => {
@@ -2056,10 +2029,9 @@ function applyPlanNavGating() {
     btn.style.display = show ? '' : 'none';
   });
 
-  DOM.panels.forEach((panel) => {
-    const panelName = panel.dataset.panel;
+  Object.keys(DOM.panels).forEach(panelName => {
     const show = allowed.has(panelName);
-    panel.style.display = show ? '' : 'none';
+    DOM.panels[panelName].style.display = show ? '' : 'none';
   });
 
   // If current active tab is not allowed anymore, jump to first allowed
@@ -2123,10 +2095,7 @@ function humanizeIntent(val) {
 
 function renderSettingsDisplay(user, prefs) {
   if (DOM.sNameDisplay) DOM.sNameDisplay.textContent = user?.name || '—';
-  if (DOM.sEmailDisplay) {
-    const rawEmail = user?.email || '';
-    DOM.sEmailDisplay.textContent = maskEmail(rawEmail) || '—';
-  }
+  if (DOM.sEmailDisplay) DOM.sEmailDisplay.textContent = user?.email || '—';
   if (DOM.sAvatar) DOM.sAvatar.src = user?.avatarUrl || 'assets/images/truematch-mark.png';
 
   // Profile fields (matches Preferences "Your profile")
@@ -2311,59 +2280,115 @@ async function handleCreatorApplicationSubmit() {
 }
 
 async function handlePremiumApplicationSubmit() {
-  if (!state.me || !state.me.email) {
-    showToast('Please log in first.', 'error');
-    window.location.href = 'auth.html?mode=login';
+  const status = normalizeStatus(state.me && state.me.premiumStatus);
+
+  // Prevent duplicate submissions
+  if (status === 'pending') {
+    showToast('Your Premium Society application is already pending review.', 'warn');
     return;
   }
-
-  const status = normalizeStatus(state.me.premiumStatus);
-  if (status === 'pending') {
-    showToast('Premium Society application is already pending.', 'error');
+  if (status === 'approved') {
+    showToast('You are already a Premium Society member.', 'info');
     return;
   }
 
   const form = DOM.frmPremiumApply;
   if (!form) return;
 
-  const submitBtn = form.querySelector('button[type="submit"]');
-  const oldTxt = submitBtn ? submitBtn.textContent : '';
+  // Let native validation UI show what’s missing
+  if (typeof form.checkValidity === 'function' && !form.checkValidity()) {
+    if (typeof form.reportValidity === 'function') form.reportValidity();
+    showToast('Please complete the required fields.', 'warn');
+    return;
+  }
+
+  const fd = new FormData(form);
+
+  const fullName = (fd.get('fullName') || '').toString().trim();
+  const occupation = (fd.get('occupation') || fd.get('employmentStatus') || '').toString().trim();
+
+  // New Premium Society fields (preferred)
+  const wealthStatus = (fd.get('wealthStatus') || '').toString().trim();
+  const incomeRange = (fd.get('incomeRange') || '').toString().trim();
+  const netWorthRange = (fd.get('netWorthRange') || '').toString().trim();
+  const incomeSource = (fd.get('incomeSource') || '').toString().trim();
+  const socialLink = (fd.get('socialLink') || '').toString().trim();
+  const reason = (fd.get('reason') || fd.get('notes') || '').toString().trim();
+
+  // Back-compat (older versions)
+  const age = (fd.get('age') || '').toString().trim();
+  const finance = (fd.get('finance') || '').toString().trim();
+
+  const confirmAccurate = !!fd.get('confirmAccurate');
+
+  if (!fullName || !occupation) {
+    showToast('Please fill in your full name and employment status.', 'warn');
+    return;
+  }
+  if (!confirmAccurate) {
+    showToast('Please confirm the details above are accurate.', 'warn');
+    return;
+  }
+
+  const amountUsdRaw = fd.get('amountUsd');
+  const amountUsd = Number((amountUsdRaw ?? 0).toString()) || 0;
+
+  const payload = {
+    fullName,
+    occupation,
+    wealthStatus,
+    incomeRange,
+    netWorthRange,
+    incomeSource,
+    socialLink,
+    reason,
+    amountUsd
+  };
+
+  if (age) payload.age = age;
+  if (finance) payload.finance = finance;
+
+  let submitBtn = null;
+
   try {
+    setLoading(true);
+
+    submitBtn = DOM.btnPremiumSubmit || form.querySelector('button[type="submit"]');
     if (submitBtn) {
       submitBtn.disabled = true;
+      submitBtn.dataset._oldText = submitBtn.textContent || '';
       submitBtn.textContent = 'Submitting...';
     }
 
-    const fd = new FormData(form);
-    const payload = {
-      fullName: String(fd.get('fullName') || '').trim(),
-      age: String(fd.get('age') || '').trim(),
-      occupation: String(fd.get('occupation') || '').trim(),
-      finance: String(fd.get('finance') || '').trim()
-    };
-
-    if (!payload.fullName || !payload.occupation) {
-      showToast('Please fill in your full name and occupation.', 'error');
-      return;
-    }
-
     const res = await apiPost('/api/me/premium/apply', payload);
-    if (!res || !res.ok) throw new Error(res && res.error ? res.error : 'Failed to submit application.');
 
-    showToast('Premium Society application submitted. Status: pending.');
-    if (DOM.dlgPremiumApply) DOM.dlgPremiumApply.close();
-
+    // Update local state immediately so the Premium tab reflects "pending"
+    state.me = state.me || {};
     state.me.premiumStatus = 'pending';
-    state.me.premiumApplication = { ...payload, submittedAt: Date.now() };
+    state.me.premiumApplication =
+      (res && (res.premiumApplication || res.application)) ||
+      Object.assign({ status: 'pending', createdAt: Date.now() }, payload);
 
+    showToast('Premium Society application submitted. Status: pending.', 'success');
+
+    // Refresh UI cards
     renderCreatorPremiumEntryCards();
+
+    // Close + reset
+    if (DOM.dlgPremiumApply && typeof DOM.dlgPremiumApply.close === 'function') DOM.dlgPremiumApply.close();
+    if (typeof form.reset === 'function') form.reset();
   } catch (err) {
-    console.error(err);
-    showToast(err.message || 'Failed to submit Premium Society application.', 'error');
+    console.error('[premium-apply] submit failed:', err);
+    showToast((err && err.message) ? err.message : 'Failed to submit application. Please try again.', 'error');
   } finally {
+    setLoading(false);
+
     if (submitBtn) {
       submitBtn.disabled = false;
-      submitBtn.textContent = oldTxt || 'Submit Application';
+      if (submitBtn.dataset._oldText !== undefined) {
+        submitBtn.textContent = submitBtn.dataset._oldText;
+        delete submitBtn.dataset._oldText;
+      }
     }
   }
 }
