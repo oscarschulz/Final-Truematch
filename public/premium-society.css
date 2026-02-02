@@ -473,31 +473,31 @@ body.ps-theme {
 /* FIX: REFRESH POPOVER - COMPACT & BOTTOM RIGHT */
 .ps-refresh-popover {
     display: none;
-    position: absolute !important; /* Force Absolute to escape flex centering */
-    
-    /* REMOVE CENTERING */
-    top: auto !important;
-    left: auto !important;
-    transform: none !important;
+    position: absolute !important;
 
-    /* ANCHOR TO BOTTOM RIGHT (Beside Get Gold) */
-    bottom: 20px !important;
-    right: 20px !important;
-    
-    /* COMPACT SIZE */
-    width: 260px; /* Small width */
+    /* CENTER IN SWIPE TAB */
+    top: 50% !important;
+    left: 50% !important;
+    bottom: auto !important;
+    right: auto !important;
+    transform: translate(-50%, -50%) !important;
+
+    /* SIZE */
+    width: 280px;
+    max-width: calc(100% - 40px);
     height: auto;
-    
+
     background: rgba(20, 20, 25, 0.95);
     backdrop-filter: blur(20px);
     border: 1px solid rgba(255,255,255,0.15);
     border-radius: 20px;
-    padding: 20px; /* Less padding */
+    padding: 20px;
     z-index: 6000;
     box-shadow: 0 20px 60px rgba(0,0,0,0.9);
     text-align: center;
     animation: psFadeIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
+
 .ps-refresh-popover.active { display: block !important; }
 
 /* Smaller Font sizes for compact look */
@@ -545,14 +545,33 @@ body.ps-theme {
     .ps-layout { display: grid; grid-template-columns: var(--ps-sidebar-left-width) 1fr; }
     
     /* TABLET: Balik sa gitna kasi wala na yung right sidebar */
-    .ps-refresh-popover { 
-        right: 50% !important;
-        left: auto !important;
-        transform: translateX(50%) !important;
-        bottom: 30px !important;
-        width: auto;
-        max-width: 90%;
-    }
+    .ps-refresh-popover {
+    display: none;
+    position: absolute !important;
+
+    /* CENTER IN SWIPE TAB */
+    top: 50% !important;
+    left: 50% !important;
+    bottom: auto !important;
+    right: auto !important;
+    transform: translate(-50%, -50%) !important;
+
+    /* SIZE */
+    width: 280px;
+    max-width: calc(100% - 40px);
+    height: auto;
+
+    background: rgba(20, 20, 25, 0.95);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 20px;
+    padding: 20px;
+    z-index: 6000;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.9);
+    text-align: center;
+    animation: psFadeIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
 }
 
 @media (max-width: 768px) {
@@ -588,12 +607,62 @@ body.ps-theme {
     .ps-moments-popup h3 { margin: 0; font-size: 0.9rem; color: #ccc; }
     
     /* MOBILE: Gitna sa baba */
-    .ps-refresh-popover { 
-        right: 50% !important;
-        left: auto !important;
-        transform: translateX(50%) !important;
-        bottom: 100px !important;
-        width: 90%;
-    }
+    .ps-refresh-popover {
+    display: none;
+    position: absolute !important;
+
+    /* CENTER IN SWIPE TAB */
+    top: 50% !important;
+    left: 50% !important;
+    bottom: auto !important;
+    right: auto !important;
+    transform: translate(-50%, -50%) !important;
+
+    /* SIZE */
+    width: 280px;
+    max-width: calc(100% - 40px);
+    height: auto;
+
+    background: rgba(20, 20, 25, 0.95);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 20px;
+    padding: 20px;
+    z-index: 6000;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.9);
+    text-align: center;
+    animation: psFadeIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
 }
 @keyframes slideRight { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+
+/* Tips widget (Right Sidebar) */
+.ps-tips-widget .ps-tips-body {
+    margin-top: 10px;
+}
+
+.ps-tips-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.ps-tips-list li {
+    font-size: 0.85rem;
+    color: var(--ps-text-muted);
+    line-height: 1.35;
+    position: relative;
+    padding-left: 16px;
+}
+
+.ps-tips-list li::before {
+    content: "•";
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: var(--ps-accent);
+}

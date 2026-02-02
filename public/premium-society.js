@@ -52,7 +52,15 @@ const PS_DOM = {
     // Mini Profile Elements
     miniAvatar: document.getElementById('psMiniAvatar'),
     miniName: document.getElementById('psMiniName'),
+    miniPlan: document.getElementById('psMiniPlan'),
     miniLogout: document.getElementById('ps-btn-logout'),
+
+    
+    // Settings Profile
+    settingsName: document.getElementById('psSNameDisplay'),
+    settingsEmail: document.getElementById('psSEmailDisplay'),
+    settingsAvatar: document.getElementById('psSAvatar'),
+    settingsPlanBadge: document.getElementById('psSPlanBadge'),
 
     // Refresh Popover
     refreshPopover: document.getElementById('psRefreshPopover'),
@@ -113,6 +121,36 @@ function psResolveDisplayName(user) {
     return out || 'Member';
 }
 
+function psNormalizePlanKey(rawPlan) {
+    const v = String(rawPlan || '').trim().toLowerCase();
+    if (!v) return 'free';
+    if (v === 'free' || v === '0') return 'free';
+    if (v === 'plus' || v === 'tier1' || v === '1') return 'tier1';
+    if (v === 'elite' || v === 'tier2' || v === '2') return 'tier2';
+    if (v === 'concierge' || v === 'tier3' || v === '3') return 'tier3';
+    return v;
+}
+
+function psPlanLabelFromKey(planKey) {
+    const key = psNormalizePlanKey(planKey);
+    if (key === 'tier1') return 'Plus';
+    if (key === 'tier2') return 'Elite';
+    if (key === 'tier3') return 'Concierge';
+    return 'Free Account';
+}
+
+function psResolvePlanLabel(user) {
+    const raw = user?.plan ?? user?.planKey ?? user?.tier ?? user?.tierKey ?? user?.subscriptionPlan ?? user?.accessTier;
+    const key = psNormalizePlanKey(raw);
+    const base = psPlanLabelFromKey(key);
+    const activeFlag = user?.planActive;
+
+    // If planActive exists and is false, show Inactive for paid plans.
+    if (activeFlag === false && key !== 'free') return `${base} (Inactive)`;
+    return base;
+}
+
+
 function psResolveAvatarUrl(user) {
     const url = (user && (user.avatarUrl || user.photoUrl || user.photoURL || user.profilePhotoUrl || user.avatar)) || '';
     const out = String(url || '').trim();
@@ -140,6 +178,15 @@ async function hydrateAccountIdentity() {
     const displayName = psResolveDisplayName(user);
     const avatarUrl = psResolveAvatarUrl(user);
 
+    const planLabel = psResolvePlanLabel(user);
+    const email = user.email || user.userEmail || user.mail || user.contactEmail || '';
+
+    if (PS_DOM.miniPlan) PS_DOM.miniPlan.textContent = planLabel;
+
+    if (PS_DOM.settingsName) PS_DOM.settingsName.textContent = displayName;
+    if (PS_DOM.settingsEmail) PS_DOM.settingsEmail.textContent = email;
+    if (PS_DOM.settingsPlanBadge) PS_DOM.settingsPlanBadge.textContent = planLabel;
+
     if (PS_DOM.miniName) PS_DOM.miniName.textContent = displayName;
     if (PS_DOM.headerName) PS_DOM.headerName.textContent = displayName;
 
@@ -149,6 +196,7 @@ async function hydrateAccountIdentity() {
     if (avatarUrl) {
         if (PS_DOM.miniAvatar) PS_DOM.miniAvatar.src = avatarUrl;
         if (PS_DOM.headerAvatar) PS_DOM.headerAvatar.src = avatarUrl;
+        if (PS_DOM.settingsAvatar) PS_DOM.settingsAvatar.src = avatarUrl;
         const storyAvatarEl = document.getElementById('psStoryAvatar');
         if (storyAvatarEl) storyAvatarEl.src = avatarUrl;
     }

@@ -74,7 +74,7 @@
             </div>
             <div class="ps-mini-info">
                 <span class="ps-mini-name" id="psMiniName">Loading...</span>
-                <span class="ps-mini-plan">Free Account</span>
+                <span class="ps-mini-plan" id="psMiniPlan">Free Account</span>
             </div>
             <i class="fa-solid fa-ellipsis" style="color:#666; font-size: 1.2rem;"></i>
         </div>
@@ -129,28 +129,16 @@
             </div>
         </div>
 
-        <div class="ps-moments-rail-section">
-            <h3 style="margin: 10px 0 15px; font-size: 0.9rem; color: #8899a6; padding-left:5px;">Recent Moments</h3>
-            <div class="ps-moments-wrapper">
-                <div class="ps-story-item ps-story-static" onclick="openAddStory()">
-                    <div class="ps-story-ring" style="border-color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer;">
-                        <i class="fa-solid fa-plus"></i>
-                    </div>
-                    <span class="ps-story-name" style="font-size:0.7rem;">Add</span>
-                </div>
-                <div class="ps-stories-scroll" id="psStoriesContainer">
-                    </div>
-            </div>
-        </div>
-
-        <div id="psDailyPickContainer" class="ps-hero-container">
-             </div>
-        
         <div class="ps-admirer-section">
             <h3 class="ps-section-title">Who Liked You <span class="ps-badge" id="psAdmirerCount">0 New</span></h3>
             <div class="ps-admirer-grid" id="psAdmirerContainer">
                  </div>
         </div>
+
+        <div id="psDailyPickContainer" class="ps-hero-container">
+             </div>
+        
+        
       </section>
 
       <section class="ps-panel" data-panel="swipe">
@@ -244,7 +232,7 @@
                       <div class="ps-bento-text">
                           <h3 id="psSNameDisplay">...</h3>
                           <p id="psSEmailDisplay">...</p>
-                          <span class="ps-badge-outline">Free Account</span>
+                          <span class="ps-badge-outline" id="psSPlanBadge">Free Account</span>
                       </div>
                   </div>
                   <button class="ps-btn-edit-layout" id="psBtnEditProfile">
@@ -327,11 +315,7 @@
 
               <div class="ps-app-version">Version 1.0.0</div>
 
-              <div class="ps-settings-footer-area">
-                  <button class="ps-btn-gold-footer" onclick="document.querySelector('[data-panel=premium]').click()">
-                      <i class="fa-solid fa-crown"></i> Get Gold
-                  </button>
-              </div>
+              
           </div>
       </section>
     </main>
@@ -341,27 +325,23 @@
         <i class="fa-solid fa-magnifying-glass"></i>
         <input type="text" placeholder="Search..." class="ps-search-input" />
       </div>
-      
-      <div class="ps-glass-card ps-stats-widget">
+
+      <div class="ps-glass-card ps-tips-widget">
         <div class="ps-card-header-flex">
-            <h3>Daily Swipes</h3>
-            <i class="fa-solid fa-circle-info" style="color:var(--ps-text-muted); font-size:0.9rem;"></i>
+            <h3>Tips</h3>
+            <i class="fa-solid fa-lightbulb" style="color:var(--ps-text-muted); font-size:0.9rem;"></i>
         </div>
-        <div class="ps-stats-body">
-          <div class="ps-progress-ring">
-              <svg width="120" height="120">
-                  <circle class="ps-bg-ring" cx="60" cy="60" r="50"></circle>
-                  <circle class="ps-fg-ring" id="psStatsRingCircle" cx="60" cy="60" r="50"></circle>
-              </svg>
-              <div class="ps-progress-text">
-                  <h2 id="psStatsCountDisplay">-</h2>
-                  <span>LEFT</span>
-              </div>
-          </div>
-          <p class="ps-tiny ps-muted" style="margin-top:10px;">Resets in --:--</p>
+        <div class="ps-tips-body">
+          <ul class="ps-tips-list">
+            <li>Complete your profile so you get better matches.</li>
+            <li>Reply early in Matches to boost your visibility.</li>
+            <li>Use Super Like only for your top picks.</li>
+            <li>Update your preferences anytime in Settings.</li>
+          </ul>
         </div>
       </div>
 
+      
       <div class="ps-glass-card">
         <div class="ps-card-header-flex">
             <h3>Active Nearby</h3>
@@ -370,15 +350,7 @@
         <div class="ps-active-grid" id="psActiveNearbyContainer"></div>
       </div>
 
-      <div class="ps-premium-card">
-        <div class="ps-premium-content">
-            <i class="fa-solid fa-crown ps-premium-icon"></i>
-            <h3 class="ps-premium-title">GET MORE<br>FEATURES</h3>
-            <p class="ps-premium-desc">See who likes you &<br>unlimited swipes.</p>
-            <button class="ps-btn-upgrade-now" id="psBtnSidebarSubscribe">Upgrade Now</button>
-        </div>
-      </div>
-
+      
     </aside>
   </div>
   
