@@ -889,3 +889,30 @@ dialog::backdrop { background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-in
   justify-content:center;
   text-align:center;
 }
+/* -------------------------------------------------------
+   Make Creators tab placement match Premium tab
+------------------------------------------------------- */
+
+.panel[data-panel="creators"]{
+  display: flex;
+  flex-direction: column;
+}
+
+#panel-creators{
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* Center the Creators + Premium entry cards vertically (override inline margin) */
+#panel-creators.is-active,
+#panel-premium.is-active{
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+#panel-creators.is-active #creatorEntryCard,
+#panel-premium.is-active #premiumEntryCard{
+  margin: auto !important; /* overrides inline: margin: 20px auto 0 */
+}
