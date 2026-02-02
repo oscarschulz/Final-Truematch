@@ -265,9 +265,10 @@ function cacheDom() {
   DOM.btnOpenCreatorApply = document.getElementById('btnOpenCreatorApply');
   DOM.dlgCreatorApply = document.getElementById('dlgCreatorApply');
   DOM.btnCloseCreatorApply = document.getElementById('btnCloseCreatorApply');
-  DOM.btnOpenPremiumApply = document.getElementById('btnOpenPremiumApply') || document.getElementById('btnOpenPremiumApplyMain');
-DOM.dlgPremiumApply = document.getElementById('dlgPremiumApply');
+  DOM.btnOpenPremiumApply = document.getElementById('btnOpenPremiumApplyMain');
+  DOM.dlgPremiumApply = document.getElementById('dlgPremiumApply');
   DOM.btnPremiumCancel = document.getElementById('btnPremiumCancel');
+  DOM.btnPremiumSubmit = document.getElementById('btnPremiumSubmit');
 
   // Application forms
   DOM.frmCreatorApply = document.getElementById('frmCreatorApply');
@@ -343,8 +344,6 @@ function renderCreatorEntryCard() {
     if (hint) hint.textContent = 'Your application is under review.';
     if (btnApply) {
       btnApply.disabled = true;
-    btnApply.style.pointerEvents = 'none';
-    btnApply.setAttribute('aria-disabled','true');
       btnApply.textContent = 'Application Pending';
       btnApply.style.opacity = '0.6';
     }
@@ -354,11 +353,8 @@ function renderCreatorEntryCard() {
     if (hint) hint.textContent = 'You can edit and re-apply anytime.';
     if (btnApply) {
       btnApply.disabled = false;
-      btnApply.textContent = 'Apply';
+      btnApply.textContent = 'Re-Apply';
       btnApply.style.opacity = '1';
-    btnApply.removeAttribute('disabled');
-    btnApply.removeAttribute('aria-disabled');
-    btnApply.style.pointerEvents = 'auto';
     }
   } else if (status === 'approved') {
     // In case user lands here (e.g., deep link / back button), show a go button.
@@ -391,10 +387,8 @@ function renderPremiumEntryCard() {
     btnApply.textContent = 'Apply';
     btnApply.style.opacity = '1';
     btnApply.style.display = 'inline-flex';
-    btnApply.removeAttribute('disabled');
-    btnApply.removeAttribute('aria-disabled');
-    btnApply.style.pointerEvents = 'auto';
   }
+
   if (status === 'pending') {
     if (row) row.style.display = 'flex';
     if (chip) chip.textContent = 'Pending';
@@ -410,7 +404,7 @@ function renderPremiumEntryCard() {
     if (hint) hint.textContent = 'You can re-apply anytime.';
     if (btnApply) {
       btnApply.disabled = false;
-      btnApply.textContent = 'Apply';
+      btnApply.textContent = 'Re-Apply';
       btnApply.style.opacity = '1';
     }
   } else if (status === 'approved') {
@@ -658,6 +652,20 @@ function setupEventListeners() {
       e.preventDefault();
       await handlePremiumApplicationSubmit();
     });
+
+    // Extra safety: handle direct click on the submit button (dialog forms can be flaky in some browsers)
+    if (DOM.btnPremiumSubmit) {
+      DOM.btnPremiumSubmit.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const form = DOM.frmPremiumApply;
+        if (form && !form.checkValidity()) {
+          form.reportValidity();
+          return;
+        }
+        await handlePremiumApplicationSubmit();
+      });
+    }
   }
 
   if (DOM.btnGoCreatorsPage) DOM.btnGoCreatorsPage.addEventListener('click', () => {
