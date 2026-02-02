@@ -265,7 +265,7 @@ function cacheDom() {
   DOM.btnOpenCreatorApply = document.getElementById('btnOpenCreatorApply');
   DOM.dlgCreatorApply = document.getElementById('dlgCreatorApply');
   DOM.btnCloseCreatorApply = document.getElementById('btnCloseCreatorApply');
-  DOM.btnOpenPremiumApply = document.getElementById('btnOpenPremiumApplyMain');
+  DOM.btnOpenPremiumApply = document.getElementById('btnOpenPremiumApply') || document.getElementById('btnOpenPremiumApplyMain');
   DOM.dlgPremiumApply = document.getElementById('dlgPremiumApply');
   DOM.btnPremiumCancel = document.getElementById('btnPremiumCancel');
   DOM.btnPremiumSubmit = document.getElementById('btnPremiumSubmit');
