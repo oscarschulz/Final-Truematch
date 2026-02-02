@@ -3929,18 +3929,34 @@ app.post('/api/me/premium/apply', async (req, res) => {
       return res.status(401).json({ ok: false, message: 'Not logged in' });
     }
 
-    const { fullName, age, occupation, finance } = req.body || {};
+    const { fullName, age, occupation, wealthStatus, incomeRange, netWorthRange, incomeSource, socialLink, reason, amountUsd, finance } = req.body || {};
 
     // Basic validation
-    if (!fullName || !occupation) {
+    const _incomeSource = (incomeSource != null && String(incomeSource).trim()) ? String(incomeSource).trim() : (finance != null ? String(finance).trim() : '');
+    const _wealthStatus = wealthStatus != null ? String(wealthStatus).trim() : '';
+    const _incomeRange = incomeRange != null ? String(incomeRange).trim() : '';
+    const _netWorthRange = netWorthRange != null ? String(netWorthRange).trim() : '';
+    const _reason = reason != null ? String(reason).trim() : '';
+    const _socialLink = socialLink != null ? String(socialLink).trim() : '';
+    const _amountUsd = Number(amountUsd || 0) || 0;
+
+    if (!fullName || !occupation || !_wealthStatus || !_incomeRange || !_netWorthRange || !_incomeSource || !_reason) {
       return res.status(400).json({ ok: false, message: 'Please complete the form.' });
     }
 
     const applicationData = {
       fullName: String(fullName).trim(),
-      age: Number(age),
+      age: (age != null && String(age).trim() !== '') ? Number(age) : (DB.user && DB.user.age ? Number(DB.user.age) : null),
       occupation: String(occupation).trim(),
-      finance: String(finance).trim(),
+      wealthStatus: _wealthStatus,
+      incomeRange: _incomeRange,
+      netWorthRange: _netWorthRange,
+      incomeSource: _incomeSource,
+      // Keep legacy field name for older frontends/admin
+      finance: _incomeSource,
+      socialLink: _socialLink,
+      reason: _reason,
+      amountUsd: _amountUsd,
       appliedAt: new Date().toISOString(),
       status: 'pending'
     };

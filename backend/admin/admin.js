@@ -714,23 +714,46 @@ async function loadPremiumApplicants() {
     const row = document.createElement('div');
     row.className = 'row';
     // Custom grid for premium info
-    row.style.gridTemplateColumns = '1fr 1fr 2fr 100px'; 
+    row.style.gridTemplateColumns = '1.2fr 0.9fr 2.2fr 110px'; 
     
-    row.innerHTML = `
-      <div>
-        <strong style="color:#fff; display:block;">${app.fullName} (${app.age})</strong>
-        <span class="tiny muted">${user.email}</span>
-      </div>
-      <div class="tiny">
-        <div>Occ: ${app.occupation}</div>
-      </div>
-      <div class="tiny muted" style="font-style:italic;">Finances: "${app.finance}"</div>
-      <div style="text-align:right; display:flex; flex-direction:column; gap:4px;">
-        <button class="btn btn--sm btn--primary btn-prem-decide" data-email="${user.email}" data-dec="approved">Approve</button>
-        <button class="btn btn--sm btn--ghost text-danger btn-prem-decide" data-email="${user.email}" data-dec="rejected">Reject</button>
-      </div>
-    `;
-    container.appendChild(row);
+    const wealth = (app.wealthStatus || '').replace(/_/g, ' ');
+      const income = app.incomeRange || '';
+      const netWorth = app.netWorthRange || '';
+      const incomeSrc = (app.incomeSource || app.finance || '').trim();
+      const reason = (app.reason || '').trim();
+      const social = (app.socialLink || '').trim();
+
+      const clip = (s, n = 140) => {
+        const str = String(s || '');
+        return str.length > n ? str.slice(0, n) + '…' : str;
+      };
+
+      row.innerHTML = `
+        <div>
+          <strong style="color:#fff; display:block;">${mmEscape(app.fullName || user.name || '—')}${app.age ? ` (${mmEscape(app.age)})` : ''}</strong>
+          <span class="tiny muted">${mmEscape(user.email || '')}</span>
+          <div class="tiny muted" style="margin-top:6px;">Occ: ${mmEscape(app.occupation || '—')}</div>
+        </div>
+
+        <div class="tiny">
+          <div style="text-transform:capitalize;">${mmEscape(wealth || '—')}</div>
+          ${social ? `<a class="tiny" href="${mmEscape(social)}" target="_blank" rel="noopener" style="color:#7a9dff; display:inline-block; margin-top:6px;">View link</a>`
+                   : `<div class="tiny muted" style="margin-top:6px;">No link</div>`}
+        </div>
+
+        <div class="tiny muted" style="line-height:1.4;">
+          <div><span style="color:rgba(255,255,255,.8)">Income:</span> ${mmEscape(income || '—')}</div>
+          <div><span style="color:rgba(255,255,255,.8)">Net worth:</span> ${mmEscape(netWorth || '—')}</div>
+          ${incomeSrc ? `<div style="margin-top:6px;"><span style="color:rgba(255,255,255,.8)">Source:</span> ${mmEscape(clip(incomeSrc, 140))}</div>` : ''}
+          ${reason ? `<div style="margin-top:6px; font-style:italic;">"${mmEscape(clip(reason, 160))}"</div>` : ''}
+        </div>
+
+        <div style="text-align:right; display:flex; flex-direction:column; gap:4px;">
+          <button class="btn btn--sm btn--primary btn-prem-decide" data-email="${mmEscape(user.email)}" data-dec="approved">Approve</button>
+          <button class="btn btn--sm btn--ghost text-danger btn-prem-decide" data-email="${mmEscape(user.email)}" data-dec="rejected">Reject</button>
+        </div>
+      `;
+      container.appendChild(row);
   });
 
   // Bind buttons

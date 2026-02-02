@@ -437,7 +437,70 @@
 <dialog id="dlgPremiumApply" class="tm-dialog premium-dialog">
     <div class="premium-header-bg"><i class="fa-solid fa-gem premium-icon-large" style="font-size:2rem; margin-bottom:5px; animation:float 3s infinite;"></i><h2>iTrueMatch <span style="color:#FFF;">GOLD</span></h2><p>Unlock the ultimate experience.</p></div>
     <div class="premium-benefits-list"><div class="p-benefit"><i class="fa-solid fa-check"></i> Unlimited Swipes</div><div class="p-benefit"><i class="fa-solid fa-check"></i> See Who Liked You</div><div class="p-benefit"><i class="fa-solid fa-check"></i> Priority Matching</div></div>
-    <form method="dialog" id="frmPremiumApply" class="tm-form" style="padding: 0 20px 20px;"><div class="dialog__body" style="padding: 5px 0;"><label class="tiny muted" style="margin-top:10px;">APPLICATION FORM</label><input type="text" name="fullName" class="tm-input input-gold" placeholder="Full Name"><input type="number" name="age" class="tm-input input-gold" placeholder="Age" min="18" step="1"><input type="text" name="occupation" class="tm-input input-gold" placeholder="Occupation"><textarea name="finance" class="tm-input input-gold" placeholder="Annual Income Source" style="height:80px; resize:none;"></textarea></div><div class="dialog__footer" style="border:none; padding-top:10px;"><button type="button" id="btnPremiumCancel" class="btn btn--ghost">Cancel</button><button type="submit" class="btn btn--gold" style="flex:1;">Submit Application</button></div></form>
+        <form method="dialog" id="frmPremiumApply" class="tm-form" style="padding: 0 20px 20px;">
+      <div class="dialog__body" style="padding: 5px 0;">
+        <label class="tiny muted" style="margin-top:10px;">APPLICATION FORM</label>
+
+        <input type="text" name="fullName" class="tm-input input-gold" placeholder="Full Name" required>
+        <input type="hidden" name="age" value="">
+
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+          <input type="text" name="occupation" class="tm-input input-gold" placeholder="Occupation / Role" style="flex:1; min-width: 170px;" required>
+          <select name="wealthStatus" class="tm-input input-gold" style="flex:1; min-width: 170px;" required>
+            <option value="" selected>Wealth status</option>
+            <option value="student">Student</option>
+            <option value="employed">Employed</option>
+            <option value="self_employed">Self-employed</option>
+            <option value="business_owner">Business owner</option>
+            <option value="investor">Investor</option>
+            <option value="high_net_worth">High net worth</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+          <select name="incomeRange" class="tm-input input-gold" style="flex:1; min-width: 170px;" required>
+            <option value="" selected>Monthly income range</option>
+            <option value="lt_500">$0 - $499</option>
+            <option value="500_1000">$500 - $999</option>
+            <option value="1000_3000">$1,000 - $2,999</option>
+            <option value="3000_10000">$3,000 - $9,999</option>
+            <option value="10000_plus">$10,000+</option>
+          </select>
+
+          <select name="netWorthRange" class="tm-input input-gold" style="flex:1; min-width: 170px;" required>
+            <option value="" selected>Estimated net worth</option>
+            <option value="lt_10k">&lt; $10k</option>
+            <option value="10k_50k">$10k - $49k</option>
+            <option value="50k_200k">$50k - $199k</option>
+            <option value="200k_1m">$200k - $999k</option>
+            <option value="1m_plus">$1M+</option>
+          </select>
+        </div>
+
+        <textarea name="incomeSource" class="tm-input input-gold" placeholder="Primary income source (brief)" style="height:80px; resize:none;" required></textarea>
+
+        <input type="url" name="socialLink" class="tm-input input-gold" placeholder="LinkedIn or Instagram link (optional)">
+
+        <textarea name="reason" class="tm-input input-gold" placeholder="Why do you want Premium Society?" style="height:90px; resize:none;" required></textarea>
+
+        <label class="tiny muted" style="margin-top: 8px;">SUBSCRIPTION</label>
+        <div class="hint" style="margin: 6px 0 10px; color: rgba(255,255,255,0.75);">
+          Test price: <strong style="color:#FFD700;">$0/month</strong>
+        </div>
+        <input type="hidden" name="amountUsd" value="0">
+
+        <label style="display:flex; gap:10px; align-items:flex-start; font-size: 0.9rem; color: rgba(255,255,255,0.85); line-height:1.35; margin-top: 6px;">
+          <input type="checkbox" name="confirmAccurate" required style="margin-top:4px;">
+          <span>I confirm the details above are accurate.</span>
+        </label>
+      </div>
+
+      <div class="dialog__footer" style="border:none; padding-top:10px;">
+        <button type="button" id="btnPremiumCancel" class="btn btn--ghost">Cancel</button>
+        <button type="submit" class="btn btn--gold" style="flex:1;">Submit Application</button>
+      </div>
+    </form>
   </dialog>
 
   <dialog id="dlgCreatorApply" class="tm-dialog">

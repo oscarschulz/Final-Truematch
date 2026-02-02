@@ -10,18 +10,6 @@ const DEV_MODE = false;
 
 const DAILY_SWIPE_LIMIT = 20; 
 
-// --- Email helper: shorten + mask to avoid UI overlap (Settings header) ---
-function maskEmail(email) {
-  if (!email || typeof email !== 'string') return '';
-  const at = email.indexOf('@');
-  if (at <= 0) return email;
-  const local = email.slice(0, at);
-  const domain = email.slice(at + 1);
-  const first = local[0] || '';
-  const stars = '*'.repeat(8);
-  return `${first}${stars}@${domain}`;
-}
-
 // --- Image helper (same behavior as Preferences page: crop to square + compress) ---
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -265,7 +253,7 @@ function cacheDom() {
   DOM.btnOpenCreatorApply = document.getElementById('btnOpenCreatorApply');
   DOM.dlgCreatorApply = document.getElementById('dlgCreatorApply');
   DOM.btnCloseCreatorApply = document.getElementById('btnCloseCreatorApply');
-  DOM.btnOpenPremiumApply = document.getElementById('btnOpenPremiumApplyMain');
+  DOM.btnOpenPremiumApply = document.getElementById('btnOpenPremiumApplyMain') || document.getElementById('btnOpenPremiumApply');
   DOM.dlgPremiumApply = document.getElementById('dlgPremiumApply');
   DOM.btnPremiumCancel = document.getElementById('btnPremiumCancel');
 
@@ -626,6 +614,17 @@ function setupEventListeners() {
           e.preventDefault();
           e.stopPropagation();
       }
+      
+      // Prefill minimal fields to avoid extra typing
+      try {
+        const form = DOM.frmPremiumApply;
+        if (form && state && state.me) {
+          const nameEl = form.querySelector('[name="fullName"]');
+          const ageEl = form.querySelector('[name="age"]');
+          if (nameEl && !nameEl.value) nameEl.value = (state.me.name || '').trim();
+          if (ageEl) ageEl.value = state.me.age ? String(state.me.age) : '';
+        }
+      } catch (_) {}
       if (DOM.dlgPremiumApply) DOM.dlgPremiumApply.showModal();
   };
   if (DOM.btnOpenPremiumApply) DOM.btnOpenPremiumApply.addEventListener('click', openPremium);
@@ -2041,10 +2040,9 @@ function applyPlanNavGating() {
     btn.style.display = show ? '' : 'none';
   });
 
-  DOM.panels.forEach((panel) => {
-    const panelName = panel.dataset.panel;
+  Object.keys(DOM.panels).forEach(panelName => {
     const show = allowed.has(panelName);
-    panel.style.display = show ? '' : 'none';
+    DOM.panels[panelName].style.display = show ? '' : 'none';
   });
 
   // If current active tab is not allowed anymore, jump to first allowed
@@ -2108,10 +2106,7 @@ function humanizeIntent(val) {
 
 function renderSettingsDisplay(user, prefs) {
   if (DOM.sNameDisplay) DOM.sNameDisplay.textContent = user?.name || '—';
-  if (DOM.sEmailDisplay) {
-    const rawEmail = user?.email || '';
-    DOM.sEmailDisplay.textContent = maskEmail(rawEmail) || '—';
-  }
+  if (DOM.sEmailDisplay) DOM.sEmailDisplay.textContent = user?.email || '—';
   if (DOM.sAvatar) DOM.sAvatar.src = user?.avatarUrl || 'assets/images/truematch-mark.png';
 
   // Profile fields (matches Preferences "Your profile")
@@ -2319,20 +2314,34 @@ async function handlePremiumApplicationSubmit() {
       submitBtn.textContent = 'Submitting...';
     }
 
-    const fd = new FormData(form);
+        const fd = new FormData(form);
+
     const payload = {
       fullName: String(fd.get('fullName') || '').trim(),
       age: String(fd.get('age') || '').trim(),
       occupation: String(fd.get('occupation') || '').trim(),
-      finance: String(fd.get('finance') || '').trim()
+      wealthStatus: String(fd.get('wealthStatus') || '').trim(),
+      incomeRange: String(fd.get('incomeRange') || '').trim(),
+      netWorthRange: String(fd.get('netWorthRange') || '').trim(),
+      incomeSource: String(fd.get('incomeSource') || '').trim(),
+      socialLink: String(fd.get('socialLink') || '').trim(),
+      reason: String(fd.get('reason') || '').trim(),
+      amountUsd: Number(fd.get('amountUsd') || 0) || 0
     };
 
+    // Basic validation
     if (!payload.fullName || !payload.occupation) {
       showToast('Please fill in your full name and occupation.', 'error');
       return;
     }
-
-    const res = await apiPost('/api/me/premium/apply', payload);
+    if (!payload.wealthStatus || !payload.incomeRange || !payload.netWorthRange) {
+      showToast('Please select your wealth status, income range, and net worth range.', 'error');
+      return;
+    }
+    if (!payload.incomeSource || !payload.reason) {
+      showToast('Please provide your income source and a short reason for applying.', 'error');
+      return;
+    }const res = await apiPost('/api/me/premium/apply', payload);
     if (!res || !res.ok) throw new Error(res && res.error ? res.error : 'Failed to submit application.');
 
     showToast('Premium Society application submitted. Status: pending.');
