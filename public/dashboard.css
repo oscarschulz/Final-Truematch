@@ -889,30 +889,20 @@ dialog::backdrop { background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-in
   justify-content:center;
   text-align:center;
 }
-/* -------------------------------------------------------
-   Make Creators tab placement match Premium tab
-------------------------------------------------------- */
-
-.panel[data-panel="creators"]{
-  display: flex;
-  flex-direction: column;
+/* Desktop: show footer logout, hide the mobile-menu logout */
+@media (min-width: 769px){
+  #btn-logout { display: flex; }
+  .sidebar-footer { display: block; }
+  #btn-logout-mobile { display: none; }
 }
 
-#panel-creators{
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+/* Mobile: show mobile-menu logout, hide the footer logout (avoid duplicate) */
+@media (max-width: 768px){
+  #btn-logout { display: none; }
+  #btn-logout-mobile { display: flex; }
 }
-/* Center the Creators + Premium entry cards vertically (override inline margin) */
-#panel-creators.is-active,
-#panel-premium.is-active{
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
-}
-
-#panel-creators.is-active #creatorEntryCard,
-#panel-premium.is-active #premiumEntryCard{
-  margin: auto !important; /* overrides inline: margin: 20px auto 0 */
+@media (min-width: 769px){
+  #btn-logout{ display:flex !important; }
+  .sidebar-footer{ display:block !important; }
+  #btn-logout-mobile{ display:none !important; }
 }
