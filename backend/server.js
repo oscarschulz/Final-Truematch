@@ -3923,73 +3923,74 @@ app.post('/api/me/creator/subscribe', async (req, res) => {
 // server.js
 
 // ---------------- Premium Society Application ----------------
-app.post('/api/me/premium/apply', requireUser, async (req, res) => {
+app.post('/api/me/premium/apply', async (req, res) => {
   try {
-    const email = req.user.email;
-    const userRef = db.collection('users').doc(email);
-    const snap = await userRef.get();
-    const user = snap.exists ? snap.data() : {};
-
-    const currentStatus = ((user && user.premiumStatus) || '').toString().toLowerCase();
-
-    // Block if already pending / approved
-    if (currentStatus === 'pending') {
-      return res.status(409).json({ error: 'Your Premium Society application is already pending review.' });
-    }
-    if (currentStatus === 'approved') {
-      return res.status(409).json({ error: 'You are already a Premium Society member.' });
+    if (!DB.user || !DB.user.email) {
+      return res.status(401).json({ ok: false, message: 'Not logged in' });
     }
 
-    const body = req.body || {};
+    const { fullName, age, occupation, wealthStatus, incomeRange, netWorthRange, incomeSource, socialLink, reason, amountUsd, finance } = req.body || {};
 
-    // New schema (preferred)
-    const fullName = (body.fullName || '').toString().trim();
-    const occupation = (body.occupation || body.employmentStatus || '').toString().trim();
-    const wealthStatus = (body.wealthStatus || '').toString().trim();
-    const incomeRange = (body.incomeRange || '').toString().trim();
-    const netWorthRange = (body.netWorthRange || '').toString().trim();
-    const incomeSource = (body.incomeSource || '').toString().trim();
-    const socialLink = (body.socialLink || '').toString().trim();
-    const reason = (body.reason || body.notes || '').toString().trim();
-    const amountUsd = Number(body.amountUsd || 0) || 0;
+    // Basic validation
+    const _incomeSource = (incomeSource != null && String(incomeSource).trim()) ? String(incomeSource).trim() : (finance != null ? String(finance).trim() : '');
+    const _wealthStatus = wealthStatus != null ? String(wealthStatus).trim() : '';
+    const _incomeRange = incomeRange != null ? String(incomeRange).trim() : '';
+    const _netWorthRange = netWorthRange != null ? String(netWorthRange).trim() : '';
+    const _reason = reason != null ? String(reason).trim() : '';
+    const _socialLink = socialLink != null ? String(socialLink).trim() : '';
+    const _amountUsd = Number(amountUsd || 0) || 0;
 
-    // Back-compat (older UI)
-    const age = (body.age || '').toString().trim();
-    const finance = (body.finance || '').toString().trim();
-
-    if (!fullName || !occupation) {
-      return res.status(400).json({ error: 'Missing required fields: fullName and occupation.' });
+    if (!fullName || !occupation || !_wealthStatus || !_incomeRange || !_netWorthRange || !_incomeSource || !_reason) {
+      return res.status(400).json({ ok: false, message: 'Please complete the form.' });
     }
 
-    const premiumApplication = {
-      fullName,
-      occupation,
-      wealthStatus,
-      incomeRange,
-      netWorthRange,
-      incomeSource,
-      socialLink,
-      reason,
-      amountUsd,
-      // keep old fields (optional)
-      age,
-      finance,
-      status: 'pending',
-      createdAt: Date.now()
+    const applicationData = {
+      fullName: String(fullName).trim(),
+      age: (age != null && String(age).trim() !== '') ? Number(age) : (DB.user && DB.user.age ? Number(DB.user.age) : null),
+      occupation: String(occupation).trim(),
+      wealthStatus: _wealthStatus,
+      incomeRange: _incomeRange,
+      netWorthRange: _netWorthRange,
+      incomeSource: _incomeSource,
+      // Keep legacy field name for older frontends/admin
+      finance: _incomeSource,
+      socialLink: _socialLink,
+      reason: _reason,
+      amountUsd: _amountUsd,
+      appliedAt: new Date().toISOString(),
+      status: 'pending'
     };
 
-    await userRef.set(
-      {
-        premiumStatus: 'pending',
-        premiumApplication
-      },
-      { merge: true }
-    );
+    const email = DB.user.email;
 
-    return res.json({ ok: true, premiumApplication });
+    // Ensure user exists in Global DB
+    if (!DB.users[email]) {
+       DB.users[email] = { ...DB.user };
+    }
+
+    // Update Status
+    Object.assign(DB.users[email], {
+      premiumStatus: 'pending',
+      premiumApplication: applicationData
+    });
+
+    // Save to Disk
+    if (typeof saveUsersStore === 'function') saveUsersStore();
+
+    // Update Firestore (Optional)
+    if (hasFirebase) {
+      try {
+        await updateUserByEmail(email, {
+          premiumStatus: 'pending',
+          premiumApplication: applicationData
+        });
+      } catch (e) {}
+    }
+
+    return res.json({ ok: true });
   } catch (err) {
-    console.error('[api/me/premium/apply] error:', err);
-    return res.status(500).json({ error: 'Failed to submit Premium Society application.' });
+    console.error('Premium apply error:', err);
+    return res.status(500).json({ ok: false, message: 'Server error' });
   }
 });
 
@@ -4232,41 +4233,54 @@ app.post('/api/admin/creators/reject', requireAdmin, async (req, res) => {
 // 1) Get pending Premium applications
 app.get('/api/admin/premium/pending', requireAdmin, async (req, res) => {
   try {
-    const snap = await db.collection('users').get();
-    const out = [];
+    const applicants = [];
 
-    snap.forEach((doc) => {
-      const u = doc.data() || {};
-      if ((u.premiumStatus || '').toString().toLowerCase() !== 'pending') return;
+    if (hasFirebase && usersCollection) {
+      const snap = await usersCollection
+        .where('premiumStatus', '==', 'pending')
+        .get();
 
-      const a = u.premiumApplication || {};
+      snap.forEach((docSnap) => {
+        const d = docSnap.data() || {};
+        const pub = publicUser({ id: docSnap.id, ...d });
 
-      out.push({
-        email: doc.id,
-        premiumStatus: u.premiumStatus || 'pending',
-        application: {
-          fullName: a.fullName || '',
-          occupation: a.occupation || '',
-          wealthStatus: a.wealthStatus || '',
-          incomeRange: a.incomeRange || '',
-          netWorthRange: a.netWorthRange || '',
-          incomeSource: a.incomeSource || '',
-          socialLink: a.socialLink || '',
-          reason: a.reason || '',
-          amountUsd: a.amountUsd || 0,
-          // back-compat fields
-          age: a.age || '',
-          finance: a.finance || '',
-          status: a.status || 'pending',
-          createdAt: a.createdAt || null
-        }
+        applicants.push({
+          ...pub,
+          premiumStatus: d.premiumStatus || null,
+          premiumApplication: d.premiumApplication || null,
+          creatorStatus: d.creatorStatus || null,
+          creatorApplication: d.creatorApplication || null
+        });
       });
-    });
+    } else {
+      const list = Object.values(DB.users || {}).filter(
+        (u) => u && u.premiumStatus === 'pending'
+      );
 
-    return res.json({ ok: true, count: out.length, applicants: out });
+      list.forEach((u) => {
+        applicants.push({
+          id: u.id || '',
+          email: u.email || '',
+          name: u.name || '',
+          plan: u.plan || 'free',
+          planStart: u.planStart || null,
+          planEnd: u.planEnd || null,
+          avatarUrl: u.avatarUrl || '',
+          prefsSaved: !!u.prefsSaved,
+          emailVerified: !!u.emailVerified,
+          planActive: !!u.planActive,
+          premiumStatus: u.premiumStatus || null,
+          premiumApplication: u.premiumApplication || null,
+          creatorStatus: u.creatorStatus || null,
+          creatorApplication: u.creatorApplication || null
+        });
+      });
+    }
+
+    return res.json({ ok: true, count: applicants.length, applicants });
   } catch (err) {
-    console.error('[api/admin/premium/pending] error:', err);
-    return res.status(500).json({ error: 'Failed to load pending Premium Society applications.' });
+    console.error('premium/pending error:', err);
+    return res.status(500).json({ ok: false, message: 'server error' });
   }
 });
 
