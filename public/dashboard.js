@@ -10,6 +10,18 @@ const DEV_MODE = false;
 
 const DAILY_SWIPE_LIMIT = 20; 
 
+// --- Email helper: shorten + mask to avoid UI overlap (Settings header) ---
+function maskEmail(email) {
+  if (!email || typeof email !== 'string') return '';
+  const at = email.indexOf('@');
+  if (at <= 0) return email;
+  const local = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  const first = local[0] || '';
+  const stars = '*'.repeat(8);
+  return `${first}${stars}@${domain}`;
+}
+
 // --- Image helper (same behavior as Preferences page: crop to square + compress) ---
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -340,10 +352,7 @@ function renderCreatorEntryCard() {
     if (hint) hint.textContent = 'You can edit and re-apply anytime.';
     if (btnApply) {
       btnApply.disabled = false;
-      btnApply.removeAttribute('disabled');
-      btnApply.style.pointerEvents = 'auto';
-      btnApply.style.cursor = 'pointer';
-      btnApply.textContent = 'Apply';
+      btnApply.textContent = 'Re-Apply';
       btnApply.style.opacity = '1';
     }
   } else if (status === 'approved') {
@@ -394,7 +403,7 @@ function renderPremiumEntryCard() {
     if (hint) hint.textContent = 'You can re-apply anytime.';
     if (btnApply) {
       btnApply.disabled = false;
-      btnApply.textContent = 'Apply';
+      btnApply.textContent = 'Re-Apply';
       btnApply.style.opacity = '1';
     }
   } else if (status === 'approved') {
@@ -2032,9 +2041,10 @@ function applyPlanNavGating() {
     btn.style.display = show ? '' : 'none';
   });
 
-  Object.keys(DOM.panels).forEach(panelName => {
+  DOM.panels.forEach((panel) => {
+    const panelName = panel.dataset.panel;
     const show = allowed.has(panelName);
-    DOM.panels[panelName].style.display = show ? '' : 'none';
+    panel.style.display = show ? '' : 'none';
   });
 
   // If current active tab is not allowed anymore, jump to first allowed
@@ -2098,7 +2108,10 @@ function humanizeIntent(val) {
 
 function renderSettingsDisplay(user, prefs) {
   if (DOM.sNameDisplay) DOM.sNameDisplay.textContent = user?.name || '—';
-  if (DOM.sEmailDisplay) DOM.sEmailDisplay.textContent = user?.email || '—';
+  if (DOM.sEmailDisplay) {
+    const rawEmail = user?.email || '';
+    DOM.sEmailDisplay.textContent = maskEmail(rawEmail) || '—';
+  }
   if (DOM.sAvatar) DOM.sAvatar.src = user?.avatarUrl || 'assets/images/truematch-mark.png';
 
   // Profile fields (matches Preferences "Your profile")
