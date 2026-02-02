@@ -78,7 +78,62 @@ function closeAvatarLightbox() {
   document.body.style.overflow = '';
 }
 
+function ensureConciergeTab() {
+  const tabbar = document.getElementById('tabbar');
+  const panels = document.getElementById('panels');
+  if (!tabbar || !panels) return;
+
+  // --- Nav button (insert between Premium and Creators) ---
+  const existingBtn = tabbar.querySelector('.nav-btn[data-panel="concierge"]');
+  if (!existingBtn) {
+    const btn = document.createElement('button');
+    btn.className = 'nav-btn';
+    btn.setAttribute('data-panel', 'concierge');
+    btn.innerHTML = '<i class="fa-solid fa-user-tie"></i><span>Concierge</span>';
+
+    const creatorsBtn = tabbar.querySelector('.nav-btn[data-panel="creators"]');
+    if (creatorsBtn) {
+      tabbar.insertBefore(btn, creatorsBtn);
+    } else {
+      tabbar.appendChild(btn);
+    }
+  }
+
+  // --- Panel ---
+  const existingPanel = panels.querySelector('.panel[data-panel="concierge"]');
+  if (!existingPanel) {
+    const section = document.createElement('section');
+    section.className = 'panel';
+    section.setAttribute('data-panel', 'concierge');
+    section.style.display = 'none';
+
+    section.innerHTML = `
+      <div class="feed-header">
+        <h2>Concierge</h2>
+        <p style="margin:0; color:rgba(255,255,255,0.75); font-size:0.9rem;">
+          Date-setter concierge (Tier 3 only).
+        </p>
+      </div>
+
+      <div id="panel-concierge"></div>
+    `;
+
+    // Insert after Shortlist panel if present, otherwise before Creators panel if present.
+    const shortlistPanel = panels.querySelector('.panel[data-panel="shortlist"]');
+    const creatorsPanel = panels.querySelector('.panel[data-panel="creators"]');
+
+    if (shortlistPanel && shortlistPanel.nextSibling) {
+      shortlistPanel.insertAdjacentElement('afterend', section);
+    } else if (creatorsPanel) {
+      panels.insertBefore(section, creatorsPanel);
+    } else {
+      panels.appendChild(section);
+    }
+  }
+}
+
 function cacheDom() {
+  ensureConciergeTab();
   DOM.tabs = document.querySelectorAll('.nav-btn');
   DOM.panels = document.querySelectorAll('.panel[data-panel]');
   DOM.btnLogout = document.getElementById('btn-logout');
@@ -101,6 +156,9 @@ function cacheDom() {
   DOM.chatUserName = document.getElementById('chatUserName');
   DOM.chatBody = document.getElementById('chatBody');
   DOM.btnCloseChat = document.getElementById('btnCloseChat');
+  DOM.chatInput = DOM.dlgChat ? DOM.dlgChat.querySelector('input.tm-input') : null;
+  DOM.btnChatSend = DOM.dlgChat ? DOM.dlgChat.querySelector('button.btn.btn--primary') : null;
+  DOM.chatReceiptLine = DOM.dlgChat ? DOM.dlgChat.querySelector('.chat-head .chat-user p') : null;
 
   DOM.activeNearbyContainer = document.getElementById('activeNearbyContainer');
   DOM.btnNotifToggle = document.getElementById('btnNotifToggle');
@@ -187,6 +245,7 @@ function cacheDom() {
   
   // Panel Bodies
   DOM.panelShortlistBody = document.getElementById('panel-shortlist');
+  DOM.panelConciergeBody = document.getElementById('panel-concierge');
   DOM.panelCreatorsBody = document.getElementById('panel-creators');
   DOM.panelPremiumBody = document.getElementById('panel-premium');
 
@@ -452,12 +511,12 @@ function setupEventListeners() {
               name = targetCard.querySelector('.match-name').textContent.split(',')[0];
               imgColor = targetCard.querySelector('.match-img').style.backgroundColor;
               msg = targetCard.dataset.msg; 
-              openChatModal(name, imgColor, msg);
+              openChatModal(name, imgColor, msg, targetCard.dataset.email || '', targetCard.dataset.photoUrl || '');
           }
       } else if (item) {
           name = item.dataset.name;
           imgColor = item.querySelector('.story-img').style.backgroundColor;
-          openChatModal(name, imgColor, "Matched via Stories 🔥");
+          openChatModal(name, imgColor, "Matched via Stories 🔥", item.dataset.email || '', item.dataset.photoUrl || '');
       }
   };
   if (DOM.matchesContainer) DOM.matchesContainer.addEventListener('click', handleMatchClick);
@@ -466,6 +525,12 @@ function setupEventListeners() {
   // 5. Modals Close
   if (DOM.btnCloseStory && DOM.dlgStory) DOM.btnCloseStory.addEventListener('click', () => MomentsController.closeStory());
   if (DOM.btnCloseChat && DOM.dlgChat) DOM.btnCloseChat.addEventListener('click', () => DOM.dlgChat.close());
+
+  // Chat Send
+  if (DOM.btnChatSend) DOM.btnChatSend.addEventListener('click', (e) => { e.preventDefault(); sendChatMessage(); });
+  if (DOM.chatInput) DOM.chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); sendChatMessage(); }
+  });
 
   // 6. Logout
   const handleLogout = (e) => {
@@ -743,29 +808,55 @@ function setActiveTab(tabName) {
       if(menuBtn) menuBtn.innerHTML = '<i class="fa-solid fa-bars"></i>';
   }
 }
+function onPanelActivated(tabName) {
+  if (tabName === 'matches') {
+    loadMatchesPanel();
+  }
+  if (tabName === 'shortlist') {
+    loadShortlistPanel();
+  }
+  if (tabName === 'concierge') {
+    loadConciergePanel();
+  }
+}
+
 
 // ---------------------------------------------------------------------
 // MODAL HELPERS
 // ---------------------------------------------------------------------
 
-function openChatModal(name, color, lastMsg) {
-    if(DOM.dlgChat) {
-        if(DOM.chatUserName) DOM.chatUserName.textContent = name;
-        if(DOM.chatUserImg) {
-            DOM.chatUserImg.src = 'assets/images/truematch-mark.png';
-            DOM.chatUserImg.style.backgroundColor = color || '#333';
-        }
-        
-        const messageToShow = lastMsg || "Hey there! 👋";
+async function openChatModal(name, imgColor, lastMsg, peerEmail, peerPhotoUrl) {
+  if (!DOM.dlgChat) return;
 
-        if(DOM.chatBody) {
-            DOM.chatBody.innerHTML = `
-                <div class="msg-bubble me">Hi ${name}!</div>
-                <div class="msg-bubble them">${messageToShow}</div>
-            `;
-        }
-        DOM.dlgChat.showModal();
-    }
+  state.currentChatPeerEmail = String(peerEmail || '').toLowerCase();
+  state.currentChatPeerName = name || 'Match';
+  state.currentChatPeerPhoto = peerPhotoUrl || '';
+
+  DOM.chatAvatar.style.background = imgColor || '#3AAFB9';
+
+  // Prefer backend photo if available
+  const hasPhoto = !!state.currentChatPeerPhoto;
+  DOM.chatAvatar.style.backgroundImage = hasPhoto ? `url('${state.currentChatPeerPhoto}')` : 'none';
+  DOM.chatAvatar.style.backgroundSize = hasPhoto ? 'cover' : 'auto';
+  DOM.chatAvatar.style.backgroundPosition = hasPhoto ? 'center' : 'center';
+
+  DOM.chatName.textContent = state.currentChatPeerName;
+
+  // Reset header meta line
+  if (DOM.chatReceiptLine) {
+    DOM.chatReceiptLine.textContent = '● Online';
+  }
+
+  // Clear body and show initial hint
+  DOM.chatBody.innerHTML = '';
+  DOM.dlgChat.showModal();
+
+  if (!state.currentChatPeerEmail) {
+    DOM.chatBody.innerHTML = '<p style="margin:0; color:rgba(255,255,255,0.7);">No chat recipient found.</p>';
+    return;
+  }
+
+  await loadAndRenderThread(state.currentChatPeerEmail);
 }
 
 function openStoryModal(name, color) {
@@ -1467,6 +1558,365 @@ function populateMockContent() {
   }
 }
 
+async function loadMatchesPanel() {
+  try {
+    // Only load when panel exists and user is logged in
+    if (!DOM.matchesContainer) return;
+    if (!state.me || !state.me.email) return;
+
+    const res = await apiGet('/api/matches');
+    if (!res || !res.ok) {
+      // keep current UI
+      return;
+    }
+
+    renderMatchesFromApi(Array.isArray(res.matches) ? res.matches : []);
+  } catch (err) {
+    console.warn('loadMatchesPanel failed:', err);
+  }
+}
+
+function renderMatchesFromApi(matches) {
+  // Update counters
+  const count = matches.length;
+  if (DOM.matchCount) DOM.matchCount.textContent = String(count);
+  if (DOM.newMatchCount) DOM.newMatchCount.textContent = String(Math.min(count, 6));
+
+  // --- Stories (new matches rail) ---
+  if (DOM.newMatchesRail) {
+    if (!count) {
+      DOM.newMatchesRail.innerHTML = '<div style="color:rgba(255,255,255,0.65); font-size:0.9rem;">No matches yet.</div>';
+    } else {
+      DOM.newMatchesRail.innerHTML = matches.slice(0, 6).map(m => {
+        const safeName = (m.name || 'Match').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const photoUrl = m.photoUrl || '';
+        return `
+          <div class="story-item" data-name="${safeName}" data-email="${m.email || ''}" data-photo-url="${photoUrl}">
+            <div class="story-ring">
+              <div class="story-img" style="${photoUrl ? `background-image:url('${photoUrl}')` : ''}"></div>
+            </div>
+            <div class="story-name">${safeName}</div>
+          </div>
+        `;
+      }).join('');
+    }
+  }
+
+  // --- Match cards ---
+  if (DOM.matchesContainer) {
+    if (!count) {
+      DOM.matchesContainer.innerHTML = '<div style="color:rgba(255,255,255,0.65);">No matches yet. Keep swiping.</div>';
+      return;
+    }
+
+    DOM.matchesContainer.innerHTML = matches.map(m => {
+      const safeName = (m.name || 'Match').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const safeSub = (m.city ? m.city : '—');
+      const photoUrl = m.photoUrl || '';
+      const msg = (m.lastMessage || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const seedColor = getRandomColor();
+      return `
+        <div class="match-card" data-name="${safeName}" data-email="${m.email || ''}" data-photo-url="${photoUrl}" data-msg="${msg}">
+          <div class="match-img" style="background-color:${seedColor}; ${photoUrl ? `background-image:url('${photoUrl}'); background-size:cover; background-position:center;` : ''}"></div>
+          <div class="match-info">
+            <div class="match-name">${safeName}</div>
+            <div class="match-sub">${safeSub}</div>
+            <div class="match-last">${msg || 'Tap to chat'}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+}
+
+// --- Messages / Chat ---
+async function loadAndRenderThread(peerEmail) {
+  try {
+    const res = await apiGet('/api/messages/thread/' + encodeURIComponent(peerEmail));
+    if (!res || !res.ok) return;
+
+    const planKey = normalizePlanKey(res.plan || state.plan || 'free');
+    const messages = Array.isArray(res.messages) ? res.messages : [];
+    const usage = res.usage || {};
+
+    renderThreadMessages(messages, planKey, usage);
+
+  } catch (err) {
+    console.warn('load thread failed:', err);
+  }
+}
+
+
+function renderThreadMessages(messages, planKey, usage) {
+  if (!DOM.chatBody) return;
+
+  const meEmail = String((state.me && state.me.email) || '').toLowerCase();
+  const peerEmail = String(state.currentChatPeerEmail || '').toLowerCase();
+
+  if (!messages.length) {
+    DOM.chatBody.innerHTML = '<p style="margin:0; color:rgba(255,255,255,0.7);">Start the conversation.</p>';
+  } else {
+    DOM.chatBody.innerHTML = messages.map(msg => {
+      const from = String(msg.from || '').toLowerCase();
+      const isMe = from === meEmail;
+      const safeText = String(msg.text || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+      const rowStyle = isMe
+        ? 'display:flex; justify-content:flex-end; margin:10px 0;'
+        : 'display:flex; justify-content:flex-start; margin:10px 0;';
+
+      const bubbleStyle = isMe
+        ? 'max-width:78%; background:rgba(255,255,255,0.12); padding:10px 12px; border-radius:14px; line-height:1.35;'
+        : 'max-width:78%; background:rgba(58,175,185,0.18); padding:10px 12px; border-radius:14px; line-height:1.35;';
+
+      return `<div style="${rowStyle}"><div style="${bubbleStyle}">${safeText}</div></div>`;
+    }).join('');
+  }
+
+  DOM.chatBody.scrollTop = DOM.chatBody.scrollHeight;
+
+  // Read receipt line (Tier1+)
+  if (DOM.chatReceiptLine) {
+    if (planKey === 'free') {
+      DOM.chatReceiptLine.textContent = '● Online';
+    } else {
+      const lastOut = [...messages].reverse().find(m => String(m.from || '').toLowerCase() === meEmail && String(m.to || '').toLowerCase() === peerEmail);
+      const seen = !!(lastOut && lastOut.readAt);
+      DOM.chatReceiptLine.textContent = seen ? 'Seen' : 'Delivered';
+    }
+  }
+
+  // Message cap enforcement (free only)
+  if (planKey === 'free' && usage && typeof usage.limit === 'number') {
+    const remaining = Math.max(0, usage.limit - (usage.sentToday || 0));
+    if (DOM.btnChatSend) DOM.btnChatSend.disabled = remaining <= 0;
+  } else {
+    if (DOM.btnChatSend) DOM.btnChatSend.disabled = false;
+  }
+}
+
+async function sendChatMessage() {
+  try {
+    if (!state.currentChatPeerEmail) return;
+    if (!DOM.chatInput) return;
+
+    const text = String(DOM.chatInput.value || '').trim();
+    if (!text) return;
+
+    if (DOM.btnChatSend) DOM.btnChatSend.disabled = true;
+
+    const res = await apiPost('/api/messages/send', { to: state.currentChatPeerEmail, text });
+
+    if (!res || !res.ok) {
+      showToast('Unable to send message.', 'error');
+      if (DOM.btnChatSend) DOM.btnChatSend.disabled = false;
+      return;
+    }
+
+    DOM.chatInput.value = '';
+    await loadAndRenderThread(state.currentChatPeerEmail);
+
+    // Free message cap feedback
+    if (res.usage && typeof res.usage.limit === 'number') {
+      const remaining = Math.max(0, res.usage.limit - (res.usage.sentToday || 0));
+      if (remaining <= 0) {
+        showToast('Daily message limit reached (20). Upgrade to Plus for unlimited messaging.', 'warning');
+      }
+    }
+
+    if (DOM.btnChatSend) DOM.btnChatSend.disabled = false;
+  } catch (err) {
+    const msg = (err && err.message) ? err.message : '';
+    if (String(msg).includes('daily_message_limit')) {
+      showToast('Daily message limit reached (20). Upgrade to Plus for unlimited messaging.', 'warning');
+    } else {
+      showToast('Unable to send message.', 'error');
+    }
+    if (DOM.btnChatSend) DOM.btnChatSend.disabled = false;
+  }
+}
+
+// --- Shortlist (Tier2+) ---
+async function loadShortlistPanel() {
+  try {
+    if (!DOM.panelShortlistBody) return;
+
+    const plan = normalizePlanKey(state.plan || 'free');
+    if (plan !== 'tier2' && plan !== 'tier3') return;
+
+    const res = await apiGet('/api/shortlist');
+    if (!res || !res.ok) return;
+
+    renderShortlist(res);
+  } catch (err) {
+    console.warn('loadShortlistPanel failed:', err);
+  }
+}
+
+function renderShortlist(res) {
+  if (!DOM.panelShortlistBody) return;
+
+  const header = DOM.panelShortlistBody.querySelector('.feed-header');
+  let container = DOM.panelShortlistBody.querySelector('.shortlist-wrap');
+  if (!container) {
+    container = document.createElement('div');
+    container.className = 'shortlist-wrap';
+    DOM.panelShortlistBody.appendChild(container);
+  }
+
+  const items = Array.isArray(res.items) ? res.items : [];
+  if (!items.length) {
+    container.innerHTML = '<div style="color:rgba(255,255,255,0.7);">No profiles in today\'s shortlist.</div>';
+    return;
+  }
+
+  container.innerHTML = items.map(p => {
+    const safeName = String(p.name || 'Profile').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safeCity = String(p.city || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const photoUrl = p.photoUrl || '';
+    return `
+      <div class="short-card" data-id="${p.id}">
+        <div class="short-img" style="${photoUrl ? `background-image:url('${photoUrl}')` : ''}"></div>
+        <div class="short-meta">
+          <div class="short-name">${safeName}</div>
+          <div class="short-sub">${safeCity}</div>
+          <div class="short-actions">
+            <button class="btn btn--ghost" data-act="pass">Pass</button>
+            <button class="btn btn--primary" data-act="approve">Approve</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.querySelectorAll('button[data-act]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const act = btn.dataset.act;
+      const card = btn.closest('.short-card');
+      const id = card ? card.dataset.id : '';
+      if (!id) return;
+
+      btn.disabled = true;
+      try {
+        const out = await apiPost('/api/shortlist/decision', { profileId: id, action: act });
+        if (out && out.ok) {
+          card.remove();
+          showToast(act === 'approve' ? 'Approved.' : 'Passed.', 'success');
+        } else {
+          showToast('Action failed.', 'error');
+          btn.disabled = false;
+        }
+      } catch (_err) {
+        showToast('Action failed.', 'error');
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+// --- Concierge (Tier3) ---
+async function loadConciergePanel() {
+  try {
+    if (!DOM.panelConciergeBody) return;
+    const plan = normalizePlanKey(state.plan || 'free');
+    if (plan !== 'tier3') return;
+
+    const [approved, scheduled] = await Promise.all([
+      apiGet('/api/shortlist/approved'),
+      apiGet('/api/concierge/scheduled')
+    ]);
+
+    renderConciergePanel(approved, scheduled);
+  } catch (err) {
+    console.warn('loadConciergePanel failed:', err);
+  }
+}
+
+function renderConciergePanel(approvedRes, scheduledRes) {
+  if (!DOM.panelConciergeBody) return;
+
+  const approved = (approvedRes && approvedRes.ok && Array.isArray(approvedRes.items)) ? approvedRes.items : [];
+  const scheduled = (scheduledRes && scheduledRes.ok && Array.isArray(scheduledRes.scheduled)) ? scheduledRes.scheduled : [];
+
+  DOM.panelConciergeBody.innerHTML = `
+    <div style="margin-bottom:14px;">
+      <h3 style="margin:0 0 8px 0;">Approved profiles</h3>
+      <div class="conc-list" id="conc-approved"></div>
+    </div>
+    <div>
+      <h3 style="margin:0 0 8px 0;">Scheduled dates</h3>
+      <div class="conc-list" id="conc-scheduled"></div>
+    </div>
+  `;
+
+  const approvedEl = DOM.panelConciergeBody.querySelector('#conc-approved');
+  const scheduledEl = DOM.panelConciergeBody.querySelector('#conc-scheduled');
+
+  if (!approved.length) {
+    approvedEl.innerHTML = '<div style="color:rgba(255,255,255,0.7);">No approved profiles yet.</div>';
+  } else {
+    approvedEl.innerHTML = approved.map(p => {
+      const safeName = String(p.name || 'Profile').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const safeCity = String(p.city || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const photoUrl = p.photoUrl || '';
+      return `
+        <div class="conc-card" data-id="${p.id}">
+          <div class="conc-img" style="${photoUrl ? `background-image:url('${photoUrl}')` : ''}"></div>
+          <div class="conc-meta">
+            <div class="conc-name">${safeName}</div>
+            <div class="conc-sub">${safeCity}</div>
+          </div>
+          <div class="conc-actions">
+            <button class="btn btn--primary" data-act="date">Request date</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    approvedEl.querySelectorAll('button[data-act="date"]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const card = btn.closest('.conc-card');
+        const id = card ? card.dataset.id : '';
+        if (!id) return;
+
+        btn.disabled = true;
+        try {
+          const out = await apiPost('/api/approved/date', { profileId: id });
+          if (out && out.ok) {
+            showToast('Date requested. Your concierge is scheduling.', 'success');
+            await loadConciergePanel();
+          } else {
+            showToast('Request failed.', 'error');
+            btn.disabled = false;
+          }
+        } catch (_err) {
+          showToast('Request failed.', 'error');
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+
+  if (!scheduled.length) {
+    scheduledEl.innerHTML = '<div style="color:rgba(255,255,255,0.7);">No scheduled dates yet.</div>';
+  } else {
+    scheduledEl.innerHTML = scheduled.map(it => {
+      const p = it.profile || it;
+      const safeName = String(p.name || 'Profile').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const safeCity = String(p.city || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const when = it.when || it.date || it.time || '';
+      return `
+        <div class="conc-card">
+          <div class="conc-meta">
+            <div class="conc-name">${safeName}</div>
+            <div class="conc-sub">${safeCity}${when ? ' • ' + when : ''}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+}
+
 function renderHomeEmptyStates() {
   if (DOM.admirerCount) DOM.admirerCount.textContent = '0 New';
   if (DOM.admirerContainer) {
@@ -1553,32 +2003,44 @@ function renderHome(user) {
 }
 
 function applyPlanNavGating() {
-  if (DEV_MODE) return; 
-  const rules = {
-    // Premium tab should be hidden for Free users, shown for paid tiers
-    free: ['home', 'matches', 'swipe', 'creators', 'settings'],
-    tier1: ['home', 'matches', 'swipe', 'creators', 'premium', 'settings'],
-    tier2: ['home', 'matches', 'shortlist', 'approved', 'swipe', 'creators', 'premium', 'settings'],
-    tier3: ['home', 'matches', 'shortlist', 'approved', 'confirmed', 'swipe', 'creators', 'premium', 'settings']
-  };
-  const allowed = rules[state.plan] || rules.free;
+  const plan = normalizePlanKey(state.plan || 'free');
 
-  DOM.tabs.forEach(tab => {
-    const panel = tab.dataset.panel;
-    // Non-panel buttons (e.g., Logout) must never be plan-gated.
-    if (!panel) {
-      tab.hidden = false;
-      tab.style.display = 'flex';
-      return;
-    }
-    if (allowed.includes(panel)) {
-      tab.hidden = false;
-      tab.style.display = 'flex';
-    } else {
-      tab.hidden = true;
-      tab.style.display = 'none';
-    }
+  // Tabs visible per plan:
+  // free: Home, Swipe, Matches, Settings, Creators
+  // tier1: + Premium Society
+  // tier2: + Shortlist
+  // tier3: + Concierge
+  const allowed = new Set(['home', 'swipe', 'matches', 'settings', 'creators']);
+
+  if (plan === 'tier1' || plan === 'tier2' || plan === 'tier3') {
+    allowed.add('premium');
+  }
+  if (plan === 'tier2' || plan === 'tier3') {
+    allowed.add('shortlist');
+  }
+  if (plan === 'tier3') {
+    allowed.add('concierge');
+  }
+
+  // Hide / show nav buttons + panels
+  DOM.tabs.forEach(btn => {
+    const tabName = btn.dataset.panel;
+    const show = allowed.has(tabName);
+    btn.style.display = show ? '' : 'none';
   });
+
+  Object.keys(DOM.panels).forEach(panelName => {
+    const show = allowed.has(panelName);
+    DOM.panels[panelName].style.display = show ? '' : 'none';
+  });
+
+  // If current active tab is not allowed anymore, jump to first allowed
+  const activeNow = state.activeTab || localStorage.getItem('tm_activeTab') || 'home';
+  if (!allowed.has(activeNow)) {
+    const first = ['home', 'swipe', 'matches', 'premium', 'shortlist', 'concierge', 'settings', 'creators']
+      .find(t => allowed.has(t)) || 'home';
+    setActiveTab(first);
+  }
 }
 
 function applyAdvancedPrefsLock() {

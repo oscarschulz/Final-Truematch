@@ -2598,6 +2598,13 @@ app.get('/api/shortlist', async (_req, res) => {
       return res.status(401).json({ ok: false, message: 'not logged in' });
     }
 
+
+  const user = (DB.users && DB.users[email]) || DB.user || {};
+  const planKey = normalizePlanKey(user.plan || 'free');
+  if (planKey !== 'tier2' && planKey !== 'tier3') {
+    return res.status(403).json({ ok: false, message: 'not_allowed' });
+  }
+
     const data = await serveShortlistForToday(email);
     return res.json({ ok: true, ...data });
   } catch (err) {
@@ -2616,13 +2623,43 @@ app.get('/api/shortlist/approved', async (_req, res) => {
       return res.status(401).json({ ok: false, message: 'not logged in' });
     }
 
+
+  const user = (DB.users && DB.users[email]) || DB.user || {};
+  const planKey = normalizePlanKey(user.plan || 'free');
+  if (planKey !== 'tier2' && planKey !== 'tier3') {
+    return res.status(403).json({ ok: false, message: 'not_allowed' });
+  }
+
     const approved = await loadApprovedProfiles(email);
-    return res.json({ ok: true, approved });
+    return res.json({ ok: true, approved, items: approved });
   } catch (err) {
     console.error('approved error:', err);
     return res.status(500).json({ ok: false, message: 'server error' });
   }
 });
+
+// Scheduled dates (Tier 3 Concierge)
+app.get('/api/concierge/scheduled', async (_req, res) => {
+  try {
+    const email = DB.user && DB.user.email;
+    if (!email) {
+      return res.status(401).json({ ok: false, message: 'not logged in' });
+    }
+
+    const user = (DB.users && DB.users[email]) || DB.user || {};
+    const planKey = normalizePlanKey(user.plan || 'free');
+    if (planKey !== 'tier3') {
+      return res.status(403).json({ ok: false, message: 'not_allowed' });
+    }
+
+    const scheduled = await loadScheduledDates(email);
+    return res.json({ ok: true, scheduled });
+  } catch (err) {
+    console.error('concierge scheduled error:', err);
+    return res.status(500).json({ ok: false, message: 'server error' });
+  }
+});
+
 
 // Request a date from an APPROVED profile (moves from approved -> scheduledDates)
 app.post('/api/approved/date', async (req, res) => {
@@ -2631,6 +2668,13 @@ app.post('/api/approved/date', async (req, res) => {
     if (!email) {
       return res.status(401).json({ ok: false, message: 'not logged in' });
     }
+
+
+  const user = (DB.users && DB.users[email]) || DB.user || {};
+  const planKey = normalizePlanKey(user.plan || 'free');
+  if (planKey !== 'tier3') {
+    return res.status(403).json({ ok: false, message: 'not_allowed' });
+  }
 
     const { profileId } = req.body || {};
     if (!profileId) {
@@ -2662,7 +2706,6 @@ app.post('/api/approved/date', async (req, res) => {
     return res.status(500).json({ ok: false, message: 'server error' });
   }
 });
-
 // User decisions: approve, pass, request date (Tier 3)
 
 // User decisions: approve, pass, request date (Tier 3)
@@ -2673,10 +2716,22 @@ app.post('/api/shortlist/decision', async (req, res) => {
       return res.status(401).json({ ok: false, message: 'not logged in' });
     }
 
+
+  const user = (DB.users && DB.users[email]) || DB.user || {};
+  const planKey = normalizePlanKey(user.plan || 'free');
+  if (planKey !== 'tier2' && planKey !== 'tier3') {
+    return res.status(403).json({ ok: false, message: 'not_allowed' });
+  }
+
     const { profileId, action } = req.body || {};
     if (!profileId || !['approve', 'pass', 'date'].includes(action)) {
       return res.status(400).json({ ok: false, message: 'invalid action' });
     }
+
+
+  if (action === 'date' && planKey !== 'tier3') {
+    return res.status(403).json({ ok: false, message: 'not_allowed' });
+  }
 
     const state = await loadShortlistState(email);
     let shortlist = Array.isArray(state.shortlist) ? state.shortlist : [];
@@ -2711,7 +2766,6 @@ app.post('/api/shortlist/decision', async (req, res) => {
     return res.status(500).json({ ok: false, message: 'server error' });
   }
 });
-
 // ---------------- Admin auth (username + password login) -------------------
 app.post('/api/admin/login', (req, res) => {
   try {
@@ -3156,14 +3210,33 @@ app.get('/api/messages/thread/:peer', (req, res) => {
 
   const user = (DB.users && DB.users[email]) || DB.user || {};
   const plan = user.plan || null;
+  const planKey = normalizePlanKey(plan);
   const usage = getOrInitMessageUsage(email, plan);
 
   const byPeer = DB.messages[email] || {};
   const list = byPeer[peerEmail] || [];
 
+  // Read receipts:
+  // Only tier1+ should update read state (free has no read receipts)
+  if (planKey !== 'free' && Array.isArray(list) && list.length) {
+    const nowIso = new Date().toISOString();
+    let changed = false;
+    for (const msg of list) {
+      if (msg && String(msg.to || '').toLowerCase() === String(email).toLowerCase() && !msg.readAt) {
+        msg.readAt = nowIso;
+        changed = true;
+      }
+    }
+    // Because the same msg objects are stored for both sides in this demo store,
+    // marking readAt here is enough for the sender to see "seen".
+    if (changed) {
+      DB.messages[email][peerEmail] = list;
+    }
+  }
+
   return res.json({
     ok: true,
-    plan: normalizePlanKey(plan),
+    plan: planKey,
     usage: {
       dayKey: usage.dayKey,
       sentToday: usage.sentToday || 0,
@@ -3172,7 +3245,6 @@ app.get('/api/messages/thread/:peer', (req, res) => {
     messages: list
   });
 });
-
 // Send a message to a peer. Free plan has 20 messages/day cap; paid tiers are unlimited.
 app.post('/api/messages/send', (req, res) => {
   const email = DB.user && DB.user.email;
@@ -3251,7 +3323,6 @@ app.post('/api/messages/send', (req, res) => {
     }
   });
 });
-
 // ---------------- Plan selection -------------------
 app.post('/api/plan/choose', async (req, res) => {
   try {
@@ -4583,55 +4654,65 @@ app.get('/api/swipe/candidates', async (req, res) => {
 app.post('/api/swipe/action', async (req, res) => {
   try {
     const myEmail = String(((req.user && req.user.email) || (DB.user && DB.user.email) || '')).toLowerCase();
-    if (!myEmail) return res.status(401).json({ ok: false, error: 'Not authenticated' });
+    if (!myEmail) return res.status(401).json({ ok: false, error: 'Not logged in' });
 
-    const { targetId, type } = req.body || {};
-    const tId = String(targetId || '').toLowerCase();
-    const actionType = String(type || '').toLowerCase();
-
-    if (!tId) return res.status(400).json({ ok: false, error: 'Missing targetId' });
-    if (!['pass', 'like', 'superlike'].includes(actionType)) {
-      return res.status(400).json({ ok: false, error: 'Invalid swipe type' });
+    const tId = String((req.body && req.body.targetEmail) || '').toLowerCase();
+    const action = String((req.body && req.body.action) || '').toLowerCase();
+    if (!tId || !['like', 'pass', 'super'].includes(action)) {
+      return res.status(400).json({ ok: false, error: 'Invalid swipe payload' });
     }
 
-    // Strict daily limit (server-side)
-    const today = new Date().toISOString().slice(0, 10);
-    SERVER_SWIPE_COUNTS[myEmail] = SERVER_SWIPE_COUNTS[myEmail] || { date: today, count: 0 };
-    if (SERVER_SWIPE_COUNTS[myEmail].date !== today) {
-      SERVER_SWIPE_COUNTS[myEmail] = { date: today, count: 0 };
-    }
-    if (SERVER_SWIPE_COUNTS[myEmail].count >= STRICT_DAILY_LIMIT) {
-      return res.json({ ok: true, remaining: 0, limit: STRICT_DAILY_LIMIT, limitReached: true, isMatch: false });
+    // Plan-gated daily swipe cap:
+    // - free: 20/day (server-side enforced)
+    // - tier1+: unlimited
+    const userDoc = (DB.users && DB.users[myEmail]) || DB.user || {};
+    const planKey = normalizePlanKey((req.user && req.user.plan) || userDoc.plan || 'free');
+    const cap = (planKey === 'free') ? STRICT_DAILY_LIMIT : null;
+
+    let remaining = null;
+    let limitReached = false;
+
+    if (cap !== null) {
+      const today = new Date().toISOString().slice(0, 10);
+
+      if (!SERVER_SWIPE_COUNTS[myEmail] || SERVER_SWIPE_COUNTS[myEmail].day !== today) {
+        SERVER_SWIPE_COUNTS[myEmail] = { day: today, count: 0 };
+      }
+
+      if (SERVER_SWIPE_COUNTS[myEmail].count >= cap) {
+        return res.json({ ok: true, remaining: 0, limit: cap, limitReached: true, isMatch: false });
+      }
     }
 
-    // Save swipe (pass counts too; pass means "never show again")
+    const actionType = action === 'super' ? 'super' : (action === 'like' ? 'like' : 'pass');
     await _saveSwipe(myEmail, tId, actionType);
 
-    // Consume a swipe
-    SERVER_SWIPE_COUNTS[myEmail].count += 1;
-    const remaining = Math.max(0, STRICT_DAILY_LIMIT - SERVER_SWIPE_COUNTS[myEmail].count);
-
-    // Pass never creates a match
-    if (actionType === 'pass') {
-      return res.json({ ok: true, remaining, limit: STRICT_DAILY_LIMIT, limitReached: remaining <= 0, isMatch: false });
+    if (cap !== null) {
+      SERVER_SWIPE_COUNTS[myEmail].count += 1;
+      remaining = Math.max(0, cap - SERVER_SWIPE_COUNTS[myEmail].count);
+      limitReached = remaining <= 0;
     }
 
-    // Mutual like/superlike -> match
+    // If pass: no match check needed
+    if (!_isPositiveSwipe(actionType)) {
+      return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: false });
+    }
+
+    // Check reciprocal swipe and create match if mutual positive
     const otherType = await _getSwipeType(tId, myEmail);
     const isMutual = _isPositiveSwipe(actionType) && _isPositiveSwipe(otherType);
 
     if (isMutual) {
       await _saveMatch(myEmail, tId, actionType, otherType);
-      return res.json({ ok: true, remaining, limit: STRICT_DAILY_LIMIT, limitReached: remaining <= 0, isMatch: true, matchWithEmail: tId });
+      return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: true, matchWithEmail: tId });
     }
 
-    return res.json({ ok: true, remaining, limit: STRICT_DAILY_LIMIT, limitReached: remaining <= 0, isMatch: false });
+    return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: false });
   } catch (err) {
     console.error('Swipe action error:', err);
     res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
-
 // ---------------- Google Sign-In (GIS ID token) ----------------
 app.post('/api/auth/oauth/google', async (req, res) => {
   try {
