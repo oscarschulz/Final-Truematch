@@ -144,15 +144,3 @@ html { -webkit-overflow-scrolling: touch; }
   .nav-links { grid-template-columns: repeat(3, 1fr); }
   .nav-btn { font-size: 20px; }
 }
-/* Desktop: show footer logout, hide the mobile-menu logout */
-@media (min-width: 769px){
-  #btn-logout { display: flex; }
-  .sidebar-footer { display: block; }
-  #btn-logout-mobile { display: none; }
-}
-
-/* Mobile: show mobile-menu logout, hide the footer logout (avoid duplicate) */
-@media (max-width: 768px){
-  #btn-logout { display: none; }
-  #btn-logout-mobile { display: flex; }
-}

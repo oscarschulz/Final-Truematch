@@ -1239,6 +1239,7 @@ function publicUser(doc) {
     email,
     name: doc.name || doc.fullName || '',
     verified: Boolean(doc.verified),
+    emailVerified: Boolean(doc.emailVerified || doc.email_verified),
     plan,                 // free | tier1 | tier2 | tier3
     planActive,           // boolean computed
     planStart,
