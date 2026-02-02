@@ -2339,18 +2339,30 @@ async function handlePremiumApplicationSubmit() {
       fullName: String(fd.get('fullName') || '').trim(),
       age: String(fd.get('age') || '').trim(),
       occupation: String(fd.get('occupation') || '').trim(),
-      finance: String(fd.get('finance') || '').trim()
+
+      wealthStatus: String(fd.get('wealthStatus') || '').trim(),
+      incomeRange: String(fd.get('incomeRange') || '').trim(),
+      netWorthRange: String(fd.get('netWorthRange') || '').trim(),
+      incomeSource: String(fd.get('incomeSource') || '').trim(),
+
+      // Legacy field name (kept for backward compatibility)
+      finance: String(fd.get('incomeSource') || '').trim(),
+
+      socialLink: String(fd.get('socialLink') || '').trim(),
+      reason: String(fd.get('reason') || '').trim(),
+      amountUsd: String(fd.get('amountUsd') || '').trim()
     };
 
-    if (!payload.fullName || !payload.occupation) {
-      showToast('Please fill in your full name and occupation.', 'error');
+    // Backend requires these fields; keep the error message simple.
+    if (!payload.fullName || !payload.occupation || !payload.wealthStatus || !payload.incomeRange || !payload.netWorthRange || !payload.incomeSource || !payload.reason) {
+      showToast('Please complete the form.', 'error');
+      form.reportValidity();
       return;
     }
 
     const res = await apiPost('/api/me/premium/apply', payload);
-    if (!res || !res.ok) throw new Error(res && res.error ? res.error : 'Failed to submit application.');
-
-    showToast('Premium Society application submitted. Status: pending.');
+    if (!res || !res.ok) throw new Error((res && (res.message || res.error)) ? (res.message || res.error) : 'Failed to submit application.');
+showToast('Premium Society application submitted. Status: pending.');
     if (DOM.dlgPremiumApply) DOM.dlgPremiumApply.close();
 
     state.me.premiumStatus = 'pending';
