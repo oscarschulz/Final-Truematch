@@ -52,6 +52,7 @@ function switchTab(tabId) {
   if (tabId === 'users') loadUsers();
   if (tabId === 'matchmaking') loadMatchmakingSubscribers();
   if (tabId === 'creators') loadPendingCreators();
+  if (tabId === 'premium') loadPremiumApplicants();
   if (tabId === 'overview') loadOverviewStats();
 }
 
@@ -421,6 +422,8 @@ if (btnClearUserFilters) {
    ========================================= */
 const creatorsBody = document.getElementById('creators-list-body');
 document.getElementById('btn-refresh-creators').addEventListener('click', loadPendingCreators);
+// Premium refresh button
+document.getElementById('btn-refresh-premium')?.addEventListener('click', loadPremiumApplicants);
 
 async function loadPendingCreators() {
   creatorsBody.innerHTML = '<p class="muted p-4">Checking...</p>';
@@ -432,7 +435,7 @@ async function loadPendingCreators() {
   }
 
   creatorsBody.innerHTML = '';
-  data.applicants.forEach(user => {
+  applicants.forEach(user => {
     const app = user.creatorApplication || {};
     const row = document.createElement('div');
     row.className = 'row';
@@ -690,6 +693,10 @@ document.getElementById('btn-logout-admin')?.addEventListener('click', async () 
 
 // Initial Load
 loadOverviewStats();
+// If user refreshed while a non-overview tab is active, ensure lazy loaders run.
+const __initialTab = document.querySelector('.nav-btn.active')?.dataset.tab;
+if (__initialTab && __initialTab !== 'overview') switchTab(__initialTab);
+
 /* =========================================
    7. PREMIUM SOCIETY MANAGEMENT
    ========================================= */
@@ -700,104 +707,82 @@ async function loadPremiumApplicants() {
   const container = document.getElementById('premium-list-body');
   if (!container) return; // Skip kung wala sa HTML
 
-  container.innerHTML = '<p class="muted">Loading Premium Society applications...</p>';
-
-  try {
-    const data = await fetchJSON('/api/admin/premium/pending');
-    const applicants = (data && (data.applicants || data.pending)) || [];
-
-    if (!Array.isArray(applicants) || applicants.length === 0) {
-      container.innerHTML = '<p class="muted">No pending Premium Society applications.</p>';
-      return;
-    }
-
-    container.innerHTML = '';
-
-    applicants.forEach((user) => {
-      const app = (user && user.application) ? user.application : {};
-      const email = (user && user.email) ? user.email : '';
-
-      // Column 1: Applicant
-      const fullName = (app.fullName || '').toString().trim();
-      const applicantCell = document.createElement('div');
-      applicantCell.className = 'cell';
-
-      const nameLine = document.createElement('div');
-      nameLine.textContent = fullName || email || '—';
-      applicantCell.appendChild(nameLine);
-
-      if (fullName && email) {
-        const emailLine = document.createElement('div');
-        emailLine.className = 'muted tiny';
-        emailLine.textContent = email;
-        applicantCell.appendChild(emailLine);
-      }
-
-      // Column 2: Wealth
-      const wealthCell = document.createElement('div');
-      wealthCell.className = 'cell';
-      wealthCell.textContent = (app.wealthStatus || app.finance || '—').toString();
-
-      // Column 3: Income / Net Worth / Notes
-      const detailsCell = document.createElement('div');
-      detailsCell.className = 'cell';
-
-      const details = [];
-      if (app.incomeRange) details.push(`Income: ${app.incomeRange}`);
-      if (app.netWorthRange) details.push(`Net worth: ${app.netWorthRange}`);
-      if (app.incomeSource) details.push(`Source: ${app.incomeSource}`);
-      if (app.socialLink) details.push(`Link: ${app.socialLink}`);
-      if (app.reason) details.push(`Notes: ${app.reason}`);
-      if (!details.length && app.finance) details.push(`Finance: ${app.finance}`);
-
-      if (details.length) {
-        details.forEach((line) => {
-          const d = document.createElement('div');
-          d.className = 'muted tiny';
-          d.textContent = line;
-          detailsCell.appendChild(d);
-        });
-      } else {
-        const d = document.createElement('div');
-        d.className = 'muted';
-        d.textContent = '—';
-        detailsCell.appendChild(d);
-      }
-
-      // Column 4: Actions
-      const actionsCell = document.createElement('div');
-      actionsCell.className = 'actions';
-
-      const approveBtn = document.createElement('button');
-      approveBtn.className = 'btn btn--small btn--green';
-      approveBtn.textContent = 'Approve';
-      approveBtn.dataset.premiumAction = 'approve';
-      approveBtn.dataset.email = email;
-
-      const rejectBtn = document.createElement('button');
-      rejectBtn.className = 'btn btn--small btn--red';
-      rejectBtn.textContent = 'Reject';
-      rejectBtn.dataset.premiumAction = 'reject';
-      rejectBtn.dataset.email = email;
-
-      actionsCell.appendChild(approveBtn);
-      actionsCell.appendChild(rejectBtn);
-
-      // Row wrapper
-      const row = document.createElement('div');
-      row.className = 'table-row premium-row';
-
-      row.appendChild(applicantCell);
-      row.appendChild(wealthCell);
-      row.appendChild(detailsCell);
-      row.appendChild(actionsCell);
-
-      container.appendChild(row);
-    });
-  } catch (err) {
-    console.error('[premium] load pending error:', err);
-    container.innerHTML = '<p class="muted">Failed to load Premium Society applications.</p>';
+  container.innerHTML = '<p class="muted p-4">Checking...</p>';
+  const data = await apiCall('/api/admin/premium/pending');
+  if (!data || data.ok === false) {
+    const msg = (data && (data.message || data.error)) ? (data.message || data.error) : 'Unable to load premium applications.';
+    container.innerHTML = `<p class="muted p-4">${mmEscape(String(msg))}</p>`;
+    return;
   }
+
+  const applicants = Array.isArray(data.applicants) ? data.applicants : [];
+  if (applicants.length === 0) {
+    container.innerHTML = '<p class="muted p-4">No pending premium applications.</p>';
+    return;
+  }
+
+  container.innerHTML = '';
+  applicants.forEach(user => {
+    const app = user.premiumApplication || {};
+    const row = document.createElement('div');
+    row.className = 'row';
+    // Custom grid for premium info
+    row.style.gridTemplateColumns = '1.2fr 0.9fr 2.2fr 110px'; 
+    
+    const wealth = (app.wealthStatus || '').replace(/_/g, ' ');
+      const income = app.incomeRange || '';
+      const netWorth = app.netWorthRange || '';
+      const incomeSrc = (app.incomeSource || app.finance || '').trim();
+      const reason = (app.reason || '').trim();
+      const social = (app.socialLink || '').trim();
+
+      const clip = (s, n = 140) => {
+        const str = String(s || '');
+        return str.length > n ? str.slice(0, n) + '…' : str;
+      };
+
+      row.innerHTML = `
+        <div>
+          <strong style="color:#fff; display:block;">${mmEscape(app.fullName || user.name || '—')}${app.age ? ` (${mmEscape(app.age)})` : ''}</strong>
+          <span class="tiny muted">${mmEscape(user.email || '')}</span>
+          <div class="tiny muted" style="margin-top:6px;">Occ: ${mmEscape(app.occupation || '—')}</div>
+        </div>
+
+        <div class="tiny">
+          <div style="text-transform:capitalize;">${mmEscape(wealth || '—')}</div>
+          ${social ? `<a class="tiny" href="${mmEscape(social)}" target="_blank" rel="noopener" style="color:#7a9dff; display:inline-block; margin-top:6px;">View link</a>`
+                   : `<div class="tiny muted" style="margin-top:6px;">No link</div>`}
+        </div>
+
+        <div class="tiny muted" style="line-height:1.4;">
+          <div><span style="color:rgba(255,255,255,.8)">Income:</span> ${mmEscape(income || '—')}</div>
+          <div><span style="color:rgba(255,255,255,.8)">Net worth:</span> ${mmEscape(netWorth || '—')}</div>
+          ${incomeSrc ? `<div style="margin-top:6px;"><span style="color:rgba(255,255,255,.8)">Source:</span> ${mmEscape(clip(incomeSrc, 140))}</div>` : ''}
+          ${reason ? `<div style="margin-top:6px; font-style:italic;">"${mmEscape(clip(reason, 160))}"</div>` : ''}
+        </div>
+
+        <div style="text-align:right; display:flex; flex-direction:column; gap:4px;">
+          <button class="btn btn--sm btn--primary btn-prem-decide" data-email="${mmEscape(user.email)}" data-dec="approved">Approve</button>
+          <button class="btn btn--sm btn--ghost text-danger btn-prem-decide" data-email="${mmEscape(user.email)}" data-dec="rejected">Reject</button>
+        </div>
+      `;
+      container.appendChild(row);
+  });
+
+  // Bind buttons
+  document.querySelectorAll('.btn-prem-decide').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if(!confirm(`Confirm ${btn.dataset.dec}?`)) return;
+      const resp = await apiCall('/api/admin/premium/decision', 'POST', { 
+        email: btn.dataset.email, 
+        decision: btn.dataset.dec 
+      });
+      if (!resp || resp.ok === false) {
+        alert(resp && (resp.message || resp.error) ? (resp.message || resp.error) : 'Failed to update status.');
+      }
+      loadPremiumApplicants(); // Refresh
+    });
+  });
 }
 
 // I-expose globally or tawagin sa switchTab kung may tab na
