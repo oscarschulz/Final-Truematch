@@ -95,6 +95,65 @@ function showToast(msg) {
     setTimeout(() => PS_DOM.toast.classList.remove('ps-visible'), 3000);
 }
 
+
+// ---------------------------------------------------------------------
+// ACCOUNT IDENTITY (name/avatar from session)
+// ---------------------------------------------------------------------
+function psSafeGetLocalUser() {
+    try {
+        return JSON.parse(localStorage.getItem('tm_user') || 'null');
+    } catch (_) {
+        return null;
+    }
+}
+
+function psResolveDisplayName(user) {
+    const name = (user && (user.name || user.displayName || user.fullName || user.username)) || '';
+    const out = String(name || '').trim();
+    return out || 'Member';
+}
+
+function psResolveAvatarUrl(user) {
+    const url = (user && (user.avatarUrl || user.photoUrl || user.photoURL || user.profilePhotoUrl || user.avatar)) || '';
+    const out = String(url || '').trim();
+    return out || '';
+}
+
+async function hydrateAccountIdentity() {
+    let user = null;
+
+    // 1) Try server session (recommended)
+    try {
+        const res = await fetch('/api/me', { credentials: 'same-origin' });
+        const data = await res.json();
+        if (data && data.ok && data.user) user = data.user;
+    } catch (_) {}
+
+    // 2) Fallback: local cached user
+    if (!user) {
+        const local = psSafeGetLocalUser();
+        if (local && (local.name || local.displayName || local.fullName || local.username)) user = local;
+    }
+
+    if (!user) return;
+
+    const displayName = psResolveDisplayName(user);
+    const avatarUrl = psResolveAvatarUrl(user);
+
+    if (PS_DOM.miniName) PS_DOM.miniName.textContent = displayName;
+    if (PS_DOM.headerName) PS_DOM.headerName.textContent = displayName;
+
+    const menuNameEl = document.getElementById('psMenuName');
+    if (menuNameEl) menuNameEl.textContent = displayName;
+
+    if (avatarUrl) {
+        if (PS_DOM.miniAvatar) PS_DOM.miniAvatar.src = avatarUrl;
+        if (PS_DOM.headerAvatar) PS_DOM.headerAvatar.src = avatarUrl;
+        const storyAvatarEl = document.getElementById('psStoryAvatar');
+        if (storyAvatarEl) storyAvatarEl.src = avatarUrl;
+    }
+}
+
 // ---------------------------------------------------------------------
 // INIT
 // ---------------------------------------------------------------------
@@ -104,8 +163,8 @@ window.addEventListener('DOMContentLoaded', () => {
     initMobileMenu();
     initStoryViewer();
     initChat(); // Initialize Chat Listeners
-    populateMockContent(); 
-    
+    populateMockContent();
+    hydrateAccountIdentity();
     // Check Local Storage for Last Tab
     const lastTab = localStorage.getItem('ps_last_tab') || 'home';
     switchTab(lastTab);
@@ -279,15 +338,17 @@ window.postNewStory = function() {
 // ---------------------------------------------------------------------
 // POPULATE MOCK CONTENT
 // ---------------------------------------------------------------------
-function populateMockContent() {
-    const userName = "Member";
-    const defaultAvatar = "assets/images/truematch-mark.png";
-
+function populateMockContent(opts = {}) {
+    const userName = (opts && opts.userName ? String(opts.userName) : "Member");
+    const defaultAvatar = (opts && opts.avatarUrl ? String(opts.avatarUrl) : "assets/images/truematch-mark.png");
     if(PS_DOM.miniAvatar) PS_DOM.miniAvatar.src = defaultAvatar;
     if(PS_DOM.miniName) PS_DOM.miniName.textContent = userName;
     if(PS_DOM.headerAvatar) PS_DOM.headerAvatar.src = defaultAvatar;
     if(PS_DOM.headerName) PS_DOM.headerName.textContent = userName;
 
+
+    const menuNameEl = document.getElementById('psMenuName');
+    if(menuNameEl) menuNameEl.textContent = userName;
     if(PS_DOM.dailyPickContainer) {
         const color = getRandomColor();
         PS_DOM.dailyPickContainer.innerHTML = `
