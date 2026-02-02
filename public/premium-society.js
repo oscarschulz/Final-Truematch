@@ -116,8 +116,26 @@ function psSafeGetLocalUser() {
 }
 
 function psResolveDisplayName(user) {
-    const name = (user && (user.name || user.displayName || user.fullName || user.username)) || '';
-    const out = String(name || '').trim();
+    // Prefer explicit name fields first
+    let name =
+        (user && (user.name || user.displayName || user.fullName || user.username)) ||
+        (user && user.profile && (user.profile.name || user.profile.fullName || user.profile.displayName)) ||
+        '';
+
+    let out = String(name || '').trim();
+
+    // Fallback: firstName + lastName (common in forms)
+    if (!out) {
+        const first = (user && (user.firstName || user.firstname || user.first_name)) || '';
+        const last = (user && (user.lastName || user.lastname || user.last_name)) || '';
+        out = String(`${first} ${last}`).trim();
+    }
+
+    // Last-resort fallback: common app-specific fields
+    if (!out) {
+        out = String((user && (user.applicantName || user.premiumApplicantName || user.creatorApplicantName)) || '').trim();
+    }
+
     return out || 'Member';
 }
 
@@ -158,20 +176,18 @@ function psResolveAvatarUrl(user) {
 }
 
 async function hydrateAccountIdentity() {
-    let user = null;
+    // Start with cached local user to avoid "..." staying on UI if /api/me fails.
+    let user = psSafeGetLocalUser();
 
     // 1) Try server session (recommended)
     try {
         const res = await fetch('/api/me', { credentials: 'same-origin' });
-        const data = await res.json();
-        if (data && data.ok && data.user) user = data.user;
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+            const data = await res.json();
+            if (data && data.ok && data.user) user = data.user;
+        }
     } catch (_) {}
-
-    // 2) Fallback: local cached user
-    if (!user) {
-        const local = psSafeGetLocalUser();
-        if (local && (local.name || local.displayName || local.fullName || local.username)) user = local;
-    }
 
     if (!user) return;
 
@@ -211,8 +227,9 @@ window.addEventListener('DOMContentLoaded', () => {
     initMobileMenu();
     initStoryViewer();
     initChat(); // Initialize Chat Listeners
-    populateMockContent();
+    // Hydrate identity first so name/plan updates even if some optional sections were removed.
     hydrateAccountIdentity();
+    populateMockContent();
     // Check Local Storage for Last Tab
     const lastTab = localStorage.getItem('ps_last_tab') || 'home';
     switchTab(lastTab);
@@ -778,15 +795,15 @@ function initMobileMenu() {
     if(PS_DOM.mobileMenuBtn) {
         PS_DOM.mobileMenuBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            PS_DOM.momentsPopup.classList.remove('ps-is-open');
-            PS_DOM.sidebar.classList.toggle('ps-is-open');
+            if (PS_DOM.momentsPopup) PS_DOM.momentsPopup.classList.remove('ps-is-open');
+            if (PS_DOM.sidebar) PS_DOM.sidebar.classList.toggle('ps-is-open');
         });
     }
     if(PS_DOM.mobileMomentsBtn) {
         PS_DOM.mobileMomentsBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            PS_DOM.sidebar.classList.remove('ps-is-open');
-            PS_DOM.momentsPopup.classList.toggle('ps-is-open');
+            if (PS_DOM.sidebar) PS_DOM.sidebar.classList.remove('ps-is-open');
+            if (PS_DOM.momentsPopup) PS_DOM.momentsPopup.classList.toggle('ps-is-open');
         });
     }
 }

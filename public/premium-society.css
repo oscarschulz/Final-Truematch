@@ -666,3 +666,23 @@ body.ps-theme {
     top: 0;
     color: var(--ps-accent);
 }
+
+
+/* ---------------------------------------------------------------------
+   FIX (Swipe): Force "All Caught Up!" to be visually centered in the Swipe tab
+   NOTE: Centers between left + right rails using existing CSS vars.
+--------------------------------------------------------------------- */
+.ps-panel.ps-is-active[data-panel="swipe"] .ps-refresh-popover.active {
+  position: fixed !important;
+  top: 50% !important;
+  left: calc(50% + (var(--ps-sidebar-left-width) - var(--ps-sidebar-right-width)) / 2) !important;
+  transform: translate(-50%, -50%) !important;
+  margin: 0 !important;
+  z-index: 90 !important;
+}
+
+@media (max-width: 1100px) {
+  .ps-panel.ps-is-active[data-panel="swipe"] .ps-refresh-popover.active {
+    left: 50% !important;
+  }
+}
