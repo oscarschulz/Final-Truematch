@@ -2029,9 +2029,10 @@ function applyPlanNavGating() {
     btn.style.display = show ? '' : 'none';
   });
 
-  Object.keys(DOM.panels).forEach(panelName => {
+  DOM.panels.forEach((panel) => {
+    const panelName = panel.dataset.panel;
     const show = allowed.has(panelName);
-    DOM.panels[panelName].style.display = show ? '' : 'none';
+    panel.style.display = show ? '' : 'none';
   });
 
   // If current active tab is not allowed anymore, jump to first allowed
