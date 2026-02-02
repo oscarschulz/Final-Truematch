@@ -52,6 +52,7 @@ function switchTab(tabId) {
   if (tabId === 'users') loadUsers();
   if (tabId === 'matchmaking') loadMatchmakingSubscribers();
   if (tabId === 'creators') loadPendingCreators();
+  if (tabId === 'premium') loadPremiumApplicants();
   if (tabId === 'overview') loadOverviewStats();
 }
 
@@ -421,6 +422,8 @@ if (btnClearUserFilters) {
    ========================================= */
 const creatorsBody = document.getElementById('creators-list-body');
 document.getElementById('btn-refresh-creators').addEventListener('click', loadPendingCreators);
+// Premium refresh button
+document.getElementById('btn-refresh-premium')?.addEventListener('click', loadPremiumApplicants);
 
 async function loadPendingCreators() {
   creatorsBody.innerHTML = '<p class="muted p-4">Checking...</p>';
@@ -432,7 +435,7 @@ async function loadPendingCreators() {
   }
 
   creatorsBody.innerHTML = '';
-  data.applicants.forEach(user => {
+  applicants.forEach(user => {
     const app = user.creatorApplication || {};
     const row = document.createElement('div');
     row.className = 'row';
@@ -690,6 +693,10 @@ document.getElementById('btn-logout-admin')?.addEventListener('click', async () 
 
 // Initial Load
 loadOverviewStats();
+// If user refreshed while a non-overview tab is active, ensure lazy loaders run.
+const __initialTab = document.querySelector('.nav-btn.active')?.dataset.tab;
+if (__initialTab && __initialTab !== 'overview') switchTab(__initialTab);
+
 /* =========================================
    7. PREMIUM SOCIETY MANAGEMENT
    ========================================= */
@@ -702,14 +709,20 @@ async function loadPremiumApplicants() {
 
   container.innerHTML = '<p class="muted p-4">Checking...</p>';
   const data = await apiCall('/api/admin/premium/pending');
+  if (!data || data.ok === false) {
+    const msg = (data && (data.message || data.error)) ? (data.message || data.error) : 'Unable to load premium applications.';
+    container.innerHTML = `<p class="muted p-4">${mmEscape(String(msg))}</p>`;
+    return;
+  }
 
-  if (!data.applicants || data.applicants.length === 0) {
+  const applicants = Array.isArray(data.applicants) ? data.applicants : [];
+  if (applicants.length === 0) {
     container.innerHTML = '<p class="muted p-4">No pending premium applications.</p>';
     return;
   }
 
   container.innerHTML = '';
-  data.applicants.forEach(user => {
+  applicants.forEach(user => {
     const app = user.premiumApplication || {};
     const row = document.createElement('div');
     row.className = 'row';
@@ -760,10 +773,13 @@ async function loadPremiumApplicants() {
   document.querySelectorAll('.btn-prem-decide').forEach(btn => {
     btn.addEventListener('click', async () => {
       if(!confirm(`Confirm ${btn.dataset.dec}?`)) return;
-      await apiCall('/api/admin/premium/decision', 'POST', { 
+      const resp = await apiCall('/api/admin/premium/decision', 'POST', { 
         email: btn.dataset.email, 
         decision: btn.dataset.dec 
       });
+      if (!resp || resp.ok === false) {
+        alert(resp && (resp.message || resp.error) ? (resp.message || resp.error) : 'Failed to update status.');
+      }
       loadPremiumApplicants(); // Refresh
     });
   });
