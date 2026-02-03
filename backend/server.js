@@ -427,6 +427,7 @@ const DEMO_PASSWORD = 'aries2311';
 
 // 🔹 DEV-only bypass demo accounts (for multi-user testing)
 // Enable with: ALLOW_TEST_BYPASS=true (and keep NODE_ENV != 'production')
+const SEED_DEMO_ACCOUNTS = ['1','true','yes','on'].includes(String(process.env.SEED_DEMO_ACCOUNTS || '').toLowerCase());
 const ALLOW_TEST_BYPASS = !IS_PROD && ['1','true','yes','on'].includes(String(process.env.ALLOW_TEST_BYPASS || '').toLowerCase());
 const TEST_BYPASS_ACCOUNTS = {
   "demo1@truematch.app": {
@@ -456,7 +457,10 @@ const TEST_BYPASS_ACCOUNTS = {
 // Seed the 3 demo accounts into the database at server start (dev only).
 // This gives you real users for Swipe / Premium Society testing (no mock UI data).
 async function ensureDemoAccounts() {
-  if (!ALLOW_TEST_BYPASS) return;
+  // Seed demo accounts into Firestore/local store when either:
+  // - ALLOW_TEST_BYPASS is enabled (dev only) OR
+  // - SEED_DEMO_ACCOUNTS is enabled (safe for prod; no login bypass, just account creation)
+  if (!(ALLOW_TEST_BYPASS || SEED_DEMO_ACCOUNTS)) return;
 
   const now = new Date();
 
@@ -494,12 +498,13 @@ async function ensureDemoAccounts() {
     if (hasFirebase) {
       try {
         const existing = await findUserByEmail(emailNorm);
+        // Always (re)generate passwordHash for demo accounts so the login is guaranteed to work.
+        // This ONLY affects the 3 hardcoded demo emails.
+        const passwordHash = await bcrypt.hash(String(cfg.password || 'Demo123!@#'), 10);
         if (!existing) {
-          const passwordHash = await bcrypt.hash(String(cfg.password || 'Demo123!@#'), 10);
           await createUserDoc({ ...demoPatch, passwordHash, createdAt: now.toISOString() });
         } else {
-          // Keep existing passwordHash; just update plan/profile fields.
-          await updateUserByEmail(emailNorm, demoPatch);
+          await updateUserByEmail(emailNorm, { ...demoPatch, passwordHash });
         }
       } catch (e) {
         console.error('[demo-accounts] Firestore seed error for', emailNorm, e);
