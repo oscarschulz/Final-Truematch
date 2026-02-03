@@ -4594,50 +4594,65 @@ async function sendVerificationEmail(toEmail, code) {
 // [PALITAN ANG BUONG "app.get('/api/swipe/candidates'...)"]
 // =======================================================================
 app.get('/api/swipe/candidates', async (req, res) => {
-  // 1. Basic Auth Check
-  if (!DB.user || !DB.user.email) return res.status(401).json({ ok: false });
-  
-  const myEmail = String(((req.user && req.user.email) || (DB.user && DB.user.email) || '')).toLowerCase();
+  try {
+    const myEmail = String(((req.user && req.user.email) || (DB.user && DB.user.email) || '')).toLowerCase();
     if (!myEmail) return res.status(401).json({ ok: false, error: 'Not authenticated' });
 
     const mySwipes = await _getSwipeMapFor(myEmail);
-  const planName = DB.user.plan || 'free';
 
-  // 2. CHECK STRICT LIMIT (Server Memory) – keep a per-day counter
-  const today = new Date().toISOString().slice(0, 10);
-  let rec = SERVER_SWIPE_COUNTS[myEmail];
-  if (!rec || typeof rec !== 'object' || !('count' in rec) || !('date' in rec)) {
-    rec = { date: today, count: 0 };
-  }
-  if (rec.date !== today) rec = { date: today, count: 0 };
-  SERVER_SWIPE_COUNTS[myEmail] = rec;
+    // ✅ Use real user doc (not only DB.user)
+    const userDoc = (DB.users && DB.users[myEmail]) || DB.user || {};
+    const planKey = normalizePlanKey((req.user && req.user.plan) || userDoc.plan || 'free');
+    const planActive = ((req.user && typeof req.user.planActive === 'boolean') ? req.user.planActive
+                      : (typeof userDoc.planActive === 'boolean') ? userDoc.planActive
+                      : true);
 
-  const currentCount = rec.count || 0;
-  const remainingNow = Math.max(0, STRICT_DAILY_LIMIT - currentCount);
+    const isPremium = (planKey !== 'free') && (planActive !== false);
 
-  if (planName === 'free' && currentCount >= STRICT_DAILY_LIMIT) {
-    console.log(`[Limit Block] User ${myEmail} has reached ${currentCount}/${STRICT_DAILY_LIMIT}`);
-    return res.json({
-      ok: true,
-      candidates: [],
-      limitReached: true,
-      remaining: 0,
-      limit: STRICT_DAILY_LIMIT,
-      message: 'Daily limit reached.'
-    });
-  }
+    // ✅ Cap: free only; premium unlimited
+    const cap = isPremium ? null : STRICT_DAILY_LIMIT;
 
-  // 3. Load Candidates (Kapag hindi pa limit reached)
-  let candidates = [];
-  try {
-    // (A) Kung may Firebase
+    // ✅ Daily counter only if capped (free/inactive)
+    let limitReached = false;
+    let remaining = null;
+    let limit = null;
+
+    if (cap !== null) {
+      const today = new Date().toISOString().slice(0, 10);
+      let rec = SERVER_SWIPE_COUNTS[myEmail];
+      if (!rec || typeof rec !== 'object' || !('count' in rec) || !('date' in rec)) rec = { date: today, count: 0 };
+      if (rec.date !== today) rec = { date: today, count: 0 };
+      SERVER_SWIPE_COUNTS[myEmail] = rec;
+
+      const currentCount = rec.count || 0;
+      remaining = Math.max(0, cap - currentCount);
+      limit = cap;
+
+      if (currentCount >= cap) {
+        return res.json({ ok: true, candidates: [], limitReached: true, remaining: 0, limit: cap, message: 'Daily limit reached.' });
+      }
+    }
+
+    // Helper: premium candidate (plan != free and active)
+    const isPremiumCandidate = (u) => {
+      const pk = normalizePlanKey((u && u.plan) || 'free');
+      const act = (u && typeof u.planActive === 'boolean') ? u.planActive : true;
+      return pk !== 'free' && act !== false;
+    };
+
+    // ✅ Load candidates
+    let candidates = [];
+
     if (hasFirebase && usersCollection) {
-      const snap = await usersCollection.limit(50).get();
+      const snap = await usersCollection.limit(80).get();
       snap.forEach(doc => {
         const u = doc.data() || {};
         const candEmail = String(u.email || '').toLowerCase();
         if (!candEmail || candEmail === myEmail) return;
         if (mySwipes[candEmail]) return;
+
+        // ✅ Premium-to-premium only
+        if (isPremium && !isPremiumCandidate(u)) return;
 
         candidates.push({
           id: candEmail,
@@ -4647,46 +4662,47 @@ app.get('/api/swipe/candidates', async (req, res) => {
           photoUrl: u.avatarUrl || 'assets/images/truematch-mark.png'
         });
       });
-    } 
-    // (B) Kung Local Demo Mode
-    else {
-      const allUsers = Object.values(DB.users);
-
+    } else {
+      const allUsers = Object.values(DB.users || {});
       candidates = allUsers
-        .filter(u => String(u.email||'').toLowerCase() !== myEmail && !mySwipes[String(u.email||'').toLowerCase()])
+        .filter(u => {
+          const e = String(u.email || '').toLowerCase();
+          if (!e || e === myEmail) return false;
+          if (mySwipes[e]) return false;
+
+          // ✅ Premium-to-premium only
+          if (isPremium && !isPremiumCandidate(u)) return false;
+
+          return true;
+        })
         .map(u => ({
-          id: String(u.email||'').toLowerCase(),
+          id: String(u.email || '').toLowerCase(),
           name: u.name || 'Member',
-          age: 25,
+          age: u.age || 25,
           city: u.city || 'Global',
           photoUrl: u.avatarUrl || 'assets/images/truematch-mark.png'
         }));
     }
 
-    // Limitahan ang ibibigay na cards base sa natitirang swipes
-    let limitReached = false;
-    let remaining = null;
-    let limit = null;
-
-    if (planName === 'free') {
-      limit = STRICT_DAILY_LIMIT;
-      remaining = Math.max(0, STRICT_DAILY_LIMIT - (SERVER_SWIPE_COUNTS[myEmail]?.count || 0));
+    // ✅ If capped (free), slice candidates to remaining swipes
+    if (cap !== null) {
       if (remaining <= 0) {
         candidates = [];
         limitReached = true;
       } else {
         candidates = candidates.slice(0, remaining);
       }
+      return res.json({ ok: true, candidates, limitReached, remaining, limit });
     }
 
-    res.json({ ok: true, candidates, limitReached, remaining, limit });
-
-
+    // ✅ Premium unlimited: remaining stays null, limit stays null
+    return res.json({ ok: true, candidates, limitReached: false, remaining: null, limit: null });
   } catch (err) {
     console.error('Swipe candidate error:', err);
-    res.status(500).json({ ok: false });
+    return res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
+
 // 2. Swipe Action (Like/Pass)
 // [UPDATED] Swipe Action (Saves Timestamp)
 // =======================================================================
@@ -4710,32 +4726,47 @@ app.post('/api/swipe/action', async (req, res) => {
     const userDoc = (DB.users && DB.users[myEmail]) || DB.user || {};
     const planKey = normalizePlanKey((req.user && req.user.plan) || userDoc.plan || 'free');
     const cap = (planKey === 'free') ? STRICT_DAILY_LIMIT : null;
+    const planActive = (typeof userDoc.planActive === 'boolean') ? userDoc.planActive : true;
+    const isPremium = (planKey !== 'free') && (planActive !== false);
+
+  if (isPremium) {
+  // prevent premium users from swiping on non-premium targets (extra safety)
+  let other = null;
+  if (hasFirebase) other = await findUserByEmail(tId);
+  else other = (DB.users && DB.users[tId]) ? DB.users[tId] : null;
+
+  const otherPlanKey = normalizePlanKey((other && other.plan) || 'free');
+  const otherActive = (other && typeof other.planActive === 'boolean') ? other.planActive : true;
+
+  if (otherPlanKey === 'free' || otherActive === false) {
+    return res.status(400).json({ ok: false, error: 'target_not_premium' });
+  }
+}
 
     let remaining = null;
     let limitReached = false;
 
     if (cap !== null) {
       const today = new Date().toISOString().slice(0, 10);
-
-      if (!SERVER_SWIPE_COUNTS[myEmail] || SERVER_SWIPE_COUNTS[myEmail].day !== today) {
-        SERVER_SWIPE_COUNTS[myEmail] = { day: today, count: 0 };
+      let rec = SERVER_SWIPE_COUNTS[myEmail];
+      if (!rec || typeof rec !== 'object' || rec.date !== today) {
+        rec = { date: today, count: 0 };
+        SERVER_SWIPE_COUNTS[myEmail] = rec;
       }
-
-      if (SERVER_SWIPE_COUNTS[myEmail].count >= cap) {
+      if (rec.count >= cap) {
         return res.json({ ok: true, remaining: 0, limit: cap, limitReached: true, isMatch: false });
       }
     }
-
-    const actionType = action === 'super' ? 'super' : (action === 'like' ? 'like' : 'pass');
+const actionType = action === 'super' ? 'super' : (action === 'like' ? 'like' : 'pass');
     await _saveSwipe(myEmail, tId, actionType);
 
     if (cap !== null) {
-      SERVER_SWIPE_COUNTS[myEmail].count += 1;
-      remaining = Math.max(0, cap - SERVER_SWIPE_COUNTS[myEmail].count);
+      const rec = SERVER_SWIPE_COUNTS[myEmail];
+      rec.count += 1;
+      remaining = Math.max(0, cap - rec.count);
       limitReached = remaining <= 0;
     }
-
-    // If pass: no match check needed
+// If pass: no match check needed
     if (!_isPositiveSwipe(actionType)) {
       return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: false });
     }

@@ -549,206 +549,255 @@ function populateMockContent(opts = {}) {
 // SWIPE CONTROLLER (PERSISTENT LOGIC & TIMER)
 // ---------------------------------------------------------------------
 const SwipeController = (() => {
-    const mockCandidates = [
-        { name: 'Isabella', age: 24, loc: 'Manila', color: '#8e44ad', tags: ['Travel', 'Music'] },
-        { name: 'Christian', age: 29, loc: 'Cebu', color: '#2c3e50', tags: ['Tech', 'Coffee'] },
-        { name: 'Natalia', age: 26, loc: 'Davao', color: '#c0392b', tags: ['Art', 'Movies'] },
-        { name: 'Sophia', age: 22, loc: 'Baguio', color: '#16a085', tags: ['Nature', 'Hiking'] },
-        { name: 'Marco', age: 27, loc: 'Makati', color: '#e67e22', tags: ['Food', 'Gym'] }
+    // NOTE:
+    // - Unlimited swipes for Premium members (paid plan + active).
+    // - Free / inactive users are capped server-side (STRICT_DAILY_LIMIT in server.js).
+    // - This page pulls real candidates from /api/swipe/candidates and saves swipes to /api/swipe/action.
+
+    const fallbackCandidates = [
+        { id: 'fallback1@example.com', name: 'Isabella', age: 24, city: 'Manila', photoUrl: '', tags: ['Travel', 'Music'] },
+        { id: 'fallback2@example.com', name: 'Christian', age: 29, city: 'Cebu', photoUrl: '', tags: ['Tech', 'Coffee'] },
+        { id: 'fallback3@example.com', name: 'Natalia', age: 26, city: 'Davao', photoUrl: '', tags: ['Art', 'Movies'] },
+        { id: 'fallback4@example.com', name: 'Sophia', age: 22, city: 'Baguio', photoUrl: '', tags: ['Nature', 'Hiking'] },
+        { id: 'fallback5@example.com', name: 'Marco', age: 27, city: 'Makati', photoUrl: '', tags: ['Fitness', 'Gaming'] }
     ];
-    
-    let candidates = [...mockCandidates]; 
-    let index = 0;
-    
-    // Persistent Variables
-    let dailySwipes = 20;
-    let resetTime = 0;
-    let isSwiping = false; 
 
-    function init() {
-        candidates = [...mockCandidates]; 
-        index = 0;
+    let candidates = [];
+    let currentIndex = 0;
+    let isSwiping = false;
 
-        // 1. CHECK LOCAL STORAGE
-        const savedSwipes = localStorage.getItem('ps_swipes_left');
-        const savedTime = localStorage.getItem('ps_reset_time');
-        const now = Date.now();
+    // Server-provided counters (null = unlimited)
+    let remaining = null;
+    let limit = null;
+    let limitReached = false;
 
-        if (savedTime && now < parseInt(savedTime)) {
-            // Timer is active, load saved data
-            dailySwipes = parseInt(savedSwipes);
-            resetTime = parseInt(savedTime);
-        } else {
-            // Timer expired or first run: RESET TO 20
-            dailySwipes = 20;
-            resetTime = now + (12 * 60 * 60 * 1000); // 12 Hours from now
-            saveData();
-        }
-
-        startCountdown(); // Start the UI timer
-        
-        if(PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove('active');
-        if(PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = 'flex';
-        
-        updateStats(dailySwipes, 20);
-        renderCards();
-        
-        // Refresh Button Click
-        if(PS_DOM.btnRefreshDeck) {
-            PS_DOM.btnRefreshDeck.onclick = () => tryRefresh();
-        }
+    function normalizeCandidate(raw) {
+        if (!raw || typeof raw !== 'object') return null;
+        const id = String(raw.id || raw.email || raw.targetEmail || '').trim();
+        const name = String(raw.name || raw.fullName || 'Unknown').trim();
+        const age = Number(raw.age || raw.userAge || 0) || '';
+        const city = String(raw.city || raw.location || '').trim();
+        const photoUrl = String(raw.photoUrl || raw.photoURL || raw.avatarUrl || raw.avatar || raw.photo || '').trim();
+        const tags = Array.isArray(raw.tags) ? raw.tags : [];
+        return { id, name, age, city, photoUrl, tags };
     }
 
-    function saveData() {
-        localStorage.setItem('ps_swipes_left', dailySwipes);
-        localStorage.setItem('ps_reset_time', resetTime);
-    }
+    async function fetchDeck() {
+        // Hide empty deck popover while loading a fresh deck
+        if (PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove('active');
 
-    function startCountdown() {
-        // Update timer every second
-        setInterval(() => {
-            const now = Date.now();
-            const diff = resetTime - now;
+        try {
+            const res = await fetch('/api/swipe/candidates', { credentials: 'same-origin' });
+            const ct = (res.headers.get('content-type') || '').toLowerCase();
+            const data = ct.includes('application/json') ? await res.json() : null;
 
-            if (diff <= 0) {
-                // Time's up! Reset Logic
-                if (PS_DOM.timerDisplay) PS_DOM.timerDisplay.textContent = "Ready to reset!";
-                // Automatically reset if time passes
-                if (dailySwipes < 20) {
-                    dailySwipes = 20;
-                    resetTime = now + (12 * 60 * 60 * 1000);
-                    saveData();
-                    updateStats(dailySwipes, 20);
-                    // Optional: reload page or notify user
-                }
-            } else {
-                // Format HHh MMm SSs
-                const hrs = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-                const secs = Math.floor((diff % (1000 * 60)) / 1000);
-                
-                if (PS_DOM.timerDisplay) {
-                    PS_DOM.timerDisplay.textContent = `Resets in ${hrs}h ${mins}m ${secs}s`;
-                }
+            if (!data || data.ok !== true) {
+                throw new Error((data && (data.error || data.message)) || 'Failed to load candidates');
             }
-        }, 1000);
-    }
 
-    function tryRefresh() {
-        if (dailySwipes <= 0) {
-            fireEmptyAlert();
-        } else {
-            // Only refresh cards if they have swipes
-            index = 0;
-            if(PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove('active');
-            if(PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = 'flex';
+            const list = Array.isArray(data.candidates) ? data.candidates : [];
+            candidates = list.map(normalizeCandidate).filter(Boolean);
+
+            currentIndex = 0;
+
+            remaining = (data.remaining === null || data.remaining === undefined) ? null : Number(data.remaining);
+            limit = (data.limit === null || data.limit === undefined) ? null : Number(data.limit);
+            limitReached = Boolean(data.limitReached);
+
+            // Update UI counters
+            updateStats(remaining, limit);
+
+            if (limitReached) {
+                // Free user hit the cap (server-side)
+                showToast('You’ve hit your daily swipe limit.');
+                candidates = [];
+            }
+
             renderCards();
-            showToast("Deck Refreshed");
+            return;
+        } catch (err) {
+            console.warn('[premium-society] fetchDeck failed:', err);
+            showToast('Could not load live deck. Using fallback profiles.');
+
+            candidates = fallbackCandidates.map(normalizeCandidate).filter(Boolean);
+            currentIndex = 0;
+            remaining = null;
+            limit = null;
+            limitReached = false;
+            updateStats(remaining, limit);
+            renderCards();
         }
     }
 
-    function fireEmptyAlert() {
-        Swal.fire({
-            title: 'Out of Swipes!',
-            text: 'Please wait for the timer to reset or upgrade to Gold.',
-            icon: 'warning',
-            background: '#1a1a2e',
-            color: '#fff',
-            confirmButtonColor: '#00aff0',
-            confirmButtonText: 'Okay, I\'ll wait',
-            backdrop: `rgba(0,0,0,0.8)`
-        });
-    }
-
-    function createCard(person, position) {
+    function createCard(person, position, index) {
         const card = document.createElement('div');
         card.className = 'ps-swipe-card';
-        card.setAttribute('data-pos', position);
-        if (position === 'center') card.id = 'activeSwipeCard';
-        card.style.background = `linear-gradient(to bottom, ${person.color}, #000)`;
-        
-        let tagsHtml = `<div class="ps-swipe-tags">`;
-        person.tags.forEach(t => tagsHtml += `<span class="ps-tag">${t}</span>`);
-        tagsHtml += `</div>`;
+        card.dataset.pos = position;
+
+        // Prefer real profile photo if present, otherwise fallback to gradient
+        if (person.photoUrl) {
+            card.style.backgroundImage = `url('${person.photoUrl.replace(/'/g, "\\'")}')`;
+        } else {
+            card.style.backgroundImage = `linear-gradient(135deg, ${getRandomColor()}, #000)`;
+        }
+
+        const tags = Array.isArray(person.tags) ? person.tags : [];
+        const tagHtml = tags.slice(0, 3).map(t => `<span class="ps-tag">${t}</span>`).join('');
 
         card.innerHTML = `
             <div class="ps-swipe-card-info">
-                <h2>${person.name} <span>${person.age}</span></h2>
-                <p>📍 ${person.loc}</p>
-                ${tagsHtml}
+                <h2>${person.name}${person.age ? `, ${person.age}` : ''}</h2>
+                <p>${person.city || '—'}</p>
+                ${tagHtml ? `<div class="ps-tags">${tagHtml}</div>` : ``}
             </div>
         `;
+
+        // For debugging / future profile modal
+        card.dataset.email = person.id || '';
+        card.dataset.index = String(index);
+
         return card;
     }
 
     function renderCards() {
         if (!PS_DOM.swipeStack) return;
+
         PS_DOM.swipeStack.innerHTML = '';
-        
-        if(index >= candidates.length) {
-            showEmptyState();
+
+        const remainingCards = candidates.slice(currentIndex, currentIndex + 3);
+        if (remainingCards.length === 0) {
+            // Show "All caught up" popover
+            if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.opacity = '0.4';
+            if (PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.add('active');
             return;
         }
 
-        if (index > 0) {
-            const prevPerson = candidates[index - 1];
-            PS_DOM.swipeStack.appendChild(createCard(prevPerson, 'left'));
-        }
+        if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.opacity = '1';
+        if (PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove('active');
 
-        const centerPerson = candidates[index];
-        PS_DOM.swipeStack.appendChild(createCard(centerPerson, 'center'));
-
-        if (index + 1 < candidates.length) {
-            const rightPerson = candidates[index + 1];
-            PS_DOM.swipeStack.appendChild(createCard(rightPerson, 'right'));
-        }
+        // Order: left, center, right
+        remainingCards.forEach((person, i) => {
+            const position = ['left', 'center', 'right'][i] || 'center';
+            const card = createCard(person, position, currentIndex + i);
+            if (position === 'center') card.id = 'activeSwipeCard';
+            PS_DOM.swipeStack.appendChild(card);
+        });
     }
 
-    function showEmptyState() {
-        if(PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = 'none';
-        if(PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.add('active');
+    async function sendSwipe(targetEmail, action) {
+        const payload = {
+            targetEmail: String(targetEmail || '').trim().toLowerCase(),
+            action: action
+        };
+
+        const res = await fetch('/api/swipe/action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify(payload)
+        });
+
+        const ct = (res.headers.get('content-type') || '').toLowerCase();
+        const data = ct.includes('application/json') ? await res.json() : null;
+
+        if (!data || data.ok !== true) {
+            const reason = (data && (data.error || data.message)) || 'Swipe failed';
+            throw new Error(reason);
+        }
+
+        // Update counters (server source of truth)
+        remaining = (data.remaining === null || data.remaining === undefined) ? null : Number(data.remaining);
+        limit = (data.limit === null || data.limit === undefined) ? null : Number(data.limit);
+        limitReached = Boolean(data.limitReached);
+
+        updateStats(remaining, limit);
+
+        return data;
     }
 
-    function handleSwipe(action) {
-        if(isSwiping) return;
-
-        // BLOCK IF NO SWIPES LEFT
-        if (dailySwipes <= 0) {
-            fireEmptyAlert();
+    async function handleSwipe(action) {
+        if (isSwiping) return;
+        if (limitReached) {
+            showToast('Daily limit reached.');
             return;
         }
+
+        const person = candidates[currentIndex];
+        if (!person) return;
 
         const card = document.getElementById('activeSwipeCard');
-        if(!card) return;
+        if (!card) return;
 
-        isSwiping = true; 
+        isSwiping = true;
 
-        // Decrement and Save
-        dailySwipes--;
-        saveData(); // Save new count to local storage
-        updateStats(dailySwipes, 20);
+        // Animate card
+        const direction = action === 'pass' ? -1 : 1;
+        card.style.transform = `translateX(${direction * 400}px) rotate(${direction * 15}deg)`;
+        card.style.opacity = '0';
 
-        if(action === 'like') {
-            card.classList.add('anim-like');
-            showToast('Liked!');
-        } else if (action === 'super') {
-            card.classList.add('anim-super');
-            showToast('Super Liked!');
-        } else {
-            card.classList.add('anim-pass');
-            showToast('Passed');
+        try {
+            const resp = await sendSwipe(person.id, action);
+
+            // Match feedback
+            if (resp.isMatch) {
+                // Keep it simple: show an alert with their name
+                try {
+                    Swal.fire({
+                        title: "It's a Match! ✨",
+                        text: `You and ${person.name} liked each other.`,
+                        icon: 'success',
+                        background: '#0b0b0f',
+                        color: '#fff',
+                        confirmButtonColor: '#ffd700'
+                    });
+                } catch (_) {}
+            }
+
+            if (resp.limitReached) {
+                showToast('You’ve hit your daily swipe limit.');
+            }
+        } catch (err) {
+            console.warn('[premium-society] swipe failed:', err);
+
+            // Revert animation if the server rejected the swipe
+            card.style.transform = '';
+            card.style.opacity = '1';
+
+            const msg = String(err && err.message ? err.message : err || 'Swipe failed');
+
+            // If server says you are not allowed (not premium), redirect to dashboard
+            if (msg.includes('not_premium') || msg.includes('target_not_premium')) {
+                showToast('Premium access required for Premium Society swipes.');
+            } else if (msg.includes('limit')) {
+                showToast('Daily swipe limit reached.');
+            } else {
+                showToast('Could not save swipe. Try again.');
+            }
+
+            isSwiping = false;
+            return;
         }
 
+        // Move to next candidate
         setTimeout(() => {
-            index++;
+            currentIndex += 1;
             renderCards();
-            isSwiping = false; 
-        }, 300);
+            isSwiping = false;
+        }, 250);
     }
 
-    if(PS_DOM.btnSwipeLike) PS_DOM.btnSwipeLike.addEventListener('click', () => handleSwipe('like'));
-    if(PS_DOM.btnSwipePass) PS_DOM.btnSwipePass.addEventListener('click', () => handleSwipe('pass'));
-    if(PS_DOM.btnSwipeSuper) PS_DOM.btnSwipeSuper.addEventListener('click', () => handleSwipe('super'));
+    function bindControls() {
+        if (PS_DOM.btnSwipeLike) PS_DOM.btnSwipeLike.addEventListener('click', () => handleSwipe('like'));
+        if (PS_DOM.btnSwipePass) PS_DOM.btnSwipePass.addEventListener('click', () => handleSwipe('pass'));
+        if (PS_DOM.btnSwipeSuper) PS_DOM.btnSwipeSuper.addEventListener('click', () => handleSwipe('super'));
+
+        if (PS_DOM.btnRefreshDeck) PS_DOM.btnRefreshDeck.addEventListener('click', () => fetchDeck());
+    }
+
+    async function init() {
+        bindControls();
+        await fetchDeck();
+    }
 
     return { init };
 })();
@@ -839,11 +888,35 @@ function initCanvasParticles() {
     resize(); loop();
 }
 
-function updateStats(curr, max) {
-    if(PS_DOM.countDisplay) PS_DOM.countDisplay.textContent = curr;
-    if(PS_DOM.ringCircle) {
-        const percent = curr / max;
-        PS_DOM.ringCircle.style.strokeDasharray = 314; 
+function updateStats(remaining, limit) {
+    // Remaining/limit are server truth. limit === null means "unlimited".
+    const countEl = document.getElementById('psMobileSwipeCount');
+    const labelEl = document.getElementById('psMobileSwipeLabel');
+
+    if (limit === null) {
+        if (countEl) countEl.textContent = '∞';
+        if (labelEl) labelEl.textContent = 'Unlimited';
+        if (PS_DOM.countDisplay) PS_DOM.countDisplay.textContent = '∞';
+        if (PS_DOM.timerDisplay) PS_DOM.timerDisplay.textContent = 'Unlimited swipes';
+        if (PS_DOM.ringCircle) {
+            PS_DOM.ringCircle.style.strokeDasharray = 314;
+            PS_DOM.ringCircle.style.strokeDashoffset = 0; // full ring
+        }
+        return;
+    }
+
+    const rem = Number.isFinite(remaining) ? Math.max(0, Math.floor(remaining)) : 0;
+    const lim = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 20;
+
+    if (countEl) countEl.textContent = String(rem);
+    if (labelEl) labelEl.textContent = 'Left';
+
+    if (PS_DOM.countDisplay) PS_DOM.countDisplay.textContent = String(rem);
+    if (PS_DOM.timerDisplay) PS_DOM.timerDisplay.textContent = `Daily limit: ${lim}`;
+
+    if (PS_DOM.ringCircle) {
+        const percent = Math.min(1, rem / lim);
+        PS_DOM.ringCircle.style.strokeDasharray = 314;
         PS_DOM.ringCircle.style.strokeDashoffset = 314 - (314 * percent);
     }
 }
