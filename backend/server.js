@@ -1984,17 +1984,30 @@ app.post('/api/auth/oauth/mock', (_req, res) => {
 // GET /api/me - Current User Session (cookie-based)
 // This uses the same email cookie + in-memory DB that login / logout already maintain.
 // Firestore is still the source of truth on login; here we only read the cached user.
-app.get('/api/me', (req, res) => {
+app.get('/api/me', async (req, res) => {
   try {
     const email = getSessionEmail(req);
     if (!email) {
       return res.json({ ok: false, user: null, demo: false });
     }
 
-    // Prefer per-email cache, then fallback to global DB.user if same email
-    let user = DB.users[email] || null;
-    if (!user && DB.user && DB.user.email === email) {
-      user = { ...DB.user };
+    // Prefer source-of-truth (Firestore) when available; fallback to in-memory cache.
+    let user = null;
+
+    if (hasFirebase) {
+      try {
+        const fresh = await findUserByEmail(email);
+        if (fresh) user = { id: fresh.id, ...fresh };
+      } catch (e) {
+        // ignore and fallback
+      }
+    }
+
+    if (!user) {
+      user = DB.users[email] || null;
+      if (!user && DB.user && DB.user.email === email) {
+        user = { ...DB.user };
+      }
     }
 
     if (!user) {
@@ -3957,7 +3970,24 @@ app.post('/api/me/premium/apply', async (req, res) => {
       }
     }
 
-    const currentStatus = String(userDoc.premiumStatus || '').toLowerCase();
+    
+    // Eligibility: Premium Society requires an ACTIVE Elite (Tier 2) or Concierge (Tier 3) plan.
+    const myPlanKey = normalizePlanKey(
+      userDoc.plan || userDoc.planKey || userDoc.tier || userDoc.tierKey || userDoc.subscriptionPlan || 'free'
+    );
+    const myTier = (myPlanKey === 'tier3') ? 3 : (myPlanKey === 'tier2') ? 2 : (myPlanKey === 'tier1') ? 1 : 0;
+    const myPlanEnd = (userDoc.planEnd ?? userDoc.subscriptionEnd ?? userDoc.subEnd ?? null);
+    const myPlanActive = _computePlanActiveForDoc(myPlanKey, myPlanEnd, userDoc.planActive);
+
+    if (!(myPlanActive && myTier >= 2)) {
+      return res.status(403).json({
+        ok: false,
+        code: 'not_eligible',
+        message: 'Premium Society applications require an active Elite (Tier 2) or Concierge (Tier 3) plan.'
+      });
+    }
+
+const currentStatus = String(userDoc.premiumStatus || '').toLowerCase();
     if (currentStatus === 'approved') {
       return res.status(409).json({
         ok: false,
@@ -4337,16 +4367,8 @@ app.post('/api/admin/premium/decision', requireAdmin, async (req, res) => {
     };
 
     if (hasFirebase) {
-      // Keep old behavior: approving Premium Society ALSO activates tier3 (Concierge) if possible.
-      // If activation fails for any reason, we still persist the premium fields so it never "doesn't save".
-      if (dec === 'approved') {
-        const activated = await activatePlanForEmail(e, 'tier3', fields);
-        if (!activated) {
-          await updateUserByEmail(e, fields);
-        }
-      } else {
-        await updateUserByEmail(e, fields);
-      }
+      // Premium Society decision should NOT modify the user's subscription plan.
+      await updateUserByEmail(e, fields);
 
       // Pull fresh doc + refresh cache so /api/me shows the new status immediately
       const fresh = await findUserByEmail(e);
@@ -4591,7 +4613,176 @@ async function sendVerificationEmail(toEmail, code) {
 // [UPDATED] Get Candidates (Supports Firestore & Local)
 // [UPDATED] Get Candidates with Daily Limit Check
 // =======================================================================
-// [PALITAN ANG BUONG "app.get('/api/swipe/candidates'...)"]
+// [PALITAN ANG BUONG "
+// ---------------------------------------------------------------------
+// PREMIUM SOCIETY SWIPE API
+// Definition (authoritative):
+// - Eligible: active Elite (tier2) or Concierge (tier3) plan.
+// - Premium Society Member: eligible + premiumStatus === 'approved'.
+// This API is intentionally separate from /api/swipe/* so other matchmaking flows can keep their own rules.
+// ---------------------------------------------------------------------
+function psTierNumFromPlanKey(planKey) {
+  const k = normalizePlanKey(planKey || 'free');
+  if (k === 'tier3') return 3;
+  if (k === 'tier2') return 2;
+  if (k === 'tier1') return 1;
+  return 0;
+}
+
+function psIsEligibleForPremiumSociety(uPublic) {
+  return Boolean(uPublic && uPublic.planActive === true && psTierNumFromPlanKey(uPublic.plan) >= 2);
+}
+
+function psIsPremiumSocietyMember(uPublic) {
+  return psIsEligibleForPremiumSociety(uPublic) && String(uPublic.premiumStatus || '').toLowerCase() === 'approved';
+}
+
+app.get('/api/premium-society/candidates', authMiddleware, async (req, res) => {
+  try {
+    const myEmail = String(req.user && req.user.email ? req.user.email : '').trim().toLowerCase();
+    if (!myEmail) return res.status(401).json({ ok: false, message: 'Not authenticated' });
+
+    // Source-of-truth user doc
+    let meDoc = null;
+    if (hasFirebase) {
+      meDoc = await findUserByEmail(myEmail);
+    } else {
+      meDoc = (DB.users && DB.users[myEmail]) ? { ...DB.users[myEmail] } : (DB.user ? { ...DB.user } : null);
+    }
+    if (!meDoc) return res.status(404).json({ ok: false, message: 'User not found' });
+
+    const mePublic = publicUser({ id: meDoc.id, ...meDoc });
+    if (!psIsPremiumSocietyMember(mePublic)) {
+      return res.status(403).json({
+        ok: false,
+        code: 'not_premium_society',
+        message: 'Premium Society access requires an active Elite (Tier 2) or Concierge (Tier 3) plan AND an approved Premium Society application.'
+      });
+    }
+
+    const mySwipes = await _getSwipeMapFor(myEmail);
+    const candidates = [];
+
+    if (hasFirebase && usersCollection) {
+      let snap = null;
+      try {
+        snap = await usersCollection.where('premiumStatus', '==', 'approved').limit(250).get();
+      } catch (e) {
+        // Fallback if query fails (e.g., missing index) — we still filter in-memory.
+        snap = await usersCollection.limit(250).get();
+      }
+
+      snap.forEach(doc => {
+        const raw = doc.data() || {};
+        const pu = publicUser({ id: doc.id, ...raw });
+        const email = String(pu.email || raw.email || '').trim().toLowerCase();
+        if (!email || email === myEmail) return;
+        if (mySwipes[email]) return;
+        if (!psIsPremiumSocietyMember(pu)) return;
+
+        candidates.push({
+          id: email,
+          email,
+          fullName: pu.fullName,
+          name: pu.fullName,
+          age: pu.age,
+          city: pu.location || pu.city || '',
+          photoUrl: pu.photoUrl || pu.profilePhotoUrl || ''
+        });
+      });
+    } else {
+      const all = Object.values(DB.users || {});
+      for (const raw of all) {
+        const pu = publicUser(raw);
+        const email = String(pu.email || raw.email || '').trim().toLowerCase();
+        if (!email || email === myEmail) continue;
+        if (mySwipes[email]) continue;
+        if (!psIsPremiumSocietyMember(pu)) continue;
+
+        candidates.push({
+          id: email,
+          email,
+          fullName: pu.fullName,
+          name: pu.fullName,
+          age: pu.age,
+          city: pu.location || pu.city || '',
+          photoUrl: pu.photoUrl || pu.profilePhotoUrl || ''
+        });
+      }
+    }
+
+    const picked = pickOneCandidate(candidates);
+    const list = picked ? [picked] : [];
+    return res.json({ ok: true, candidates: list, remaining: null, limit: null, limitReached: false });
+  } catch (err) {
+    console.error('[premium-society] candidates error:', err);
+    return res.status(500).json({ ok: false, message: 'Server error' });
+  }
+});
+
+app.post('/api/premium-society/action', authMiddleware, async (req, res) => {
+  try {
+    const myEmail = String(req.user && req.user.email ? req.user.email : '').trim().toLowerCase();
+    if (!myEmail) return res.status(401).json({ ok: false, message: 'Not authenticated' });
+
+    const targetEmail = String((req.body && req.body.targetEmail) || '').trim().toLowerCase();
+    const action = String((req.body && req.body.action) || '').trim().toLowerCase();
+    if (!targetEmail) return res.status(400).json({ ok: false, message: 'Missing targetEmail' });
+
+    // Verify actor is Premium Society member
+    let meDoc = null;
+    if (hasFirebase) {
+      meDoc = await findUserByEmail(myEmail);
+    } else {
+      meDoc = (DB.users && DB.users[myEmail]) ? { ...DB.users[myEmail] } : (DB.user ? { ...DB.user } : null);
+    }
+    if (!meDoc) return res.status(404).json({ ok: false, message: 'User not found' });
+
+    const mePublic = publicUser({ id: meDoc.id, ...meDoc });
+    if (!psIsPremiumSocietyMember(mePublic)) {
+      return res.status(403).json({
+        ok: false,
+        code: 'not_premium_society',
+        message: 'Premium Society access requires an active Elite (Tier 2) or Concierge (Tier 3) plan AND an approved Premium Society application.'
+      });
+    }
+
+    // Verify target is Premium Society member too
+    let targetDoc = null;
+    if (hasFirebase) {
+      targetDoc = await findUserByEmail(targetEmail);
+    } else {
+      targetDoc = (DB.users && DB.users[targetEmail]) ? { ...DB.users[targetEmail] } : null;
+    }
+    if (!targetDoc) return res.status(404).json({ ok: false, message: 'Target user not found' });
+
+    const targetPublic = publicUser({ id: targetDoc.id, ...targetDoc });
+    if (!psIsPremiumSocietyMember(targetPublic)) {
+      return res.status(400).json({ ok: false, code: 'target_not_premium_society', message: 'You can only swipe on Premium Society members.' });
+    }
+
+    const type = _getSwipeType(action);
+    await _saveSwipe(myEmail, targetEmail, type);
+
+    let isMatch = false;
+    let matchId = null;
+
+    if (_isPositiveSwipe(type)) {
+      const theirSwipes = await _getSwipeMapFor(targetEmail);
+      const theirType = theirSwipes[myEmail] || null;
+      if (_isPositiveSwipe(theirType)) {
+        isMatch = true;
+        const saved = await _saveMatch(myEmail, targetEmail);
+        matchId = saved && saved.id ? saved.id : null;
+      }
+    }
+
+    return res.json({ ok: true, isMatch, matchId, remaining: null, limit: null, limitReached: false });
+  } catch (err) {
+    console.error('[premium-society] action error:', err);
+    return res.status(500).json({ ok: false, message: 'Server error' });
+  }
+});
 // =======================================================================
 app.get('/api/swipe/candidates', async (req, res) => {
   try {

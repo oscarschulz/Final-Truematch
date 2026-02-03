@@ -91,6 +91,19 @@ const PS_DOM = {
     panelPremiumBody: document.getElementById('ps-panel-premium')
 };
 
+// --- Runtime state (hydrated from /api/me)
+const PS_STATE = {
+  me: null,
+  swipeInited: false,
+  premiumSociety: {
+    eligible: false,   // active Elite/Concierge plan
+    approved: false,   // eligible + premiumStatus === 'approved'
+    status: 'none'     // none | pending | rejected | approved
+  }
+};
+
+
+
 function getRandomColor() {
     const colors = ['#00aff0', '#ff3366', '#3ad4ff', '#800080', '#00ff88', '#333'];
     return colors[Math.floor(Math.random() * colors.length)];
@@ -157,6 +170,146 @@ function psPlanLabelFromKey(planKey) {
     return 'Free Account';
 }
 
+
+function psTierNumFromPlanKey(planKey) {
+  const k = psNormalizePlanKey(planKey || 'free');
+  if (k === 'tier3') return 3;
+  if (k === 'tier2') return 2;
+  if (k === 'tier1') return 1;
+  return 0;
+}
+
+function psNormalizePremiumStatus(status) {
+  const s = String(status || '').toLowerCase().trim();
+  if (s === 'approved') return 'approved';
+  if (s === 'pending') return 'pending';
+  if (s === 'rejected') return 'rejected';
+  return 'none';
+}
+
+/**
+ * Premium Society rules (authoritative):
+ * - Eligible: active Elite (tier2) or Concierge (tier3) plan.
+ * - Member: eligible + premiumStatus === 'approved'.
+ */
+function psHydratePremiumSocietyState(me) {
+  const planKey = psNormalizePlanKey(me && (me.plan || me.tier || me.planKey));
+  const tierNum = psTierNumFromPlanKey(planKey);
+  const planActive = Boolean(me && me.planActive === true);
+  const status = psNormalizePremiumStatus(me && me.premiumStatus);
+
+  const eligible = planActive && tierNum >= 2;
+  const approved = eligible && status === 'approved';
+
+  PS_STATE.premiumSociety.eligible = eligible;
+  PS_STATE.premiumSociety.approved = approved;
+  PS_STATE.premiumSociety.status = status;
+}
+
+function psRenderPremiumSocietyLockedDeck() {
+  if (!PS_DOM.swipeStack) return;
+  if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = 'none';
+
+  const s = PS_STATE.premiumSociety.status;
+  const eligible = PS_STATE.premiumSociety.eligible;
+
+  let title = 'Premium Society is locked';
+  let body = 'You need an active Elite (Tier 2) or Concierge (Tier 3) plan, plus an approved Premium Society application.';
+
+  if (eligible && s === 'pending') {
+    title = 'Application pending';
+    body = 'Your Premium Society application is under review. Once approved, you can start swiping here.';
+  } else if (eligible && s === 'rejected') {
+    title = 'Application rejected';
+    body = 'Your application was rejected. You can re-apply from your Dashboard Premium tab.';
+  } else if (eligible && s === 'none') {
+    title = 'Not a member yet';
+    body = 'You have an eligible plan, but you still need an approved Premium Society application.';
+  } else if (!eligible) {
+    title = 'Upgrade required';
+    body = 'Premium Society access requires an active Elite (Tier 2) or Concierge (Tier 3) plan.';
+  }
+
+  PS_DOM.swipeStack.innerHTML = `
+    <div class="ps-card" style="max-width:520px;margin:24px auto;padding:20px;border-radius:18px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);">
+      <h3 style="margin:0 0 8px 0;font-size:18px;">${title}</h3>
+      <p style="margin:0 0 14px 0;opacity:.9;line-height:1.45;">${body}</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button id="psGoDashboardBtn" class="ps-btn ps-btn-primary" style="padding:10px 14px;border-radius:12px;">Back to Dashboard</button>
+        <button id="psRefreshMeBtn" class="ps-btn" style="padding:10px 14px;border-radius:12px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.10);color:#fff;">Refresh</button>
+      </div>
+    </div>
+  `;
+
+  const goBtn = document.getElementById('psGoDashboardBtn');
+  if (goBtn) goBtn.addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+
+  const refBtn = document.getElementById('psRefreshMeBtn');
+  if (refBtn) refBtn.addEventListener('click', async () => {
+    try {
+      const me = await hydrateAccountIdentity();
+      if (me) PS_STATE.me = me;
+      psHydratePremiumSocietyState(PS_STATE.me);
+      populateMockContent();
+      const lastTab = localStorage.getItem('ps_last_tab') || 'home';
+      switchTab(lastTab);
+    } catch (e) {}
+  });
+}
+
+function psRenderPremiumSocietyPanel() {
+  if (!PS_DOM.panelPremiumBody) return;
+
+  const s = PS_STATE.premiumSociety.status;
+  const eligible = PS_STATE.premiumSociety.eligible;
+  const approved = PS_STATE.premiumSociety.approved;
+
+  let headline = 'Premium Society';
+  let desc = 'Swipe and match with other Premium Society members.';
+  let badge = approved ? 'ACTIVE' : 'LOCKED';
+
+  if (approved) {
+    desc = 'You are approved. Enjoy unlimited swipes with Premium Society members.';
+  } else if (eligible && s === 'pending') {
+    desc = 'Your application is pending review. You will get access after approval.';
+  } else if (eligible && s === 'rejected') {
+    desc = 'Your application was rejected. You can re-apply from your Dashboard Premium tab.';
+  } else if (eligible && s === 'none') {
+    desc = 'You have an eligible plan, but you still need an approved Premium Society application.';
+  } else if (!eligible) {
+    desc = 'Requires an active Elite (Tier 2) or Concierge (Tier 3) plan, plus an approved application.';
+  }
+
+  PS_DOM.panelPremiumBody.innerHTML = `
+    <div style="padding:22px;background:linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03));border:1px solid rgba(255,255,255,.10);border-radius:18px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <h3 style="margin:0;font-size:18px;">${headline}</h3>
+        <span style="padding:6px 10px;border-radius:999px;font-size:12px;letter-spacing:.06em;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.12);">${badge}</span>
+      </div>
+      <p style="margin:10px 0 14px 0;opacity:.9;line-height:1.45;">${desc}</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button id="psDashPremiumBtn" class="ps-btn ps-btn-primary" style="padding:10px 14px;border-radius:12px;">Open Dashboard</button>
+        <button id="psRefreshPremiumBtn" class="ps-btn" style="padding:10px 14px;border-radius:12px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.10);color:#fff;">Refresh</button>
+      </div>
+    </div>
+  `;
+
+  const dashBtn = document.getElementById('psDashPremiumBtn');
+  if (dashBtn) dashBtn.addEventListener('click', () => { window.location.href = 'dashboard.html'; });
+
+  const refBtn = document.getElementById('psRefreshPremiumBtn');
+  if (refBtn) refBtn.addEventListener('click', async () => {
+    try {
+      const me = await hydrateAccountIdentity();
+      if (me) PS_STATE.me = me;
+      psHydratePremiumSocietyState(PS_STATE.me);
+      populateMockContent();
+      const lastTab = localStorage.getItem('ps_last_tab') || 'home';
+      switchTab(lastTab);
+    } catch (e) {}
+  });
+}
+
 function psResolvePlanLabel(user) {
     const raw = user?.plan ?? user?.planKey ?? user?.tier ?? user?.tierKey ?? user?.subscriptionPlan ?? user?.accessTier;
     const key = psNormalizePlanKey(raw);
@@ -216,20 +369,33 @@ async function hydrateAccountIdentity() {
         const storyAvatarEl = document.getElementById('psStoryAvatar');
         if (storyAvatarEl) storyAvatarEl.src = avatarUrl;
     }
+
+
+    return user;
 }
 
 // ---------------------------------------------------------------------
 // INIT
 // ---------------------------------------------------------------------
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
     initCanvasParticles();
     initNavigation();
     initMobileMenu();
     initStoryViewer();
     initChat(); // Initialize Chat Listeners
+
     // Hydrate identity first so name/plan updates even if some optional sections were removed.
-    hydrateAccountIdentity();
+    try {
+        const me = await hydrateAccountIdentity();
+        if (me) PS_STATE.me = me;
+    } catch (e) {
+        // non-fatal — UI will fall back to local storage / placeholders
+    }
+
+    psHydratePremiumSocietyState(PS_STATE.me);
+
     populateMockContent();
+
     // Check Local Storage for Last Tab
     const lastTab = localStorage.getItem('ps_last_tab') || 'home';
     switchTab(lastTab);
@@ -539,10 +705,19 @@ function populateMockContent(opts = {}) {
         PS_DOM.panelCreatorsBody.innerHTML = `<div class="ps-feed-header">Creators</div><div class="ps-matches-grid" style="grid-template-columns: repeat(2, 1fr); padding:20px;"><div class="ps-creator-card" style="background: linear-gradient(135deg, #4b0082, #800080);"><h3 style="margin:0; color:#fff;">Sasha <i class="fa-solid fa-circle-check" style="color:#00aff0"></i></h3><p class="ps-tiny">Elite Model</p><button class="ps-btn-white" style="margin-top:auto;">View</button></div></div>`;
     }
     if(PS_DOM.panelPremiumBody) {
-        PS_DOM.panelPremiumBody.innerHTML = `<div class="ps-feed-header">Premium</div><div style="text-align:center; padding:30px; border:1px solid #00aff0; border-radius:16px; margin:20px; background:rgba(0, 175, 240, 0.1);"><i class="fa-solid fa-gem" style="font-size:3rem; color:#00aff0; margin-bottom:15px;"></i><h2>iTrueMatch GOLD</h2><p>Unlock swipes.</p><button class="ps-btn-white" style="background:#00aff0; color:#fff; margin-top:20px; width:100%;">Subscribe</button></div>`;
-    }
+    psRenderPremiumSocietyPanel();
+}
 
-    SwipeController.init();
+// Premium Society swiping is ONLY available to approved members (active Elite/Concierge + approved application).
+if (PS_STATE.premiumSociety.approved) {
+    if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = '';
+    if (!PS_STATE.swipeInited) {
+        PS_STATE.swipeInited = true;
+        SwipeController.init();
+    }
+} else {
+    psRenderPremiumSocietyLockedDeck();
+}
 }
 
 // ---------------------------------------------------------------------
@@ -552,7 +727,7 @@ const SwipeController = (() => {
     // NOTE:
     // - Unlimited swipes for Premium members (paid plan + active).
     // - Free / inactive users are capped server-side (STRICT_DAILY_LIMIT in server.js).
-    // - This page pulls real candidates from /api/swipe/candidates and saves swipes to /api/swipe/action.
+    // - This page pulls real candidates from /api/premium-society/candidates and saves swipes to /api/premium-society/action.
 
     const fallbackCandidates = [
         { id: 'fallback1@example.com', name: 'Isabella', age: 24, city: 'Manila', photoUrl: '', tags: ['Travel', 'Music'] },
@@ -587,7 +762,7 @@ const SwipeController = (() => {
         if (PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove('active');
 
         try {
-            const res = await fetch('/api/swipe/candidates', { credentials: 'same-origin' });
+            const res = await fetch('/api/premium-society/candidates', { credentials: 'same-origin' });
             const ct = (res.headers.get('content-type') || '').toLowerCase();
             const data = ct.includes('application/json') ? await res.json() : null;
 
@@ -617,6 +792,13 @@ const SwipeController = (() => {
             return;
         } catch (err) {
             console.warn('[premium-society] fetchDeck failed:', err);
+            if (!PS_STATE.premiumSociety.approved) {
+                showToast('Premium Society is locked.');
+                candidates = [];
+                psRenderPremiumSocietyLockedDeck();
+                return;
+            }
+
             showToast('Could not load live deck. Using fallback profiles.');
 
             candidates = fallbackCandidates.map(normalizeCandidate).filter(Boolean);
@@ -690,7 +872,7 @@ const SwipeController = (() => {
             action: action
         };
 
-        const res = await fetch('/api/swipe/action', {
+        const res = await fetch('/api/premium-society/action', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
