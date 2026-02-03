@@ -498,7 +498,8 @@ body.ps-theme {
     animation: psFadeIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-.ps-refresh-popover.active { display: block !important; }
+.ps-refresh-popover.active { display: block !important; 
+}
 
 /* Smaller Font sizes for compact look */
 .ps-emoji-lg { font-size: 3rem; margin-bottom: 10px; display: block; animation: bounce 2s infinite; }

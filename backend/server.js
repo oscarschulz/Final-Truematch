@@ -1238,7 +1238,15 @@ function publicUser(doc) {
     uid: doc.uid || doc.id || doc.userId || null,
     email,
     name: doc.name || doc.fullName || '',
-    verified: Boolean(doc.verified),
+    
+    city: doc.city || doc.location || '',
+    avatarUrl: doc.avatarUrl || doc.avatar || '',
+    creatorStatus: doc.creatorStatus ?? doc.creator_status ?? null,
+    hasCreatorAccess: Boolean(doc.hasCreatorAccess ?? doc.creatorApproved ?? false),
+    premiumStatus: doc.premiumStatus ?? doc.premium_status ?? null,
+    premiumSince: doc.premiumSince ?? doc.premium_since ?? null,
+    premiumApplication: doc.premiumApplication ?? doc.premium_application ?? null,
+verified: Boolean(doc.verified),
     emailVerified: Boolean(doc.emailVerified || doc.email_verified),
     plan,                 // free | tier1 | tier2 | tier3
     planActive,           // boolean computed
@@ -3925,72 +3933,90 @@ app.post('/api/me/creator/subscribe', async (req, res) => {
 // ---------------- Premium Society Application ----------------
 app.post('/api/me/premium/apply', async (req, res) => {
   try {
-    if (!DB.user || !DB.user.email) {
-      return res.status(401).json({ ok: false, message: 'Not logged in' });
+    const email = (typeof getSessionEmail === 'function' ? getSessionEmail(req) : '') ||
+                  String((DB.user && DB.user.email) || '').trim().toLowerCase();
+
+    if (!email) {
+      return res.status(401).json({ ok: false, message: 'Not authenticated' });
     }
 
-    const { fullName, age, occupation, wealthStatus, incomeRange, netWorthRange, incomeSource, socialLink, reason, amountUsd, finance } = req.body || {};
+    const body = req.body || {};
+    const form = body.application || body || {};
 
-    // Basic validation
-    const _incomeSource = (incomeSource != null && String(incomeSource).trim()) ? String(incomeSource).trim() : (finance != null ? String(finance).trim() : '');
-    const _wealthStatus = wealthStatus != null ? String(wealthStatus).trim() : '';
-    const _incomeRange = incomeRange != null ? String(incomeRange).trim() : '';
-    const _netWorthRange = netWorthRange != null ? String(netWorthRange).trim() : '';
-    const _reason = reason != null ? String(reason).trim() : '';
-    const _socialLink = socialLink != null ? String(socialLink).trim() : '';
-    const _amountUsd = Number(amountUsd || 0) || 0;
-
-    if (!fullName || !occupation || !_wealthStatus || !_incomeRange || !_netWorthRange || !_incomeSource || !_reason) {
-      return res.status(400).json({ ok: false, message: 'Please complete the form.' });
+    // Always use DB source-of-truth user (Firestore if enabled) to avoid stale/global DB.user
+    let userDoc = null;
+    if (hasFirebase) {
+      userDoc = await findUserByEmail(email);
+      if (!userDoc) {
+        return res.status(404).json({ ok: false, message: 'User not found' });
+      }
+    } else {
+      userDoc = (DB.users && DB.users[email]) ? { ...DB.users[email] } : null;
+      if (!userDoc) {
+        return res.status(404).json({ ok: false, message: 'User not found' });
+      }
     }
 
-    const applicationData = {
-      fullName: String(fullName).trim(),
-      age: (age != null && String(age).trim() !== '') ? Number(age) : (DB.user && DB.user.age ? Number(DB.user.age) : null),
-      occupation: String(occupation).trim(),
-      wealthStatus: _wealthStatus,
-      incomeRange: _incomeRange,
-      netWorthRange: _netWorthRange,
-      incomeSource: _incomeSource,
-      // Keep legacy field name for older frontends/admin
-      finance: _incomeSource,
-      socialLink: _socialLink,
-      reason: _reason,
-      amountUsd: _amountUsd,
-      appliedAt: new Date().toISOString(),
-      status: 'pending'
+    const currentStatus = String(userDoc.premiumStatus || '').toLowerCase();
+    if (currentStatus === 'approved') {
+      return res.status(409).json({
+        ok: false,
+        message: 'You are already approved as a Premium Society member.'
+      });
+    }
+    if (currentStatus === 'pending') {
+      return res.status(409).json({
+        ok: false,
+        message: 'Your Premium Society application is already pending.'
+      });
+    }
+
+    // Build application payload
+    const nowIso = new Date().toISOString();
+    const nextApp = {
+      ...form,
+      fullName: (form.fullName || userDoc.name || '').toString().trim(),
+      age: form.age ?? null,
+      status: 'pending',
+      submittedAt: nowIso,
+      decidedAt: null
     };
 
-    const email = DB.user.email;
-
-    // Ensure user exists in Global DB
-    if (!DB.users[email]) {
-       DB.users[email] = { ...DB.user };
-    }
-
-    // Update Status
-    Object.assign(DB.users[email], {
-      premiumStatus: 'pending',
-      premiumApplication: applicationData
-    });
-
-    // Save to Disk
-    if (typeof saveUsersStore === 'function') saveUsersStore();
-
-    // Update Firestore (Optional)
     if (hasFirebase) {
-      try {
-        await updateUserByEmail(email, {
-          premiumStatus: 'pending',
-          premiumApplication: applicationData
-        });
-      } catch (e) {}
+      await updateUserByEmail(email, {
+        premiumStatus: 'pending',
+        premiumSince: null,
+        premiumApplication: nextApp
+      });
+      // refresh cache from firestore so /api/me reflects immediately
+      const fresh = await findUserByEmail(email);
+      if (fresh) {
+        DB.users[email] = { ...publicUser({ id: fresh.id, ...fresh }) };
+        // keep premium fields even if publicUser is older
+        DB.users[email].premiumStatus = fresh.premiumStatus ?? null;
+        DB.users[email].premiumSince = fresh.premiumSince ?? null;
+        DB.users[email].premiumApplication = fresh.premiumApplication ?? null;
+        if (DB.user && String(DB.user.email || '').toLowerCase() === email) {
+          DB.user = { ...DB.users[email] };
+        }
+      }
+    } else {
+      DB.users[email] = DB.users[email] || {};
+      DB.users[email].premiumStatus = 'pending';
+      DB.users[email].premiumSince = null;
+      DB.users[email].premiumApplication = nextApp;
+      saveUsersStore();
+      if (DB.user && String(DB.user.email || '').toLowerCase() === email) {
+        DB.user.premiumStatus = 'pending';
+        DB.user.premiumSince = null;
+        DB.user.premiumApplication = nextApp;
+      }
     }
 
-    return res.json({ ok: true });
+    return res.json({ ok: true, status: 'pending' });
   } catch (err) {
-    console.error('Premium apply error:', err);
-    return res.status(500).json({ ok: false, message: 'Server error' });
+    console.error('premium apply error:', err);
+    return res.status(500).json({ ok: false, message: 'server error' });
   }
 });
 
@@ -4287,67 +4313,66 @@ app.get('/api/admin/premium/pending', requireAdmin, async (req, res) => {
 // 2) Decide on Premium Application (approved / rejected)
 app.post('/api/admin/premium/decision', requireAdmin, async (req, res) => {
   try {
-    const email = String((req.body && req.body.email) || '').trim().toLowerCase();
-    const decision = String((req.body && req.body.decision) || '').trim().toLowerCase();
+    const { email, decision } = req.body || {};
+    const e = (email || '').toString().trim().toLowerCase();
+    const dec = (decision || '').toString().trim().toLowerCase();
 
-    if (!email) return res.status(400).json({ ok: false, message: 'email required' });
-    if (!['approved', 'rejected'].includes(decision)) {
-      return res.status(400).json({ ok: false, message: 'Invalid decision' });
+    if (!e || !['approved', 'rejected'].includes(dec)) {
+      return res.status(400).json({ ok: false, message: 'email + decision required' });
+    }
+
+    const userDoc = hasFirebase ? await findUserByEmail(e) : (DB.users && DB.users[e] ? { ...DB.users[e] } : null);
+    if (!userDoc) {
+      return res.status(404).json({ ok: false, message: 'User not found' });
     }
 
     const decidedAt = new Date().toISOString();
+    const prevApp = userDoc.premiumApplication || {};
+    const nextApp = { ...prevApp, status: dec, decidedAt };
 
-    if (hasFirebase && usersCollection) {
-      const existing = await findUserByEmail(email);
-      if (!existing) return res.status(404).json({ ok: false, message: 'User not found' });
+    const fields = {
+      premiumStatus: dec,
+      premiumSince: dec === 'approved' ? decidedAt : null,
+      premiumApplication: nextApp
+    };
 
-      const prevApp = existing.premiumApplication || {};
-      const nextApp = { ...prevApp, status: decision, decidedAt };
-
-      if (decision === 'approved') {
-        // Upgrade plan using the central plan activator (sets planStart/planEnd/planActive correctly)
-        await activatePlanForEmail(email, 'tier3', {
-          premiumStatus: 'approved',
-          premiumSince: decidedAt,
-          premiumApplication: nextApp
-        });
+    if (hasFirebase) {
+      // Keep old behavior: approving Premium Society ALSO activates tier3 (Concierge) if possible.
+      // If activation fails for any reason, we still persist the premium fields so it never "doesn't save".
+      if (dec === 'approved') {
+        const activated = await activatePlanForEmail(e, 'tier3', fields);
+        if (!activated) {
+          await updateUserByEmail(e, fields);
+        }
       } else {
-        await updateUserByEmail(email, {
-          premiumStatus: 'rejected',
-          premiumApplication: nextApp
-        });
+        await updateUserByEmail(e, fields);
+      }
+
+      // Pull fresh doc + refresh cache so /api/me shows the new status immediately
+      const fresh = await findUserByEmail(e);
+      if (fresh) {
+        DB.users[e] = { ...publicUser({ id: fresh.id, ...fresh }) };
+        if (DB.user && String(DB.user.email || '').toLowerCase() === e) {
+          DB.user = { ...DB.users[e] };
+        }
+      }
+    } else {
+      DB.users[e] = DB.users[e] || {};
+      DB.users[e].premiumStatus = fields.premiumStatus;
+      DB.users[e].premiumSince = fields.premiumSince;
+      DB.users[e].premiumApplication = fields.premiumApplication;
+      saveUsersStore();
+
+      if (DB.user && String(DB.user.email || '').toLowerCase() === e) {
+        DB.user.premiumStatus = fields.premiumStatus;
+        DB.user.premiumSince = fields.premiumSince;
+        DB.user.premiumApplication = fields.premiumApplication;
       }
     }
 
-    // Fallback / local cache
-    if (DB.users && DB.users[email]) {
-      DB.users[email].premiumStatus = decision;
-      const prev = DB.users[email].premiumApplication || {};
-      DB.users[email].premiumApplication = { ...prev, status: decision, decidedAt };
-
-      if (decision === 'approved' && !hasFirebase) {
-        // Local-only fallback: upgrade plan using the central plan activator
-        try {
-          await activatePlanForEmail(email, 'tier3', {
-            premiumStatus: 'approved',
-            premiumSince: decidedAt,
-            premiumApplication: DB.users[email].premiumApplication
-          });
-        } catch {}
-      }
-
-      if (typeof saveUsersStore === 'function') saveUsersStore();
-    }
-
-    if (DB.user && String(DB.user.email || '').toLowerCase() === email) {
-      DB.user.premiumStatus = decision;
-      const prev = DB.user.premiumApplication || {};
-      DB.user.premiumApplication = { ...prev, status: decision, decidedAt };
-    }
-
-    return res.json({ ok: true });
+    return res.json({ ok: true, status: dec });
   } catch (err) {
-    console.error('premium/decision error:', err);
+    console.error('premium decision error:', err);
     return res.status(500).json({ ok: false, message: 'server error' });
   }
 });
