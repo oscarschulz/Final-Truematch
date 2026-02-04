@@ -92,7 +92,7 @@ function closeAvatarLightbox() {
 
 function ensureConciergeTab() {
   const tabbar = document.getElementById('tabbar');
-  const panels = document.getElementById('panels');
+  const panels = document.getElementById('panels') || document.querySelector('main.main-feed') || document.querySelector('.main-feed');
   if (!tabbar || !panels) return;
 
   // --- Nav button (insert between Premium and Creators) ---
@@ -299,11 +299,64 @@ function showToast(msg, type = 'success') {
 }
 
 function normalizePlanKey(rawPlan) {
-  if (!rawPlan) return 'free';
-  const p = String(rawPlan).toLowerCase().replace(/\s+/g, '');
-  if (p.includes('plus') || p.includes('tier1')) return 'tier1';
-  if (p.includes('elite') || p.includes('tier2')) return 'tier2';
-  if (p.includes('concierge') || p.includes('tier3')) return 'tier3';
+  // Accepts: 'free' | 'plus' | 'elite' | 'concierge' | 'tier1' | 'tier2' | 'tier3'
+  // Also accepts numeric tiers: 0/1/2/3 (or strings like '1', '2', '3')
+  if (rawPlan === null || typeof rawPlan === 'undefined' || rawPlan === '') return 'free';
+
+  // If an object was passed (some API shapes nest plan info), try common keys.
+  if (typeof rawPlan === 'object') {
+    const maybe =
+      rawPlan.plan ??
+      rawPlan.planKey ??
+      rawPlan.plan_name ??
+      rawPlan.planName ??
+      rawPlan.tier ??
+      rawPlan.level ??
+      rawPlan.code ??
+      rawPlan.name ??
+      rawPlan.subscription ??
+      rawPlan.subscriptionTier ??
+      rawPlan.currentPlan;
+    if (typeof maybe !== 'undefined' && maybe !== null && maybe !== rawPlan) {
+      return normalizePlanKey(maybe);
+    }
+  }
+
+  // Numeric plan
+  if (typeof rawPlan === 'number' && Number.isFinite(rawPlan)) {
+    if (rawPlan >= 3) return 'tier3';
+    if (rawPlan === 2) return 'tier2';
+    if (rawPlan === 1) return 'tier1';
+    return 'free';
+  }
+
+  const s = String(rawPlan).toLowerCase().trim();
+  const p = s.replace(/\s+/g, '');
+
+  // Plain digit strings like "1", "2", "3"
+  if (/^\d+$/.test(p)) {
+    const n = parseInt(p, 10);
+    if (n >= 3) return 'tier3';
+    if (n === 2) return 'tier2';
+    if (n === 1) return 'tier1';
+    return 'free';
+  }
+
+  // Common names / aliases
+  if (p.includes('free') || p.includes('basic') || p.includes('tier0')) return 'free';
+  if (p.includes('plus') || p.includes('starter') || p.includes('tier1')) return 'tier1';
+  if (p.includes('elite') || p.includes('pro') || p.includes('tier2')) return 'tier2';
+  if (p.includes('concierge') || p.includes('vip') || p.includes('tier3')) return 'tier3';
+
+  // Patterns like "plan2", "level3", etc.
+  const m = p.match(/(?:tier|plan|level)(\d)/);
+  if (m && m[1]) {
+    const n = parseInt(m[1], 10);
+    if (n >= 3) return 'tier3';
+    if (n === 2) return 'tier2';
+    if (n === 1) return 'tier1';
+  }
+
   return 'free';
 }
 
@@ -2019,7 +2072,8 @@ async function loadMe() {
 
     state.me = user;
     state.prefs = prefs;
-    state.plan = normalizePlanKey(user.plan);
+    const rawPlan = (user && (user.plan ?? user.planKey ?? user.tier ?? user.level ?? user.subscriptionTier ?? user.subscription ?? user.currentPlan)) || 'free';
+    state.plan = normalizePlanKey(rawPlan);
 
     renderHome(user);
     renderSettingsDisplay(user, prefs);
@@ -2039,10 +2093,14 @@ function renderHome(user) {
     const displayName = user?.name || user?.displayName || user?.fullName || 'Member';
     DOM.homeWelcomeName.textContent = displayName.trim();
   }
-  if (DOM.homePlanPill) DOM.homePlanPill.textContent = state.plan.toUpperCase();
+  if (DOM.homePlanPill) {
+    const map = { free: 'Free', tier1: 'Plus', tier2: 'Elite', tier3: 'Concierge' };
+    DOM.homePlanPill.textContent = String(map[state.plan] || state.plan || 'Free').toUpperCase();
+  }
   if (DOM.homePlanSummary) {
     if (state.plan === 'tier3') DOM.homePlanSummary.textContent = "Concierge Service Active.";
     else if (state.plan === 'tier2') DOM.homePlanSummary.textContent = "Elite Member Access.";
+    else if (state.plan === 'tier1') DOM.homePlanSummary.textContent = "Plus Member Access.";
     else DOM.homePlanSummary.textContent = "Upgrade for more daily swipes.";
   }
 }

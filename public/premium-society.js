@@ -212,6 +212,28 @@ function showToast(msg) {
 
 
 // ---------------------------------------------------------------------
+// FETCH HELPERS (avoid stuck loader if the network hangs)
+// ---------------------------------------------------------------------
+async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 6000) {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const res = await fetch(url, { ...options, signal: controller.signal });
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+            const data = await res.json();
+            return { res, data };
+        }
+        const raw = await res.text().catch(() => '');
+        return { res, data: { ok: false, raw } };
+    } finally {
+        clearTimeout(t);
+    }
+}
+
+
+
+// ---------------------------------------------------------------------
 // ACCOUNT IDENTITY (name/avatar from session)
 // ---------------------------------------------------------------------
 function psSafeGetLocalUser() {
@@ -430,14 +452,10 @@ async function hydrateAccountIdentity() {
     // Start with cached local user to avoid "..." staying on UI if /api/me fails.
     let user = psSafeGetLocalUser();
 
-    // 1) Try server session (recommended)
+    // 1) Try server session (recommended) with timeout so the loader never gets stuck.
     try {
-        const res = await fetch('/api/me', { credentials: 'same-origin' });
-        const ct = res.headers.get('content-type') || '';
-        if (ct.includes('application/json')) {
-            const data = await res.json();
-            if (data && data.ok && data.user) user = data.user;
-        }
+        const { data } = await fetchJsonWithTimeout('/api/me', { credentials: 'same-origin' }, 6000);
+        if (data && data.ok && data.user) user = data.user;
     } catch (_) {}
 
     if (!user) return;
@@ -475,39 +493,66 @@ async function hydrateAccountIdentity() {
 // ---------------------------------------------------------------------
 // INIT
 // ---------------------------------------------------------------------
-window.addEventListener('DOMContentLoaded', async () => {
-    initCanvasParticles();
-    initNavigation();
-    initSettingsSliders();
-initMobileMenu();
-    initStoryViewer();
-    initChat(); // Initialize Chat Listeners
+window.addEventListener('DOMContentLoaded', () => {
+    const safeCall = (fn) => { try { fn && fn(); } catch (e) { console.warn('[premium-society] init error:', e); } };
 
-    // Hydrate identity first so name/plan updates even if some optional sections were removed.
+    // Run UI init without letting a single error keep the loader stuck.
+    safeCall(initCanvasParticles);
+    safeCall(initNavigation);
+    safeCall(initSettingsSliders);
+    safeCall(initMobileMenu);
+    safeCall(initStoryViewer);
+    safeCall(initChat);
+
+    // Hydrate from local storage immediately (fast), then refresh from server in background.
     try {
-        const me = await hydrateAccountIdentity();
-        if (me) PS_STATE.me = me;
-    } catch (e) {
-        // non-fatal — UI will fall back to local storage / placeholders
-    }
+        const localMe = psSafeGetLocalUser();
+        if (localMe) PS_STATE.me = localMe;
+    } catch (_) {}
 
-    psHydratePremiumSocietyState(PS_STATE.me);
+    const bootPremiumSociety = () => {
+        try { psHydratePremiumSocietyState(PS_STATE.me); } catch (e) {}
+        try { psRenderPremiumSocietyPanel(); } catch (e) {}
 
-    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || new URLSearchParams(location.search).get('mock') === '1') {
-        populateMockContent();
-      }
-// Check Local Storage for Last Tab
-    const lastTab = localStorage.getItem('ps_last_tab') || 'home';
-    switchTab(lastTab);
-
-    // Remove Loader smoothly
-    setTimeout(() => {
-        if(PS_DOM.loader) {
-            PS_DOM.loader.style.opacity = '0';
-            setTimeout(() => PS_DOM.loader.remove(), 500);
+        if (PS_STATE.premiumSociety.approved) {
+            if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = '';
+            if (!PS_STATE.swipeInited) {
+                PS_STATE.swipeInited = true;
+                Promise.resolve(SwipeController.init()).catch(() => {});
+            }
+        } else {
+            psRenderPremiumSocietyLockedDeck();
         }
-        if(PS_DOM.layout) PS_DOM.layout.style.opacity = '1';
-    }, 1000);
+    };
+
+    // Restore last tab early (even before API calls).
+    try {
+        const lastTab = localStorage.getItem('ps_last_tab') || 'home';
+        switchTab(lastTab);
+    } catch (_) {}
+
+    // Always boot Premium Society gating/deck.
+    bootPremiumSociety();
+
+    // Refresh identity from server (won't block UI).
+    hydrateAccountIdentity()
+        .then((me) => {
+            if (me) PS_STATE.me = me;
+            bootPremiumSociety();
+        })
+        .catch(() => {});
+
+    // Fail-safe: never let the loader stay forever.
+    const killLoader = () => {
+        if (PS_DOM.loader) {
+            PS_DOM.loader.style.opacity = '0';
+            setTimeout(() => { try { PS_DOM.loader.remove(); } catch (_) {} }, 500);
+        }
+        if (PS_DOM.layout) PS_DOM.layout.style.opacity = '1';
+    };
+
+    setTimeout(killLoader, 900);
+    setTimeout(killLoader, 4000);
 });
 
 // ---------------------------------------------------------------------
