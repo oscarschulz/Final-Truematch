@@ -330,7 +330,8 @@ function psResolveAvatarUrl(user) {
 
 async function hydrateAccountIdentity() {
     // Start with cached local user to avoid "..." staying on UI if /api/me fails.
-    let user = psSafeGetLocalUser();
+    const local = psSafeGetLocalUser();
+    let user = local;
 
     // 1) Try server session (recommended)
     try {
@@ -338,7 +339,29 @@ async function hydrateAccountIdentity() {
         const ct = res.headers.get('content-type') || '';
         if (ct.includes('application/json')) {
             const data = await res.json();
-            if (data && data.ok && data.user) user = data.user;
+            if (data && data.ok && data.user) {
+                const serverUser = data.user;
+
+                // Merge: keep local identity fields if serverUser is missing them (common after deploy/restart).
+                user = { ...(local && typeof local === 'object' ? local : {}) };
+                for (const [k, v] of Object.entries(serverUser || {})) {
+                    if (v !== undefined && v !== null && v !== '') user[k] = v;
+                }
+
+                // Keep local identity as fallback if server didn't send it
+                if (local && typeof local === 'object') {
+                    if (!user.name && local.name) user.name = local.name;
+                    if (!user.displayName && local.displayName) user.displayName = local.displayName;
+                    if (!user.fullName && local.fullName) user.fullName = local.fullName;
+                    if (!user.firstName && local.firstName) user.firstName = local.firstName;
+                    if (!user.lastName && local.lastName) user.lastName = local.lastName;
+                    if (!user.avatar && local.avatar) user.avatar = local.avatar;
+                    if (!user.photoUrl && local.photoUrl) user.photoUrl = local.photoUrl;
+                }
+
+                // Persist merged user (so subsequent pages keep identity too)
+                psWriteLocalUser(user);
+            }
         }
     } catch (_) {}
 
@@ -373,7 +396,6 @@ async function hydrateAccountIdentity() {
 
     return user;
 }
-
 // ---------------------------------------------------------------------
 // INIT
 // ---------------------------------------------------------------------
