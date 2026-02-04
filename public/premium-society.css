@@ -470,20 +470,6 @@ body.ps-theme {
 .ps-btn-like { color: #00aff0; border-color: #00aff0; }
 .ps-btn-super { color: #3ad4ff; border-color: #3ad4ff; }
 
-
-.ps-swipe-empty-notice {
-  flex: 1;
-  text-align: center;
-  color: rgba(255,255,255,0.78);
-  font-weight: 800;
-  letter-spacing: 0.01em;
-  padding: 12px 16px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.12);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
 /* FIX: REFRESH POPOVER - COMPACT & BOTTOM RIGHT */
 .ps-refresh-popover {
     display: none;

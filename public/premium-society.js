@@ -63,21 +63,6 @@ const PS_DOM = {
     settingsAvatar: document.getElementById('psSAvatar'),
     settingsPlanBadge: document.getElementById('psSPlanBadge'),
 
-    // Edit Premium Profile modal (Premium Society application details)
-    editProfileBtn: document.getElementById('psBtnEditProfile'),
-    editProfileModal: document.getElementById('psEditProfileModal'),
-    editProfileCard: document.querySelector('#psEditProfileModal .ps-edit-modal-card'),
-    inpPremiumName: document.getElementById('psInputName'),
-    inpPremiumEmail: document.getElementById('psInputEmail'),
-    inpPremiumOccupation: document.getElementById('psInputOccupation'),
-    inpPremiumAge: document.getElementById('psInputAge'),
-    inpPremiumWealthStatus: document.getElementById('psInputWealthStatus'),
-    inpPremiumIncomeRange: document.getElementById('psInputIncomeRange'),
-    inpPremiumNetWorthRange: document.getElementById('psInputNetWorthRange'),
-    inpPremiumIncomeSource: document.getElementById('psInputIncomeSource'),
-    inpPremiumSocialLink: document.getElementById('psInputSocialLink'),
-    inpPremiumReason: document.getElementById('psInputReason'),
-
     // Refresh Popover
     refreshPopover: document.getElementById('psRefreshPopover'),
     btnRefreshDeck: document.getElementById('psBtnRefreshDeck'),
@@ -92,7 +77,6 @@ const PS_DOM = {
     swipeControls: document.getElementById('psSwipeControls'),
     btnSwipePass: document.getElementById('psBtnSwipePass'),
     btnSwipeLike: document.getElementById('psBtnSwipeLike'),
-    swipeEmptyNotice: document.getElementById('psSwipeEmptyNotice'),
     btnSwipeSuper: document.getElementById('psBtnSwipeSuper'),
     
     // Stats & Toast
@@ -226,244 +210,6 @@ function showToast(msg) {
     setTimeout(() => PS_DOM.toast.classList.remove('ps-visible'), 3000);
 }
 
-// ---------------------------------------------------------------------
-// SWIPE EMPTY-STATE UI HELPERS
-// ---------------------------------------------------------------------
-function psSetSwipeControlsEmpty(isEmpty) {
-    const notice = PS_DOM.swipeEmptyNotice;
-    const btns = [PS_DOM.btnSwipePass, PS_DOM.btnSwipeSuper, PS_DOM.btnSwipeLike].filter(Boolean);
-
-    if (notice) notice.style.display = isEmpty ? 'block' : 'none';
-    btns.forEach((b) => {
-        b.style.display = isEmpty ? 'none' : '';
-        // Keep buttons enabled; deck logic controls whether swipes can happen
-        if (!isEmpty) b.disabled = false;
-    });
-
-    if (PS_DOM.swipeControls) {
-        PS_DOM.swipeControls.style.justifyContent = isEmpty ? 'center' : '';
-        PS_DOM.swipeControls.style.gap = isEmpty ? '0' : '';
-        PS_DOM.swipeControls.style.opacity = '1';
-    }
-}
-
-// ---------------------------------------------------------------------
-// EDIT PREMIUM PROFILE MODAL (Premium Society application details)
-// ---------------------------------------------------------------------
-let PS_EDIT_SAVING = false;
-
-function psSaveLocalUser(user) {
-    try {
-        localStorage.setItem('tm_user', JSON.stringify(user));
-    } catch (_) { /* ignore */ }
-}
-
-function psGetPremiumApplication(user) {
-    if (!user || typeof user !== 'object') return null;
-    return user.premiumApplication
-        || user.premiumSocietyApplication
-        || (user.premiumSociety && user.premiumSociety.application)
-        || user.premiumApp
-        || null;
-}
-
-function psSetEditProfileModalOpen(isOpen) {
-    if (!PS_DOM.editProfileModal) return;
-    PS_DOM.editProfileModal.style.display = isOpen ? 'flex' : 'none';
-    document.body.style.overflow = isOpen ? 'hidden' : '';
-}
-
-function openEditProfile() {
-    const user = PS_STATE.me || psSafeGetLocalUser() || {};
-    const app = psGetPremiumApplication(user) || {};
-
-    if (PS_DOM.inpPremiumName) {
-        PS_DOM.inpPremiumName.value = String(app.fullName || user.name || user.fullName || '').trim();
-    }
-    if (PS_DOM.inpPremiumEmail) {
-        PS_DOM.inpPremiumEmail.value = String(user.email || '').trim();
-    }
-    if (PS_DOM.inpPremiumOccupation) {
-        PS_DOM.inpPremiumOccupation.value = String(app.occupation || '').trim();
-    }
-    if (PS_DOM.inpPremiumAge) {
-        const age = (app.age ?? user.age ?? '');
-        PS_DOM.inpPremiumAge.value = String(age || '').trim();
-    }
-    if (PS_DOM.inpPremiumWealthStatus) {
-        PS_DOM.inpPremiumWealthStatus.value = String(app.wealthStatus || '').trim();
-    }
-    if (PS_DOM.inpPremiumIncomeRange) {
-        PS_DOM.inpPremiumIncomeRange.value = String(app.incomeRange || '').trim();
-    }
-    if (PS_DOM.inpPremiumNetWorthRange) {
-        PS_DOM.inpPremiumNetWorthRange.value = String(app.netWorthRange || '').trim();
-    }
-    if (PS_DOM.inpPremiumIncomeSource) {
-        PS_DOM.inpPremiumIncomeSource.value = String(app.incomeSource || app.finance || '').trim();
-    }
-    if (PS_DOM.inpPremiumSocialLink) {
-        PS_DOM.inpPremiumSocialLink.value = String(app.socialLink || '').trim();
-    }
-    if (PS_DOM.inpPremiumReason) {
-        PS_DOM.inpPremiumReason.value = String(app.reason || '').trim();
-    }
-
-    psSetEditProfileModalOpen(true);
-}
-
-function closeEditProfile() {
-    psSetEditProfileModalOpen(false);
-}
-
-async function psTryUpdatePremiumProfile(payload) {
-    // Try a small set of likely endpoints. If none exist, we still keep local updates.
-    const paths = [
-        '/api/me/premium/profile',
-        '/api/me/premium/profile/update',
-        '/api/me/premium/update-profile'
-    ];
-
-    for (const path of paths) {
-        try {
-            const res = await fetch(path, {
-                method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            // If endpoint doesn't exist on this build, skip quietly.
-            if (res.status === 404 || res.status === 405) continue;
-
-            // If backend responded, try to parse JSON (optional).
-            let data = null;
-            try { data = await res.json(); } catch (_) { /* ignore */ }
-
-            if (!res.ok) {
-                const msg = (data && (data.message || data.error)) ? (data.message || data.error) : `Failed to save (HTTP ${res.status})`;
-                throw new Error(msg);
-            }
-
-            // Some endpoints may not return {ok:true}
-            if (data && typeof data === 'object' && data.ok === false) {
-                throw new Error(data.message || data.error || 'Failed to save');
-            }
-
-            return { ok: true, pathUsed: path, data };
-        } catch (e) {
-            // If it's a real backend error (not 404/405), surface it.
-            throw e;
-        }
-    }
-
-    return { ok: false, skipped: true };
-}
-
-async function saveEditProfile() {
-    if (PS_EDIT_SAVING) return;
-    PS_EDIT_SAVING = true;
-
-    try {
-        const fullName = String(PS_DOM.inpPremiumName ? PS_DOM.inpPremiumName.value : '').trim();
-        const occupation = String(PS_DOM.inpPremiumOccupation ? PS_DOM.inpPremiumOccupation.value : '').trim();
-        const ageRaw = String(PS_DOM.inpPremiumAge ? PS_DOM.inpPremiumAge.value : '').trim();
-        const age = ageRaw ? parseInt(ageRaw, 10) : null;
-
-        const wealthStatus = String(PS_DOM.inpPremiumWealthStatus ? PS_DOM.inpPremiumWealthStatus.value : '').trim();
-        const incomeRange = String(PS_DOM.inpPremiumIncomeRange ? PS_DOM.inpPremiumIncomeRange.value : '').trim();
-        const netWorthRange = String(PS_DOM.inpPremiumNetWorthRange ? PS_DOM.inpPremiumNetWorthRange.value : '').trim();
-        const incomeSource = String(PS_DOM.inpPremiumIncomeSource ? PS_DOM.inpPremiumIncomeSource.value : '').trim();
-        const socialLink = String(PS_DOM.inpPremiumSocialLink ? PS_DOM.inpPremiumSocialLink.value : '').trim();
-        const reason = String(PS_DOM.inpPremiumReason ? PS_DOM.inpPremiumReason.value : '').trim();
-
-        // Mirror the same minimal validation used in the Premium application form
-        if (!fullName || !occupation || !wealthStatus || !incomeRange || !netWorthRange || !incomeSource || !reason) {
-            showToast('Please complete the form.');
-            return;
-        }
-        if (age !== null && (!Number.isFinite(age) || age < 18 || age > 99)) {
-            showToast('Please enter a valid age (18-99).');
-            return;
-        }
-
-        const payload = {
-            fullName,
-            age: (age === null ? '' : String(age)),
-            occupation,
-            wealthStatus,
-            incomeRange,
-            netWorthRange,
-            incomeSource,
-            socialLink,
-            reason
-        };
-
-        // Update local state (so UI is immediately consistent)
-        PS_STATE.me = PS_STATE.me || psSafeGetLocalUser() || {};
-        PS_STATE.me.premiumApplication = { ...(psGetPremiumApplication(PS_STATE.me) || {}), ...payload, updatedAt: Date.now() };
-
-        // Also keep top-level identity consistent
-        PS_STATE.me.fullName = fullName;
-        if (!PS_STATE.me.name) PS_STATE.me.name = fullName;
-        if (age !== null) PS_STATE.me.age = age;
-
-        psSaveLocalUser(PS_STATE.me);
-
-        // Best-effort server update (if supported in this build)
-        const serverRes = await psTryUpdatePremiumProfile(payload);
-        if (serverRes && serverRes.ok) {
-            showToast('Saved successfully!');
-        } else {
-            // No endpoint found in this build; keep local save.
-            showToast('Saved successfully!');
-        }
-
-        // Refresh visible identity
-        const displayName = psResolveDisplayName(PS_STATE.me);
-        if (PS_DOM.headerName) PS_DOM.headerName.textContent = displayName;
-        if (PS_DOM.settingsName) PS_DOM.settingsName.textContent = displayName;
-        if (PS_DOM.miniName) PS_DOM.miniName.textContent = displayName;
-
-        closeEditProfile();
-    } catch (e) {
-        console.error(e);
-        showToast(e?.message || 'Failed to save. Please try again.');
-    } finally {
-        PS_EDIT_SAVING = false;
-    }
-}
-
-function initEditProfileModal() {
-    // Expose handlers for inline onclick attributes (modal buttons in HTML)
-    window.closeEditProfile = closeEditProfile;
-    window.saveEditProfile = saveEditProfile;
-
-    if (PS_DOM.editProfileBtn) {
-        PS_DOM.editProfileBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            openEditProfile();
-        });
-    }
-
-    if (PS_DOM.editProfileModal) {
-        // Close when clicking the overlay
-        PS_DOM.editProfileModal.addEventListener('click', (e) => {
-            if (e.target === PS_DOM.editProfileModal) closeEditProfile();
-        });
-    }
-
-    if (PS_DOM.editProfileCard) {
-        PS_DOM.editProfileCard.addEventListener('click', (e) => e.stopPropagation());
-    }
-
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && PS_DOM.editProfileModal && PS_DOM.editProfileModal.style.display !== 'none') {
-            closeEditProfile();
-        }
-    });
-}
-
 
 // ---------------------------------------------------------------------
 // ACCOUNT IDENTITY (name/avatar from session)
@@ -476,9 +222,20 @@ function psSafeGetLocalUser() {
     }
 }
 
+function psSafeSetLocalUser(user) {
+    try {
+        if (!user) return;
+        localStorage.setItem('tm_user', JSON.stringify(user));
+    } catch (_) {}
+}
+
 function psResolveDisplayName(user) {
+    // Premium Society page should prefer the name used on the Premium Society application (if any)
+    const pa = (user && (user.premiumApplication || user.premiumApp)) || null;
+
     // Prefer explicit name fields first
     let name =
+        (pa && (pa.fullName || pa.name)) ||
         (user && (user.name || user.displayName || user.fullName || user.username)) ||
         (user && user.profile && (user.profile.name || user.profile.fullName || user.profile.displayName)) ||
         '';
@@ -727,13 +484,161 @@ async function hydrateAccountIdentity() {
 }
 
 // ---------------------------------------------------------------------
+// SETTINGS: EDIT PREMIUM PROFILE (Premium Society application details)
+// ---------------------------------------------------------------------
+function psApplyEditProfileModalBaseStyles() {
+    if (!PS_DOM.editProfileModal) return;
+
+    // Defensive inline styles so the modal is usable even if CSS wasn't loaded / changed.
+    const m = PS_DOM.editProfileModal;
+    m.style.position = 'fixed';
+    m.style.inset = '0';
+    m.style.zIndex = '9999';
+    m.style.alignItems = 'center';
+    m.style.justifyContent = 'center';
+    m.style.background = 'rgba(0,0,0,.62)';
+    m.style.backdropFilter = 'blur(6px)';
+
+    const card = PS_DOM.editProfileCard;
+    if (card) {
+        card.style.maxWidth = card.style.maxWidth || '760px';
+        card.style.width = card.style.width || 'min(92vw, 760px)';
+        card.style.maxHeight = card.style.maxHeight || '86vh';
+        card.style.overflow = card.style.overflow || 'auto';
+    }
+}
+
+function psFillEditPremiumProfileForm(user) {
+    const u = user || PS_STATE.me || null;
+    if (!u) return;
+
+    const pa = (u.premiumApplication || u.premiumApp || {}) || {};
+
+    if (PS_DOM.inpPremiumName) {
+        PS_DOM.inpPremiumName.value = String(pa.fullName || u.name || u.displayName || '').trim();
+    }
+    if (PS_DOM.inpPremiumEmail) {
+        PS_DOM.inpPremiumEmail.value = String(u.email || u.userEmail || '').trim();
+    }
+    if (PS_DOM.inpPremiumOccupation) PS_DOM.inpPremiumOccupation.value = String(pa.occupation || '').trim();
+    if (PS_DOM.inpPremiumAge) {
+        const a = (pa.age != null ? pa.age : u.age);
+        PS_DOM.inpPremiumAge.value = (a == null ? '' : String(a));
+    }
+    if (PS_DOM.inpPremiumWealthStatus) PS_DOM.inpPremiumWealthStatus.value = String(pa.wealthStatus || '').trim();
+    if (PS_DOM.inpPremiumIncomeRange) PS_DOM.inpPremiumIncomeRange.value = String(pa.incomeRange || '').trim();
+    if (PS_DOM.inpPremiumNetWorthRange) PS_DOM.inpPremiumNetWorthRange.value = String(pa.netWorthRange || '').trim();
+    if (PS_DOM.inpPremiumIncomeSource) PS_DOM.inpPremiumIncomeSource.value = String(pa.incomeSource || '').trim();
+    if (PS_DOM.inpPremiumSocialLink) PS_DOM.inpPremiumSocialLink.value = String(pa.socialLink || '').trim();
+    if (PS_DOM.inpPremiumReason) PS_DOM.inpPremiumReason.value = String(pa.reason || '').trim();
+}
+
+function psOpenEditProfile() {
+    if (!PS_STATE.premiumSociety || PS_STATE.premiumSociety.approved !== true) {
+        showToast('Premium Society members only.');
+        return;
+    }
+    if (!PS_DOM.editProfileModal) return;
+
+    psApplyEditProfileModalBaseStyles();
+    psFillEditPremiumProfileForm(PS_STATE.me);
+
+    PS_DOM.editProfileModal.style.display = 'flex';
+
+    // Close when clicking outside the card
+    if (!PS_DOM.editProfileModal.dataset.bound) {
+        PS_DOM.editProfileModal.dataset.bound = '1';
+        PS_DOM.editProfileModal.addEventListener('click', (e) => {
+            if (e.target === PS_DOM.editProfileModal) {
+                psCloseEditProfile();
+            }
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') psCloseEditProfile();
+        });
+    }
+}
+
+function psCloseEditProfile() {
+    if (!PS_DOM.editProfileModal) return;
+    PS_DOM.editProfileModal.style.display = 'none';
+}
+
+async function psSaveEditProfile() {
+    if (!PS_STATE.premiumSociety || PS_STATE.premiumSociety.approved !== true) {
+        showToast('Premium Society members only.');
+        return;
+    }
+
+    const payload = {
+        premiumApplication: {
+            fullName: PS_DOM.inpPremiumName ? PS_DOM.inpPremiumName.value : '',
+            occupation: PS_DOM.inpPremiumOccupation ? PS_DOM.inpPremiumOccupation.value : '',
+            age: PS_DOM.inpPremiumAge ? PS_DOM.inpPremiumAge.value : '',
+            wealthStatus: PS_DOM.inpPremiumWealthStatus ? PS_DOM.inpPremiumWealthStatus.value : '',
+            incomeRange: PS_DOM.inpPremiumIncomeRange ? PS_DOM.inpPremiumIncomeRange.value : '',
+            netWorthRange: PS_DOM.inpPremiumNetWorthRange ? PS_DOM.inpPremiumNetWorthRange.value : '',
+            incomeSource: PS_DOM.inpPremiumIncomeSource ? PS_DOM.inpPremiumIncomeSource.value : '',
+            socialLink: PS_DOM.inpPremiumSocialLink ? PS_DOM.inpPremiumSocialLink.value : '',
+            reason: PS_DOM.inpPremiumReason ? PS_DOM.inpPremiumReason.value : ''
+        }
+    };
+
+    try {
+        const res = await fetch('/api/me/premium/profile', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify(payload)
+        });
+        const ct = (res.headers.get('content-type') || '').toLowerCase();
+        const data = ct.includes('application/json') ? await res.json() : null;
+        if (!data || data.ok !== true) {
+            throw new Error((data && (data.message || data.error)) || 'Failed to update profile');
+        }
+
+        // Update local state/cache so UI updates immediately
+        PS_STATE.me = { ...(PS_STATE.me || {}), premiumApplication: data.premiumApplication || payload.premiumApplication };
+        psSafeSetLocalUser(PS_STATE.me);
+
+        // Re-hydrate name display (Premium application name may be used in header/settings)
+        try { await hydrateAccountIdentity(); } catch (_) {}
+
+        showToast('Profile updated.');
+        psCloseEditProfile();
+    } catch (err) {
+        console.warn('[premium-society] premium profile save failed:', err);
+        showToast('Could not save. Please try again.');
+    }
+}
+
+function initEditProfile() {
+    // Make inline onclick handlers work in a type="module" script
+    window.closeEditProfile = psCloseEditProfile;
+    window.saveEditProfile = psSaveEditProfile;
+
+    if (PS_DOM.editProfileBtn) {
+        // Defensive: ensure the button stays clickable even if a CSS refactor accidentally disabled pointer events
+        try {
+            PS_DOM.editProfileBtn.style.pointerEvents = 'auto';
+            PS_DOM.editProfileBtn.style.cursor = 'pointer';
+        } catch (_) {}
+        PS_DOM.editProfileBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            psOpenEditProfile();
+        });
+    }
+}
+
+// ---------------------------------------------------------------------
 // INIT
 // ---------------------------------------------------------------------
 window.addEventListener('DOMContentLoaded', async () => {
     initCanvasParticles();
     initNavigation();
     initSettingsSliders();
-initMobileMenu();
+    initMobileMenu();
+    initEditProfile();
     initStoryViewer();
     initChat(); // Initialize Chat Listeners
 
@@ -1201,6 +1106,67 @@ const SwipeController = (() => {
         return card;
     }
 
+    function setSwipeEmptyState(isEmpty) {
+        // Hide swipe action buttons and show an inline empty message + refresh button
+        const btns = [PS_DOM.btnSwipePass, PS_DOM.btnSwipeSuper, PS_DOM.btnSwipeLike];
+        if (isEmpty) {
+            btns.forEach(b => { if (b) b.style.display = 'none'; });
+
+            if (PS_DOM.refreshPopover) {
+                // We now use a simpler empty state instead of the popover
+                PS_DOM.refreshPopover.classList.remove('active');
+            }
+
+            if (PS_DOM.swipeEmptyNotice) {
+                // One-time build of the refresh UI
+                if (!PS_DOM.swipeEmptyNotice.dataset.ready) {
+                    const existingText = String(PS_DOM.swipeEmptyNotice.textContent || '').trim() || 'Nothing to swipe for now';
+                    PS_DOM.swipeEmptyNotice.innerHTML = '';
+
+                    const text = document.createElement('span');
+                    text.textContent = existingText;
+                    text.style.opacity = '0.9';
+                    text.style.fontSize = '14px';
+                    text.style.letterSpacing = '0.02em';
+
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.id = 'psBtnSwipeEmptyRefresh';
+                    btn.innerHTML = `<i class="fa-solid fa-rotate-right"></i> Refresh`;
+                    btn.style.border = '1px solid rgba(255,255,255,0.18)';
+                    btn.style.background = 'rgba(255,255,255,0.08)';
+                    btn.style.color = '#fff';
+                    btn.style.padding = '10px 14px';
+                    btn.style.borderRadius = '999px';
+                    btn.style.cursor = 'pointer';
+                    btn.style.display = 'inline-flex';
+                    btn.style.alignItems = 'center';
+                    btn.style.gap = '10px';
+
+                    btn.addEventListener('click', () => fetchDeck());
+
+                    PS_DOM.swipeEmptyNotice.appendChild(text);
+                    PS_DOM.swipeEmptyNotice.appendChild(btn);
+                    PS_DOM.swipeEmptyNotice.dataset.ready = '1';
+                }
+
+                PS_DOM.swipeEmptyNotice.style.display = 'flex';
+                PS_DOM.swipeEmptyNotice.style.alignItems = 'center';
+                PS_DOM.swipeEmptyNotice.style.justifyContent = 'center';
+                PS_DOM.swipeEmptyNotice.style.gap = '12px';
+            }
+
+            if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.opacity = '1';
+            return;
+        }
+
+        // Not empty
+        btns.forEach(b => { if (b) b.style.display = ''; });
+        if (PS_DOM.swipeEmptyNotice) PS_DOM.swipeEmptyNotice.style.display = 'none';
+        if (PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove('active');
+        if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.opacity = '1';
+    }
+
     function renderCards() {
         if (!PS_DOM.swipeStack) return;
 
@@ -1208,13 +1174,13 @@ const SwipeController = (() => {
 
         const remainingCards = candidates.slice(currentIndex, currentIndex + 3);
         if (remainingCards.length === 0) {
-            psSetSwipeControlsEmpty(true);
-            if (PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.add('active');
+            setSwipeEmptyState(true);
             return;
         }
-        psSetSwipeControlsEmpty(false);
-        if (PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove('active');
-// Order: left, center, right
+
+        setSwipeEmptyState(false);
+
+        // Order: left, center, right
         remainingCards.forEach((person, i) => {
             const position = ['left', 'center', 'right'][i] || 'center';
             const card = createCard(person, position, currentIndex + i);
