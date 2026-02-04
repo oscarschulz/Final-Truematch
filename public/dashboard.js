@@ -465,7 +465,6 @@ async function initApp() {
   setupEventListeners();
   setupMobileMenu();
   
-  updateSwipeStats(DAILY_SWIPE_LIMIT, DAILY_SWIPE_LIMIT); 
   
   // Remove Loader
   setTimeout(() => {
@@ -2475,6 +2474,25 @@ const SwipeController = (() => {
   let profiles = [];
   let currentIndex = 0;
   let isLoading = false;
+  let lastLimit = DAILY_SWIPE_LIMIT; // default (Free), may become null for paid
+  let lastRemaining = DAILY_SWIPE_LIMIT;
+
+  function setSwipeStats(remaining, limit) {
+    // limit === null => unlimited
+    lastLimit = (limit === null || typeof limit === 'undefined') ? null : Number(limit);
+    lastRemaining = (remaining === null || typeof remaining === 'undefined') ? null : Number(remaining);
+
+    // Update ring/counter UI (if present)
+    if (lastLimit === null) {
+      if (DOM.statsCountDisplay) DOM.statsCountDisplay.textContent = '∞';
+      if (DOM.statsRingCircle) DOM.statsRingCircle.style.strokeDashoffset = 0;
+      return;
+    }
+
+    const safeLimit = Number.isFinite(lastLimit) && lastLimit > 0 ? lastLimit : DAILY_SWIPE_LIMIT;
+    const safeRemaining = Number.isFinite(lastRemaining) ? Math.max(0, Math.min(safeLimit, lastRemaining)) : safeLimit;
+    updateSwipeStats(safeRemaining, safeLimit);
+  }
 
   async function init() {
     await loadCandidates();
@@ -2483,36 +2501,59 @@ const SwipeController = (() => {
   async function loadCandidates() {
     if (isLoading) return;
     isLoading = true;
-    
-    if (DOM.swipeStack) DOM.swipeStack.innerHTML = ''; 
+
+    if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
     if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = true;
 
     try {
       let data;
       if (DEV_MODE) {
-        data = { candidates: [
-          { id: 1, name: 'Alice', age: 24, city: 'New York', photoUrl: 'assets/images/truematch-mark.png', tags: ['Travel', 'Music', 'Pizza'] },
-          { id: 2, name: 'Bea', age: 22, city: 'Los Angeles', photoUrl: 'assets/images/truematch-mark.png', tags: ['Gym', 'Movies'] },
-          { id: 3, name: 'Cathy', age: 25, city: 'Chicago', photoUrl: 'assets/images/truematch-mark.png', tags: ['Art', 'Coffee', 'Dogs'] }
-        ]};
+        data = {
+          ok: true,
+          candidates: [
+            { id: 'alice@test.com', name: 'Alice', age: 24, city: 'New York', photoUrl: 'assets/images/truematch-mark.png', tags: ['Travel', 'Music', 'Pizza'] },
+            { id: 'bea@test.com', name: 'Bea', age: 22, city: 'Los Angeles', photoUrl: 'assets/images/truematch-mark.png', tags: ['Gym', 'Movies'] },
+            { id: 'cathy@test.com', name: 'Cathy', age: 25, city: 'Chicago', photoUrl: 'assets/images/truematch-mark.png', tags: ['Art', 'Coffee', 'Dogs'] }
+          ],
+          remaining: DAILY_SWIPE_LIMIT,
+          limit: DAILY_SWIPE_LIMIT,
+          limitReached: false
+        };
       } else {
         data = await apiGet('/api/swipe/candidates');
       }
 
-      if (data && data.candidates && data.candidates.length > 0) {
-        profiles = data.candidates;
+      if (data && data.ok && (data.limit === null || typeof data.limit === 'number' || typeof data.limit === 'undefined')) {
+        setSwipeStats(data.remaining, data.limit);
+      }
+
+      const list = (data && data.candidates) ? data.candidates : [];
+
+      if (data && data.limitReached) {
+        // Free cap reached: keep empty state visible and disable controls
+        if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
+        if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
+        showToast('Daily swipe limit reached. Come back tomorrow.', 'error');
+        profiles = [];
         currentIndex = 0;
-        // Ensure the empty-state is hidden when we actually have candidates.
-        // (This also prevents a rare "flash" if CSS or previous state made it visible.)
+        return;
+      }
+
+      if (list.length > 0) {
+        profiles = list;
+        currentIndex = 0;
         if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = true;
         renderCards();
         if (DOM.swipeControls) DOM.swipeControls.style.display = 'flex';
       } else {
+        profiles = [];
+        currentIndex = 0;
         if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
         if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
       }
     } catch (e) {
-      console.error("Swipe Error", e);
+      console.error('Swipe Error', e);
+      showToast('Failed to load swipe deck.', 'error');
     } finally {
       isLoading = false;
     }
@@ -2530,10 +2571,10 @@ const SwipeController = (() => {
       const card = document.createElement('div');
       card.className = 'swipe-card';
       const img = p.photoUrl || 'assets/images/truematch-mark.png';
-      
+
       card.style.backgroundImage = `url('${img}')`;
-      card.style.backgroundColor = getRandomColor(); 
-      
+      card.style.backgroundColor = getRandomColor();
+
       if (isTop) {
         card.id = 'activeSwipeCard';
         card.style.zIndex = 10;
@@ -2546,46 +2587,75 @@ const SwipeController = (() => {
       }
 
       let tagsHtml = '';
-      if(p.tags && p.tags.length > 0) {
-          tagsHtml = `<div class="swipe-tags">`;
-          p.tags.forEach(t => tagsHtml += `<span class="tag">${t}</span>`);
-          tagsHtml += `</div>`;
+      if (p.tags && p.tags.length > 0) {
+        tagsHtml = `<div class="swipe-tags">` + p.tags.map(t => `<span class="tag">${t}</span>`).join('') + `</div>`;
       }
 
       card.innerHTML = `
         <div class="swipe-card__info">
-           <h2>${p.name} <span>${p.age}</span></h2>
-           <p>📍 ${p.city}</p>
-           ${tagsHtml}
+          <h2>${p.name} <span>${p.age}</span></h2>
+          <p>📍 ${p.city}</p>
+          ${tagsHtml}
         </div>
       `;
       DOM.swipeStack.appendChild(card);
     });
   }
 
+  function mapAction(type) {
+    if (type === 'superlike') return 'super';
+    if (type === 'pass') return 'pass';
+    return 'like';
+  }
+
   async function handleAction(type) {
     if (currentIndex >= profiles.length) return;
-    
-    const card = document.getElementById('activeSwipeCard');
-    if (card) {
+
+    const active = document.getElementById('activeSwipeCard');
+    if (active) {
       let animClass = 'swipe-out-right';
-      if(type === 'pass') animClass = 'swipe-out-left';
-      else if(type === 'superlike') animClass = 'swipe-out-right';
-      
-      card.classList.add(animClass);
+      if (type === 'pass') animClass = 'swipe-out-left';
+      else if (type === 'superlike') animClass = 'swipe-out-right';
+      active.classList.add(animClass);
     }
+
+    const targetEmail = profiles[currentIndex].id;
 
     if (!DEV_MODE) {
-       const apiType = (type === 'superlike') ? 'star' : type;
-       apiPost('/api/swipe/action', { targetId: profiles[currentIndex].id, type: apiType });
+      try {
+        const res = await apiPost('/api/swipe/action', { targetEmail, action: mapAction(type) });
+
+        if (!res || !res.ok) {
+          const err = (res && (res.error || res.message)) || 'Swipe failed';
+          if (String(err) === 'daily_swipe_limit_reached') {
+            setSwipeStats(0, res.limit || DAILY_SWIPE_LIMIT);
+            showToast('Daily swipe limit reached. Come back tomorrow.', 'error');
+            // clear deck
+            profiles = [];
+            currentIndex = 0;
+            if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
+            if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
+            if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
+            return;
+          }
+          if (String(err) === 'target_is_premium_society') {
+            showToast('This member is only available inside Premium Society.', 'error');
+          } else {
+            showToast(err, 'error');
+          }
+        } else {
+          setSwipeStats(res.remaining, res.limit);
+          if (res.match) showToast('It’s a match! 🎉');
+        }
+      } catch (e) {
+        console.error(e);
+        showToast('Swipe failed. Please try again.', 'error');
+      }
     }
-    
-    let currentStats = parseInt(DOM.statsCountDisplay ? DOM.statsCountDisplay.textContent : "20");
-    if(currentStats > 0) updateSwipeStats(currentStats - 1, DAILY_SWIPE_LIMIT);
 
     let msg = 'Liked!';
-    if(type === 'pass') msg = 'Passed';
-    if(type === 'superlike') msg = 'Super Liked! ⭐';
+    if (type === 'pass') msg = 'Passed';
+    if (type === 'superlike') msg = 'Super Liked! ⭐';
     showToast(msg);
 
     setTimeout(() => {
@@ -2606,7 +2676,7 @@ const SwipeController = (() => {
     pass: () => handleAction('pass'),
     superLike: () => handleAction('superlike')
   };
-})();
+})();;
 
 // ONE SINGLE ENTRY POINT
 window.addEventListener('DOMContentLoaded', initApp);

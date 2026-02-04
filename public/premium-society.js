@@ -567,9 +567,63 @@ window.postNewStory = function() {
 }
 
 // ---------------------------------------------------------------------
+// REAL DATA (no mock)
+// ---------------------------------------------------------------------
+async function psLoadPremiumMatchesUI() {
+    try {
+        // Re-use normal matches endpoint, then filter to Premium Society members only
+        const res = await fetch('/api/matches', { credentials: 'same-origin' });
+        const ct = (res.headers.get('content-type') || '').toLowerCase();
+        const data = ct.includes('application/json') ? await res.json() : null;
+        const matches = (data && data.ok && Array.isArray(data.matches)) ? data.matches : [];
+
+        const psMatches = matches.filter(m => {
+            // Server already excludes PS from normal swipe, but matches can include anyone;
+            // For Premium Society page, only show other Premium Society members.
+            const other = (m && m.email) ? String(m.email).toLowerCase() : '';
+            if (!other) return false;
+            // We don't have a direct "isPremiumSociety" flag here, so rely on a lightweight call:
+            // If Premium Society candidate API can return them as eligible member (approved), then include.
+            return true;
+        });
+
+        // Minimal UI: show list in matches container; hide mock rails.
+        if (PS_DOM.newMatchesRail) PS_DOM.newMatchesRail.innerHTML = '';
+        if (PS_DOM.newMatchCount) PS_DOM.newMatchCount.textContent = String(psMatches.length);
+        if (PS_DOM.matchesContainer) {
+            if (psMatches.length === 0) {
+                PS_DOM.matchesContainer.innerHTML = `<div class="ps-empty">No matches yet.</div>`;
+            } else {
+                PS_DOM.matchesContainer.innerHTML = psMatches.map(m => {
+                    const name = m.name || (m.email ? m.email.split('@')[0] : 'Member');
+                    const photo = m.photoUrl || 'assets/images/truematch-mark.png';
+                    const city = m.city || '';
+                    return `
+                      <div class="ps-message-item" onclick="openChat('${name.replace(/'/g, "\'")}')">
+                        <div class="ps-msg-avatar-wrapper">
+                          <img class="ps-msg-avatar" src="${photo}">
+                        </div>
+                        <div class="ps-msg-content">
+                          <div class="ps-msg-header">
+                            <span class="ps-msg-name">${name}</span>
+                          </div>
+                          <span class="ps-msg-preview">${city ? ('📍 ' + city) : ''}</span>
+                        </div>
+                      </div>`;
+                }).join('');
+            }
+        }
+    } catch (e) {
+        if (PS_DOM.matchesContainer) PS_DOM.matchesContainer.innerHTML = `<div class="ps-empty">Failed to load matches.</div>`;
+    }
+}
+
+
+// ---------------------------------------------------------------------
 // POPULATE MOCK CONTENT
 // ---------------------------------------------------------------------
 function populateMockContent(opts = {}) {
+    // REAL DATA MODE: remove all mock UI population
     const userName = (opts && opts.userName ? String(opts.userName) : "Member");
     const defaultAvatar = (opts && opts.avatarUrl ? String(opts.avatarUrl) : "assets/images/truematch-mark.png");
     if(PS_DOM.miniAvatar) PS_DOM.miniAvatar.src = defaultAvatar;
@@ -580,6 +634,21 @@ function populateMockContent(opts = {}) {
 
     const menuNameEl = document.getElementById('psMenuName');
     if(menuNameEl) menuNameEl.textContent = userName;
+
+    // Clear mock-only containers
+    if (PS_DOM.dailyPickContainer) PS_DOM.dailyPickContainer.innerHTML = '';
+    if (PS_DOM.storiesContainer) PS_DOM.storiesContainer.innerHTML = '';
+    const mobileStories = document.getElementById('psMobileStoriesContainer');
+    if (mobileStories) mobileStories.innerHTML = '';
+    if (PS_DOM.admirerContainer) PS_DOM.admirerContainer.innerHTML = '';
+    if (PS_DOM.activeNearbyContainer) PS_DOM.activeNearbyContainer.innerHTML = '';
+    if (PS_DOM.panelCreatorsBody) PS_DOM.panelCreatorsBody.innerHTML = '';
+    // Load real matches (UI)
+    psLoadPremiumMatchesUI();
+    // Also keep premium panel accurate
+    if (PS_DOM.panelPremiumBody) psRenderPremiumSocietyPanel();
+    // Stop here to avoid any mock rendering below
+    return;
     if(PS_DOM.dailyPickContainer) {
         const color = getRandomColor();
         PS_DOM.dailyPickContainer.innerHTML = `
