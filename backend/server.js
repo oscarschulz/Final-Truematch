@@ -427,7 +427,8 @@ const DEMO_PASSWORD = 'aries2311';
 
 // 🔹 DEV-only bypass demo accounts (for multi-user testing)
 // Enable with: ALLOW_TEST_BYPASS=true (and keep NODE_ENV != 'production')
-const ALLOW_TEST_BYPASS = !IS_PROD && ['1','true','yes','on'].includes(String(process.env.ALLOW_TEST_BYPASS || '').toLowerCase());
+const ALLOW_TEST_BYPASS = !IS_PROD && (process.env.ALLOW_TEST_BYPASS === '1');
+
 const TEST_BYPASS_ACCOUNTS = {
   "demo1@truematch.app": {
     password: "Demo123!@#",
@@ -451,78 +452,6 @@ const TEST_BYPASS_ACCOUNTS = {
     prefs: { city: "Davao", ageMin: 22, ageMax: 38, lookingFor: ["women"] }
   }
 };
-
-
-// Seed the 3 demo accounts into the database at server start (dev only).
-// This gives you real users for Swipe / Premium Society testing (no mock UI data).
-async function ensureDemoAccounts() {
-  if (!ALLOW_TEST_BYPASS) return;
-
-  const now = new Date();
-
-  for (const [email, cfg] of Object.entries(TEST_BYPASS_ACCOUNTS || {})) {
-    const emailNorm = String(email || '').trim().toLowerCase();
-    if (!emailNorm) continue;
-
-    const planKey = (typeof normalizePlanKey === 'function') ? normalizePlanKey(cfg.plan) : (cfg.plan || 'free');
-    const rule = (typeof PLAN_RULES === 'object' && PLAN_RULES && PLAN_RULES[planKey]) ? PLAN_RULES[planKey] : { durationDays: 30 };
-    const planStart = now.toISOString();
-    const planEnd = new Date(now.getTime() + (Number(rule.durationDays || 30) * (typeof DAY_MS === 'number' ? DAY_MS : 86400000))).toISOString();
-
-    const demoPatch = {
-      email: emailNorm,
-      name: cfg.name || (emailNorm.split('@')[0] || 'Demo User'),
-      city: cfg.city || '',
-      plan: planKey,
-      planStart,
-      planEnd,
-      planActive: true,
-      emailVerified: true,
-      prefsSaved: true,
-      prefs: cfg.prefs || null,
-      avatarUrl: cfg.avatarUrl || '',
-      isDemo: true,
-      demoTier: planKey,
-      updatedAt: new Date().toISOString()
-    };
-
-    // Optional extra profile fields (won't break if unused by frontend)
-    if (cfg.gender) demoPatch.gender = cfg.gender;
-    if (cfg.age) demoPatch.age = cfg.age;
-    if (cfg.bio) demoPatch.bio = cfg.bio;
-
-    if (hasFirebase) {
-      try {
-        const existing = await findUserByEmail(emailNorm);
-        if (!existing) {
-          const passwordHash = await bcrypt.hash(String(cfg.password || 'Demo123!@#'), 10);
-          await createUserDoc({ ...demoPatch, passwordHash, createdAt: now.toISOString() });
-        } else {
-          // Keep existing passwordHash; just update plan/profile fields.
-          await updateUserByEmail(emailNorm, demoPatch);
-        }
-      } catch (e) {
-        console.error('[demo-accounts] Firestore seed error for', emailNorm, e);
-      }
-    } else {
-      try {
-        if (!DB.users) DB.users = {};
-        DB.users[emailNorm] = { ...(DB.users[emailNorm] || {}), ...demoPatch };
-
-        DB.shortlistState[emailNorm] = DB.shortlistState[emailNorm] || { shortlist: [], shortlistLastDate: null };
-        DB.datesState[emailNorm] = DB.datesState[emailNorm] || [];
-        DB.prefsByEmail[emailNorm] = DB.prefsByEmail[emailNorm] || demoPatch.prefs || null;
-      } catch (e) {
-        console.error('[demo-accounts] Local seed error for', emailNorm, e);
-      }
-    }
-  }
-
-  // Persist local store
-  if (!hasFirebase) {
-    try { saveUsersStore(); } catch (e) {}
-  }
-}
 
 // 🔹 Cookie session (email-based) — simple & works for your current frontend
 const SESSION_COOKIE = 'tm_email';
@@ -1253,7 +1182,6 @@ function toMillis(v) {
 function momentOwnerIdFromEmail(email) {
   try {
     const e = String(email || '').trim().toLowerCase();
-    const crypto = require('crypto');
     return crypto.createHash('sha256').update(e).digest('hex').slice(0, 16);
   } catch {
     return String(email || '').slice(0, 16);
@@ -4043,7 +3971,7 @@ app.post('/api/me/premium/apply', async (req, res) => {
     }
 
     
-    // Eligibility: Premium Society requires an ACTIVE Elite (Tier 2) or Concierge (Tier 3) plan.
+    // Eligibility: Premium Society requires an ACTIVE Plus (Tier 1) or higher plan.
     const myPlanKey = normalizePlanKey(
       userDoc.plan || userDoc.planKey || userDoc.tier || userDoc.tierKey || userDoc.subscriptionPlan || 'free'
     );
@@ -4055,7 +3983,7 @@ app.post('/api/me/premium/apply', async (req, res) => {
       return res.status(403).json({
         ok: false,
         code: 'not_eligible',
-        message: 'Premium Society applications require an active Elite (Tier 2) or Concierge (Tier 3) plan.'
+        message: 'Premium Society applications require an active Plus (Tier 1) or higher plan.'
       });
     }
 
@@ -4702,7 +4630,7 @@ function psTierNumFromPlanKey(planKey) {
 }
 
 function psIsEligibleForPremiumSociety(uPublic) {
-  return Boolean(uPublic && uPublic.planActive === true && psTierNumFromPlanKey(uPublic.plan) >= 2);
+  return Boolean(uPublic && uPublic.planActive === true && psTierNumFromPlanKey(uPublic.plan) >= 1);
 }
 
 function psIsPremiumSocietyMember(uPublic) {
@@ -5280,17 +5208,6 @@ app.get('/api/ig/avatar/:username', async (req, res) => {
   return _streamRemoteImage(res, imgUrl);
 });
 // ---------------- Start server -------------------
-(async function startServer() {
-  try {
-    await ensureDemoAccounts();
-  } catch (e) {
-    console.error('[demo-accounts] failed to seed demo accounts:', e);
-  }
-
-  app.listen(PORT, () => {
-    console.log(`TrueMatch server running at ${APP_BASE_URL}`);
-    if (ALLOW_TEST_BYPASS) {
-      console.log('[demo-accounts] test bypass enabled (dev). Demo logins: demo1@truematch.app, demo2@truematch.app, demo3@truematch.app (password: Demo123!@#)');
-    }
-  });
-})();
+app.listen(PORT, () => {
+  console.log(`TrueMatch server running at ${APP_BASE_URL}`);
+});
