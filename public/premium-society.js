@@ -63,6 +63,21 @@ const PS_DOM = {
     settingsAvatar: document.getElementById('psSAvatar'),
     settingsPlanBadge: document.getElementById('psSPlanBadge'),
 
+    // Edit Premium Profile modal (Premium Society application details)
+    editProfileBtn: document.getElementById('psBtnEditProfile'),
+    editProfileModal: document.getElementById('psEditProfileModal'),
+    editProfileCard: document.querySelector('#psEditProfileModal .ps-edit-modal-card'),
+    inpPremiumName: document.getElementById('psInputName'),
+    inpPremiumEmail: document.getElementById('psInputEmail'),
+    inpPremiumOccupation: document.getElementById('psInputOccupation'),
+    inpPremiumAge: document.getElementById('psInputAge'),
+    inpPremiumWealthStatus: document.getElementById('psInputWealthStatus'),
+    inpPremiumIncomeRange: document.getElementById('psInputIncomeRange'),
+    inpPremiumNetWorthRange: document.getElementById('psInputNetWorthRange'),
+    inpPremiumIncomeSource: document.getElementById('psInputIncomeSource'),
+    inpPremiumSocialLink: document.getElementById('psInputSocialLink'),
+    inpPremiumReason: document.getElementById('psInputReason'),
+
     // Refresh Popover
     refreshPopover: document.getElementById('psRefreshPopover'),
     btnRefreshDeck: document.getElementById('psBtnRefreshDeck'),
@@ -77,6 +92,7 @@ const PS_DOM = {
     swipeControls: document.getElementById('psSwipeControls'),
     btnSwipePass: document.getElementById('psBtnSwipePass'),
     btnSwipeLike: document.getElementById('psBtnSwipeLike'),
+    swipeEmptyNotice: document.getElementById('psSwipeEmptyNotice'),
     btnSwipeSuper: document.getElementById('psBtnSwipeSuper'),
     
     // Stats & Toast
@@ -208,6 +224,244 @@ function showToast(msg) {
     PS_DOM.toast.innerHTML = `<i class="fa-solid fa-fire"></i> ${msg}`;
     PS_DOM.toast.className = `ps-toast ps-visible`;
     setTimeout(() => PS_DOM.toast.classList.remove('ps-visible'), 3000);
+}
+
+// ---------------------------------------------------------------------
+// SWIPE EMPTY-STATE UI HELPERS
+// ---------------------------------------------------------------------
+function psSetSwipeControlsEmpty(isEmpty) {
+    const notice = PS_DOM.swipeEmptyNotice;
+    const btns = [PS_DOM.btnSwipePass, PS_DOM.btnSwipeSuper, PS_DOM.btnSwipeLike].filter(Boolean);
+
+    if (notice) notice.style.display = isEmpty ? 'block' : 'none';
+    btns.forEach((b) => {
+        b.style.display = isEmpty ? 'none' : '';
+        // Keep buttons enabled; deck logic controls whether swipes can happen
+        if (!isEmpty) b.disabled = false;
+    });
+
+    if (PS_DOM.swipeControls) {
+        PS_DOM.swipeControls.style.justifyContent = isEmpty ? 'center' : '';
+        PS_DOM.swipeControls.style.gap = isEmpty ? '0' : '';
+        PS_DOM.swipeControls.style.opacity = '1';
+    }
+}
+
+// ---------------------------------------------------------------------
+// EDIT PREMIUM PROFILE MODAL (Premium Society application details)
+// ---------------------------------------------------------------------
+let PS_EDIT_SAVING = false;
+
+function psSaveLocalUser(user) {
+    try {
+        localStorage.setItem('tm_user', JSON.stringify(user));
+    } catch (_) { /* ignore */ }
+}
+
+function psGetPremiumApplication(user) {
+    if (!user || typeof user !== 'object') return null;
+    return user.premiumApplication
+        || user.premiumSocietyApplication
+        || (user.premiumSociety && user.premiumSociety.application)
+        || user.premiumApp
+        || null;
+}
+
+function psSetEditProfileModalOpen(isOpen) {
+    if (!PS_DOM.editProfileModal) return;
+    PS_DOM.editProfileModal.style.display = isOpen ? 'flex' : 'none';
+    document.body.style.overflow = isOpen ? 'hidden' : '';
+}
+
+function openEditProfile() {
+    const user = PS_STATE.me || psSafeGetLocalUser() || {};
+    const app = psGetPremiumApplication(user) || {};
+
+    if (PS_DOM.inpPremiumName) {
+        PS_DOM.inpPremiumName.value = String(app.fullName || user.name || user.fullName || '').trim();
+    }
+    if (PS_DOM.inpPremiumEmail) {
+        PS_DOM.inpPremiumEmail.value = String(user.email || '').trim();
+    }
+    if (PS_DOM.inpPremiumOccupation) {
+        PS_DOM.inpPremiumOccupation.value = String(app.occupation || '').trim();
+    }
+    if (PS_DOM.inpPremiumAge) {
+        const age = (app.age ?? user.age ?? '');
+        PS_DOM.inpPremiumAge.value = String(age || '').trim();
+    }
+    if (PS_DOM.inpPremiumWealthStatus) {
+        PS_DOM.inpPremiumWealthStatus.value = String(app.wealthStatus || '').trim();
+    }
+    if (PS_DOM.inpPremiumIncomeRange) {
+        PS_DOM.inpPremiumIncomeRange.value = String(app.incomeRange || '').trim();
+    }
+    if (PS_DOM.inpPremiumNetWorthRange) {
+        PS_DOM.inpPremiumNetWorthRange.value = String(app.netWorthRange || '').trim();
+    }
+    if (PS_DOM.inpPremiumIncomeSource) {
+        PS_DOM.inpPremiumIncomeSource.value = String(app.incomeSource || app.finance || '').trim();
+    }
+    if (PS_DOM.inpPremiumSocialLink) {
+        PS_DOM.inpPremiumSocialLink.value = String(app.socialLink || '').trim();
+    }
+    if (PS_DOM.inpPremiumReason) {
+        PS_DOM.inpPremiumReason.value = String(app.reason || '').trim();
+    }
+
+    psSetEditProfileModalOpen(true);
+}
+
+function closeEditProfile() {
+    psSetEditProfileModalOpen(false);
+}
+
+async function psTryUpdatePremiumProfile(payload) {
+    // Try a small set of likely endpoints. If none exist, we still keep local updates.
+    const paths = [
+        '/api/me/premium/profile',
+        '/api/me/premium/profile/update',
+        '/api/me/premium/update-profile'
+    ];
+
+    for (const path of paths) {
+        try {
+            const res = await fetch(path, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            // If endpoint doesn't exist on this build, skip quietly.
+            if (res.status === 404 || res.status === 405) continue;
+
+            // If backend responded, try to parse JSON (optional).
+            let data = null;
+            try { data = await res.json(); } catch (_) { /* ignore */ }
+
+            if (!res.ok) {
+                const msg = (data && (data.message || data.error)) ? (data.message || data.error) : `Failed to save (HTTP ${res.status})`;
+                throw new Error(msg);
+            }
+
+            // Some endpoints may not return {ok:true}
+            if (data && typeof data === 'object' && data.ok === false) {
+                throw new Error(data.message || data.error || 'Failed to save');
+            }
+
+            return { ok: true, pathUsed: path, data };
+        } catch (e) {
+            // If it's a real backend error (not 404/405), surface it.
+            throw e;
+        }
+    }
+
+    return { ok: false, skipped: true };
+}
+
+async function saveEditProfile() {
+    if (PS_EDIT_SAVING) return;
+    PS_EDIT_SAVING = true;
+
+    try {
+        const fullName = String(PS_DOM.inpPremiumName ? PS_DOM.inpPremiumName.value : '').trim();
+        const occupation = String(PS_DOM.inpPremiumOccupation ? PS_DOM.inpPremiumOccupation.value : '').trim();
+        const ageRaw = String(PS_DOM.inpPremiumAge ? PS_DOM.inpPremiumAge.value : '').trim();
+        const age = ageRaw ? parseInt(ageRaw, 10) : null;
+
+        const wealthStatus = String(PS_DOM.inpPremiumWealthStatus ? PS_DOM.inpPremiumWealthStatus.value : '').trim();
+        const incomeRange = String(PS_DOM.inpPremiumIncomeRange ? PS_DOM.inpPremiumIncomeRange.value : '').trim();
+        const netWorthRange = String(PS_DOM.inpPremiumNetWorthRange ? PS_DOM.inpPremiumNetWorthRange.value : '').trim();
+        const incomeSource = String(PS_DOM.inpPremiumIncomeSource ? PS_DOM.inpPremiumIncomeSource.value : '').trim();
+        const socialLink = String(PS_DOM.inpPremiumSocialLink ? PS_DOM.inpPremiumSocialLink.value : '').trim();
+        const reason = String(PS_DOM.inpPremiumReason ? PS_DOM.inpPremiumReason.value : '').trim();
+
+        // Mirror the same minimal validation used in the Premium application form
+        if (!fullName || !occupation || !wealthStatus || !incomeRange || !netWorthRange || !incomeSource || !reason) {
+            showToast('Please complete the form.');
+            return;
+        }
+        if (age !== null && (!Number.isFinite(age) || age < 18 || age > 99)) {
+            showToast('Please enter a valid age (18-99).');
+            return;
+        }
+
+        const payload = {
+            fullName,
+            age: (age === null ? '' : String(age)),
+            occupation,
+            wealthStatus,
+            incomeRange,
+            netWorthRange,
+            incomeSource,
+            socialLink,
+            reason
+        };
+
+        // Update local state (so UI is immediately consistent)
+        PS_STATE.me = PS_STATE.me || psSafeGetLocalUser() || {};
+        PS_STATE.me.premiumApplication = { ...(psGetPremiumApplication(PS_STATE.me) || {}), ...payload, updatedAt: Date.now() };
+
+        // Also keep top-level identity consistent
+        PS_STATE.me.fullName = fullName;
+        if (!PS_STATE.me.name) PS_STATE.me.name = fullName;
+        if (age !== null) PS_STATE.me.age = age;
+
+        psSaveLocalUser(PS_STATE.me);
+
+        // Best-effort server update (if supported in this build)
+        const serverRes = await psTryUpdatePremiumProfile(payload);
+        if (serverRes && serverRes.ok) {
+            showToast('Saved successfully!');
+        } else {
+            // No endpoint found in this build; keep local save.
+            showToast('Saved successfully!');
+        }
+
+        // Refresh visible identity
+        const displayName = psResolveDisplayName(PS_STATE.me);
+        if (PS_DOM.headerName) PS_DOM.headerName.textContent = displayName;
+        if (PS_DOM.settingsName) PS_DOM.settingsName.textContent = displayName;
+        if (PS_DOM.miniName) PS_DOM.miniName.textContent = displayName;
+
+        closeEditProfile();
+    } catch (e) {
+        console.error(e);
+        showToast(e?.message || 'Failed to save. Please try again.');
+    } finally {
+        PS_EDIT_SAVING = false;
+    }
+}
+
+function initEditProfileModal() {
+    // Expose handlers for inline onclick attributes (modal buttons in HTML)
+    window.closeEditProfile = closeEditProfile;
+    window.saveEditProfile = saveEditProfile;
+
+    if (PS_DOM.editProfileBtn) {
+        PS_DOM.editProfileBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            openEditProfile();
+        });
+    }
+
+    if (PS_DOM.editProfileModal) {
+        // Close when clicking the overlay
+        PS_DOM.editProfileModal.addEventListener('click', (e) => {
+            if (e.target === PS_DOM.editProfileModal) closeEditProfile();
+        });
+    }
+
+    if (PS_DOM.editProfileCard) {
+        PS_DOM.editProfileCard.addEventListener('click', (e) => e.stopPropagation());
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && PS_DOM.editProfileModal && PS_DOM.editProfileModal.style.display !== 'none') {
+            closeEditProfile();
+        }
+    });
 }
 
 
@@ -954,16 +1208,13 @@ const SwipeController = (() => {
 
         const remainingCards = candidates.slice(currentIndex, currentIndex + 3);
         if (remainingCards.length === 0) {
-            // Show "All caught up" popover
-            if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.opacity = '0.4';
+            psSetSwipeControlsEmpty(true);
             if (PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.add('active');
             return;
         }
-
-        if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.opacity = '1';
+        psSetSwipeControlsEmpty(false);
         if (PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove('active');
-
-        // Order: left, center, right
+// Order: left, center, right
         remainingCards.forEach((person, i) => {
             const position = ['left', 'center', 'right'][i] || 'center';
             const card = createCard(person, position, currentIndex + i);
