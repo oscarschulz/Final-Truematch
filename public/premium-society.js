@@ -212,28 +212,6 @@ function showToast(msg) {
 
 
 // ---------------------------------------------------------------------
-// FETCH HELPERS (avoid stuck loader if the network hangs)
-// ---------------------------------------------------------------------
-async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 6000) {
-    const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-        const res = await fetch(url, { ...options, signal: controller.signal });
-        const ct = res.headers.get('content-type') || '';
-        if (ct.includes('application/json')) {
-            const data = await res.json();
-            return { res, data };
-        }
-        const raw = await res.text().catch(() => '');
-        return { res, data: { ok: false, raw } };
-    } finally {
-        clearTimeout(t);
-    }
-}
-
-
-
-// ---------------------------------------------------------------------
 // ACCOUNT IDENTITY (name/avatar from session)
 // ---------------------------------------------------------------------
 function psSafeGetLocalUser() {
@@ -366,10 +344,13 @@ function psRenderPremiumSocietyLockedDeck() {
       const me = await hydrateAccountIdentity();
       if (me) PS_STATE.me = me;
       psHydratePremiumSocietyState(PS_STATE.me);
-      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || new URLSearchParams(location.search).get('mock') === '1') {
-        populateMockContent();
-      }
-const lastTab = localStorage.getItem('ps_last_tab') || 'home';
+      await psRehydrateAndBoot();
+      try {
+        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || new URLSearchParams(location.search).get('mock') === '1') {
+          populateMockContent();
+        }
+      } catch (_) {}
+      const lastTab = localStorage.getItem('ps_last_tab') || 'home';
       switchTab(lastTab);
     } catch (e) {}
   });
@@ -421,10 +402,13 @@ function psRenderPremiumSocietyPanel() {
       const me = await hydrateAccountIdentity();
       if (me) PS_STATE.me = me;
       psHydratePremiumSocietyState(PS_STATE.me);
-      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || new URLSearchParams(location.search).get('mock') === '1') {
-        populateMockContent();
-      }
-const lastTab = localStorage.getItem('ps_last_tab') || 'home';
+      await psRehydrateAndBoot();
+      try {
+        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || new URLSearchParams(location.search).get('mock') === '1') {
+          populateMockContent();
+        }
+      } catch (_) {}
+      const lastTab = localStorage.getItem('ps_last_tab') || 'home';
       switchTab(lastTab);
     } catch (e) {}
   });
@@ -452,10 +436,17 @@ async function hydrateAccountIdentity() {
     // Start with cached local user to avoid "..." staying on UI if /api/me fails.
     let user = psSafeGetLocalUser();
 
-    // 1) Try server session (recommended) with timeout so the loader never gets stuck.
+    // 1) Try server session (recommended)
     try {
-        const { data } = await fetchJsonWithTimeout('/api/me', { credentials: 'same-origin' }, 6000);
-        if (data && data.ok && data.user) user = data.user;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3500);
+        const res = await fetch('/api/me', { credentials: 'same-origin', signal: controller.signal });
+        clearTimeout(timeout);
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+            const data = await res.json();
+            if (data && data.ok && data.user) user = data.user;
+        }
     } catch (_) {}
 
     if (!user) return;
@@ -490,13 +481,36 @@ async function hydrateAccountIdentity() {
     return user;
 }
 
+
+async function psRehydrateAndBoot({ preferServer = false } = {}) {
+    // Optional: refresh session from server (with timeout) before rendering.
+    if (preferServer) {
+        try {
+            const me = await hydrateAccountIdentity();
+            if (me) PS_STATE.me = me;
+        } catch (_) {}
+    }
+
+    try { psHydratePremiumSocietyState(PS_STATE.me || {}); } catch (_) {}
+    try { psRenderPremiumSocietyPanel(); } catch (_) {}
+
+    if (PS_STATE.premiumSociety.approved) {
+        if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = '';
+        PS_STATE.swipeInited = true;
+        try { await SwipeController.init(); } catch (e) { console.warn('[premium-society] swipe init failed:', e); }
+    } else {
+        try { psRenderPremiumSocietyLockedDeck(); } catch (_) {}
+    }
+}
+
+
 // ---------------------------------------------------------------------
 // INIT
 // ---------------------------------------------------------------------
 window.addEventListener('DOMContentLoaded', () => {
     const safeCall = (fn) => { try { fn && fn(); } catch (e) { console.warn('[premium-society] init error:', e); } };
 
-    // Run UI init without letting a single error keep the loader stuck.
+    // UI init (never block the loader).
     safeCall(initCanvasParticles);
     safeCall(initNavigation);
     safeCall(initSettingsSliders);
@@ -504,57 +518,56 @@ window.addEventListener('DOMContentLoaded', () => {
     safeCall(initStoryViewer);
     safeCall(initChat);
 
-    // Hydrate from local storage immediately (fast), then refresh from server in background.
+    // Fast local hydration so name/avatar show immediately even if /api/me is slow.
     try {
         const localMe = psSafeGetLocalUser();
         if (localMe) PS_STATE.me = localMe;
     } catch (_) {}
 
-    const bootPremiumSociety = () => {
-        try { psHydratePremiumSocietyState(PS_STATE.me); } catch (e) {}
-        try { psRenderPremiumSocietyPanel(); } catch (e) {}
-
-        if (PS_STATE.premiumSociety.approved) {
-            if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = '';
-            if (!PS_STATE.swipeInited) {
-                PS_STATE.swipeInited = true;
-                Promise.resolve(SwipeController.init()).catch(() => {});
-            }
-        } else {
-            psRenderPremiumSocietyLockedDeck();
-        }
+    const reveal = () => {
+        try { if (PS_DOM.layout) PS_DOM.layout.style.opacity = '1'; } catch (_) {}
+        try {
+            const loader = PS_DOM.loader || document.getElementById('app-loader');
+            if (!loader) return;
+            loader.style.opacity = '0';
+            setTimeout(() => { try { loader.remove(); } catch (_) {} }, 320);
+        } catch (_) {}
     };
 
-    // Restore last tab early (even before API calls).
-    try {
-        const lastTab = localStorage.getItem('ps_last_tab') || 'home';
-        switchTab(lastTab);
-    } catch (_) {}
+    // Always reveal within 500ms (prevents "stuck loading" even if network hangs).
+    setTimeout(reveal, 500);
 
-    // Always boot Premium Society gating/deck.
-    bootPremiumSociety();
-
-    // Refresh identity from server (won't block UI).
-    hydrateAccountIdentity()
-        .then((me) => {
+    (async () => {
+        // Refresh session (server) but never let it block the UI.
+        try {
+            const me = await hydrateAccountIdentity();
             if (me) PS_STATE.me = me;
-            bootPremiumSociety();
-        })
-        .catch(() => {});
-
-    // Fail-safe: never let the loader stay forever.
-    const killLoader = () => {
-        if (PS_DOM.loader) {
-            PS_DOM.loader.style.opacity = '0';
-            setTimeout(() => { try { PS_DOM.loader.remove(); } catch (_) {} }, 500);
+        } catch (e) {
+            console.warn('[premium-society] hydrateAccountIdentity failed:', e);
         }
-        if (PS_DOM.layout) PS_DOM.layout.style.opacity = '1';
-    };
 
-    setTimeout(killLoader, 900);
-    setTimeout(killLoader, 4000);
+        try {
+            await psRehydrateAndBoot();
+        } catch (e) {
+            console.warn('[premium-society] boot failed:', e);
+        }
+
+        // Optional: local/mock-only extra content
+        try {
+            const params = new URLSearchParams(location.search);
+            const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+            if (isLocal || params.get('mock') === '1') populateMockContent();
+        } catch (_) {}
+
+        try {
+            const lastTab = localStorage.getItem('ps_last_tab') || 'home';
+            switchTab(lastTab);
+        } catch (_) {}
+
+        // Ensure loader is removed even if the timer hasn't fired yet.
+        reveal();
+    })();
 });
-
 // ---------------------------------------------------------------------
 // CHAT LOGIC (NEW)
 // ---------------------------------------------------------------------
@@ -885,6 +898,7 @@ const SwipeController = (() => {
     let candidates = [];
     let currentIndex = 0;
     let isSwiping = false;
+    let controlsBound = false;
 
     // Server-provided counters (null = unlimited)
     let remaining = null;
@@ -1114,6 +1128,8 @@ const SwipeController = (() => {
     }
 
     function bindControls() {
+        if (controlsBound) return;
+        controlsBound = true;
         if (PS_DOM.btnSwipeLike) PS_DOM.btnSwipeLike.addEventListener('click', () => handleSwipe('like'));
         if (PS_DOM.btnSwipePass) PS_DOM.btnSwipePass.addEventListener('click', () => handleSwipe('pass'));
         if (PS_DOM.btnSwipeSuper) PS_DOM.btnSwipeSuper.addEventListener('click', () => handleSwipe('super'));
@@ -1188,6 +1204,7 @@ function initCanvasParticles() {
     const canvas = document.getElementById('ps-bg-canvas');
     if(!canvas) return;
     const ctx = canvas.getContext('2d');
+    if (!ctx) return;
     let W, H, pts = [];
 
     function resize() { 

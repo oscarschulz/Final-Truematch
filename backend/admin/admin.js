@@ -421,7 +421,7 @@ if (btnClearUserFilters) {
    4. CREATOR APPLICATIONS
    ========================================= */
 const creatorsBody = document.getElementById('creators-list-body');
-document.getElementById('btn-refresh-creators').addEventListener('click', loadPendingCreators);
+document.getElementById('btn-refresh-creators')?.addEventListener('click', loadPendingCreators);
 // Premium refresh button
 document.getElementById('btn-refresh-premium')?.addEventListener('click', loadPremiumApplicants);
 
@@ -435,6 +435,7 @@ async function loadPendingCreators() {
   }
 
   creatorsBody.innerHTML = '';
+  const applicants = Array.isArray(data.applicants) ? data.applicants : [];
   applicants.forEach(user => {
     const app = user.creatorApplication || {};
     const row = document.createElement('div');
@@ -487,7 +488,7 @@ const emailInput = document.getElementById('admin-email');
 const previewBox = document.getElementById('admin-list-body');
 
 // Live Preview
-profilesInput.addEventListener('input', () => {
+profilesInput?.addEventListener('input', () => {
   try {
     const raw = profilesInput.value;
     const parsed = JSON.parse(raw);
@@ -633,7 +634,9 @@ document.getElementById('btn-serve').addEventListener('click', async () => {
     if (!mmBody) return;
 
     if (!USERS_CACHE_ALL.length || force) {
-      await fetchUsersAll();
+      const users = await fetchUsersAll();
+      USERS_CACHE_ALL = Array.isArray(users) ? users : [];
+      USERS_CACHE_LAST = Date.now();
     }
 
     MM_CACHE = USERS_CACHE_ALL.filter(u => u.plan === 'tier2' || u.plan === 'tier3');
