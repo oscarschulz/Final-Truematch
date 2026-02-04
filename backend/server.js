@@ -4630,12 +4630,94 @@ function psTierNumFromPlanKey(planKey) {
 }
 
 function psIsEligibleForPremiumSociety(uPublic) {
-  return Boolean(uPublic && uPublic.planActive === true && psTierNumFromPlanKey(uPublic.plan) >= 1);
+  return Boolean(uPublic && uPublic.planActive === true && psTierNumFromPlanKey(uPublic.plan) >= 2);
 }
 
 function psIsPremiumSocietyMember(uPublic) {
   return psIsEligibleForPremiumSociety(uPublic) && String(uPublic.premiumStatus || '').toLowerCase() === 'approved';
 }
+
+// ---------------------------------------------------------------------
+// Premium Society - Edit Profile (updates premiumApplication details)
+// ---------------------------------------------------------------------
+app.post('/api/me/premium/profile', async (req, res) => {
+  try {
+    const email = getSessionEmail(req);
+    if (!email) return res.status(401).json({ ok: false, message: 'Not logged in' });
+
+    const meDoc = hasFirebase ? await findUserByEmail(email) : (DB.users[email] || null);
+    if (!meDoc) return res.status(404).json({ ok: false, message: 'User not found' });
+
+    const mePublic = publicUser({ id: meDoc.id, ...meDoc });
+
+    // Only approved Premium Society members can edit their Premium profile from this page.
+    if (!psIsPremiumSocietyMember(mePublic)) {
+      return res.status(403).json({ ok: false, message: 'Premium Society members only' });
+    }
+
+    const body = req.body || {};
+    const input = body.premiumApplication || body.application || body || {};
+
+    const prev = (meDoc.premiumApplication || {}) || {};
+    const nowIso = new Date().toISOString();
+
+    const toStr = (v) => (v == null ? '' : String(v)).trim();
+    const toNumOrNull = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    // Preserve decision fields from admin
+    const preservedStatus = prev.status;
+    const preservedSubmittedAt = prev.submittedAt;
+    const preservedDecidedAt = prev.decidedAt;
+
+    const next = {
+      ...prev,
+      fullName: toStr(input.fullName || prev.fullName),
+      occupation: toStr(input.occupation || prev.occupation),
+      wealthStatus: toStr(input.wealthStatus || prev.wealthStatus),
+      incomeRange: toStr(input.incomeRange || prev.incomeRange),
+      netWorthRange: toStr(input.netWorthRange || prev.netWorthRange),
+      incomeSource: toStr(input.incomeSource || prev.incomeSource),
+      socialLink: toStr(input.socialLink || prev.socialLink),
+      reason: toStr(input.reason || prev.reason),
+      updatedAt: nowIso,
+    };
+
+    // Optional numeric field
+    const age = input.age != null ? toNumOrNull(input.age) : (prev.age != null ? prev.age : null);
+    if (age != null) next.age = age;
+
+    if (preservedStatus != null) next.status = preservedStatus;
+    if (preservedSubmittedAt != null) next.submittedAt = preservedSubmittedAt;
+    if (preservedDecidedAt != null) next.decidedAt = preservedDecidedAt;
+
+    if (hasFirebase) {
+      await updateUserByEmail(email, { premiumApplication: next });
+
+      // Keep in-memory cache fresh
+      const fresh = await findUserByEmail(email);
+      if (fresh) {
+        const p = normalizePlanKey(fresh.plan ?? fresh.planKey ?? fresh.tier ?? fresh.level ?? 'free');
+        const planEnd = fresh.planEnd ?? fresh.planExpiry ?? fresh.subscriptionEnd ?? null;
+        const planActive = _computePlanActiveForDoc(p, planEnd, fresh.planActive);
+        DB.users[email] = { ...fresh, plan: p, planActive };
+      } else {
+        DB.users[email] = { ...(DB.users[email] || {}), premiumApplication: next };
+      }
+    } else {
+      DB.users[email] = { ...(DB.users[email] || {}), premiumApplication: next };
+      saveUsersStore();
+    }
+
+    return res.json({ ok: true, premiumApplication: next });
+  } catch (err) {
+    console.error('[me premium profile] error:', err);
+    return res.status(500).json({ ok: false, message: 'Server error updating premium profile' });
+  }
+});
+
 
 app.get('/api/premium-society/candidates', authMiddleware, async (req, res) => {
   try {
@@ -4683,8 +4765,8 @@ app.get('/api/premium-society/candidates', authMiddleware, async (req, res) => {
         candidates.push({
           id: email,
           email,
-          fullName: pu.fullName,
-          name: pu.fullName,
+          fullName: pu.name,
+          name: pu.name,
           age: pu.age,
           city: pu.location || pu.city || '',
           photoUrl: pu.photoUrl || pu.profilePhotoUrl || ''
@@ -4702,8 +4784,8 @@ app.get('/api/premium-society/candidates', authMiddleware, async (req, res) => {
         candidates.push({
           id: email,
           email,
-          fullName: pu.fullName,
-          name: pu.fullName,
+          fullName: pu.name,
+          name: pu.name,
           age: pu.age,
           city: pu.location || pu.city || '',
           photoUrl: pu.photoUrl || pu.profilePhotoUrl || ''

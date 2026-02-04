@@ -212,6 +212,28 @@ function showToast(msg) {
 
 
 // ---------------------------------------------------------------------
+// FETCH HELPERS (avoid stuck loader if the network hangs)
+// ---------------------------------------------------------------------
+async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 6000) {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const res = await fetch(url, { ...options, signal: controller.signal });
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+            const data = await res.json();
+            return { res, data };
+        }
+        const raw = await res.text().catch(() => '');
+        return { res, data: { ok: false, raw } };
+    } finally {
+        clearTimeout(t);
+    }
+}
+
+
+
+// ---------------------------------------------------------------------
 // ACCOUNT IDENTITY (name/avatar from session)
 // ---------------------------------------------------------------------
 function psSafeGetLocalUser() {
@@ -344,13 +366,10 @@ function psRenderPremiumSocietyLockedDeck() {
       const me = await hydrateAccountIdentity();
       if (me) PS_STATE.me = me;
       psHydratePremiumSocietyState(PS_STATE.me);
-      await psRehydrateAndBoot();
-      try {
-        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || new URLSearchParams(location.search).get('mock') === '1') {
-          populateMockContent();
-        }
-      } catch (_) {}
-      const lastTab = localStorage.getItem('ps_last_tab') || 'home';
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || new URLSearchParams(location.search).get('mock') === '1') {
+        populateMockContent();
+      }
+const lastTab = localStorage.getItem('ps_last_tab') || 'home';
       switchTab(lastTab);
     } catch (e) {}
   });
@@ -402,13 +421,10 @@ function psRenderPremiumSocietyPanel() {
       const me = await hydrateAccountIdentity();
       if (me) PS_STATE.me = me;
       psHydratePremiumSocietyState(PS_STATE.me);
-      await psRehydrateAndBoot();
-      try {
-        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || new URLSearchParams(location.search).get('mock') === '1') {
-          populateMockContent();
-        }
-      } catch (_) {}
-      const lastTab = localStorage.getItem('ps_last_tab') || 'home';
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || new URLSearchParams(location.search).get('mock') === '1') {
+        populateMockContent();
+      }
+const lastTab = localStorage.getItem('ps_last_tab') || 'home';
       switchTab(lastTab);
     } catch (e) {}
   });
@@ -436,17 +452,10 @@ async function hydrateAccountIdentity() {
     // Start with cached local user to avoid "..." staying on UI if /api/me fails.
     let user = psSafeGetLocalUser();
 
-    // 1) Try server session (recommended)
+    // 1) Try server session (recommended) with timeout so the loader never gets stuck.
     try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3500);
-        const res = await fetch('/api/me', { credentials: 'same-origin', signal: controller.signal });
-        clearTimeout(timeout);
-        const ct = res.headers.get('content-type') || '';
-        if (ct.includes('application/json')) {
-            const data = await res.json();
-            if (data && data.ok && data.user) user = data.user;
-        }
+        const { data } = await fetchJsonWithTimeout('/api/me', { credentials: 'same-origin' }, 6000);
+        if (data && data.ok && data.user) user = data.user;
     } catch (_) {}
 
     if (!user) return;
@@ -481,28 +490,172 @@ async function hydrateAccountIdentity() {
     return user;
 }
 
+// ---------------------------------------------------------------------
+// EDIT PROFILE (Premium Society application details)
+// ---------------------------------------------------------------------
 
-async function psRehydrateAndBoot({ preferServer = false } = {}) {
-    // Optional: refresh session from server (with timeout) before rendering.
-    if (preferServer) {
-        try {
-            const me = await hydrateAccountIdentity();
-            if (me) PS_STATE.me = me;
-        } catch (_) {}
-    }
-
-    try { psHydratePremiumSocietyState(PS_STATE.me || {}); } catch (_) {}
-    try { psRenderPremiumSocietyPanel(); } catch (_) {}
-
-    if (PS_STATE.premiumSociety.approved) {
-        if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = '';
-        PS_STATE.swipeInited = true;
-        try { await SwipeController.init(); } catch (e) { console.warn('[premium-society] swipe init failed:', e); }
-    } else {
-        try { psRenderPremiumSocietyLockedDeck(); } catch (_) {}
-    }
+function psGetMePremiumApplication(me) {
+  const app = (me && (me.premiumApplication || me.premium_application)) || null;
+  return app && typeof app === 'object' ? app : null;
 }
 
+function psSetModalVisible(modal, visible) {
+  if (!modal) return;
+  if (visible) {
+    modal.style.display = 'flex';
+    modal.classList.add('ps-is-open', 'is-open', 'active');
+    try { document.body.classList.add('ps-modal-open'); } catch (_) {}
+  } else {
+    modal.style.display = 'none';
+    modal.classList.remove('ps-is-open', 'is-open', 'active');
+    try { document.body.classList.remove('ps-modal-open'); } catch (_) {}
+  }
+}
+
+function psFillEditProfileForm(me) {
+  const app = psGetMePremiumApplication(me) || {};
+  const fullName = app.fullName || me?.name || me?.fullName || '';
+  const email = me?.email || app.email || '';
+
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.value = (val == null) ? '' : String(val);
+  };
+
+  set('psInputName', fullName);
+  set('psInputEmail', email);
+
+  set('psInputOccupation', app.occupation || '');
+  set('psInputAge', app.age || me?.age || '');
+
+  set('psInputWealthStatus', app.wealthStatus || '');
+  set('psInputIncomeRange', app.incomeRange || '');
+  set('psInputNetWorthRange', app.netWorthRange || '');
+
+  set('psInputIncomeSource', app.incomeSource || '');
+  set('psInputSocialLink', app.socialLink || '');
+  set('psInputReason', app.reason || '');
+}
+
+async function psSaveEditProfileToServer(payload) {
+  const res = await fetch('/api/me/premium/profile', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {})
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false) {
+    const msg = data.message || data.error || `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
+function initEditProfile() {
+  const btn = document.getElementById('psBtnEditProfile');
+  const modal = document.getElementById('psEditProfileModal');
+  if (!btn || !modal) return;
+
+  // Ensure the button is clickable (in case it was styled "inactive")
+  btn.disabled = false;
+  btn.style.pointerEvents = 'auto';
+  btn.style.opacity = '';
+
+  btn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // refresh identity before opening so we load latest premiumApplication
+    try {
+      const me = await hydrateAccountIdentity();
+      if (me) PS_STATE.me = me;
+    } catch (_) {}
+    window.openEditProfile();
+  });
+
+  // click on overlay closes
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) window.closeEditProfile();
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const m = document.getElementById('psEditProfileModal');
+      if (m && m.style.display !== 'none') window.closeEditProfile();
+    }
+  });
+}
+
+// Expose for inline onclick handlers in HTML (module scripts don't auto-globalize)
+window.openEditProfile = function openEditProfile() {
+  const modal = document.getElementById('psEditProfileModal');
+  psFillEditProfileForm(PS_STATE.me || {});
+  psSetModalVisible(modal, true);
+};
+
+window.closeEditProfile = function closeEditProfile() {
+  const modal = document.getElementById('psEditProfileModal');
+  psSetModalVisible(modal, false);
+};
+
+window.saveEditProfile = async function saveEditProfile() {
+  const me = PS_STATE.me || {};
+
+  const get = (id) => {
+    const el = document.getElementById(id);
+    return el ? String(el.value || '').trim() : '';
+  };
+
+  const ageRaw = get('psInputAge');
+  const ageNum = Number(ageRaw);
+  const age = Number.isFinite(ageNum) && ageNum > 0 ? ageNum : null;
+
+  const application = {
+    fullName: get('psInputName'),
+    email: me.email || get('psInputEmail'),
+    occupation: get('psInputOccupation'),
+    age,
+    wealthStatus: get('psInputWealthStatus'),
+    incomeRange: get('psInputIncomeRange'),
+    netWorthRange: get('psInputNetWorthRange'),
+    incomeSource: get('psInputIncomeSource'),
+    socialLink: get('psInputSocialLink'),
+    reason: get('psInputReason'),
+  };
+
+  // Basic validation aligned with the original application form
+  if (!application.fullName) return psToast('Please enter your full name.');
+  if (!application.occupation) return psToast('Please enter your occupation/role.');
+  if (!application.wealthStatus) return psToast('Please choose your wealth status.');
+  if (!application.incomeRange) return psToast('Please choose your income range.');
+  if (!application.netWorthRange) return psToast('Please choose your net worth range.');
+  if (!application.incomeSource) return psToast('Please describe your income source.');
+  if (!application.reason) return psToast('Please add your reason for joining.');
+
+  try {
+    const data = await psSaveEditProfileToServer({ premiumApplication: application });
+
+    // Update local state
+    PS_STATE.me = PS_STATE.me || {};
+    PS_STATE.me.premiumApplication = data.premiumApplication || { ...(PS_STATE.me.premiumApplication || {}), ...application };
+
+    // Persist into tm_user for faster hydration across pages
+    try {
+      const local = psSafeGetLocalUser() || {};
+      const merged = { ...local, ...PS_STATE.me };
+      localStorage.setItem('tm_user', JSON.stringify(merged));
+    } catch (_) {}
+
+    try { renderAccountBadge(PS_STATE.me); } catch (_) {}
+
+    psToast('Profile updated ✅');
+    window.closeEditProfile();
+  } catch (err) {
+    psToast(err?.message || 'Failed to update profile.');
+  }
+};
 
 // ---------------------------------------------------------------------
 // INIT
@@ -510,64 +663,66 @@ async function psRehydrateAndBoot({ preferServer = false } = {}) {
 window.addEventListener('DOMContentLoaded', () => {
     const safeCall = (fn) => { try { fn && fn(); } catch (e) { console.warn('[premium-society] init error:', e); } };
 
-    // UI init (never block the loader).
+    // Run UI init without letting a single error keep the loader stuck.
     safeCall(initCanvasParticles);
     safeCall(initNavigation);
     safeCall(initSettingsSliders);
+    safeCall(initEditProfile);
     safeCall(initMobileMenu);
     safeCall(initStoryViewer);
     safeCall(initChat);
 
-    // Fast local hydration so name/avatar show immediately even if /api/me is slow.
+    // Hydrate from local storage immediately (fast), then refresh from server in background.
     try {
         const localMe = psSafeGetLocalUser();
         if (localMe) PS_STATE.me = localMe;
     } catch (_) {}
 
-    const reveal = () => {
-        try { if (PS_DOM.layout) PS_DOM.layout.style.opacity = '1'; } catch (_) {}
-        try {
-            const loader = PS_DOM.loader || document.getElementById('app-loader');
-            if (!loader) return;
-            loader.style.opacity = '0';
-            setTimeout(() => { try { loader.remove(); } catch (_) {} }, 320);
-        } catch (_) {}
+    const bootPremiumSociety = () => {
+        try { psHydratePremiumSocietyState(PS_STATE.me); } catch (e) {}
+        try { psRenderPremiumSocietyPanel(); } catch (e) {}
+
+        if (PS_STATE.premiumSociety.approved) {
+            if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = '';
+            if (!PS_STATE.swipeInited) {
+                PS_STATE.swipeInited = true;
+                Promise.resolve(SwipeController.init()).catch(() => {});
+            }
+        } else {
+            psRenderPremiumSocietyLockedDeck();
+        }
     };
 
-    // Always reveal within 500ms (prevents "stuck loading" even if network hangs).
-    setTimeout(reveal, 500);
+    // Restore last tab early (even before API calls).
+    try {
+        const lastTab = localStorage.getItem('ps_last_tab') || 'home';
+        switchTab(lastTab);
+    } catch (_) {}
 
-    (async () => {
-        // Refresh session (server) but never let it block the UI.
-        try {
-            const me = await hydrateAccountIdentity();
+    // Always boot Premium Society gating/deck.
+    bootPremiumSociety();
+
+    // Refresh identity from server (won't block UI).
+    hydrateAccountIdentity()
+        .then((me) => {
             if (me) PS_STATE.me = me;
-        } catch (e) {
-            console.warn('[premium-society] hydrateAccountIdentity failed:', e);
+            bootPremiumSociety();
+        })
+        .catch(() => {});
+
+    // Fail-safe: never let the loader stay forever.
+    const killLoader = () => {
+        if (PS_DOM.loader) {
+            PS_DOM.loader.style.opacity = '0';
+            setTimeout(() => { try { PS_DOM.loader.remove(); } catch (_) {} }, 500);
         }
+        if (PS_DOM.layout) PS_DOM.layout.style.opacity = '1';
+    };
 
-        try {
-            await psRehydrateAndBoot();
-        } catch (e) {
-            console.warn('[premium-society] boot failed:', e);
-        }
-
-        // Optional: local/mock-only extra content
-        try {
-            const params = new URLSearchParams(location.search);
-            const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-            if (isLocal || params.get('mock') === '1') populateMockContent();
-        } catch (_) {}
-
-        try {
-            const lastTab = localStorage.getItem('ps_last_tab') || 'home';
-            switchTab(lastTab);
-        } catch (_) {}
-
-        // Ensure loader is removed even if the timer hasn't fired yet.
-        reveal();
-    })();
+    setTimeout(killLoader, 900);
+    setTimeout(killLoader, 4000);
 });
+
 // ---------------------------------------------------------------------
 // CHAT LOGIC (NEW)
 // ---------------------------------------------------------------------
@@ -898,7 +1053,6 @@ const SwipeController = (() => {
     let candidates = [];
     let currentIndex = 0;
     let isSwiping = false;
-    let controlsBound = false;
 
     // Server-provided counters (null = unlimited)
     let remaining = null;
@@ -1128,8 +1282,6 @@ const SwipeController = (() => {
     }
 
     function bindControls() {
-        if (controlsBound) return;
-        controlsBound = true;
         if (PS_DOM.btnSwipeLike) PS_DOM.btnSwipeLike.addEventListener('click', () => handleSwipe('like'));
         if (PS_DOM.btnSwipePass) PS_DOM.btnSwipePass.addEventListener('click', () => handleSwipe('pass'));
         if (PS_DOM.btnSwipeSuper) PS_DOM.btnSwipeSuper.addEventListener('click', () => handleSwipe('super'));
@@ -1204,7 +1356,6 @@ function initCanvasParticles() {
     const canvas = document.getElementById('ps-bg-canvas');
     if(!canvas) return;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
     let W, H, pts = [];
 
     function resize() { 

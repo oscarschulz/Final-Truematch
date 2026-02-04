@@ -468,91 +468,98 @@
       </div>
   </div>
 
-  <div id="psEditProfileModal" class="ps-edit-modal-overlay">
-      <div class="ps-edit-modal-card ps-bento-edit-modal">
-          
-          <div class="ps-bento-header">
-              <h3>Edit Profile</h3>
-              <button class="ps-btn-save-bento" onclick="saveEditProfile()">Save Changes</button>
-          </div>
-
-          <div class="ps-bento-body">
-              
-              <div class="ps-form-section top-section">
-                  <div class="ps-avatar-upload-zone">
-                      <img id="psEditAvatarPreview" src="assets/images/truematch-mark.png">
-                      <div class="ps-upload-icon"><i class="fa-solid fa-camera"></i></div>
-                  </div>
-                  <div class="ps-bio-zone">
-                      <label class="ps-form-label">Bio</label>
-                      <textarea class="ps-form-textarea" placeholder="Write something about yourself...">Just living life!</textarea>
-                  </div>
-              </div>
-
-              <div class="ps-form-grid-2">
-                  <div class="ps-input-group">
-                      <label class="ps-form-label">Full Name</label>
-                      <div class="ps-input-wrapper">
-                          <i class="fa-solid fa-user"></i>
-                          <input type="text" id="psInputName" value="">
-                      </div>
-                  </div>
-                  <div class="ps-input-group">
-                      <label class="ps-form-label">Email Address</label>
-                      <div class="ps-input-wrapper">
-                          <i class="fa-solid fa-envelope"></i>
-                          <input type="text" id="psInputEmail" value="">
-                      </div>
-                  </div>
-                  
-                  <div class="ps-input-group">
-                      <label class="ps-form-label">Location (City, Country)</label>
-                      <div class="ps-input-wrapper">
-                          <i class="fa-solid fa-map-pin"></i>
-                          <input type="text" value="">
-                      </div>
-                  </div>
-                  <div class="ps-input-group">
-                      <label class="ps-form-label">Age</label>
-                      <div class="ps-input-wrapper">
-                          <i class="fa-solid fa-cake-candles"></i>
-                          <input type="number" value="">
-                      </div>
-                  </div>
-
-                  <div class="ps-input-group">
-                      <label class="ps-form-label">Interested In</label>
-                      <div class="ps-input-wrapper">
-                          <i class="fa-solid fa-heart"></i>
-                          <select>
-                              <option>Women</option>
-                              <option>Men</option>
-                              <option>Everyone</option>
-                          </select>
-                      </div>
-                  </div>
-                  <div class="ps-input-group">
-                      <label class="ps-form-label">Age Preference</label>
-                      <div class="ps-range-inputs">
-                          <input type="number" value="18">
-                          <span>to</span>
-                          <input type="number" value="30">
-                      </div>
-                  </div>
-              </div>
-
-              <div class="ps-security-zone">
-                  <button class="ps-btn-password-bento" onclick="openChangePassword()">
-                      <i class="fa-solid fa-lock"></i> Change Password
-                  </button>
-                  <button class="ps-btn-cancel-bento" onclick="closeEditProfile()">Cancel</button>
-              </div>
-
-          </div>
+  <div id="psEditProfileModal" class="ps-edit-modal-overlay" style="display:none;">
+  <div class="ps-edit-modal-card ps-bento-edit-modal" role="dialog" aria-modal="true" aria-labelledby="psEditProfileTitle">
+    <div class="ps-edit-modal-header">
+      <div>
+        <h3 id="psEditProfileTitle" style="margin:0;">Edit Premium Profile</h3>
+        <div class="ps-edit-modal-subtext" style="margin-top:6px;opacity:.8;font-size:.9rem;">
+          These details come from your Premium Society application and are saved to your account.
+        </div>
       </div>
-  </div>
+      <div class="ps-edit-modal-actions">
+        <button class="ps-btn-cancel" onclick="closeEditProfile()">Cancel</button>
+        <button class="ps-btn-save" onclick="saveEditProfile()">Save Changes</button>
+      </div>
+    </div>
 
-  <script type="module" src="premium-society.js"></script>
+    <div class="ps-edit-modal-body">
+
+      <div class="ps-edit-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div class="ps-edit-field">
+          <label>Full Name</label>
+          <input id="psInputName" type="text" placeholder="Your full name">
+        </div>
+        <div class="ps-edit-field">
+          <label>Email</label>
+          <input id="psInputEmail" type="email" placeholder="Email address" readonly>
+        </div>
+        <div class="ps-edit-field">
+          <label>Occupation / Role</label>
+          <input id="psInputOccupation" type="text" placeholder="e.g., Entrepreneur, Lawyer, Investor">
+        </div>
+        <div class="ps-edit-field">
+          <label>Age</label>
+          <input id="psInputAge" type="number" min="18" max="99" placeholder="e.g., 28">
+        </div>
+      </div>
+
+      <div class="ps-edit-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:16px;">
+        <div class="ps-edit-field">
+          <label>Wealth Status</label>
+          <select id="psInputWealthStatus">
+            <option value="">Select</option>
+            <option value="Lower-Middle Class">Lower-Middle Class</option>
+            <option value="Middle Class">Middle Class</option>
+            <option value="Upper-Middle Class">Upper-Middle Class</option>
+            <option value="Wealthy">Wealthy</option>
+            <option value="Ultra-Wealthy">Ultra-Wealthy</option>
+          </select>
+        </div>
+
+        <div class="ps-edit-field">
+          <label>Monthly Income Range</label>
+          <select id="psInputIncomeRange">
+            <option value="">Select</option>
+            <option value="$1,000 - $5,000">$1,000 - $5,000</option>
+            <option value="$5,000 - $10,000">$5,000 - $10,000</option>
+            <option value="$10,000 - $25,000">$10,000 - $25,000</option>
+            <option value="$25,000+">$25,000+</option>
+          </select>
+        </div>
+
+        <div class="ps-edit-field">
+          <label>Estimated Net Worth</label>
+          <select id="psInputNetWorthRange">
+            <option value="">Select</option>
+            <option value="$10K - $50K">$10K - $50K</option>
+            <option value="$50K - $200K">$50K - $200K</option>
+            <option value="$200K - $1M">$200K - $1M</option>
+            <option value="$1M+">$1M+</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="ps-edit-field" style="margin-top:16px;">
+        <label>Primary Income Source</label>
+        <textarea id="psInputIncomeSource" rows="3" placeholder="Describe briefly (business, employment, investments, etc.)"></textarea>
+      </div>
+
+      <div class="ps-edit-field" style="margin-top:16px;">
+        <label>Social Link</label>
+        <input id="psInputSocialLink" type="url" placeholder="Instagram, LinkedIn, website, etc.">
+      </div>
+
+      <div class="ps-edit-field" style="margin-top:16px;">
+        <label>Reason for joining Premium Society</label>
+        <textarea id="psInputReason" rows="4" placeholder="Write your reason..."></textarea>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script type="module" src="premium-society.js"></script>
 
   <script>
     document.addEventListener('DOMContentLoaded', () => {
