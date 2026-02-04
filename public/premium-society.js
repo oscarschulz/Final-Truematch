@@ -212,28 +212,6 @@ function showToast(msg) {
 
 
 // ---------------------------------------------------------------------
-// FETCH HELPERS (avoid stuck loader if the network hangs)
-// ---------------------------------------------------------------------
-async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 6000) {
-    const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-        const res = await fetch(url, { ...options, signal: controller.signal });
-        const ct = res.headers.get('content-type') || '';
-        if (ct.includes('application/json')) {
-            const data = await res.json();
-            return { res, data };
-        }
-        const raw = await res.text().catch(() => '');
-        return { res, data: { ok: false, raw } };
-    } finally {
-        clearTimeout(t);
-    }
-}
-
-
-
-// ---------------------------------------------------------------------
 // ACCOUNT IDENTITY (name/avatar from session)
 // ---------------------------------------------------------------------
 function psSafeGetLocalUser() {
@@ -452,10 +430,14 @@ async function hydrateAccountIdentity() {
     // Start with cached local user to avoid "..." staying on UI if /api/me fails.
     let user = psSafeGetLocalUser();
 
-    // 1) Try server session (recommended) with timeout so the loader never gets stuck.
+    // 1) Try server session (recommended)
     try {
-        const { data } = await fetchJsonWithTimeout('/api/me', { credentials: 'same-origin' }, 6000);
-        if (data && data.ok && data.user) user = data.user;
+        const res = await fetch('/api/me', { credentials: 'same-origin' });
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+            const data = await res.json();
+            if (data && data.ok && data.user) user = data.user;
+        }
     } catch (_) {}
 
     if (!user) return;
@@ -491,236 +473,41 @@ async function hydrateAccountIdentity() {
 }
 
 // ---------------------------------------------------------------------
-// EDIT PROFILE (Premium Society application details)
-// ---------------------------------------------------------------------
-
-function psGetMePremiumApplication(me) {
-  const app = (me && (me.premiumApplication || me.premium_application)) || null;
-  return app && typeof app === 'object' ? app : null;
-}
-
-function psSetModalVisible(modal, visible) {
-  if (!modal) return;
-  if (visible) {
-    modal.style.display = 'flex';
-    modal.classList.add('ps-is-open', 'is-open', 'active');
-    try { document.body.classList.add('ps-modal-open'); } catch (_) {}
-  } else {
-    modal.style.display = 'none';
-    modal.classList.remove('ps-is-open', 'is-open', 'active');
-    try { document.body.classList.remove('ps-modal-open'); } catch (_) {}
-  }
-}
-
-function psFillEditProfileForm(me) {
-  const app = psGetMePremiumApplication(me) || {};
-  const fullName = app.fullName || me?.name || me?.fullName || '';
-  const email = me?.email || app.email || '';
-
-  const set = (id, val) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.value = (val == null) ? '' : String(val);
-  };
-
-  set('psInputName', fullName);
-  set('psInputEmail', email);
-
-  set('psInputOccupation', app.occupation || '');
-  set('psInputAge', app.age || me?.age || '');
-
-  set('psInputWealthStatus', app.wealthStatus || '');
-  set('psInputIncomeRange', app.incomeRange || '');
-  set('psInputNetWorthRange', app.netWorthRange || '');
-
-  set('psInputIncomeSource', app.incomeSource || '');
-  set('psInputSocialLink', app.socialLink || '');
-  set('psInputReason', app.reason || '');
-}
-
-async function psSaveEditProfileToServer(payload) {
-  const res = await fetch('/api/me/premium/profile', {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload || {})
-  });
-
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.ok === false) {
-    const msg = data.message || data.error || `Request failed (${res.status})`;
-    throw new Error(msg);
-  }
-  return data;
-}
-
-function initEditProfile() {
-  const btn = document.getElementById('psBtnEditProfile');
-  const modal = document.getElementById('psEditProfileModal');
-  if (!btn || !modal) return;
-
-  // Ensure the button is clickable (in case it was styled "inactive")
-  btn.disabled = false;
-  btn.style.pointerEvents = 'auto';
-  btn.style.opacity = '';
-
-  btn.addEventListener('click', async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    // refresh identity before opening so we load latest premiumApplication
-    try {
-      const me = await hydrateAccountIdentity();
-      if (me) PS_STATE.me = me;
-    } catch (_) {}
-    window.openEditProfile();
-  });
-
-  // click on overlay closes
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) window.closeEditProfile();
-  });
-
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      const m = document.getElementById('psEditProfileModal');
-      if (m && m.style.display !== 'none') window.closeEditProfile();
-    }
-  });
-}
-
-// Expose for inline onclick handlers in HTML (module scripts don't auto-globalize)
-window.openEditProfile = function openEditProfile() {
-  const modal = document.getElementById('psEditProfileModal');
-  psFillEditProfileForm(PS_STATE.me || {});
-  psSetModalVisible(modal, true);
-};
-
-window.closeEditProfile = function closeEditProfile() {
-  const modal = document.getElementById('psEditProfileModal');
-  psSetModalVisible(modal, false);
-};
-
-window.saveEditProfile = async function saveEditProfile() {
-  const me = PS_STATE.me || {};
-
-  const get = (id) => {
-    const el = document.getElementById(id);
-    return el ? String(el.value || '').trim() : '';
-  };
-
-  const ageRaw = get('psInputAge');
-  const ageNum = Number(ageRaw);
-  const age = Number.isFinite(ageNum) && ageNum > 0 ? ageNum : null;
-
-  const application = {
-    fullName: get('psInputName'),
-    email: me.email || get('psInputEmail'),
-    occupation: get('psInputOccupation'),
-    age,
-    wealthStatus: get('psInputWealthStatus'),
-    incomeRange: get('psInputIncomeRange'),
-    netWorthRange: get('psInputNetWorthRange'),
-    incomeSource: get('psInputIncomeSource'),
-    socialLink: get('psInputSocialLink'),
-    reason: get('psInputReason'),
-  };
-
-  // Basic validation aligned with the original application form
-  if (!application.fullName) return psToast('Please enter your full name.');
-  if (!application.occupation) return psToast('Please enter your occupation/role.');
-  if (!application.wealthStatus) return psToast('Please choose your wealth status.');
-  if (!application.incomeRange) return psToast('Please choose your income range.');
-  if (!application.netWorthRange) return psToast('Please choose your net worth range.');
-  if (!application.incomeSource) return psToast('Please describe your income source.');
-  if (!application.reason) return psToast('Please add your reason for joining.');
-
-  try {
-    const data = await psSaveEditProfileToServer({ premiumApplication: application });
-
-    // Update local state
-    PS_STATE.me = PS_STATE.me || {};
-    PS_STATE.me.premiumApplication = data.premiumApplication || { ...(PS_STATE.me.premiumApplication || {}), ...application };
-
-    // Persist into tm_user for faster hydration across pages
-    try {
-      const local = psSafeGetLocalUser() || {};
-      const merged = { ...local, ...PS_STATE.me };
-      localStorage.setItem('tm_user', JSON.stringify(merged));
-    } catch (_) {}
-
-    try { renderAccountBadge(PS_STATE.me); } catch (_) {}
-
-    psToast('Profile updated ✅');
-    window.closeEditProfile();
-  } catch (err) {
-    psToast(err?.message || 'Failed to update profile.');
-  }
-};
-
-// ---------------------------------------------------------------------
 // INIT
 // ---------------------------------------------------------------------
-window.addEventListener('DOMContentLoaded', () => {
-    const safeCall = (fn) => { try { fn && fn(); } catch (e) { console.warn('[premium-society] init error:', e); } };
+window.addEventListener('DOMContentLoaded', async () => {
+    initCanvasParticles();
+    initNavigation();
+    initSettingsSliders();
+initMobileMenu();
+    initStoryViewer();
+    initChat(); // Initialize Chat Listeners
 
-    // Run UI init without letting a single error keep the loader stuck.
-    safeCall(initCanvasParticles);
-    safeCall(initNavigation);
-    safeCall(initSettingsSliders);
-    safeCall(initEditProfile);
-    safeCall(initMobileMenu);
-    safeCall(initStoryViewer);
-    safeCall(initChat);
-
-    // Hydrate from local storage immediately (fast), then refresh from server in background.
+    // Hydrate identity first so name/plan updates even if some optional sections were removed.
     try {
-        const localMe = psSafeGetLocalUser();
-        if (localMe) PS_STATE.me = localMe;
-    } catch (_) {}
+        const me = await hydrateAccountIdentity();
+        if (me) PS_STATE.me = me;
+    } catch (e) {
+        // non-fatal — UI will fall back to local storage / placeholders
+    }
 
-    const bootPremiumSociety = () => {
-        try { psHydratePremiumSocietyState(PS_STATE.me); } catch (e) {}
-        try { psRenderPremiumSocietyPanel(); } catch (e) {}
+    psHydratePremiumSocietyState(PS_STATE.me);
 
-        if (PS_STATE.premiumSociety.approved) {
-            if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = '';
-            if (!PS_STATE.swipeInited) {
-                PS_STATE.swipeInited = true;
-                Promise.resolve(SwipeController.init()).catch(() => {});
-            }
-        } else {
-            psRenderPremiumSocietyLockedDeck();
-        }
-    };
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || new URLSearchParams(location.search).get('mock') === '1') {
+        populateMockContent();
+      }
+// Check Local Storage for Last Tab
+    const lastTab = localStorage.getItem('ps_last_tab') || 'home';
+    switchTab(lastTab);
 
-    // Restore last tab early (even before API calls).
-    try {
-        const lastTab = localStorage.getItem('ps_last_tab') || 'home';
-        switchTab(lastTab);
-    } catch (_) {}
-
-    // Always boot Premium Society gating/deck.
-    bootPremiumSociety();
-
-    // Refresh identity from server (won't block UI).
-    hydrateAccountIdentity()
-        .then((me) => {
-            if (me) PS_STATE.me = me;
-            bootPremiumSociety();
-        })
-        .catch(() => {});
-
-    // Fail-safe: never let the loader stay forever.
-    const killLoader = () => {
-        if (PS_DOM.loader) {
+    // Remove Loader smoothly
+    setTimeout(() => {
+        if(PS_DOM.loader) {
             PS_DOM.loader.style.opacity = '0';
-            setTimeout(() => { try { PS_DOM.loader.remove(); } catch (_) {} }, 500);
+            setTimeout(() => PS_DOM.loader.remove(), 500);
         }
-        if (PS_DOM.layout) PS_DOM.layout.style.opacity = '1';
-    };
-
-    setTimeout(killLoader, 900);
-    setTimeout(killLoader, 4000);
+        if(PS_DOM.layout) PS_DOM.layout.style.opacity = '1';
+    }, 1000);
 });
 
 // ---------------------------------------------------------------------
@@ -1042,6 +829,8 @@ const SwipeController = (() => {
     // - Free / inactive users are capped server-side (STRICT_DAILY_LIMIT in server.js).
     // - This page pulls real candidates from /api/premium-society/candidates and saves swipes to /api/premium-society/action.
 
+    const IS_DEV_MOCK = ['localhost', '127.0.0.1'].includes(window.location.hostname) || new URLSearchParams(window.location.search).get('mock') === '1';
+
     const fallbackCandidates = [
         { id: 'fallback1@example.com', name: 'Isabella', age: 24, city: 'Manila', photoUrl: '', tags: ['Travel', 'Music'] },
         { id: 'fallback2@example.com', name: 'Christian', age: 29, city: 'Cebu', photoUrl: '', tags: ['Tech', 'Coffee'] },
@@ -1112,9 +901,13 @@ const SwipeController = (() => {
                 return;
             }
 
-            showToast('Could not load live deck. Using fallback profiles.');
-
-            candidates = fallbackCandidates.map(normalizeCandidate).filter(Boolean);
+            if (IS_DEV_MOCK) {
+                showToast('Could not load live deck. Using fallback profiles (mock).');
+                candidates = fallbackCandidates.map(normalizeCandidate).filter(Boolean);
+            } else {
+                showToast('Could not load live deck. Please refresh.');
+                candidates = [];
+            }
             currentIndex = 0;
             remaining = null;
             limit = null;

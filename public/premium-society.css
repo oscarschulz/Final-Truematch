@@ -687,3 +687,155 @@ body.ps-theme {
     left: 50% !important;
   }
 }
+
+/* =========================================================
+   Edit Premium Profile Modal (Premium Society application)
+   ========================================================= */
+.ps-edit-modal-overlay{
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0,0,0,0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.ps-edit-modal-card{
+  width: min(920px, 100%);
+  max-height: 85vh;
+  overflow: auto;
+  background: rgba(15, 18, 26, 0.88);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 18px;
+  box-shadow: 0 18px 60px rgba(0,0,0,0.55);
+  padding: 18px 18px 20px;
+}
+
+.ps-edit-modal-header{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.10);
+  margin-bottom: 14px;
+}
+
+.ps-edit-modal-subtext{
+  color: rgba(255,255,255,0.72);
+}
+
+.ps-edit-modal-actions{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ps-btn-cancel,
+.ps-btn-save{
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 600;
+  font-size: 14px;
+  border: 1px solid rgba(255,255,255,0.14);
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease, background .12s ease, border-color .12s ease;
+  user-select: none;
+}
+
+.ps-btn-cancel{
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.92);
+}
+
+.ps-btn-cancel:hover{
+  background: rgba(255,255,255,0.09);
+  transform: translateY(-1px);
+}
+
+.ps-btn-save{
+  background: linear-gradient(135deg, rgba(0,175,240,0.95), rgba(0,114,255,0.95));
+  color: #0a0a0a;
+  border-color: rgba(0,175,240,0.30);
+  box-shadow: 0 10px 24px rgba(0,175,240,0.12);
+}
+
+.ps-btn-save:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 14px 34px rgba(0,175,240,0.18);
+}
+
+.ps-edit-modal-body{
+  padding-top: 6px;
+}
+
+.ps-edit-grid{
+  width: 100%;
+}
+
+.ps-edit-field label{
+  display: block;
+  font-size: 12px;
+  letter-spacing: 0.2px;
+  color: rgba(255,255,255,0.74);
+  margin-bottom: 8px;
+}
+
+.ps-edit-field input,
+.ps-edit-field select,
+.ps-edit-field textarea{
+  width: 100%;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: rgba(255,255,255,0.92);
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  outline: none;
+}
+
+.ps-edit-field textarea{
+  resize: vertical;
+  min-height: 44px;
+}
+
+.ps-edit-field input::placeholder,
+.ps-edit-field textarea::placeholder{
+  color: rgba(255,255,255,0.42);
+}
+
+.ps-edit-field input:focus,
+.ps-edit-field select:focus,
+.ps-edit-field textarea:focus{
+  border-color: rgba(0,175,240,0.55);
+  box-shadow: 0 0 0 3px rgba(0,175,240,0.18);
+}
+
+.ps-edit-field input[readonly]{
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+/* Responsive modal grids */
+@media (max-width: 820px){
+  .ps-edit-modal-card{
+    padding: 16px;
+  }
+  .ps-edit-modal-header{
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .ps-edit-modal-actions{
+    justify-content: flex-start;
+  }
+  .ps-edit-grid[style*="grid-template-columns:1fr 1fr 1fr"]{
+    grid-template-columns: 1fr !important;
+  }
+  .ps-edit-grid[style*="grid-template-columns:1fr 1fr"]{
+    grid-template-columns: 1fr !important;
+  }
+}
