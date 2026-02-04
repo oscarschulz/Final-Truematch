@@ -328,10 +328,65 @@ function psResolveAvatarUrl(user) {
     return out || '';
 }
 
+function psMergeUserPreferLocalIdentity(localUser, serverUser) {
+    const a = localUser || {};
+    const b = serverUser || {};
+    const merged = { ...a, ...b };
+
+    // Merge nested profile object if present
+    if (a.profile || b.profile) {
+        merged.profile = { ...(a.profile || {}), ...(b.profile || {}) };
+    }
+
+    // If server overwrote identity fields with empty values, keep local.
+    const keys = [
+        'name','displayName','fullName','username',
+        'firstName','firstname','first_name',
+        'lastName','lastname','last_name',
+        'avatarUrl','photoUrl','photoURL','profilePhotoUrl','avatar',
+        'email','userEmail','mail','contactEmail'
+    ];
+
+    for (const k of keys) {
+        const vLocal = a[k];
+        const vServer = b[k];
+        const vMerged = merged[k];
+
+        const localOk = typeof vLocal === 'string' ? vLocal.trim() : !!vLocal;
+        const serverOk = typeof vServer === 'string' ? vServer.trim() : !!vServer;
+        const mergedOk = typeof vMerged === 'string' ? vMerged.trim() : !!vMerged;
+
+        // If merged is empty but local has something, restore local.
+        if (!mergedOk && localOk) merged[k] = vLocal;
+        // If server value exists, keep it (already applied by spread).
+        if (serverOk) merged[k] = vServer;
+    }
+
+    // Same preference inside profile
+    if (merged.profile) {
+        const pa = a.profile || {};
+        const pb = b.profile || {};
+        const pkeys = ['name','displayName','fullName','username','avatarUrl','photoUrl','photoURL','profilePhotoUrl','avatar'];
+        for (const k of pkeys) {
+            const vLocal = pa[k];
+            const vServer = pb[k];
+            const vMerged = merged.profile[k];
+
+            const localOk = typeof vLocal === 'string' ? vLocal.trim() : !!vLocal;
+            const serverOk = typeof vServer === 'string' ? vServer.trim() : !!vServer;
+            const mergedOk = typeof vMerged === 'string' ? vMerged.trim() : !!vMerged;
+
+            if (!mergedOk && localOk) merged.profile[k] = vLocal;
+            if (serverOk) merged.profile[k] = vServer;
+        }
+    }
+
+    return merged;
+}
+
 async function hydrateAccountIdentity() {
     // Start with cached local user to avoid "..." staying on UI if /api/me fails.
-    const local = psSafeGetLocalUser();
-    let user = local;
+    let user = psSafeGetLocalUser();
 
     // 1) Try server session (recommended)
     try {
@@ -340,28 +395,9 @@ async function hydrateAccountIdentity() {
         if (ct.includes('application/json')) {
             const data = await res.json();
             if (data && data.ok && data.user) {
-                const serverUser = data.user;
-
-                // Merge: keep local identity fields if serverUser is missing them (common after deploy/restart).
-                user = { ...(local && typeof local === 'object' ? local : {}) };
-                for (const [k, v] of Object.entries(serverUser || {})) {
-                    if (v !== undefined && v !== null && v !== '') user[k] = v;
-                }
-
-                // Keep local identity as fallback if server didn't send it
-                if (local && typeof local === 'object') {
-                    if (!user.name && local.name) user.name = local.name;
-                    if (!user.displayName && local.displayName) user.displayName = local.displayName;
-                    if (!user.fullName && local.fullName) user.fullName = local.fullName;
-                    if (!user.firstName && local.firstName) user.firstName = local.firstName;
-                    if (!user.lastName && local.lastName) user.lastName = local.lastName;
-                    if (!user.avatar && local.avatar) user.avatar = local.avatar;
-                    if (!user.photoUrl && local.photoUrl) user.photoUrl = local.photoUrl;
-                }
-
-                // Persist merged user (so subsequent pages keep identity too)
-                psWriteLocalUser(user);
-            }
+            user = psMergeUserPreferLocalIdentity(user, data.user);
+            try { localStorage.setItem('tm_user', JSON.stringify(user)); } catch (_) {}
+        }
         }
     } catch (_) {}
 
@@ -396,6 +432,7 @@ async function hydrateAccountIdentity() {
 
     return user;
 }
+
 // ---------------------------------------------------------------------
 // INIT
 // ---------------------------------------------------------------------
@@ -589,63 +626,9 @@ window.postNewStory = function() {
 }
 
 // ---------------------------------------------------------------------
-// REAL DATA (no mock)
-// ---------------------------------------------------------------------
-async function psLoadPremiumMatchesUI() {
-    try {
-        // Re-use normal matches endpoint, then filter to Premium Society members only
-        const res = await fetch('/api/matches', { credentials: 'same-origin' });
-        const ct = (res.headers.get('content-type') || '').toLowerCase();
-        const data = ct.includes('application/json') ? await res.json() : null;
-        const matches = (data && data.ok && Array.isArray(data.matches)) ? data.matches : [];
-
-        const psMatches = matches.filter(m => {
-            // Server already excludes PS from normal swipe, but matches can include anyone;
-            // For Premium Society page, only show other Premium Society members.
-            const other = (m && m.email) ? String(m.email).toLowerCase() : '';
-            if (!other) return false;
-            // We don't have a direct "isPremiumSociety" flag here, so rely on a lightweight call:
-            // If Premium Society candidate API can return them as eligible member (approved), then include.
-            return true;
-        });
-
-        // Minimal UI: show list in matches container; hide mock rails.
-        if (PS_DOM.newMatchesRail) PS_DOM.newMatchesRail.innerHTML = '';
-        if (PS_DOM.newMatchCount) PS_DOM.newMatchCount.textContent = String(psMatches.length);
-        if (PS_DOM.matchesContainer) {
-            if (psMatches.length === 0) {
-                PS_DOM.matchesContainer.innerHTML = `<div class="ps-empty">No matches yet.</div>`;
-            } else {
-                PS_DOM.matchesContainer.innerHTML = psMatches.map(m => {
-                    const name = m.name || (m.email ? m.email.split('@')[0] : 'Member');
-                    const photo = m.photoUrl || 'assets/images/truematch-mark.png';
-                    const city = m.city || '';
-                    return `
-                      <div class="ps-message-item" onclick="openChat('${name.replace(/'/g, "\'")}')">
-                        <div class="ps-msg-avatar-wrapper">
-                          <img class="ps-msg-avatar" src="${photo}">
-                        </div>
-                        <div class="ps-msg-content">
-                          <div class="ps-msg-header">
-                            <span class="ps-msg-name">${name}</span>
-                          </div>
-                          <span class="ps-msg-preview">${city ? ('📍 ' + city) : ''}</span>
-                        </div>
-                      </div>`;
-                }).join('');
-            }
-        }
-    } catch (e) {
-        if (PS_DOM.matchesContainer) PS_DOM.matchesContainer.innerHTML = `<div class="ps-empty">Failed to load matches.</div>`;
-    }
-}
-
-
-// ---------------------------------------------------------------------
 // POPULATE MOCK CONTENT
 // ---------------------------------------------------------------------
 function populateMockContent(opts = {}) {
-    // REAL DATA MODE: remove all mock UI population
     const userName = (opts && opts.userName ? String(opts.userName) : "Member");
     const defaultAvatar = (opts && opts.avatarUrl ? String(opts.avatarUrl) : "assets/images/truematch-mark.png");
     if(PS_DOM.miniAvatar) PS_DOM.miniAvatar.src = defaultAvatar;
@@ -656,21 +639,6 @@ function populateMockContent(opts = {}) {
 
     const menuNameEl = document.getElementById('psMenuName');
     if(menuNameEl) menuNameEl.textContent = userName;
-
-    // Clear mock-only containers
-    if (PS_DOM.dailyPickContainer) PS_DOM.dailyPickContainer.innerHTML = '';
-    if (PS_DOM.storiesContainer) PS_DOM.storiesContainer.innerHTML = '';
-    const mobileStories = document.getElementById('psMobileStoriesContainer');
-    if (mobileStories) mobileStories.innerHTML = '';
-    if (PS_DOM.admirerContainer) PS_DOM.admirerContainer.innerHTML = '';
-    if (PS_DOM.activeNearbyContainer) PS_DOM.activeNearbyContainer.innerHTML = '';
-    if (PS_DOM.panelCreatorsBody) PS_DOM.panelCreatorsBody.innerHTML = '';
-    // Load real matches (UI)
-    psLoadPremiumMatchesUI();
-    // Also keep premium panel accurate
-    if (PS_DOM.panelPremiumBody) psRenderPremiumSocietyPanel();
-    // Stop here to avoid any mock rendering below
-    return;
     if(PS_DOM.dailyPickContainer) {
         const color = getRandomColor();
         PS_DOM.dailyPickContainer.innerHTML = `
