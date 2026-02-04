@@ -1,3 +1,4 @@
+import { getCurrentUser, loadPrefsForUser, savePrefsForUser } from './tm-session.js';
 // ---------------------------------------------------------------------
 // Premium Society - Secured & Persistent Logic
 // ---------------------------------------------------------------------
@@ -90,6 +91,99 @@ const PS_DOM = {
     panelCreatorsBody: document.getElementById('ps-panel-creators'),
     panelPremiumBody: document.getElementById('ps-panel-premium')
 };
+
+
+
+/** Settings sliders (Distance + Max Age) **/
+function clampNumber(n, min, max) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return min;
+  return Math.min(max, Math.max(min, x));
+}
+function debounce(fn, waitMs = 250) {
+  let t = null;
+  return (...args) => {
+    if (t) clearTimeout(t);
+    t = setTimeout(() => fn(...args), waitMs);
+  };
+}
+function initSettingsSliders() {
+  const distRange = document.getElementById('psRangeDist');
+  const ageRange = document.getElementById('psRangeAge');
+  const distVal = document.getElementById('psDistVal');
+  const ageVal = document.getElementById('psAgeVal');
+
+  if (!distRange || !ageRange) return;
+
+  // Enforce requested constraints
+  ageRange.min = '18';
+  ageRange.max = '70';
+  ageRange.step = '1';
+
+  // Distance: intentionally wide range (no practical min/max in UI)
+  if (!distRange.min) distRange.min = '0';
+  if (!distRange.max) distRange.max = '1000';
+  distRange.step = distRange.step || '1';
+
+  const me = (() => {
+    try { return getCurrentUser(); } catch (e) { return null; }
+  })();
+  const email = me?.email || me?.userEmail || me?.emailAddress || null;
+
+  // Load saved prefs (local) if available
+  if (email) {
+    const prefs = loadPrefsForUser(email) || {};
+    if (prefs.distanceKm != null && String(prefs.distanceKm).trim() !== '') {
+      distRange.value = String(prefs.distanceKm);
+    }
+    if (prefs.maxAge != null && String(prefs.maxAge).trim() !== '') {
+      ageRange.value = String(clampNumber(prefs.maxAge, 18, 70));
+    }
+  }
+
+  const render = () => {
+    if (distVal) distVal.textContent = String(distRange.value);
+    if (ageVal) ageVal.textContent = String(ageRange.value);
+  };
+
+  const persist = () => {
+    if (!email) return;
+    const existing = loadPrefsForUser(email) || {};
+    const next = {
+      ...existing,
+      distanceKm: Number(distRange.value),
+      maxAge: clampNumber(ageRange.value, 18, 70),
+    };
+    savePrefsForUser(email, next);
+  };
+
+  const persistDebounced = debounce(persist, 300);
+
+  // Make the UI responsive while dragging
+  distRange.addEventListener('input', () => {
+    render();
+    persistDebounced();
+  });
+  ageRange.addEventListener('input', () => {
+    ageRange.value = String(clampNumber(ageRange.value, 18, 70));
+    render();
+    persistDebounced();
+  });
+
+  // Hard save on release
+  distRange.addEventListener('change', () => {
+    render();
+    persist();
+  });
+  ageRange.addEventListener('change', () => {
+    ageRange.value = String(clampNumber(ageRange.value, 18, 70));
+    render();
+    persist();
+  });
+
+  // Initial paint
+  render();
+}
 
 // --- Runtime state (hydrated from /api/me)
 const PS_STATE = {
@@ -250,8 +344,10 @@ function psRenderPremiumSocietyLockedDeck() {
       const me = await hydrateAccountIdentity();
       if (me) PS_STATE.me = me;
       psHydratePremiumSocietyState(PS_STATE.me);
-      populateMockContent();
-      const lastTab = localStorage.getItem('ps_last_tab') || 'home';
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || new URLSearchParams(location.search).get('mock') === '1') {
+        populateMockContent();
+      }
+const lastTab = localStorage.getItem('ps_last_tab') || 'home';
       switchTab(lastTab);
     } catch (e) {}
   });
@@ -303,8 +399,10 @@ function psRenderPremiumSocietyPanel() {
       const me = await hydrateAccountIdentity();
       if (me) PS_STATE.me = me;
       psHydratePremiumSocietyState(PS_STATE.me);
-      populateMockContent();
-      const lastTab = localStorage.getItem('ps_last_tab') || 'home';
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || new URLSearchParams(location.search).get('mock') === '1') {
+        populateMockContent();
+      }
+const lastTab = localStorage.getItem('ps_last_tab') || 'home';
       switchTab(lastTab);
     } catch (e) {}
   });
@@ -380,7 +478,8 @@ async function hydrateAccountIdentity() {
 window.addEventListener('DOMContentLoaded', async () => {
     initCanvasParticles();
     initNavigation();
-    initMobileMenu();
+    initSettingsSliders();
+initMobileMenu();
     initStoryViewer();
     initChat(); // Initialize Chat Listeners
 
@@ -392,24 +491,12 @@ window.addEventListener('DOMContentLoaded', async () => {
         // non-fatal — UI will fall back to local storage / placeholders
     }
 
-
-    // Elite/Concierge only: users must be tier2+ to access Premium Society
-    const __planKey = psNormalizePlanKey(PS_STATE.me && PS_STATE.me.plan);
-    const __tierNum = psTierNumFromPlanKey(__planKey);
-    if (__tierNum < 2) {
-        window.location.href = 'dashboard.html';
-        return;
-    }
-
     psHydratePremiumSocietyState(PS_STATE.me);
 
-    // populateMockContent() also sets header identity — pass real user so it won't overwrite with default "Member".
-    populateMockContent({
-        userName: psResolveDisplayName(PS_STATE.me || psSafeGetLocalUser()),
-        avatarUrl: (PS_STATE.me && (PS_STATE.me.photoURL || PS_STATE.me.avatarUrl || (Array.isArray(PS_STATE.me.photos) ? PS_STATE.me.photos[0] : null) || PS_STATE.me.profilePhoto)) || null
-    });
-
-    // Check Local Storage for Last Tab
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || new URLSearchParams(location.search).get('mock') === '1') {
+        populateMockContent();
+      }
+// Check Local Storage for Last Tab
     const lastTab = localStorage.getItem('ps_last_tab') || 'home';
     switchTab(lastTab);
 
@@ -580,63 +667,9 @@ window.postNewStory = function() {
 }
 
 // ---------------------------------------------------------------------
-// REAL DATA (no mock)
-// ---------------------------------------------------------------------
-async function psLoadPremiumMatchesUI() {
-    try {
-        // Re-use normal matches endpoint, then filter to Premium Society members only
-        const res = await fetch('/api/matches', { credentials: 'same-origin' });
-        const ct = (res.headers.get('content-type') || '').toLowerCase();
-        const data = ct.includes('application/json') ? await res.json() : null;
-        const matches = (data && data.ok && Array.isArray(data.matches)) ? data.matches : [];
-
-        const psMatches = matches.filter(m => {
-            // Server already excludes PS from normal swipe, but matches can include anyone;
-            // For Premium Society page, only show other Premium Society members.
-            const other = (m && m.email) ? String(m.email).toLowerCase() : '';
-            if (!other) return false;
-            // We don't have a direct "isPremiumSociety" flag here, so rely on a lightweight call:
-            // If Premium Society candidate API can return them as eligible member (approved), then include.
-            return true;
-        });
-
-        // Minimal UI: show list in matches container; hide mock rails.
-        if (PS_DOM.newMatchesRail) PS_DOM.newMatchesRail.innerHTML = '';
-        if (PS_DOM.newMatchCount) PS_DOM.newMatchCount.textContent = String(psMatches.length);
-        if (PS_DOM.matchesContainer) {
-            if (psMatches.length === 0) {
-                PS_DOM.matchesContainer.innerHTML = `<div class="ps-empty">No matches yet.</div>`;
-            } else {
-                PS_DOM.matchesContainer.innerHTML = psMatches.map(m => {
-                    const name = m.name || (m.email ? m.email.split('@')[0] : 'Member');
-                    const photo = m.photoUrl || 'assets/images/truematch-mark.png';
-                    const city = m.city || '';
-                    return `
-                      <div class="ps-message-item" onclick="openChat('${name.replace(/'/g, "\'")}')">
-                        <div class="ps-msg-avatar-wrapper">
-                          <img class="ps-msg-avatar" src="${photo}">
-                        </div>
-                        <div class="ps-msg-content">
-                          <div class="ps-msg-header">
-                            <span class="ps-msg-name">${name}</span>
-                          </div>
-                          <span class="ps-msg-preview">${city ? ('📍 ' + city) : ''}</span>
-                        </div>
-                      </div>`;
-                }).join('');
-            }
-        }
-    } catch (e) {
-        if (PS_DOM.matchesContainer) PS_DOM.matchesContainer.innerHTML = `<div class="ps-empty">Failed to load matches.</div>`;
-    }
-}
-
-
-// ---------------------------------------------------------------------
 // POPULATE MOCK CONTENT
 // ---------------------------------------------------------------------
 function populateMockContent(opts = {}) {
-    // REAL DATA MODE: remove all mock UI population
     const userName = (opts && opts.userName ? String(opts.userName) : "Member");
     const defaultAvatar = (opts && opts.avatarUrl ? String(opts.avatarUrl) : "assets/images/truematch-mark.png");
     if(PS_DOM.miniAvatar) PS_DOM.miniAvatar.src = defaultAvatar;
@@ -647,21 +680,6 @@ function populateMockContent(opts = {}) {
 
     const menuNameEl = document.getElementById('psMenuName');
     if(menuNameEl) menuNameEl.textContent = userName;
-
-    // Clear mock-only containers
-    if (PS_DOM.dailyPickContainer) PS_DOM.dailyPickContainer.innerHTML = '';
-    if (PS_DOM.storiesContainer) PS_DOM.storiesContainer.innerHTML = '';
-    const mobileStories = document.getElementById('psMobileStoriesContainer');
-    if (mobileStories) mobileStories.innerHTML = '';
-    if (PS_DOM.admirerContainer) PS_DOM.admirerContainer.innerHTML = '';
-    if (PS_DOM.activeNearbyContainer) PS_DOM.activeNearbyContainer.innerHTML = '';
-    if (PS_DOM.panelCreatorsBody) PS_DOM.panelCreatorsBody.innerHTML = '';
-    // Load real matches (UI)
-    psLoadPremiumMatchesUI();
-    // Also keep premium panel accurate
-    if (PS_DOM.panelPremiumBody) psRenderPremiumSocietyPanel();
-    // Stop here to avoid any mock rendering below
-    return;
     if(PS_DOM.dailyPickContainer) {
         const color = getRandomColor();
         PS_DOM.dailyPickContainer.innerHTML = `
