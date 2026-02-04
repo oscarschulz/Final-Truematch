@@ -2057,7 +2057,7 @@ function applyPlanNavGating() {
   // tier3: + Concierge
   const allowed = new Set(['home', 'swipe', 'matches', 'settings', 'creators']);
 
-  if (plan === 'tier1' || plan === 'tier2' || plan === 'tier3') {
+  if (plan !== 'free') {
     allowed.add('premium');
   }
   if (plan === 'tier2' || plan === 'tier3') {

@@ -3979,7 +3979,7 @@ app.post('/api/me/premium/apply', async (req, res) => {
     const myPlanEnd = (userDoc.planEnd ?? userDoc.subscriptionEnd ?? userDoc.subEnd ?? null);
     const myPlanActive = _computePlanActiveForDoc(myPlanKey, myPlanEnd, userDoc.planActive);
 
-    if (!(myPlanActive && myTier >= 2)) {
+    if (!(myPlanActive && myTier >= 1)) {
       return res.status(403).json({
         ok: false,
         code: 'not_eligible',
