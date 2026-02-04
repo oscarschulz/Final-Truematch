@@ -178,3 +178,47 @@ export function isAuthenticated() {
     return !!getCurrentUser();
 }
 
+// Compatibility exports for Premium Society page
+export function loadPrefsForUser(email) {
+  try {
+    const e = String(email || '').trim().toLowerCase();
+    if (!e) return null;
+
+    const rawMap = localStorage.getItem(PREFS_MAP_KEY);
+    if (!rawMap) return null;
+
+    const map = JSON.parse(rawMap) || {};
+    return (map && typeof map === 'object') ? (map[e] || null) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function savePrefsForUser(email, prefs) {
+  try {
+    const e = String(email || '').trim().toLowerCase();
+    if (!e) return;
+
+    let map = {};
+    const rawMap = localStorage.getItem(PREFS_MAP_KEY);
+    if (rawMap) {
+      try { map = JSON.parse(rawMap) || {}; } catch { map = {}; }
+    }
+
+    map[e] = prefs;
+    localStorage.setItem(PREFS_MAP_KEY, JSON.stringify(map));
+
+    // keep legacy slot in sync if this is the current user
+    try {
+      const rawUser = JSON.parse(localStorage.getItem('tm_user') || 'null');
+      const curEmail = rawUser?.email ? String(rawUser.email).toLowerCase() : null;
+      if (curEmail && curEmail === e) {
+        localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+      }
+    } catch {
+      // ignore
+    }
+  } catch {
+    // ignore
+  }
+}
