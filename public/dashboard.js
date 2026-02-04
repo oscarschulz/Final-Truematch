@@ -618,17 +618,36 @@ function setupEventListeners() {
   if (DOM.btnCloseCreatorApply) DOM.btnCloseCreatorApply.addEventListener('click', () => DOM.dlgCreatorApply.close());
   
   const openPremium = (e) => {
+      // Sidebar "Subscribe" should always go to plans
       if (e && e.currentTarget && e.currentTarget.id === 'btnSidebarSubscribe') {
           window.location.href = './tier.html?upgrade=1';
           return;
       }
+
       if (e) {
           e.preventDefault();
           e.stopPropagation();
       }
+
+      const ps = normalizeStatus(state.me && state.me.premiumStatus);
+
+      // If already approved, go straight to Premium Society
+      if (ps === 'approved') {
+          window.location.href = 'premium-society.html';
+          return;
+      }
+
+      // If pending, show the modal (read-only) and start watching for approval
+      if (ps === 'pending') {
+          showToast('Premium Society application is pending. You will be redirected once approved.', 'info');
+          if (DOM.dlgPremiumApply) DOM.dlgPremiumApply.showModal();
+          startPremiumApprovalWatcher();
+          return;
+      }
+
+      // Otherwise, allow user to apply
       if (DOM.dlgPremiumApply) DOM.dlgPremiumApply.showModal();
-  };
-  if (DOM.btnOpenPremiumApply) DOM.btnOpenPremiumApply.addEventListener('click', openPremium);
+  };  if (DOM.btnOpenPremiumApply) DOM.btnOpenPremiumApply.addEventListener('click', openPremium);
   if (DOM.btnPremiumCancel) DOM.btnPremiumCancel.addEventListener('click', () => DOM.dlgPremiumApply.close());
   if (DOM.btnSidebarSubscribe) DOM.btnSidebarSubscribe.addEventListener('click', openPremium);
 
@@ -2309,6 +2328,69 @@ async function handleCreatorApplicationSubmit() {
   }
 }
 
+
+// ------------------------------------------------------------------
+// Premium Society approval watcher (client-side polling)
+// - When a user's application is pending, poll /api/me periodically.
+// - If approved -> redirect immediately.
+// ------------------------------------------------------------------
+let __premiumWatchTimer = null;
+let __premiumWatchStartedAt = 0;
+
+function stopPremiumApprovalWatcher() {
+  if (__premiumWatchTimer) {
+    clearInterval(__premiumWatchTimer);
+    __premiumWatchTimer = null;
+  }
+  __premiumWatchStartedAt = 0;
+}
+
+function startPremiumApprovalWatcher() {
+  const st = normalizeStatus(state.me && state.me.premiumStatus);
+  if (st !== 'pending') {
+    stopPremiumApprovalWatcher();
+    return;
+  }
+  if (__premiumWatchTimer) return; // already running
+
+  __premiumWatchStartedAt = Date.now();
+
+  __premiumWatchTimer = setInterval(async () => {
+    try {
+      // auto-stop after 10 minutes to avoid endless polling
+      if (Date.now() - __premiumWatchStartedAt > 10 * 60 * 1000) {
+        stopPremiumApprovalWatcher();
+        return;
+      }
+
+      const meRes = await apiGet('/api/me');
+      if (meRes && meRes.ok && meRes.user) {
+        state.me = { ...(state.me || {}), ...(meRes.user || {}) };
+      } else if (meRes && meRes.ok && !meRes.user) {
+        // Some builds return the user object at top level
+        state.me = { ...(state.me || {}), ...(meRes || {}) };
+      }
+
+      const nowSt = normalizeStatus(state.me && state.me.premiumStatus);
+
+      if (nowSt === 'approved') {
+        stopPremiumApprovalWatcher();
+        window.location.href = 'premium-society.html';
+        return;
+      }
+
+      if (nowSt === 'rejected' || nowSt === 'none' || nowSt === 'inactive') {
+        // application resolved (rejected) or removed
+        stopPremiumApprovalWatcher();
+        // refresh entry card state
+        renderCreatorPremiumEntryCards();
+      }
+    } catch (e) {
+      // silent: keep trying
+    }
+  }, 4000);
+}
+
 async function handlePremiumApplicationSubmit() {
   if (!state.me || !state.me.email) {
     showToast('Please log in first.', 'error');
@@ -2360,8 +2442,24 @@ async function handlePremiumApplicationSubmit() {
     }
 
     const res = await apiPost('/api/me/premium/apply', payload);
-    if (!res || !res.ok) throw new Error((res && (res.message || res.error)) ? (res.message || res.error) : 'Failed to submit application.');
-showToast('Premium Society application submitted. Status: pending.');
+
+    if (!res || !res.ok) {
+      const msg = (res && (res.message || res.error)) ? (res.message || res.error) : 'Failed to submit application.';
+      // If user is not eligible (not Elite/Concierge), guide them to upgrade.
+      if (res && (res.code === 'not_eligible' || /require/i.test(String(msg)))) {
+        showToast(msg, 'error');
+        // Optional convenience: open upgrade page
+        window.location.href = './tier.html?upgrade=1';
+        return;
+      }
+      throw new Error(msg);
+    }
+
+    showToast('Premium Society application submitted. Status: pending.', 'success');
+
+    // Update local state immediately so UI reflects pending and watcher can run.
+    state.me.premiumStatus = 'pending';
+    startPremiumApprovalWatcher();
     if (DOM.dlgPremiumApply) DOM.dlgPremiumApply.close();
 
     state.me.premiumStatus = 'pending';
