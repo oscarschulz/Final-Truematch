@@ -2052,12 +2052,12 @@ function applyPlanNavGating() {
 
   // Tabs visible per plan:
   // free: Home, Swipe, Matches, Settings, Creators
-  // tier1: + Premium Society
-  // tier2: + Shortlist
+  // tier1: (Plus) no Premium Society
+  // tier2: + Premium Society + Shortlist
   // tier3: + Concierge
   const allowed = new Set(['home', 'swipe', 'matches', 'settings', 'creators']);
 
-  if (plan !== 'free') {
+  if (plan === 'tier2' || plan === 'tier3') {
     allowed.add('premium');
   }
   if (plan === 'tier2' || plan === 'tier3') {
