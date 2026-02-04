@@ -15,6 +15,23 @@
   <link rel="stylesheet" href="assets/css/premium-society/feed.css" />
   <link rel="stylesheet" href="assets/css/premium-society/chat.css" />
   <link rel="stylesheet" href="assets/css/premium-society/settings.css" />
+
+  <!-- Minimal hotfix overrides (scoped) -->
+  <style>
+    /* Ensure the Edit Profile CTA is actually clickable */
+    #psBtnEditProfile { pointer-events: auto; cursor: pointer; position: relative; z-index: 5; }
+
+    /* Empty swipe state overlay (ensures visibility even if theme CSS changes) */
+    #psRefreshPopover { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 60;
+      background: rgba(0,0,0,0.35); backdrop-filter: blur(4px);
+    }
+    #psRefreshPopover.active { display: flex; }
+    #psRefreshPopover .ps-popover-content { max-width: 420px; width: min(420px, 92vw); padding: 22px; border-radius: 18px;
+      background: rgba(18,18,24,0.78); border: 1px solid rgba(255,255,255,0.12);
+      box-shadow: 0 24px 80px rgba(0,0,0,0.55); text-align: center;
+    }
+    #psBtnRefreshDeck { cursor: pointer; }
+  </style>
 </head>
 
 <body class="ps-theme">
@@ -155,15 +172,16 @@
             <button id="psBtnSwipePass" class="ps-btn-round ps-btn-pass"><i class="fa-solid fa-xmark"></i></button>
             <button id="psBtnSwipeSuper" class="ps-btn-round ps-btn-super"><i class="fa-solid fa-star"></i></button>
             <button id="psBtnSwipeLike" class="ps-btn-round ps-btn-like"><i class="fa-solid fa-heart"></i></button>
+            <div id="psSwipeEmptyNotice" class="ps-swipe-empty-notice" style="display:none;">Nothing to swipe for now</div>
           </div>
 
           <div class="ps-refresh-popover" id="psRefreshPopover">
               <div class="ps-popover-content">
                   <div class="ps-emoji-lg">✨</div>
-                  <h4>All Caught Up!</h4>
-                  <p>There's no one new around you.</p>
+                  <h4>Nothing to swipe for now</h4>
+                  <p>Tap refresh to check again.</p>
                   <button class="ps-btn-refresh" id="psBtnRefreshDeck">
-                      <i class="fa-solid fa-rotate-right"></i> Refresh Deck
+                      <i class="fa-solid fa-rotate-right"></i> Refresh
                   </button>
               </div>
           </div>
