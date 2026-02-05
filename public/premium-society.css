@@ -470,20 +470,6 @@ body.ps-theme {
 .ps-btn-like { color: #00aff0; border-color: #00aff0; }
 .ps-btn-super { color: #3ad4ff; border-color: #3ad4ff; }
 
-
-.ps-swipe-empty-notice {
-  flex: 1;
-  text-align: center;
-  color: rgba(255,255,255,0.78);
-  font-weight: 800;
-  letter-spacing: 0.01em;
-  padding: 12px 16px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.12);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
 /* FIX: REFRESH POPOVER - COMPACT & BOTTOM RIGHT */
 .ps-refresh-popover {
     display: none;
@@ -854,108 +840,528 @@ body.ps-theme {
   }
 }
 
-/* =========================================================
-   PATCH: Edit Premium Profile modal footer actions (v3)
-   - Keep user's full CSS intact
-   - Move Cancel/Save buttons to bottom "footer" area
-   - Make body scroll while header/footer stay visible
-   ========================================================= */
+
+/* =====================================================================
+   iTM3 PATCH (UI)
+   1) Center "Nothing to swipe for now" overlay on desktop + mobile
+   2) Upgrade Edit Premium Profile modal UI (force styles vs global CSS)
+   ===================================================================== */
+
+/* --- Swipe empty state (Nothing to swipe...) --- */
+#psRefreshPopover{
+  /* cancel the old fixed-position centering hack */
+  position: absolute !important;
+  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  transform: none !important;
+
+  display: none;
+  align-items: center;
+  justify-content: center;
+
+  padding: 20px;
+  z-index: 7000 !important;
+
+  /* subtle overlay */
+  background: rgba(0,0,0,0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+#psRefreshPopover.active{
+  display: flex !important;  /* must beat .ps-refresh-popover.active{display:block !important} */
+}
+
+#psRefreshPopover .ps-popover-content{
+  width: min(420px, 92vw) !important;
+  max-width: 420px !important;
+
+  padding: 22px !important;
+  border-radius: 20px !important;
+  text-align: center;
+
+  background: rgba(20, 20, 25, 0.94) !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+
+  box-shadow: 0 26px 80px rgba(0,0,0,0.72) !important;
+}
+
+/* Remove the viewport-based centering rule that pushes the card under the right rail */
+.ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover.active{
+  position: absolute !important;
+  inset: 0 !important;
+  left: 0 !important;
+}
+
+/* Ensure the Swipe layout can anchor the overlay */
+.ps-panel.ps-is-active[data-panel="swipe"] .ps-swipe-layout{
+  position: relative;
+}
+
+/* Mobile breathing room */
+@media (max-width: 768px){
+  #psRefreshPopover{ padding: 16px; }
+  #psRefreshPopover .ps-popover-content{ padding: 18px !important; }
+}
+
+/* --- Edit Premium Profile modal (UI upgrade + force styles) --- */
+#psEditProfileModal.ps-edit-modal-overlay{
+  background: rgba(0,0,0,0.74) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+}
 
 #psEditProfileModal .ps-edit-modal-card.ps-bento-edit-modal{
-  /* Turn the card into a 3-row layout: header / body / footer */
-  display: grid !important;
-  grid-template-columns: 1fr !important;
-  grid-template-rows: auto 1fr auto !important;
+  width: min(920px, 94vw) !important;
+  max-height: 86vh !important;
+  overflow: auto;
 
-  /* Let the body scroll, not the whole card */
-  overflow: hidden !important;
+  border-radius: 20px !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
 
-  /* We will handle spacing inside the rows */
-  padding: 0 !important;
+  /* premium glass */
+  background:
+    radial-gradient(1200px 520px at 18% -10%, rgba(0,175,240,0.18), transparent 55%),
+    radial-gradient(900px 460px at 120% 10%, rgba(58,212,255,0.14), transparent 55%),
+    rgba(12, 14, 22, 0.92) !important;
+
+  box-shadow: 0 18px 70px rgba(0,0,0,0.62) !important;
 }
 
-/* Break header wrapper so its children become grid items */
+/* Header layout (the old styling was getting overridden on some builds) */
 #psEditProfileModal .ps-edit-modal-header{
-  display: contents !important;
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 14px !important;
+
+  padding-bottom: 14px !important;
+  margin-bottom: 14px !important;
+  border-bottom: 1px solid rgba(255,255,255,0.10) !important;
 }
 
-/* Header content (title + subtext) */
-#psEditProfileModal .ps-edit-modal-header > div:first-child{
-  grid-row: 1;
+#psEditProfileModal #psEditProfileTitle{
+  font-size: 18px !important;
+  line-height: 1.25 !important;
+  letter-spacing: 0.2px;
+}
+
+#psEditProfileModal .ps-edit-modal-subtext{
+  color: rgba(255,255,255,0.72) !important;
+  font-size: 0.92rem !important;
+}
+
+#psEditProfileModal .ps-edit-modal-actions{
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  flex-shrink: 0;
+}
+
+#psEditProfileModal .ps-btn-cancel,
+#psEditProfileModal .ps-btn-save{
+  height: 40px !important;
+  border-radius: 12px !important;
+  padding: 0 14px !important;
+  font-weight: 700 !important;
+  font-size: 14px !important;
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease, background .12s ease, border-color .12s ease;
+}
+
+#psEditProfileModal .ps-btn-cancel{
+  background: rgba(255,255,255,0.06) !important;
+  color: rgba(255,255,255,0.92) !important;
+  border: 1px solid rgba(255,255,255,0.16) !important;
+}
+
+#psEditProfileModal .ps-btn-save{
+  background: linear-gradient(135deg, rgba(0,175,240,0.95), rgba(0,114,255,0.95)) !important;
+  color: #0a0a0a !important;
+  border: 1px solid rgba(0,175,240,0.28) !important;
+  box-shadow: 0 12px 28px rgba(0,175,240,0.14) !important;
+}
+
+#psEditProfileModal .ps-btn-cancel:hover,
+#psEditProfileModal .ps-btn-save:hover{
+  transform: translateY(-1px);
+}
+
+#psEditProfileModal .ps-edit-field label{
+  display: block !important;
+  font-size: 12px !important;
+  letter-spacing: 0.2px;
+  color: rgba(255,255,255,0.74) !important;
+  margin-bottom: 8px !important;
+}
+
+/* Force dark inputs even if another stylesheet sets input{background:#fff !important} */
+#psEditProfileModal .ps-edit-field input,
+#psEditProfileModal .ps-edit-field select,
+#psEditProfileModal .ps-edit-field textarea{
+  width: 100% !important;
+  border-radius: 12px !important;
+  padding: 11px 12px !important;
+  font-size: 14px !important;
+
+  color: rgba(255,255,255,0.92) !important;
+  background: rgba(255,255,255,0.06) !important;
+  border: 1px solid rgba(255,255,255,0.16) !important;
+
+  outline: none !important;
+}
+
+#psEditProfileModal .ps-edit-field select{
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 38px !important;
+  background-image: linear-gradient(45deg, transparent 50%, rgba(255,255,255,0.75) 50%),
+                    linear-gradient(135deg, rgba(255,255,255,0.75) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 55%, calc(100% - 12px) 55%;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+
+#psEditProfileModal .ps-edit-field textarea{
+  resize: vertical;
+  min-height: 46px;
+}
+
+#psEditProfileModal .ps-edit-field input::placeholder,
+#psEditProfileModal .ps-edit-field textarea::placeholder{
+  color: rgba(255,255,255,0.42) !important;
+}
+
+#psEditProfileModal .ps-edit-field input:focus,
+#psEditProfileModal .ps-edit-field select:focus,
+#psEditProfileModal .ps-edit-field textarea:focus{
+  border-color: rgba(0,175,240,0.65) !important;
+  box-shadow: 0 0 0 4px rgba(0,175,240,0.16) !important;
+}
+
+/* Readonly email should look intentional */
+#psEditProfileModal .ps-edit-field input[readonly]{
+  opacity: 0.85 !important;
+  cursor: not-allowed !important;
+  background: rgba(255,255,255,0.04) !important;
+  border-style: dashed !important;
+}
+
+/* Modal scrolling polish */
+#psEditProfileModal .ps-edit-modal-card::-webkit-scrollbar{ width: 10px; }
+#psEditProfileModal .ps-edit-modal-card::-webkit-scrollbar-thumb{
+  background: rgba(255,255,255,0.12);
+  border-radius: 999px;
+}
+#psEditProfileModal .ps-edit-modal-card::-webkit-scrollbar-thumb:hover{
+  background: rgba(255,255,255,0.18);
+}
+
+@media (max-width: 820px){
+  #psEditProfileModal .ps-edit-modal-header{
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  #psEditProfileModal .ps-edit-modal-actions{
+    justify-content: flex-start !important;
+  }
+  #psEditProfileModal .ps-btn-cancel,
+  #psEditProfileModal .ps-btn-save{
+    width: 100%;
+  }
+}
+
+/* =======================================================================
+   PATCH (UI): Swipe empty-state centered + hide swipe buttons when empty
+   + Premium Edit Profile modal redesign (responsive)
+   - This block is intentionally placed at the END to override older rules.
+   ======================================================================= */
+
+/* --- SWIPE: Always center the "All Caught Up" / Refresh card in the SWIPE area --- */
+.ps-panel.ps-is-active[data-panel="swipe"] .ps-swipe-layout {
+  position: relative !important;
+}
+
+/* Turn the popover into a full overlay container so centering is reliable */
+.ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover {
+  display: none;
+  position: absolute !important;
+  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  transform: none !important;
+
+  /* Center contents */
+  align-items: center !important;
+  justify-content: center !important;
+
+  padding: 18px !important;
+  pointer-events: none; /* so it doesn't block the sidebar unless active */
+  z-index: 7000 !important;
+}
+
+.ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover.active {
+  display: flex !important;
+  pointer-events: auto;
+}
+
+/* Style the card itself */
+.ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover .ps-popover-content {
+  width: 320px;
+  max-width: min(420px, 92vw);
+  background: rgba(20, 20, 25, 0.92);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 22px;
+  padding: 22px 20px;
+  box-shadow: 0 18px 55px rgba(0,0,0,0.85);
+  text-align: center;
+}
+
+.ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover .ps-emoji-lg {
+  font-size: 2.8rem;
+  margin-bottom: 10px;
+}
+
+/* Hide the round swipe buttons when the empty popover is active */
+.ps-panel.ps-is-active[data-panel="swipe"]:has(#psRefreshPopover.active) #psSwipeControls {
+  display: none !important;
+}
+
+/* Fallback: also hide the buttons individually (helps if controls layout changes) */
+.ps-panel.ps-is-active[data-panel="swipe"]:has(#psRefreshPopover.active) #psBtnSwipePass,
+.ps-panel.ps-is-active[data-panel="swipe"]:has(#psRefreshPopover.active) #psBtnSwipeSuper,
+.ps-panel.ps-is-active[data-panel="swipe"]:has(#psRefreshPopover.active) #psBtnSwipeLike {
+  display: none !important;
+}
+
+/* --- EDIT PROFILE MODAL: Premium look + clean inputs + responsive grids --- */
+#psEditProfileModal.ps-edit-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 8000;
+  display: none; /* stays off until JS shows it */
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(10px);
+}
+
+#psEditProfileModal.ps-edit-modal-overlay[style*="display:block"],
+#psEditProfileModal.ps-edit-modal-overlay[style*="display: block"],
+#psEditProfileModal.ps-edit-modal-overlay[style*="display:flex"],
+#psEditProfileModal.ps-edit-modal-overlay[style*="display: flex"],
+#psEditProfileModal.ps-edit-modal-overlay.ps-is-open {
+  display: flex !important;
+}
+
+#psEditProfileModal .ps-edit-modal-card {
+  width: min(980px, 92vw);
+  max-height: min(86vh, 760px);
+  overflow: auto;
+
+  background: rgba(18, 18, 22, 0.92);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 22px;
+  box-shadow: 0 24px 85px rgba(0,0,0,0.85);
+  backdrop-filter: blur(18px);
+}
+
+#psEditProfileModal .ps-edit-modal-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: space-between;
+
   padding: 18px 18px 14px;
   border-bottom: 1px solid rgba(255,255,255,0.10);
   background: linear-gradient(180deg, rgba(18,18,22,0.98), rgba(18,18,22,0.84));
 }
 
-/* Modal body becomes the scroll area */
-#psEditProfileModal .ps-edit-modal-body{
-  grid-row: 2;
-  padding: 18px;
-  overflow: auto;
-  min-height: 0; /* critical for grid + overflow to work */
-}
-
-/* Footer actions */
-#psEditProfileModal .ps-edit-modal-actions{
-  grid-row: 3;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: flex-end !important;
-  gap: 12px !important;
-
-  padding: 14px 18px 18px;
-  border-top: 1px solid rgba(255,255,255,0.10);
-  background: linear-gradient(180deg, rgba(18,18,22,0.70), rgba(18,18,22,0.92));
-}
-
-/* Buttons styling to match the modal UI */
-#psEditProfileModal .ps-edit-modal-actions .ps-btn-cancel,
-#psEditProfileModal .ps-edit-modal-actions .ps-btn-save{
-  height: 44px;
-  padding: 0 18px;
-  border-radius: 14px;
-
-  font-weight: 700;
-  font-size: 14px;
+#psEditProfileModal .ps-edit-modal-header h3 {
+  font-size: 1.15rem;
   letter-spacing: 0.2px;
+}
 
-  border: 1px solid rgba(255,255,255,0.14);
-  background: rgba(255,255,255,0.06);
-  color: var(--ps-text-main);
+#psEditProfileModal .ps-edit-modal-subtext {
+  color: rgba(255,255,255,0.70);
+  line-height: 1.35;
+}
 
+#psEditProfileModal .ps-edit-modal-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+#psEditProfileModal .ps-btn-cancel,
+#psEditProfileModal .ps-btn-save {
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 600;
+  font-size: 0.95rem;
   cursor: pointer;
-  transition: transform .12s ease, box-shadow .12s ease, background .12s ease, border-color .12s ease, opacity .12s ease;
+  transition: transform .12s ease, opacity .12s ease, background .12s ease, border-color .12s ease;
 }
 
-#psEditProfileModal .ps-edit-modal-actions .ps-btn-cancel:hover{
-  background: rgba(255,255,255,0.09);
-  border-color: rgba(255,255,255,0.22);
+#psEditProfileModal .ps-btn-cancel {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.16);
+  color: rgba(255,255,255,0.88);
 }
 
-#psEditProfileModal .ps-edit-modal-actions .ps-btn-save{
-  background: var(--ps-brand-grad);
-  border-color: rgba(0,175,240,0.45);
-  color: #ffffff;
-  box-shadow: 0 12px 28px rgba(0,175,240,0.18);
+#psEditProfileModal .ps-btn-save {
+  background: rgba(58, 212, 255, 0.18);
+  border: 1px solid rgba(58, 212, 255, 0.35);
+  color: #eafaff;
 }
 
-#psEditProfileModal .ps-edit-modal-actions .ps-btn-save:hover{
-  box-shadow: 0 14px 32px rgba(0,175,240,0.24);
+#psEditProfileModal .ps-btn-cancel:hover,
+#psEditProfileModal .ps-btn-save:hover {
+  transform: translateY(-1px);
 }
 
-#psEditProfileModal .ps-edit-modal-actions .ps-btn-cancel:active,
-#psEditProfileModal .ps-edit-modal-actions .ps-btn-save:active{
-  transform: translateY(1px);
+#psEditProfileModal .ps-edit-modal-body {
+  padding: 18px;
 }
 
-/* Mobile: stack buttons full-width */
-@media (max-width: 560px){
-  #psEditProfileModal .ps-edit-modal-actions{
-    flex-direction: column;
-    align-items: stretch !important;
+#psEditProfileModal .ps-edit-field label {
+  display: block;
+  font-size: 0.88rem;
+  color: rgba(255,255,255,0.80);
+  margin-bottom: 6px;
+}
+
+#psEditProfileModal .ps-edit-field input,
+#psEditProfileModal .ps-edit-field select,
+#psEditProfileModal .ps-edit-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: rgba(255,255,255,0.92);
+  border-radius: 12px;
+  padding: 10px 12px;
+  outline: none;
+}
+
+#psEditProfileModal .ps-edit-field textarea {
+  resize: vertical;
+  min-height: 90px;
+}
+
+#psEditProfileModal .ps-edit-field input::placeholder,
+#psEditProfileModal .ps-edit-field textarea::placeholder {
+  color: rgba(255,255,255,0.45);
+}
+
+#psEditProfileModal .ps-edit-field input:focus,
+#psEditProfileModal .ps-edit-field select:focus,
+#psEditProfileModal .ps-edit-field textarea:focus {
+  border-color: rgba(58, 212, 255, 0.55);
+  box-shadow: 0 0 0 3px rgba(58, 212, 255, 0.12);
+}
+
+/* Make the inline grids responsive (they are defined inline, so we use !important) */
+@media (max-width: 860px) {
+  #psEditProfileModal .ps-edit-grid {
+    grid-template-columns: 1fr !important;
   }
-  #psEditProfileModal .ps-edit-modal-actions .ps-btn-cancel,
-  #psEditProfileModal .ps-edit-modal-actions .ps-btn-save{
+  #psEditProfileModal .ps-edit-modal-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 520px) {
+  #psEditProfileModal.ps-edit-modal-overlay {
+    padding: 12px;
+  }
+  #psEditProfileModal .ps-edit-modal-card {
+    width: 100%;
+    max-height: 88vh;
+    border-radius: 18px;
+  }
+  #psEditProfileModal .ps-edit-modal-body {
+    padding: 14px;
+  }
+}
+
+/* ==============================
+   PATCH: Edit Profile Modal Footer Buttons
+   - Moves Cancel/Save to a footer row
+   - Styles buttons to match Premium Society UI
+   ============================== */
+
+#psEditProfileModal .ps-edit-modal-footer{
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 14px 18px 6px;
+  margin: 18px -18px -8px; /* stretch to card edges (card has 18px padding) */
+  border-top: 1px solid rgba(255,255,255,0.10);
+  background: linear-gradient(180deg, rgba(15, 18, 26, 0.00) 0%, rgba(15, 18, 26, 0.88) 28%, rgba(15, 18, 26, 0.96) 100%);
+  backdrop-filter: blur(10px);
+  z-index: 5;
+}
+
+#psEditProfileModal .ps-edit-modal-footer .ps-btn-cancel,
+#psEditProfileModal .ps-edit-modal-footer .ps-btn-save{
+  height: 44px;
+  border-radius: 14px;
+  padding: 0 16px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  border: 1px solid rgba(255,255,255,0.14);
+  transition: transform .12s ease, box-shadow .12s ease, background .12s ease, border-color .12s ease;
+}
+
+#psEditProfileModal .ps-edit-modal-footer .ps-btn-cancel{
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.92);
+}
+#psEditProfileModal .ps-edit-modal-footer .ps-btn-cancel:hover{
+  background: rgba(255,255,255,0.09);
+  border-color: rgba(255,255,255,0.20);
+  transform: translateY(-1px);
+}
+
+#psEditProfileModal .ps-edit-modal-footer .ps-btn-save{
+  background: var(--ps-brand-color);
+  color: #fff;
+  border-color: rgba(255,255,255,0.10);
+  box-shadow: 0 10px 26px rgba(0, 175, 240, 0.30);
+}
+#psEditProfileModal .ps-edit-modal-footer .ps-btn-save:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 14px 34px rgba(0, 175, 240, 0.42);
+}
+
+@media (max-width: 520px){
+  #psEditProfileModal .ps-edit-modal-footer{
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 10px;
+    padding: 12px 14px 10px;
+    margin: 16px -14px -8px; /* card padding is reduced in your mobile rules */
+  }
+  #psEditProfileModal .ps-edit-modal-footer .ps-btn-cancel,
+  #psEditProfileModal .ps-edit-modal-footer .ps-btn-save{
     width: 100%;
   }
 }
