@@ -155,7 +155,6 @@
             <button id="psBtnSwipePass" class="ps-btn-round ps-btn-pass"><i class="fa-solid fa-xmark"></i></button>
             <button id="psBtnSwipeSuper" class="ps-btn-round ps-btn-super"><i class="fa-solid fa-star"></i></button>
             <button id="psBtnSwipeLike" class="ps-btn-round ps-btn-like"><i class="fa-solid fa-heart"></i></button>
-            <div id="psSwipeEmptyNotice" class="ps-swipe-empty-notice" style="display:none;">Nothing to swipe for now</div>
           </div>
 
           <div class="ps-refresh-popover" id="psRefreshPopover">
@@ -478,33 +477,33 @@
           These details come from your Premium Society application and are saved to your account.
         </div>
       </div>
-    </div>
+</div>
 
     <div class="ps-edit-modal-body">
 
       <div class="ps-edit-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
         <div class="ps-edit-field">
           <label>Full Name</label>
-          <input id="psInputName" type="text" placeholder="Your full name">
+          <input id="psInputName" class="tm-input input-gold" type="text" placeholder="Your full name">
         </div>
         <div class="ps-edit-field">
           <label>Email</label>
-          <input id="psInputEmail" type="email" placeholder="Email address" readonly>
+          <input id="psInputEmail" class="tm-input input-gold" type="email" placeholder="Email address" readonly>
         </div>
         <div class="ps-edit-field">
           <label>Occupation / Role</label>
-          <input id="psInputOccupation" type="text" placeholder="e.g., Entrepreneur, Lawyer, Investor">
+          <input id="psInputOccupation" class="tm-input input-gold" type="text" placeholder="e.g., Entrepreneur, Lawyer, Investor">
         </div>
         <div class="ps-edit-field">
           <label>Age</label>
-          <input id="psInputAge" type="number" min="18" max="99" placeholder="e.g., 28">
+          <input id="psInputAge" class="tm-input input-gold" type="number" min="18" max="99" placeholder="e.g., 28">
         </div>
       </div>
 
       <div class="ps-edit-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:16px;">
         <div class="ps-edit-field">
           <label>Wealth Status</label>
-          <select id="psInputWealthStatus">
+          <select id="psInputWealthStatus" class="tm-input input-gold">
             <option value="">Select</option>
             <option value="Lower-Middle Class">Lower-Middle Class</option>
             <option value="Middle Class">Middle Class</option>
@@ -544,26 +543,24 @@
 
       <div class="ps-edit-field" style="margin-top:16px;">
         <label>Social Link</label>
-        <input id="psInputSocialLink" type="url" placeholder="Instagram, LinkedIn, website, etc.">
+        <input id="psInputSocialLink" class="tm-input input-gold" type="url" placeholder="Instagram, LinkedIn, website, etc.">
       </div>
 
       <div class="ps-edit-field" style="margin-top:16px;">
         <label>Reason for joining Premium Society</label>
-        <textarea id="psInputReason" rows="4" placeholder="Write your reason..."></textarea>
+        <textarea id="psInputReason" class="tm-input input-gold" rows="4" placeholder="Write your reason..."></textarea>
       </div>
 
     </div>
 
     <div class="ps-edit-modal-footer">
-      <div class="ps-edit-modal-actions">
-        <button class="ps-btn-cancel" onclick="closeEditProfile()">Cancel</button>
-        <button class="ps-btn-save" onclick="saveEditProfile()">Save Changes</button>
-      </div>
+      <button type="button" class="btn btn--ghost ps-btn-cancel" onclick="closeEditProfile()">Cancel</button>
+      <button type="button" class="btn btn--gold ps-btn-save" onclick="saveEditProfile()">Save Changes</button>
     </div>
   </div>
 </div>
 
-<script type="module" src="premium-society.js"></script>
+<script type="module" src="premium-society.js"></script
 
   <script>
     document.addEventListener('DOMContentLoaded', () => {

@@ -230,31 +230,20 @@ function showToast(msg) {
 // SWIPE EMPTY-STATE UI HELPERS
 // ---------------------------------------------------------------------
 function psSetSwipeControlsEmpty(isEmpty) {
-    // Primary behavior:
-    // - When deck is empty: hide the X / Star / Heart controls.
-    // - Show the centered empty-state ("Nothing to swipe for now" + Refresh).
-    // This avoids relying on theme CSS that might force the round buttons visible.
-
     const notice = PS_DOM.swipeEmptyNotice;
     const btns = [PS_DOM.btnSwipePass, PS_DOM.btnSwipeSuper, PS_DOM.btnSwipeLike].filter(Boolean);
 
-    if (PS_DOM.swipeControls) {
-        PS_DOM.swipeControls.style.display = isEmpty ? 'none' : '';
-        PS_DOM.swipeControls.style.justifyContent = '';
-        PS_DOM.swipeControls.style.gap = '';
-        PS_DOM.swipeControls.style.opacity = '1';
-    }
-
-    // Fallback only (in case the popover element is missing)
-    if (notice) notice.style.display = (isEmpty && !PS_DOM.refreshPopover) ? 'block' : 'none';
+    if (notice) notice.style.display = isEmpty ? 'block' : 'none';
     btns.forEach((b) => {
-        b.style.display = (isEmpty && !PS_DOM.refreshPopover) ? 'none' : '';
+        b.style.display = isEmpty ? 'none' : '';
+        // Keep buttons enabled; deck logic controls whether swipes can happen
         if (!isEmpty) b.disabled = false;
     });
 
-    if (PS_DOM.refreshPopover) {
-        if (isEmpty) PS_DOM.refreshPopover.classList.add('active');
-        else PS_DOM.refreshPopover.classList.remove('active');
+    if (PS_DOM.swipeControls) {
+        PS_DOM.swipeControls.style.justifyContent = isEmpty ? 'center' : '';
+        PS_DOM.swipeControls.style.gap = isEmpty ? '0' : '';
+        PS_DOM.swipeControls.style.opacity = '1';
     }
 }
 
@@ -744,8 +733,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     initCanvasParticles();
     initNavigation();
     initSettingsSliders();
-    initEditProfileModal();
-    initMobileMenu();
+initMobileMenu();
     initStoryViewer();
     initChat(); // Initialize Chat Listeners
 
@@ -1354,26 +1342,6 @@ const SwipeController = (() => {
 })();
 
 // ---------------------------------------------------------------------
-// SWIPE INIT (PRODUCTION)
-// ---------------------------------------------------------------------
-function ensureSwipeInit() {
-    // Swipe deck must be initialized for real users (not only in mock/dev).
-    // Approved Premium Society members can swipe; others see a locked card.
-
-    if (!PS_STATE.premiumSociety.approved) {
-        psRenderPremiumSocietyLockedDeck();
-        return;
-    }
-
-    if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = '';
-
-    if (!PS_STATE.swipeInited) {
-        PS_STATE.swipeInited = true;
-        SwipeController.init();
-    }
-}
-
-// ---------------------------------------------------------------------
 // NAVIGATION
 // ---------------------------------------------------------------------
 function initNavigation() {
@@ -1408,11 +1376,6 @@ function switchTab(panelName) {
 
     if(PS_DOM.sidebar.classList.contains('ps-is-open')) {
         PS_DOM.sidebar.classList.remove('ps-is-open');
-    }
-
-    // Lazy-init the swipe deck so it works in production and only initializes once.
-    if (panelName === 'swipe') {
-        ensureSwipeInit();
     }
 }
 
