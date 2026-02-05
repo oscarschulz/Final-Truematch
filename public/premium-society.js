@@ -230,42 +230,40 @@ function showToast(msg) {
 // SWIPE EMPTY-STATE UI HELPERS
 // ---------------------------------------------------------------------
 function psSetSwipeControlsEmpty(isEmpty) {
-    // Requirement: when there are no profiles to swipe, show a clear message
-    // and hide the 3 swipe action buttons.
-    const notice = PS_DOM.swipeEmptyNotice;
-    const btns = [PS_DOM.btnSwipePass, PS_DOM.btnSwipeSuper, PS_DOM.btnSwipeLike].filter(Boolean);
+    // Hide swipe buttons when there is nothing to swipe (dashboard behavior).
+    if (PS_DOM.btnSwipePass) PS_DOM.btnSwipePass.style.display = isEmpty ? 'none' : '';
+    if (PS_DOM.btnSwipeLike) PS_DOM.btnSwipeLike.style.display = isEmpty ? 'none' : '';
+    if (PS_DOM.btnSwipeSuper) PS_DOM.btnSwipeSuper.style.display = isEmpty ? 'none' : '';
 
-    if (notice) {
-        notice.textContent = 'Nothing to swipe for now';
-        notice.style.display = isEmpty ? 'block' : 'none';
+    // Optional helper text node (kept for backward compatibility)
+    if (PS_DOM.swipeEmptyNotice) {
+        PS_DOM.swipeEmptyNotice.textContent = isEmpty ? 'All caught up!' : '';
+        PS_DOM.swipeEmptyNotice.style.display = isEmpty ? 'block' : 'none';
     }
 
-    // Hide/show controls + buttons explicitly (do NOT rely only on CSS :has)
-    if (PS_DOM.swipeControls) {
-        PS_DOM.swipeControls.style.display = isEmpty ? 'none' : '';
-        PS_DOM.swipeControls.style.opacity = '1';
-        PS_DOM.swipeControls.style.pointerEvents = isEmpty ? 'none' : 'auto';
-    }
-
-    btns.forEach((b) => {
-        b.style.display = isEmpty ? 'none' : '';
-        b.disabled = Boolean(isEmpty);
-        b.setAttribute('aria-disabled', String(Boolean(isEmpty)));
-    });
-
-    // Use the existing popover overlay as the empty-state surface
+    // Empty-state card (psRefreshPopover is styled like dashboard's swipe-empty card)
     if (PS_DOM.refreshPopover) {
+        // Keep both patterns: hidden attribute (dashboard) + active class (existing CSS)
+        PS_DOM.refreshPopover.hidden = !isEmpty;
+
+        if (isEmpty) PS_DOM.refreshPopover.classList.add('active');
+        else PS_DOM.refreshPopover.classList.remove('active');
+
         if (isEmpty) {
-            PS_DOM.refreshPopover.classList.add('active');
-
-            const h4 = PS_DOM.refreshPopover.querySelector('h4');
-            if (h4) h4.textContent = 'Nothing to swipe for now';
-
-            const p = PS_DOM.refreshPopover.querySelector('p');
-            if (p) p.textContent = 'Come back later or refresh the deck.';
-        } else {
-            PS_DOM.refreshPopover.classList.remove('active');
+            const titleEl = PS_DOM.refreshPopover.querySelector('h3, h4');
+            const bodyEl = PS_DOM.refreshPopover.querySelector('p');
+            if (titleEl) titleEl.textContent = 'All caught up!';
+            if (bodyEl) bodyEl.textContent = 'Come back later or refresh the deck.';
         }
+    }
+
+    // Hide/show the whole control row container (defensive; CSS also handles this)
+    if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = isEmpty ? 'none' : '';
+
+    // If you added a "no swipe" placeholder in HTML, toggle it.
+    if (PS_DOM.noSwipePlaceholder) {
+        PS_DOM.noSwipePlaceholder.classList.toggle('active', isEmpty);
+        PS_DOM.noSwipePlaceholder.style.display = isEmpty ? 'flex' : 'none';
     }
 }
 
@@ -620,6 +618,20 @@ function psRenderPremiumSocietyLockedDeck() {
       const me = await hydrateAccountIdentity();
       if (me) PS_STATE.me = me;
       psHydratePremiumSocietyState(PS_STATE.me);
+
+    // Ensure Edit Profile modal works (handlers + inline onclick functions)
+    initEditProfileModal();
+
+    // Dashboard parity: initialize swipe deck on production too (empty deck shows 'All caught up!')
+    if (PS_STATE.premiumSociety && PS_STATE.premiumSociety.approved) {
+        if (!PS_STATE.swipeInited) {
+            PS_STATE.swipeInited = true;
+            SwipeController.init();
+        }
+    } else {
+        psRenderPremiumSocietyLockedDeck();
+    }
+
       if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || new URLSearchParams(location.search).get('mock') === '1') {
         populateMockContent();
       }

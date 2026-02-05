@@ -1880,3 +1880,12 @@ body.ps-theme{
   }
 }
 
+
+
+/* Ensure Settings Edit Profile button is actually clickable (avoid overlays blocking it) */
+#psBtnEditProfile{
+  cursor: pointer;
+  position: relative;
+  z-index: 20;
+  pointer-events: auto;
+}

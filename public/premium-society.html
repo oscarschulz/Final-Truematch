@@ -152,6 +152,8 @@
           </div>
 
           <div class="ps-swipe-stack swipe-stack" id="psSwipeStack"></div>
+          <div id="psSwipeEmptyNotice" class="ps-swipe-empty-notice" aria-live="polite" style="display:none;"></div>
+
           
           <div class="ps-swipe-controls swipe-controls" id="psSwipeControls">
             <button id="psBtnSwipePass" class="ps-btn-round ps-btn-pass btn-round btn-round--pass"><i class="fa-solid fa-xmark"></i></button>
@@ -159,10 +161,13 @@
             <button id="psBtnSwipeLike" class="ps-btn-round ps-btn-like btn-round btn-round--like"><i class="fa-solid fa-heart"></i></button>
           </div>
 
-          <div class="ps-refresh-popover swipe-empty" id="psRefreshPopover">
-  <div style="font-size:3rem;">✨</div>
-  <h3>That's everyone!</h3>
-  <button class="btn btn--primary" id="psBtnRefreshDeck">Refresh</button>
+          <div class="ps-refresh-popover swipe-empty" id="psRefreshPopover" hidden>
+  <div class="ps-popover-content">
+    <div style="font-size:3rem;">✨</div>
+    <h3>All caught up!</h3>
+    <p class="ps-tiny">Come back later or refresh the deck.</p>
+    <button class="btn btn--primary" id="psBtnRefreshDeck">Refresh</button>
+  </div>
 </div>
         </div>
       </section>
