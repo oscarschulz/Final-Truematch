@@ -230,20 +230,42 @@ function showToast(msg) {
 // SWIPE EMPTY-STATE UI HELPERS
 // ---------------------------------------------------------------------
 function psSetSwipeControlsEmpty(isEmpty) {
+    // Requirement: when there are no profiles to swipe, show a clear message
+    // and hide the 3 swipe action buttons.
     const notice = PS_DOM.swipeEmptyNotice;
     const btns = [PS_DOM.btnSwipePass, PS_DOM.btnSwipeSuper, PS_DOM.btnSwipeLike].filter(Boolean);
 
-    if (notice) notice.style.display = isEmpty ? 'block' : 'none';
+    if (notice) {
+        notice.textContent = 'Nothing to swipe for now';
+        notice.style.display = isEmpty ? 'block' : 'none';
+    }
+
+    // Hide/show controls + buttons explicitly (do NOT rely only on CSS :has)
+    if (PS_DOM.swipeControls) {
+        PS_DOM.swipeControls.style.display = isEmpty ? 'none' : '';
+        PS_DOM.swipeControls.style.opacity = '1';
+        PS_DOM.swipeControls.style.pointerEvents = isEmpty ? 'none' : 'auto';
+    }
+
     btns.forEach((b) => {
         b.style.display = isEmpty ? 'none' : '';
-        // Keep buttons enabled; deck logic controls whether swipes can happen
-        if (!isEmpty) b.disabled = false;
+        b.disabled = Boolean(isEmpty);
+        b.setAttribute('aria-disabled', String(Boolean(isEmpty)));
     });
 
-    if (PS_DOM.swipeControls) {
-        PS_DOM.swipeControls.style.justifyContent = isEmpty ? 'center' : '';
-        PS_DOM.swipeControls.style.gap = isEmpty ? '0' : '';
-        PS_DOM.swipeControls.style.opacity = '1';
+    // Use the existing popover overlay as the empty-state surface
+    if (PS_DOM.refreshPopover) {
+        if (isEmpty) {
+            PS_DOM.refreshPopover.classList.add('active');
+
+            const h4 = PS_DOM.refreshPopover.querySelector('h4');
+            if (h4) h4.textContent = 'Nothing to swipe for now';
+
+            const p = PS_DOM.refreshPopover.querySelector('p');
+            if (p) p.textContent = 'Come back later or refresh the deck.';
+        } else {
+            PS_DOM.refreshPopover.classList.remove('active');
+        }
     }
 }
 
@@ -962,8 +984,7 @@ function populateMockContent(opts = {}) {
         });
         PS_DOM.storiesContainer.innerHTML = html;
         if(PS_DOM.momentsPopup) {
-            const mobileStories = document.getElementById('psMobileStoriesContainer');
-            if (mobileStories) mobileStories.innerHTML = html;
+            document.getElementById('psMobileStoriesContainer').innerHTML = html;
         }
     }
 
@@ -1172,42 +1193,26 @@ const SwipeController = (() => {
         }
     }
 
-    function createCard(person, isTop, index) {
+    function createCard(person, position, index) {
         const card = document.createElement('div');
-        // Keep PS class for legacy CSS + Dashboard class for styling parity
-        card.className = 'ps-swipe-card swipe-card';
+        card.className = 'ps-swipe-card';
+        card.dataset.pos = position;
 
-        const img = person.photoUrl || 'assets/images/truematch-mark.png';
-        card.style.backgroundImage = `url('${String(img).replace(/'/g, "\'")}')`;
-        card.style.backgroundColor = getRandomColor();
-
-        // Dashboard-style stack appearance
-        if (isTop) {
-            card.id = 'activeSwipeCard';
-            card.style.zIndex = 10;
-            card.style.opacity = 1;
-            card.style.transform = 'scale(1)';
+        // Prefer real profile photo if present, otherwise fallback to gradient
+        if (person.photoUrl) {
+            card.style.backgroundImage = `url('${person.photoUrl.replace(/'/g, "\\'")}')`;
         } else {
-            card.style.zIndex = 5;
-            card.style.opacity = 0.5;
-            card.style.transform = 'scale(0.95) translateY(10px)';
+            card.style.backgroundImage = `linear-gradient(135deg, ${getRandomColor()}, #000)`;
         }
 
-        let tagsHtml = '';
         const tags = Array.isArray(person.tags) ? person.tags : [];
-        if (tags.length > 0) {
-            tagsHtml = `<div class="swipe-tags">` + tags.slice(0, 3).map(t => `<span class="tag">${String(t)}</span>`).join('') + `</div>`;
-        }
-
-        const safeName = person.name || 'Unknown';
-        const safeAge = person.age ? `<span>${person.age}</span>` : '';
-        const safeCity = person.city ? `📍 ${person.city}` : '';
+        const tagHtml = tags.slice(0, 3).map(t => `<span class="ps-tag">${t}</span>`).join('');
 
         card.innerHTML = `
-            <div class="swipe-card__info">
-                <h2>${safeName} ${safeAge}</h2>
-                <p>${safeCity}</p>
-                ${tagsHtml}
+            <div class="ps-swipe-card-info">
+                <h2>${person.name}${person.age ? `, ${person.age}` : ''}</h2>
+                <p>${person.city || '—'}</p>
+                ${tagHtml ? `<div class="ps-tags">${tagHtml}</div>` : ``}
             </div>
         `;
 
@@ -1226,11 +1231,9 @@ const SwipeController = (() => {
         const remainingCards = candidates.slice(currentIndex, currentIndex + 3);
         if (remainingCards.length === 0) {
             psSetSwipeControlsEmpty(true);
-            if (PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.add('active');
             return;
         }
         psSetSwipeControlsEmpty(false);
-        if (PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove('active');
 // Order: left, center, right
         remainingCards.forEach((person, i) => {
             const position = ['left', 'center', 'right'][i] || 'center';
