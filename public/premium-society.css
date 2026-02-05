@@ -1687,3 +1687,16 @@ body.ps-theme {
 .ps-panel.ps-is-active[data-panel="swipe"]:has(#psRefreshPopover.active) .ps-swipe-container{
   display: none !important;
 }
+/* Remove the big gray swipe deck/frame when empty-state card is active */
+.ps-panel[data-panel="swipe"]:has(#psRefreshPopover.active) #psSwipeStack,
+.ps-panel[data-panel="swipe"]:has(#psRefreshPopover.active) .ps-swipe-stack,
+.ps-panel[data-panel="swipe"]:has(#psRefreshPopover.active) .swipe-stack{
+  display: none !important;
+}
+
+/* (Optional) hide the 3 swipe buttons too, just in case */
+.ps-panel[data-panel="swipe"]:has(#psRefreshPopover.active) #psSwipeControls,
+.ps-panel[data-panel="swipe"]:has(#psRefreshPopover.active) .ps-swipe-controls,
+.ps-panel[data-panel="swipe"]:has(#psRefreshPopover.active) .swipe-controls{
+  display: none !important;
+}
