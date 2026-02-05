@@ -1660,3 +1660,63 @@ body.ps-theme .ps-layout #psRefreshPopover .ps-popover-content p{
     left: 50% !important;
   }
 }
+/* =========================================================
+   OVERRIDE: Center the Swipe empty card (#psRefreshPopover)
+   Paste this at the VERY BOTTOM of premium-society.css
+   ========================================================= */
+
+.ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover{
+  /* remove any overlay/inset rules that cause clipping */
+  inset: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+
+  /* make it viewport-based so it won't be clipped by containers */
+  position: fixed !important;
+  top: 50% !important;
+
+  /* center inside the MIDDLE column (between left & right sidebars) */
+  left: calc(
+    var(--ps-sidebar-left-width) +
+    (100vw - var(--ps-sidebar-left-width) - var(--ps-sidebar-right-width)) / 2
+  ) !important;
+
+  transform: translate(-50%, -50%) !important;
+
+  /* keep it looking like a card */
+  width: min(420px, calc(100vw - var(--ps-sidebar-left-width) - var(--ps-sidebar-right-width) - 40px)) !important;
+  padding: 22px !important;
+  border-radius: 20px !important;
+  text-align: center !important;
+
+  background: rgba(20,20,25,0.94) !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  box-shadow: 0 26px 80px rgba(0,0,0,0.72) !important;
+
+  z-index: 9000 !important;
+  display: none !important;
+}
+
+.ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover.active{
+  display: block !important;
+}
+
+/* If right sidebar is hidden (tablet), re-center using only left sidebar */
+@media (max-width: 1100px){
+  .ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover{
+    left: calc(
+      var(--ps-sidebar-left-width) +
+      (100vw - var(--ps-sidebar-left-width)) / 2
+    ) !important;
+
+    width: min(420px, calc(100vw - var(--ps-sidebar-left-width) - 40px)) !important;
+  }
+}
+
+/* Mobile: sidebar collapses, center on full viewport */
+@media (max-width: 768px){
+  .ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover{
+    left: 50% !important;
+    width: min(420px, calc(100vw - 40px)) !important;
+  }
+}
