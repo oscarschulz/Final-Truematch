@@ -1671,3 +1671,10 @@ body.ps-theme {
 .ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover.active{
   transform: translateX(480px) !important; /* tweak */
 }
+/* Hide the big swipe deck container when empty-state is active */
+.ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover.active ~ .ps-swipe-deck,
+.ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover.active ~ .ps-swipe-stack,
+.ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover.active ~ .ps-swipe-frame,
+.ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover.active ~ .ps-swipe-container{
+  display: none !important;
+}
