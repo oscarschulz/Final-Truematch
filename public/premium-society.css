@@ -1612,111 +1612,60 @@ body.ps-theme {
 }
 #psEditProfileModal label { font-weight: 700; font-size: 0.85rem; opacity: 0.9; margin-bottom: 8px; display:block; }
 
-
 /* ======================================================================
-   PATCH: Center the Swipe empty-state card (dashboard behavior)
+   FINAL SWIPE EMPTY-STATE CENTER FIX (Swipe-only)
+   - Centers the "Nothing to swipe for now" (Refresh) card in the Swipe tab
+   - Avoids fragile fixed/absolute calc() centering hacks
    ====================================================================== */
-body.ps-theme .ps-layout #psRefreshPopover.active{
-  position: fixed !important;
-  inset: auto !important;
-  top: 50% !important;
-  left: calc(var(--ps-sidebar-left-width) + (100vw - var(--ps-sidebar-left-width) - var(--ps-sidebar-right-width))/2) !important;
-  transform: translate(-50%, -50%) !important;
-  width: auto !important;
-  height: auto !important;
-  padding: 0 !important;
+
+.ps-panel.ps-is-active[data-panel="swipe"] .ps-swipe-layout{
+  /* Ensure we always have enough vertical space to true-center the empty card */
+  min-height: calc(100vh - 220px) !important;
+  width: 100% !important;
+
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  pointer-events: auto;
-  z-index: 9500 !important;
 }
 
-body.ps-theme .ps-layout #psRefreshPopover .ps-popover-content{
-  width: 320px;
-  max-width: min(420px, 92vw);
-  background: rgba(20, 20, 25, 0.92);
-  backdrop-filter: blur(18px);
-  border: 1px solid rgba(255,255,255,0.14);
-  border-radius: 22px;
-  padding: 22px 20px;
-  box-shadow: 0 18px 55px rgba(0,0,0,0.85);
-  text-align: center;
-}
-
-body.ps-theme .ps-layout #psRefreshPopover .ps-popover-content h4{
-  margin: 0 0 6px;
-  font-size: 1.1rem;
-  color: #fff;
-}
-body.ps-theme .ps-layout #psRefreshPopover .ps-popover-content p{
-  margin: 0 0 14px;
-  font-size: 0.9rem;
-  color: rgba(231,233,234,0.75);
-}
-
-@media (max-width: 860px){
-  body.ps-theme .ps-layout #psRefreshPopover.active{
-    left: 50% !important;
-  }
-}
-/* =========================================================
-   OVERRIDE: Center the Swipe empty card (#psRefreshPopover)
-   Paste this at the VERY BOTTOM of premium-society.css
-   ========================================================= */
-
+/* Treat the popover as the EMPTY-STATE CARD (not a full-screen overlay) */
 .ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover{
-  /* remove any overlay/inset rules that cause clipping */
+  /* Reset any previous absolute/fixed overlay positioning */
+  position: relative !important;
   inset: auto !important;
+  top: auto !important;
   right: auto !important;
   bottom: auto !important;
+  left: auto !important;
+  transform: none !important;
 
-  /* make it viewport-based so it won't be clipped by containers */
-  position: fixed !important;
-  top: 50% !important;
+  /* Card sizing */
+  width: min(420px, 92vw) !important;
+  max-width: 420px !important;
 
-  /* center inside the MIDDLE column (between left & right sidebars) */
-  left: calc(
-    var(--ps-sidebar-left-width) +
-    (100vw - var(--ps-sidebar-left-width) - var(--ps-sidebar-right-width)) / 2
-  ) !important;
-
-  transform: translate(-50%, -50%) !important;
-
-  /* keep it looking like a card */
-  width: min(420px, calc(100vw - var(--ps-sidebar-left-width) - var(--ps-sidebar-right-width) - 40px)) !important;
-  padding: 22px !important;
-  border-radius: 20px !important;
-  text-align: center !important;
-
-  background: rgba(20,20,25,0.94) !important;
-  border: 1px solid rgba(255,255,255,0.14) !important;
+  /* Card styling (matches dashboard glass look) */
+  padding: 22px 20px !important;
+  border-radius: 22px !important;
+  background: rgba(20, 20, 25, 0.94) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  backdrop-filter: blur(18px) !important;
+  -webkit-backdrop-filter: blur(18px) !important;
   box-shadow: 0 26px 80px rgba(0,0,0,0.72) !important;
 
-  z-index: 9000 !important;
+  text-align: center !important;
+
+  /* Default hidden; JS toggles .active */
   display: none !important;
+
+  z-index: 50 !important;
 }
 
+/* When active, show as a centered vertical stack */
 .ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover.active{
-  display: block !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 10px !important;
 }
 
-/* If right sidebar is hidden (tablet), re-center using only left sidebar */
-@media (max-width: 1100px){
-  .ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover{
-    left: calc(
-      var(--ps-sidebar-left-width) +
-      (100vw - var(--ps-sidebar-left-width)) / 2
-    ) !important;
-
-    width: min(420px, calc(100vw - var(--ps-sidebar-left-width) - 40px)) !important;
-  }
-}
-
-/* Mobile: sidebar collapses, center on full viewport */
-@media (max-width: 768px){
-  .ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover{
-    left: 50% !important;
-    width: min(420px, calc(100vw - 40px)) !important;
-  }
-}
