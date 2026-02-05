@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="assets/css/premium-society/chat.css" />
   <link rel="stylesheet" href="assets/css/premium-society/settings.css" />
   <link rel="stylesheet" href="premium-society.css" />
+  <link rel="stylesheet" href="dashboard.css" />
 </head>
 
 <body class="ps-theme">
@@ -27,21 +28,21 @@
 
   <canvas id="ps-bg-canvas"></canvas>
 
-  <div class="ps-layout" id="psMainLayout">
+  <div class="ps-layout layout" id="psMainLayout">
     
-    <aside class="ps-sidebar ps-animate-enter ps-delay-1" id="psMainSidebar">
+    <aside class="ps-sidebar sidebar ps-animate-enter ps-delay-1 animate-enter delay-1" id="psMainSidebar">
       <div>
-        <a class="ps-brand" href="#">
-          <img src="assets/images/truematch-mark.png" class="ps-brand-img" alt="Logo" onerror="this.src='https://via.placeholder.com/40'">
-          <span class="ps-brand-name">iTrueMatch</span>
+        <a class="ps-brand brand" href="#">
+          <img src="assets/images/truematch-mark.png" class="ps-brand-img brand__logo" alt="Logo" onerror="this.src='https://via.placeholder.com/40'">
+          <span class="ps-brand-name brand__name">iTrueMatch</span>
         </a>
 
         <div class="ps-nav-label">DISCOVER</div>
-        <nav class="ps-nav-links" id="psTabbar">
-          <button class="ps-nav-btn" data-panel="home"><i class="fa-solid fa-house"></i> <span>Home</span></button>
-          <button class="ps-nav-btn ps-is-active" data-panel="swipe"><i class="fa-solid fa-layer-group"></i> <span>Swipe</span></button>
-          <button class="ps-nav-btn" data-panel="matches"><i class="fa-solid fa-comments"></i> <span>Matches</span></button>
-          <button class="ps-nav-btn" data-panel="settings"><i class="fa-solid fa-gear"></i> <span>Settings</span></button>
+        <nav class="ps-nav-links nav-links" id="psTabbar">
+          <button class="ps-nav-btn nav-btn" data-panel="home"><i class="fa-solid fa-house"></i> <span>Home</span></button>
+          <button class="ps-nav-btn nav-btn ps-is-active" data-panel="swipe"><i class="fa-solid fa-layer-group"></i> <span>Swipe</span></button>
+          <button class="ps-nav-btn nav-btn" data-panel="matches"><i class="fa-solid fa-comments"></i> <span>Matches</span></button>
+          <button class="ps-nav-btn nav-btn" data-panel="settings"><i class="fa-solid fa-gear"></i> <span>Settings</span></button>
         </nav>
       </div>
 
@@ -82,7 +83,7 @@
       </div>
     </aside>
 
-    <main class="ps-main-feed ps-animate-enter ps-delay-2">
+    <main class="ps-main-feed main-feed ps-animate-enter ps-delay-2 animate-enter delay-2">
       
       <section class="ps-panel" data-panel="home" id="ps-panel-home">
         <div class="ps-profile-header ps-glass-card">
@@ -316,7 +317,7 @@
       </section>
     </main>
 
-    <aside class="ps-right-sidebar ps-animate-enter ps-delay-3">
+    <aside class="ps-right-sidebar right-sidebar ps-animate-enter ps-delay-3 animate-enter delay-3">
       <div class="ps-search-box">
         <i class="fa-solid fa-magnifying-glass"></i>
         <input type="text" placeholder="Search..." class="ps-search-input" />
