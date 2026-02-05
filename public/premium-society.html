@@ -158,11 +158,14 @@
             <button id="psBtnSwipeLike" class="ps-btn-round ps-btn-like btn-round btn-round--like"><i class="fa-solid fa-heart"></i></button>
           </div>
 
-          <div class="ps-refresh-popover swipe-empty" id="psRefreshPopover" hidden>
-  <div style="font-size:3rem;">✨</div>
-  <h3 id="psSwipeEmptyNotice">All caught up!</h3>
-  <button class="btn btn--primary" id="psBtnRefreshDeck">Refresh</button>
-</div>
+          <div class="ps-refresh-popover swipe-empty" id="psRefreshPopover" aria-live="polite">
+            <div class="ps-popover-content">
+              <span class="ps-emoji-lg">✨</span>
+              <h4>Nothing to swipe for now</h4>
+              <p>Come back later or refresh the deck.</p>
+              <button class="btn btn--primary ps-btn-refresh" id="psBtnRefreshDeck" type="button">Refresh</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -231,7 +234,7 @@
                           <span class="ps-badge-outline" id="psSPlanBadge">Free Account</span>
                       </div>
                   </div>
-                  <button type="button" class="ps-btn-edit-layout" id="psBtnEditProfile">
+                  <button class="ps-btn-edit-layout" id="psBtnEditProfile">
                       <span>Edit Profile</span> <i class="fa-solid fa-pen"></i>
                   </button>
               </div>
@@ -471,7 +474,6 @@
     <div class="modal-title" id="psEditProfileTitle">Edit profile & preferences</div>
     <div class="modal-sub">These are the same details you filled in your Premium Society application. Saving here updates your database immediately.</div>
   </div>
-  <button id="psBtnCloseEditProfile" class="btn btn--ghost btn--sm" type="button" onclick="closeEditProfile()">Close</button>
 </div>
 <div class="ps-edit-modal-body">
 

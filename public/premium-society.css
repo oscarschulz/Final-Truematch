@@ -1612,6 +1612,51 @@ body.ps-theme {
 }
 #psEditProfileModal label { font-weight: 700; font-size: 0.85rem; opacity: 0.9; margin-bottom: 8px; display:block; }
 
-/* ---- Dashboard parity: swipe empty state should use [hidden] (not .active) ---- */
-#psRefreshPopover{display:flex;}
-#psRefreshPopover[hidden]{display:none !important;}
+
+/* ======================================================================
+   PATCH: Center the Swipe empty-state card (dashboard behavior)
+   ====================================================================== */
+body.ps-theme .ps-layout #psRefreshPopover.active{
+  position: fixed !important;
+  inset: auto !important;
+  top: 50% !important;
+  left: calc(var(--ps-sidebar-left-width) + (100vw - var(--ps-sidebar-left-width) - var(--ps-sidebar-right-width))/2) !important;
+  transform: translate(-50%, -50%) !important;
+  width: auto !important;
+  height: auto !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  pointer-events: auto;
+  z-index: 9500 !important;
+}
+
+body.ps-theme .ps-layout #psRefreshPopover .ps-popover-content{
+  width: 320px;
+  max-width: min(420px, 92vw);
+  background: rgba(20, 20, 25, 0.92);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 22px;
+  padding: 22px 20px;
+  box-shadow: 0 18px 55px rgba(0,0,0,0.85);
+  text-align: center;
+}
+
+body.ps-theme .ps-layout #psRefreshPopover .ps-popover-content h4{
+  margin: 0 0 6px;
+  font-size: 1.1rem;
+  color: #fff;
+}
+body.ps-theme .ps-layout #psRefreshPopover .ps-popover-content p{
+  margin: 0 0 14px;
+  font-size: 0.9rem;
+  color: rgba(231,233,234,0.75);
+}
+
+@media (max-width: 860px){
+  body.ps-theme .ps-layout #psRefreshPopover.active{
+    left: 50% !important;
+  }
+}
