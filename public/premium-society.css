@@ -1669,5 +1669,5 @@ body.ps-theme {
   gap: 10px !important;
 }
 .ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover.active{
-  transform: translateX(120px) !important; /* tweak */
+  transform: translateX(720px) !important; /* tweak */
 }
