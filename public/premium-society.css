@@ -1668,4 +1668,6 @@ body.ps-theme {
   justify-content: center !important;
   gap: 10px !important;
 }
-
+.ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover.active{
+  transform: translateX(120px) !important; /* tweak */
+}
