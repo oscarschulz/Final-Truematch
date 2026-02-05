@@ -1669,12 +1669,21 @@ body.ps-theme {
   gap: 10px !important;
 }
 .ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover.active{
-  transform: translateX(480px) !important; /* tweak */
+  transform: translateX(450px) !important; /* tweak */
 }
+
 /* Hide the big swipe deck container when empty-state is active */
 .ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover.active ~ .ps-swipe-deck,
 .ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover.active ~ .ps-swipe-stack,
 .ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover.active ~ .ps-swipe-frame,
 .ps-panel.ps-is-active[data-panel="swipe"] #psRefreshPopover.active ~ .ps-swipe-container{
+  display: none !important;
+}
+
+/* Fallback: if the deck is not a sibling, hide common "frame" wrappers */
+.ps-panel.ps-is-active[data-panel="swipe"]:has(#psRefreshPopover.active) .ps-swipe-deck,
+.ps-panel.ps-is-active[data-panel="swipe"]:has(#psRefreshPopover.active) .ps-swipe-stack,
+.ps-panel.ps-is-active[data-panel="swipe"]:has(#psRefreshPopover.active) .ps-swipe-frame,
+.ps-panel.ps-is-active[data-panel="swipe"]:has(#psRefreshPopover.active) .ps-swipe-container{
   display: none !important;
 }
