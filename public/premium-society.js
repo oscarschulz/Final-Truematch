@@ -230,40 +230,42 @@ function showToast(msg) {
 // SWIPE EMPTY-STATE UI HELPERS
 // ---------------------------------------------------------------------
 function psSetSwipeControlsEmpty(isEmpty) {
-    // Hide swipe buttons when there is nothing to swipe (dashboard behavior).
-    if (PS_DOM.btnSwipePass) PS_DOM.btnSwipePass.style.display = isEmpty ? 'none' : '';
-    if (PS_DOM.btnSwipeLike) PS_DOM.btnSwipeLike.style.display = isEmpty ? 'none' : '';
-    if (PS_DOM.btnSwipeSuper) PS_DOM.btnSwipeSuper.style.display = isEmpty ? 'none' : '';
+    // Requirement: when there are no profiles to swipe, show a clear message
+    // and hide the 3 swipe action buttons.
+    const notice = PS_DOM.swipeEmptyNotice;
+    const btns = [PS_DOM.btnSwipePass, PS_DOM.btnSwipeSuper, PS_DOM.btnSwipeLike].filter(Boolean);
 
-    // Optional helper text node (kept for backward compatibility)
-    if (PS_DOM.swipeEmptyNotice) {
-        PS_DOM.swipeEmptyNotice.textContent = isEmpty ? 'All caught up!' : '';
-        PS_DOM.swipeEmptyNotice.style.display = isEmpty ? 'block' : 'none';
+    if (notice) {
+        notice.textContent = 'Nothing to swipe for now';
+        notice.style.display = isEmpty ? 'block' : 'none';
     }
 
-    // Empty-state card (psRefreshPopover is styled like dashboard's swipe-empty card)
+    // Hide/show controls + buttons explicitly (do NOT rely only on CSS :has)
+    if (PS_DOM.swipeControls) {
+        PS_DOM.swipeControls.style.display = isEmpty ? 'none' : '';
+        PS_DOM.swipeControls.style.opacity = '1';
+        PS_DOM.swipeControls.style.pointerEvents = isEmpty ? 'none' : 'auto';
+    }
+
+    btns.forEach((b) => {
+        b.style.display = isEmpty ? 'none' : '';
+        b.disabled = Boolean(isEmpty);
+        b.setAttribute('aria-disabled', String(Boolean(isEmpty)));
+    });
+
+    // Use the existing popover overlay as the empty-state surface
     if (PS_DOM.refreshPopover) {
-        // Keep both patterns: hidden attribute (dashboard) + active class (existing CSS)
-        PS_DOM.refreshPopover.hidden = !isEmpty;
-
-        if (isEmpty) PS_DOM.refreshPopover.classList.add('active');
-        else PS_DOM.refreshPopover.classList.remove('active');
-
         if (isEmpty) {
-            const titleEl = PS_DOM.refreshPopover.querySelector('h3, h4');
-            const bodyEl = PS_DOM.refreshPopover.querySelector('p');
-            if (titleEl) titleEl.textContent = 'All caught up!';
-            if (bodyEl) bodyEl.textContent = 'Come back later or refresh the deck.';
+            PS_DOM.refreshPopover.classList.add('active');
+
+            const h4 = PS_DOM.refreshPopover.querySelector('h4');
+            if (h4) h4.textContent = 'Nothing to swipe for now';
+
+            const p = PS_DOM.refreshPopover.querySelector('p');
+            if (p) p.textContent = 'Come back later or refresh the deck.';
+        } else {
+            PS_DOM.refreshPopover.classList.remove('active');
         }
-    }
-
-    // Hide/show the whole control row container (defensive; CSS also handles this)
-    if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = isEmpty ? 'none' : '';
-
-    // If you added a "no swipe" placeholder in HTML, toggle it.
-    if (PS_DOM.noSwipePlaceholder) {
-        PS_DOM.noSwipePlaceholder.classList.toggle('active', isEmpty);
-        PS_DOM.noSwipePlaceholder.style.display = isEmpty ? 'flex' : 'none';
     }
 }
 
@@ -618,28 +620,42 @@ function psRenderPremiumSocietyLockedDeck() {
       const me = await hydrateAccountIdentity();
       if (me) PS_STATE.me = me;
       psHydratePremiumSocietyState(PS_STATE.me);
-
-    // Ensure Edit Profile modal works (handlers + inline onclick functions)
-    initEditProfileModal();
-
-    // Dashboard parity: initialize swipe deck on production too (empty deck shows 'All caught up!')
-    if (PS_STATE.premiumSociety && PS_STATE.premiumSociety.approved) {
-        if (!PS_STATE.swipeInited) {
-            PS_STATE.swipeInited = true;
-            SwipeController.init();
-        }
-    } else {
-        psRenderPremiumSocietyLockedDeck();
-    }
-
-      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || new URLSearchParams(location.search).get('mock') === '1') {
-        populateMockContent();
-      }
-const lastTab = localStorage.getItem('ps_last_tab') || 'home';
-      switchTab(lastTab);
-    } catch (e) {}
+            // After refreshing state, enforce the swipe gating immediately.
+      psEnforceSwipeAccess();
+} catch (e) {}
   });
 }
+
+/**
+ * Enforce Premium Society swipe gating on the Swipe tab.
+ * - If approved: init deck (once) and allow swipe UI.
+ * - If not approved/eligible: render locked card and hide swipe controls.
+ * NOTE: This does NOT change business rules — it only makes the existing gating actually run.
+ */
+function psEnforceSwipeAccess() {
+  // Only relevant on the Swipe panel.
+  if (!PS_DOM.swipeStack) return;
+
+  // Approved members can swipe.
+  if (PS_STATE.premiumSociety && PS_STATE.premiumSociety.approved) {
+    // If locked deck previously hid controls, restore them (unless empty-state hides them).
+    if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = '';
+
+    // Ensure Edit Profile modal is wired (so Settings button works regardless of tab order).
+    initEditProfileModal();
+
+    // Initialize the swipe deck once.
+    if (!PS_STATE.swipeInited) {
+      PS_STATE.swipeInited = true;
+      SwipeController.init();
+    }
+    return;
+  }
+
+  // Everyone else sees the locked deck.
+  psRenderPremiumSocietyLockedDeck();
+}
+
 
 function psRenderPremiumSocietyPanel() {
   if (!PS_DOM.panelPremiumBody) return;
@@ -780,6 +796,9 @@ initMobileMenu();
     }
 
     psHydratePremiumSocietyState(PS_STATE.me);
+
+    // Wire Edit Profile modal immediately (Settings button must be clickable)
+    initEditProfileModal();
 
     if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || new URLSearchParams(location.search).get('mock') === '1') {
         populateMockContent();
@@ -1408,6 +1427,12 @@ function switchTab(panelName) {
 
     if(PS_DOM.sidebar.classList.contains('ps-is-open')) {
         PS_DOM.sidebar.classList.remove('ps-is-open');
+    }
+
+
+    // Premium Society gating (must run when entering the Swipe tab)
+    if (panelName === 'swipe') {
+        psEnforceSwipeAccess();
     }
 }
 

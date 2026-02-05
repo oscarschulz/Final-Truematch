@@ -16,7 +16,6 @@
   <link rel="stylesheet" href="assets/css/premium-society/chat.css" />
   <link rel="stylesheet" href="assets/css/premium-society/settings.css" />
   <link rel="stylesheet" href="premium-society.css" />
-  <link rel="stylesheet" href="dashboard.css" />
 </head>
 
 <body class="ps-theme">
@@ -28,21 +27,21 @@
 
   <canvas id="ps-bg-canvas"></canvas>
 
-  <div class="ps-layout layout" id="psMainLayout">
+  <div class="ps-layout" id="psMainLayout">
     
-    <aside class="ps-sidebar sidebar ps-animate-enter ps-delay-1 animate-enter delay-1" id="psMainSidebar">
+    <aside class="ps-sidebar ps-animate-enter ps-delay-1" id="psMainSidebar">
       <div>
-        <a class="ps-brand brand" href="#">
-          <img src="assets/images/truematch-mark.png" class="ps-brand-img brand__logo" alt="Logo" onerror="this.src='https://via.placeholder.com/40'">
-          <span class="ps-brand-name brand__name">iTrueMatch</span>
+        <a class="ps-brand" href="#">
+          <img src="assets/images/truematch-mark.png" class="ps-brand-img" alt="Logo" onerror="this.src='https://via.placeholder.com/40'">
+          <span class="ps-brand-name">iTrueMatch</span>
         </a>
 
         <div class="ps-nav-label">DISCOVER</div>
-        <nav class="ps-nav-links nav-links" id="psTabbar">
-          <button class="ps-nav-btn nav-btn" data-panel="home"><i class="fa-solid fa-house"></i> <span>Home</span></button>
-          <button class="ps-nav-btn nav-btn ps-is-active" data-panel="swipe"><i class="fa-solid fa-layer-group"></i> <span>Swipe</span></button>
-          <button class="ps-nav-btn nav-btn" data-panel="matches"><i class="fa-solid fa-comments"></i> <span>Matches</span></button>
-          <button class="ps-nav-btn nav-btn" data-panel="settings"><i class="fa-solid fa-gear"></i> <span>Settings</span></button>
+        <nav class="ps-nav-links" id="psTabbar">
+          <button class="ps-nav-btn" data-panel="home"><i class="fa-solid fa-house"></i> <span>Home</span></button>
+          <button class="ps-nav-btn ps-is-active" data-panel="swipe"><i class="fa-solid fa-layer-group"></i> <span>Swipe</span></button>
+          <button class="ps-nav-btn" data-panel="matches"><i class="fa-solid fa-comments"></i> <span>Matches</span></button>
+          <button class="ps-nav-btn" data-panel="settings"><i class="fa-solid fa-gear"></i> <span>Settings</span></button>
         </nav>
       </div>
 
@@ -83,7 +82,7 @@
       </div>
     </aside>
 
-    <main class="ps-main-feed main-feed ps-animate-enter ps-delay-2 animate-enter delay-2">
+    <main class="ps-main-feed ps-animate-enter ps-delay-2">
       
       <section class="ps-panel" data-panel="home" id="ps-panel-home">
         <div class="ps-profile-header ps-glass-card">
@@ -152,8 +151,6 @@
           </div>
 
           <div class="ps-swipe-stack swipe-stack" id="psSwipeStack"></div>
-          <div id="psSwipeEmptyNotice" class="ps-swipe-empty-notice" aria-live="polite" style="display:none;"></div>
-
           
           <div class="ps-swipe-controls swipe-controls" id="psSwipeControls">
             <button id="psBtnSwipePass" class="ps-btn-round ps-btn-pass btn-round btn-round--pass"><i class="fa-solid fa-xmark"></i></button>
@@ -162,12 +159,9 @@
           </div>
 
           <div class="ps-refresh-popover swipe-empty" id="psRefreshPopover" hidden>
-  <div class="ps-popover-content">
-    <div style="font-size:3rem;">✨</div>
-    <h3>All caught up!</h3>
-    <p class="ps-tiny">Come back later or refresh the deck.</p>
-    <button class="btn btn--primary" id="psBtnRefreshDeck">Refresh</button>
-  </div>
+  <div style="font-size:3rem;">✨</div>
+  <h3 id="psSwipeEmptyNotice">All caught up!</h3>
+  <button class="btn btn--primary" id="psBtnRefreshDeck">Refresh</button>
 </div>
         </div>
       </section>
@@ -237,7 +231,7 @@
                           <span class="ps-badge-outline" id="psSPlanBadge">Free Account</span>
                       </div>
                   </div>
-                  <button class="ps-btn-edit-layout" id="psBtnEditProfile">
+                  <button type="button" class="ps-btn-edit-layout" id="psBtnEditProfile">
                       <span>Edit Profile</span> <i class="fa-solid fa-pen"></i>
                   </button>
               </div>
@@ -322,7 +316,7 @@
       </section>
     </main>
 
-    <aside class="ps-right-sidebar right-sidebar ps-animate-enter ps-delay-3 animate-enter delay-3">
+    <aside class="ps-right-sidebar ps-animate-enter ps-delay-3">
       <div class="ps-search-box">
         <i class="fa-solid fa-magnifying-glass"></i>
         <input type="text" placeholder="Search..." class="ps-search-input" />
