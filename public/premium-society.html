@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="assets/css/premium-society/feed.css" />
   <link rel="stylesheet" href="assets/css/premium-society/chat.css" />
   <link rel="stylesheet" href="assets/css/premium-society/settings.css" />
+  <link rel="stylesheet" href="premium-society.css" />
 </head>
 
 <body class="ps-theme">
@@ -149,24 +150,19 @@
               <span id="psMobileSwipeCount">-</span> <span id="psMobileSwipeLabel">Swipes</span>
           </div>
 
-          <div class="ps-swipe-stack" id="psSwipeStack"></div>
+          <div class="ps-swipe-stack swipe-stack" id="psSwipeStack"></div>
           
-          <div class="ps-swipe-controls" id="psSwipeControls">
-            <button id="psBtnSwipePass" class="ps-btn-round ps-btn-pass"><i class="fa-solid fa-xmark"></i></button>
-            <button id="psBtnSwipeSuper" class="ps-btn-round ps-btn-super"><i class="fa-solid fa-star"></i></button>
-            <button id="psBtnSwipeLike" class="ps-btn-round ps-btn-like"><i class="fa-solid fa-heart"></i></button>
+          <div class="ps-swipe-controls swipe-controls" id="psSwipeControls">
+            <button id="psBtnSwipePass" class="ps-btn-round ps-btn-pass btn-round btn-round--pass"><i class="fa-solid fa-xmark"></i></button>
+            <button id="psBtnSwipeSuper" class="ps-btn-round ps-btn-super btn-round btn-round--super"><i class="fa-solid fa-star"></i></button>
+            <button id="psBtnSwipeLike" class="ps-btn-round ps-btn-like btn-round btn-round--like"><i class="fa-solid fa-heart"></i></button>
           </div>
 
-          <div class="ps-refresh-popover" id="psRefreshPopover">
-              <div class="ps-popover-content">
-                  <div class="ps-emoji-lg">✨</div>
-                  <h4>All Caught Up!</h4>
-                  <p>There's no one new around you.</p>
-                  <button class="ps-btn-refresh" id="psBtnRefreshDeck">
-                      <i class="fa-solid fa-rotate-right"></i> Refresh Deck
-                  </button>
-              </div>
-          </div>
+          <div class="ps-refresh-popover swipe-empty" id="psRefreshPopover">
+  <div style="font-size:3rem;">✨</div>
+  <h3>That's everyone!</h3>
+  <button class="btn btn--primary" id="psBtnRefreshDeck">Refresh</button>
+</div>
         </div>
       </section>
 
@@ -470,40 +466,38 @@
 
   <div id="psEditProfileModal" class="ps-edit-modal-overlay" style="display:none;">
   <div class="ps-edit-modal-card ps-bento-edit-modal" role="dialog" aria-modal="true" aria-labelledby="psEditProfileTitle">
-    <div class="ps-edit-modal-header">
-      <div>
-        <h3 id="psEditProfileTitle" style="margin:0;">Edit Premium Profile</h3>
-        <div class="ps-edit-modal-subtext" style="margin-top:6px;opacity:.8;font-size:.9rem;">
-          These details come from your Premium Society application and are saved to your account.
-        </div>
-      </div>
+    <div class="ps-edit-modal-header modal-head">
+  <div>
+    <div class="modal-title" id="psEditProfileTitle">Edit profile & preferences</div>
+    <div class="modal-sub">These are the same details you filled in your Premium Society application. Saving here updates your database immediately.</div>
+  </div>
+  <button id="psBtnCloseEditProfile" class="btn btn--ghost btn--sm" type="button" onclick="closeEditProfile()">Close</button>
 </div>
-
-    <div class="ps-edit-modal-body">
+<div class="ps-edit-modal-body">
 
       <div class="ps-edit-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
         <div class="ps-edit-field">
           <label>Full Name</label>
-          <input id="psInputName" type="text" placeholder="Your full name">
+          <input id="psInputName" class="tm-input input-gold" type="text" placeholder="Your full name">
         </div>
         <div class="ps-edit-field">
           <label>Email</label>
-          <input id="psInputEmail" type="email" placeholder="Email address" readonly>
+          <input id="psInputEmail" class="tm-input input-gold" type="email" placeholder="Email address" readonly>
         </div>
         <div class="ps-edit-field">
           <label>Occupation / Role</label>
-          <input id="psInputOccupation" type="text" placeholder="e.g., Entrepreneur, Lawyer, Investor">
+          <input id="psInputOccupation" class="tm-input input-gold" type="text" placeholder="e.g., Entrepreneur, Lawyer, Investor">
         </div>
         <div class="ps-edit-field">
           <label>Age</label>
-          <input id="psInputAge" type="number" min="18" max="99" placeholder="e.g., 28">
+          <input id="psInputAge" class="tm-input input-gold" type="number" min="18" max="99" placeholder="e.g., 28">
         </div>
       </div>
 
       <div class="ps-edit-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:16px;">
         <div class="ps-edit-field">
           <label>Wealth Status</label>
-          <select id="psInputWealthStatus">
+          <select id="psInputWealthStatus" class="tm-input input-gold">
             <option value="">Select</option>
             <option value="Lower-Middle Class">Lower-Middle Class</option>
             <option value="Middle Class">Middle Class</option>
@@ -543,19 +537,19 @@
 
       <div class="ps-edit-field" style="margin-top:16px;">
         <label>Social Link</label>
-        <input id="psInputSocialLink" type="url" placeholder="Instagram, LinkedIn, website, etc.">
+        <input id="psInputSocialLink" class="tm-input input-gold" type="url" placeholder="Instagram, LinkedIn, website, etc.">
       </div>
 
       <div class="ps-edit-field" style="margin-top:16px;">
         <label>Reason for joining Premium Society</label>
-        <textarea id="psInputReason" rows="4" placeholder="Write your reason..."></textarea>
+        <textarea id="psInputReason" class="tm-input input-gold" rows="4" placeholder="Write your reason..."></textarea>
       </div>
 
     </div>
 
     <div class="ps-edit-modal-footer">
-      <button class="ps-btn-cancel" onclick="closeEditProfile()">Cancel</button>
-      <button class="ps-btn-save" onclick="saveEditProfile()">Save Changes</button>
+      <button type="button" class="btn btn--ghost btn--sm ps-btn-cancel" onclick="closeEditProfile()">Cancel</button>
+      <button type="button" class="btn btn--primary btn--sm ps-btn-save" onclick="saveEditProfile()">Save Changes</button>
     </div>
   </div>
 </div>

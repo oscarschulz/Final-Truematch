@@ -962,7 +962,8 @@ function populateMockContent(opts = {}) {
         });
         PS_DOM.storiesContainer.innerHTML = html;
         if(PS_DOM.momentsPopup) {
-            document.getElementById('psMobileStoriesContainer').innerHTML = html;
+            const mobileStories = document.getElementById('psMobileStoriesContainer');
+            if (mobileStories) mobileStories.innerHTML = html;
         }
     }
 
@@ -1171,26 +1172,42 @@ const SwipeController = (() => {
         }
     }
 
-    function createCard(person, position, index) {
+    function createCard(person, isTop, index) {
         const card = document.createElement('div');
-        card.className = 'ps-swipe-card';
-        card.dataset.pos = position;
+        // Keep PS class for legacy CSS + Dashboard class for styling parity
+        card.className = 'ps-swipe-card swipe-card';
 
-        // Prefer real profile photo if present, otherwise fallback to gradient
-        if (person.photoUrl) {
-            card.style.backgroundImage = `url('${person.photoUrl.replace(/'/g, "\\'")}')`;
+        const img = person.photoUrl || 'assets/images/truematch-mark.png';
+        card.style.backgroundImage = `url('${String(img).replace(/'/g, "\'")}')`;
+        card.style.backgroundColor = getRandomColor();
+
+        // Dashboard-style stack appearance
+        if (isTop) {
+            card.id = 'activeSwipeCard';
+            card.style.zIndex = 10;
+            card.style.opacity = 1;
+            card.style.transform = 'scale(1)';
         } else {
-            card.style.backgroundImage = `linear-gradient(135deg, ${getRandomColor()}, #000)`;
+            card.style.zIndex = 5;
+            card.style.opacity = 0.5;
+            card.style.transform = 'scale(0.95) translateY(10px)';
         }
 
+        let tagsHtml = '';
         const tags = Array.isArray(person.tags) ? person.tags : [];
-        const tagHtml = tags.slice(0, 3).map(t => `<span class="ps-tag">${t}</span>`).join('');
+        if (tags.length > 0) {
+            tagsHtml = `<div class="swipe-tags">` + tags.slice(0, 3).map(t => `<span class="tag">${String(t)}</span>`).join('') + `</div>`;
+        }
+
+        const safeName = person.name || 'Unknown';
+        const safeAge = person.age ? `<span>${person.age}</span>` : '';
+        const safeCity = person.city ? `📍 ${person.city}` : '';
 
         card.innerHTML = `
-            <div class="ps-swipe-card-info">
-                <h2>${person.name}${person.age ? `, ${person.age}` : ''}</h2>
-                <p>${person.city || '—'}</p>
-                ${tagHtml ? `<div class="ps-tags">${tagHtml}</div>` : ``}
+            <div class="swipe-card__info">
+                <h2>${safeName} ${safeAge}</h2>
+                <p>${safeCity}</p>
+                ${tagsHtml}
             </div>
         `;
 
