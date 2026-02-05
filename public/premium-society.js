@@ -620,14 +620,42 @@ function psRenderPremiumSocietyLockedDeck() {
       const me = await hydrateAccountIdentity();
       if (me) PS_STATE.me = me;
       psHydratePremiumSocietyState(PS_STATE.me);
-      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || new URLSearchParams(location.search).get('mock') === '1') {
-        populateMockContent();
-      }
-const lastTab = localStorage.getItem('ps_last_tab') || 'home';
-      switchTab(lastTab);
-    } catch (e) {}
+            // After refreshing state, enforce the swipe gating immediately.
+      psEnforceSwipeAccess();
+} catch (e) {}
   });
 }
+
+/**
+ * Enforce Premium Society swipe gating on the Swipe tab.
+ * - If approved: init deck (once) and allow swipe UI.
+ * - If not approved/eligible: render locked card and hide swipe controls.
+ * NOTE: This does NOT change business rules — it only makes the existing gating actually run.
+ */
+function psEnforceSwipeAccess() {
+  // Only relevant on the Swipe panel.
+  if (!PS_DOM.swipeStack) return;
+
+  // Approved members can swipe.
+  if (PS_STATE.premiumSociety && PS_STATE.premiumSociety.approved) {
+    // If locked deck previously hid controls, restore them (unless empty-state hides them).
+    if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = '';
+
+    // Ensure Edit Profile modal is wired (so Settings button works regardless of tab order).
+    initEditProfileModal();
+
+    // Initialize the swipe deck once.
+    if (!PS_STATE.swipeInited) {
+      PS_STATE.swipeInited = true;
+      SwipeController.init();
+    }
+    return;
+  }
+
+  // Everyone else sees the locked deck.
+  psRenderPremiumSocietyLockedDeck();
+}
+
 
 function psRenderPremiumSocietyPanel() {
   if (!PS_DOM.panelPremiumBody) return;
@@ -768,6 +796,9 @@ initMobileMenu();
     }
 
     psHydratePremiumSocietyState(PS_STATE.me);
+
+    // Wire Edit Profile modal immediately (Settings button must be clickable)
+    initEditProfileModal();
 
     if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || new URLSearchParams(location.search).get('mock') === '1') {
         populateMockContent();
@@ -1396,6 +1427,12 @@ function switchTab(panelName) {
 
     if(PS_DOM.sidebar.classList.contains('ps-is-open')) {
         PS_DOM.sidebar.classList.remove('ps-is-open');
+    }
+
+
+    // Premium Society gating (must run when entering the Swipe tab)
+    if (panelName === 'swipe') {
+        psEnforceSwipeAccess();
     }
 }
 
