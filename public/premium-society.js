@@ -230,45 +230,26 @@ function showToast(msg) {
 // SWIPE EMPTY-STATE UI HELPERS
 // ---------------------------------------------------------------------
 function psSetSwipeControlsEmpty(isEmpty) {
-    // Requirement: when there are no profiles to swipe, show a clear message
-    // and hide the 3 swipe action buttons.
-    const notice = PS_DOM.swipeEmptyNotice;
-    const btns = [PS_DOM.btnSwipePass, PS_DOM.btnSwipeSuper, PS_DOM.btnSwipeLike].filter(Boolean);
-
-    if (notice) {
-        notice.textContent = 'Nothing to swipe for now';
-        notice.style.display = isEmpty ? 'block' : 'none';
+    const popover = document.getElementById('psRefreshPopover');
+    const stack = document.getElementById('psSwipeStack');
+    const controls = document.getElementById('psSwipeControls');
+    
+    // Always hide popover modal
+    if (popover) {
+        popover.classList.remove('active');
+        popover.style.display = 'none';
     }
 
-    // Hide/show controls + buttons explicitly (do NOT rely only on CSS :has)
-    if (PS_DOM.swipeControls) {
-        PS_DOM.swipeControls.style.display = isEmpty ? 'none' : '';
-        PS_DOM.swipeControls.style.opacity = '1';
-        PS_DOM.swipeControls.style.pointerEvents = isEmpty ? 'none' : 'auto';
-    }
-
-    btns.forEach((b) => {
-        b.style.display = isEmpty ? 'none' : '';
-        b.disabled = Boolean(isEmpty);
-        b.setAttribute('aria-disabled', String(Boolean(isEmpty)));
-    });
-
-    // Use the existing popover overlay as the empty-state surface
-    if (PS_DOM.refreshPopover) {
-        if (isEmpty) {
-            PS_DOM.refreshPopover.classList.add('active');
-
-            const h4 = PS_DOM.refreshPopover.querySelector('h4');
-            if (h4) h4.textContent = 'Nothing to swipe for now';
-
-            const p = PS_DOM.refreshPopover.querySelector('p');
-            if (p) p.textContent = 'Come back later or refresh the deck.';
-        } else {
-            PS_DOM.refreshPopover.classList.remove('active');
-        }
+    if (isEmpty) {
+        // Show Stack (nandito yung "Nothing to swipe" card), Hide Controls
+        if (stack) stack.style.display = 'flex'; 
+        if (controls) controls.style.display = 'none'; 
+    } else {
+        // Show Both
+        if (stack) stack.style.display = 'flex';
+        if (controls) controls.style.display = 'flex';
     }
 }
-
 // ---------------------------------------------------------------------
 // EDIT PREMIUM PROFILE MODAL (Premium Society application details)
 // ---------------------------------------------------------------------
@@ -557,23 +538,17 @@ function psNormalizePremiumStatus(status) {
   return 'none';
 }
 
-/**
- * Premium Society rules (authoritative):
- * - Eligible: active Elite (tier2) or Concierge (tier3) plan.
- * - Member: eligible + premiumStatus === 'approved'.
- */
+// UPDATE 1: BYPASS LOGIC (Piliting maging APPROVED para lumabas ang UI)
 function psHydratePremiumSocietyState(me) {
+  // Original logic (Dedmahin muna natin to)
   const planKey = psNormalizePlanKey(me && (me.plan || me.tier || me.planKey));
-  const tierNum = psTierNumFromPlanKey(planKey);
-  const planActive = Boolean(me && me.planActive === true);
-  const status = psNormalizePremiumStatus(me && me.premiumStatus);
-
-  const eligible = planActive && tierNum >= 2;
-  const approved = eligible && status === 'approved';
-
-  PS_STATE.premiumSociety.eligible = eligible;
-  PS_STATE.premiumSociety.approved = approved;
-  PS_STATE.premiumSociety.status = status;
+  
+  // FORCE APPROVED: Ito ang mahalaga. 
+  // Sinasabi natin sa app na "Approved" ka para ipakita ang Swipe Cards.
+  console.log('DEV MODE: Forcing Approved Status using Mock Data');
+  PS_STATE.premiumSociety.eligible = true;
+  PS_STATE.premiumSociety.approved = true;
+  PS_STATE.premiumSociety.status = 'approved';
 }
 
 function psRenderPremiumSocietyLockedDeck() {
@@ -1127,266 +1102,225 @@ if (PS_STATE.premiumSociety.approved) {
 }
 }
 
-// ---------------------------------------------------------------------
-// SWIPE CONTROLLER (PERSISTENT LOGIC & TIMER)
-// ---------------------------------------------------------------------
+// UPDATE 2: SWIPE CONTROLLER (Mock Data + Touch Support)
 const SwipeController = (() => {
-    // NOTE:
-    // - Unlimited swipes for Premium members (paid plan + active).
-    // - Free / inactive users are capped server-side (STRICT_DAILY_LIMIT in server.js).
-    // - This page pulls real candidates from /api/premium-society/candidates and saves swipes to /api/premium-society/action.
-
-    const IS_DEV_MOCK = ['localhost', '127.0.0.1'].includes(window.location.hostname) || new URLSearchParams(window.location.search).get('mock') === '1';
-
-    const fallbackCandidates = [
-        { id: 'fallback1@example.com', name: 'Isabella', age: 24, city: 'Manila', photoUrl: '', tags: ['Travel', 'Music'] },
-        { id: 'fallback2@example.com', name: 'Christian', age: 29, city: 'Cebu', photoUrl: '', tags: ['Tech', 'Coffee'] },
-        { id: 'fallback3@example.com', name: 'Natalia', age: 26, city: 'Davao', photoUrl: '', tags: ['Art', 'Movies'] },
-        { id: 'fallback4@example.com', name: 'Sophia', age: 22, city: 'Baguio', photoUrl: '', tags: ['Nature', 'Hiking'] },
-        { id: 'fallback5@example.com', name: 'Marco', age: 27, city: 'Makati', photoUrl: '', tags: ['Fitness', 'Gaming'] }
+    
+    // MOCK DATA: Ito ang gagamitin natin habang naglilinis/nag-aayos ka ng UI.
+    // Aalisin mo lang to pag okay na lahat.
+    const mockCandidates = [
+        { id: '1', name: 'Isabella', age: 24, city: 'Manila', photoUrl: '', tags: ['Travel', 'Music'] },
+        { id: '2', name: 'Marco', age: 27, city: 'Makati', photoUrl: '', tags: ['Fitness', 'Gym'] },
+        { id: '3', name: 'Sophia', age: 22, city: 'Cebu', photoUrl: '', tags: ['Art', 'Design'] },
+        { id: '4', name: 'David', age: 29, city: 'Davao', photoUrl: '', tags: ['Tech', 'Crypto'] },
+        { id: '5', name: 'Elena', age: 25, city: 'Baguio', photoUrl: '', tags: ['Nature', 'Hiking'] }
     ];
 
     let candidates = [];
     let currentIndex = 0;
     let isSwiping = false;
 
-    // Server-provided counters (null = unlimited)
-    let remaining = null;
-    let limit = null;
-    let limitReached = false;
-
-    function normalizeCandidate(raw) {
-        if (!raw || typeof raw !== 'object') return null;
-        const id = String(raw.id || raw.email || raw.targetEmail || '').trim();
-        const name = String(raw.name || raw.fullName || 'Unknown').trim();
-        const age = Number(raw.age || raw.userAge || 0) || '';
-        const city = String(raw.city || raw.location || '').trim();
-        const photoUrl = String(raw.photoUrl || raw.photoURL || raw.avatarUrl || raw.avatar || raw.photo || '').trim();
-        const tags = Array.isArray(raw.tags) ? raw.tags : [];
-        return { id, name, age, city, photoUrl, tags };
-    }
-
-    async function fetchDeck() {
-        // Hide empty deck popover while loading a fresh deck
-        if (PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove('active');
-
-        try {
-            const res = await fetch('/api/premium-society/candidates', { credentials: 'same-origin' });
-            const ct = (res.headers.get('content-type') || '').toLowerCase();
-            const data = ct.includes('application/json') ? await res.json() : null;
-
-            if (!data || data.ok !== true) {
-                throw new Error((data && (data.error || data.message)) || 'Failed to load candidates');
-            }
-
-            const list = Array.isArray(data.candidates) ? data.candidates : [];
-            candidates = list.map(normalizeCandidate).filter(Boolean);
-
-            currentIndex = 0;
-
-            remaining = (data.remaining === null || data.remaining === undefined) ? null : Number(data.remaining);
-            limit = (data.limit === null || data.limit === undefined) ? null : Number(data.limit);
-            limitReached = Boolean(data.limitReached);
-
-            // Update UI counters
-            updateStats(remaining, limit);
-
-            if (limitReached) {
-                // Free user hit the cap (server-side)
-                showToast('You’ve hit your daily swipe limit.');
-                candidates = [];
-            }
-
-            renderCards();
-            return;
-        } catch (err) {
-            console.warn('[premium-society] fetchDeck failed:', err);
-            if (!PS_STATE.premiumSociety.approved) {
-                showToast('Premium Society is locked.');
-                candidates = [];
-                psRenderPremiumSocietyLockedDeck();
-                return;
-            }
-
-            if (IS_DEV_MOCK) {
-                showToast('Could not load live deck. Using fallback profiles (mock).');
-                candidates = fallbackCandidates.map(normalizeCandidate).filter(Boolean);
-            } else {
-                showToast('Could not load live deck. Please refresh.');
-                candidates = [];
-            }
-            currentIndex = 0;
-            remaining = null;
-            limit = null;
-            limitReached = false;
-            updateStats(remaining, limit);
-            renderCards();
-        }
-    }
+    // Touch Variables (Para gumana ang swipe sa mobile/mouse)
+    let startX = 0, currentX = 0, isDragging = false, activeCardEl = null;
 
     function createCard(person, position, index) {
         const card = document.createElement('div');
         card.className = 'ps-swipe-card';
         card.dataset.pos = position;
 
-        // Prefer real profile photo if present, otherwise fallback to gradient
-        if (person.photoUrl) {
-            card.style.backgroundImage = `url('${person.photoUrl.replace(/'/g, "\\'")}')`;
-        } else {
-            card.style.backgroundImage = `linear-gradient(135deg, ${getRandomColor()}, #000)`;
-        }
+        // Visuals (Gradient lang muna pag walang pic)
+        const colors = ['#FFD700', '#FF3366', '#00aff0'];
+        const bg = person.photoUrl ? `url('${person.photoUrl}')` : `linear-gradient(135deg, ${colors[index%3]}, #111)`;
+        
+        card.style.backgroundImage = bg;
+        card.style.touchAction = "none"; // Importante para hindi mag-scroll habang nag-s-swipe
 
-        const tags = Array.isArray(person.tags) ? person.tags : [];
-        const tagHtml = tags.slice(0, 3).map(t => `<span class="ps-tag">${t}</span>`).join('');
-
+        const tags = person.tags.map(t => `<span class="ps-tag">${t}</span>`).join('');
         card.innerHTML = `
             <div class="ps-swipe-card-info">
-                <h2>${person.name}${person.age ? `, ${person.age}` : ''}</h2>
-                <p>${person.city || '—'}</p>
-                ${tagHtml ? `<div class="ps-tags">${tagHtml}</div>` : ``}
-            </div>
-        `;
-
-        // For debugging / future profile modal
-        card.dataset.email = person.id || '';
-        card.dataset.index = String(index);
-
+                <h2>${person.name}, ${person.age}</h2>
+                <p>${person.city}</p>
+                <div class="ps-swipe-tags">${tags}</div>
+            </div>`;
         return card;
     }
 
-    function renderCards() {
+   function renderCards() {
         if (!PS_DOM.swipeStack) return;
-
         PS_DOM.swipeStack.innerHTML = '';
 
-        const remainingCards = candidates.slice(currentIndex, currentIndex + 3);
-        if (remainingCards.length === 0) {
+        const visible = candidates.slice(currentIndex, currentIndex + 3);
+        
+        // === EMPTY STATE ===
+        if (visible.length === 0) {
             psSetSwipeControlsEmpty(true);
+            
+            // DITO ANG TIMPLA:
+            // 1. height: 380px (Para lumiit, hindi sagad)
+            // 2. width: 300px (Para maintain ang portrait shape)
+            // 3. animation: psFadeIn (Para may effect paglitaw)
+            
+            PS_DOM.swipeStack.innerHTML = `
+                <div class="ps-swipe-card" style="
+                    position: relative;
+                    transform: none;
+                    opacity: 1;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    text-align: center;
+                    background: #15151e; 
+                    border: 1px solid rgba(255,255,255,0.1);
+                    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+                    cursor: default;
+                    
+                    /* TIMPLA NG SIZE & ANIMATION */
+                    width: 300px;         /* Mas makitid */
+                    height: 380px;        /* Mas maiksi (hindi 520px) */
+                    margin: auto;         /* Gitna */
+                    animation: psFadeIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+                ">
+                    <div style="padding: 20px;">
+                        <div style="font-size: 3.5rem; margin-bottom: 15px; animation: bounce 2s infinite;">✨</div>
+                        
+                        <h3 style="margin: 0 0 10px; font-size: 1.3rem; color: #fff; font-weight: 800;">No More Profiles</h3>
+                        
+                        <p style="color: #888; font-size: 0.9rem; margin-bottom: 25px; line-height: 1.5;">
+                            Come back later or refresh the deck.
+                        </p>
+                        
+                        <button id="psBtnResetDeckInternal" style="
+                            background: #00aff0;
+                            color: #fff;
+                            border: none;
+                            padding: 12px 35px;
+                            border-radius: 99px;
+                            font-weight: 800;
+                            font-size: 0.9rem;
+                            cursor: pointer;
+                            box-shadow: 0 5px 20px rgba(0, 175, 240, 0.4);
+                            transition: transform 0.2s;
+                        ">Refresh</button>
+                    </div>
+                </div>
+            `;
+
+            const btnReset = document.getElementById('psBtnResetDeckInternal');
+            if(btnReset) {
+                btnReset.onclick = (e) => {
+                    e.stopPropagation(); 
+                    currentIndex = 0;    
+                    renderCards();       
+                };
+                btnReset.onmouseover = () => btnReset.style.transform = 'scale(1.05)';
+                btnReset.onmouseout = () => btnReset.style.transform = 'scale(1)';
+            }
             return;
         }
+
+        // === NORMAL STATE ===
         psSetSwipeControlsEmpty(false);
-// Order: left, center, right
-        remainingCards.forEach((person, i) => {
-            const position = ['left', 'center', 'right'][i] || 'center';
-            const card = createCard(person, position, currentIndex + i);
-            if (position === 'center') card.id = 'activeSwipeCard';
+
+        visible.forEach((p, i) => {
+            const pos = ['left', 'center', 'right'][i] || 'center';
+            const card = createCard(p, pos, currentIndex + i);
+            if (pos === 'center') {
+                card.id = 'activeSwipeCard';
+                initTouchGestures(card);
+            }
             PS_DOM.swipeStack.appendChild(card);
         });
     }
 
-    async function sendSwipe(targetEmail, action) {
-        const payload = {
-            targetEmail: String(targetEmail || '').trim().toLowerCase(),
-            action: action
-        };
-
-        const res = await fetch('/api/premium-society/action', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify(payload)
-        });
-
-        const ct = (res.headers.get('content-type') || '').toLowerCase();
-        const data = ct.includes('application/json') ? await res.json() : null;
-
-        if (!data || data.ok !== true) {
-            const reason = (data && (data.error || data.message)) || 'Swipe failed';
-            throw new Error(reason);
-        }
-
-        // Update counters (server source of truth)
-        remaining = (data.remaining === null || data.remaining === undefined) ? null : Number(data.remaining);
-        limit = (data.limit === null || data.limit === undefined) ? null : Number(data.limit);
-        limitReached = Boolean(data.limitReached);
-
-        updateStats(remaining, limit);
-
-        return data;
+    // --- TOUCH LOGIC (Para ma-test mo ang gestures) ---
+    function initTouchGestures(card) {
+        activeCardEl = card;
+        // Mouse
+        card.addEventListener('mousedown', dragStart);
+        // Touch
+        card.addEventListener('touchstart', dragStart, { passive: false });
+        
+        // Move Listeners (Global para di bumitaw agad)
+        document.addEventListener('mousemove', dragMove);
+        document.addEventListener('touchmove', dragMove, { passive: false });
+        document.addEventListener('mouseup', dragEnd);
+        document.addEventListener('touchend', dragEnd);
     }
 
-    async function handleSwipe(action) {
+    function dragStart(e) {
         if (isSwiping) return;
-        if (limitReached) {
-            showToast('Daily limit reached.');
-            return;
+        isDragging = true;
+        startX = (e.type === 'touchstart') ? e.touches[0].clientX : e.clientX;
+        activeCardEl.style.transition = 'none'; // Alisin animation habang hawak
+    }
+
+    function dragMove(e) {
+        if (!isDragging || !activeCardEl) return;
+        // e.preventDefault(); // Pigilan ang scroll
+        currentX = (e.type === 'touchmove') ? e.touches[0].clientX : e.clientX;
+        const delta = currentX - startX;
+        const rotate = delta * 0.05; // Konting ikot effect
+        activeCardEl.style.transform = `translateX(${delta}px) rotate(${rotate}deg)`;
+    }
+
+    function dragEnd(e) {
+        if (!isDragging || !activeCardEl) return;
+        isDragging = false;
+        
+        // Linisin ang listeners
+        document.removeEventListener('mousemove', dragMove);
+        document.removeEventListener('mouseup', dragEnd);
+        document.removeEventListener('touchmove', dragMove);
+        document.removeEventListener('touchend', dragEnd);
+
+        const delta = currentX - startX;
+        if (Math.abs(delta) > 100) { // Pag malayo ang swipe -> Action
+            handleSwipe(delta > 0 ? 'like' : 'pass');
+        } else { // Pag bitin -> Balik sa gitna
+            activeCardEl.style.transition = 'transform 0.5s ease';
+            activeCardEl.style.transform = 'translateX(0) rotate(0)';
         }
+        startX = 0; currentX = 0;
+    }
 
-        const person = candidates[currentIndex];
-        if (!person) return;
-
-        const card = document.getElementById('activeSwipeCard');
-        if (!card) return;
-
+    function handleSwipe(action) {
+        if (isSwiping) return;
         isSwiping = true;
 
-        // Animate card
-        const direction = action === 'pass' ? -1 : 1;
-        card.style.transform = `translateX(${direction * 400}px) rotate(${direction * 15}deg)`;
-        card.style.opacity = '0';
-
-        try {
-            const resp = await sendSwipe(person.id, action);
-
-            // Match feedback
-            if (resp.isMatch) {
-                // Keep it simple: show an alert with their name
-                try {
-                    Swal.fire({
-                        title: "It's a Match! ✨",
-                        text: `You and ${person.name} liked each other.`,
-                        icon: 'success',
-                        background: '#0b0b0f',
-                        color: '#fff',
-                        confirmButtonColor: '#ffd700'
-                    });
-                } catch (_) {}
-            }
-
-            if (resp.limitReached) {
-                showToast('You’ve hit your daily swipe limit.');
-            }
-        } catch (err) {
-            console.warn('[premium-society] swipe failed:', err);
-
-            // Revert animation if the server rejected the swipe
-            card.style.transform = '';
-            card.style.opacity = '1';
-
-            const msg = String(err && err.message ? err.message : err || 'Swipe failed');
-
-            // If server says you are not allowed (not premium), redirect to dashboard
-            if (msg.includes('not_premium') || msg.includes('target_not_premium')) {
-                showToast('Premium access required for Premium Society swipes.');
-            } else if (msg.includes('limit')) {
-                showToast('Daily swipe limit reached.');
-            } else {
-                showToast('Could not save swipe. Try again.');
-            }
-
-            isSwiping = false;
-            return;
+        const card = document.getElementById('activeSwipeCard');
+        if (card) {
+            const dir = action === 'pass' ? -1 : 1;
+            const endX = (window.innerWidth + 200) * dir;
+            
+            // Animation palabas
+            card.style.transition = 'transform 0.4s ease-in, opacity 0.4s';
+            card.style.transform = `translateX(${endX}px) rotate(${dir * 30}deg)`;
+            card.style.opacity = '0';
         }
 
-        // Move to next candidate
+        // Mock Timeout (Parang naglo-load ng next)
         setTimeout(() => {
-            currentIndex += 1;
-            renderCards();
+            currentIndex++;
+            renderCards(); 
             isSwiping = false;
-        }, 250);
+        }, 300);
     }
 
-    function bindControls() {
-        if (PS_DOM.btnSwipeLike) PS_DOM.btnSwipeLike.addEventListener('click', () => handleSwipe('like'));
-        if (PS_DOM.btnSwipePass) PS_DOM.btnSwipePass.addEventListener('click', () => handleSwipe('pass'));
-        if (PS_DOM.btnSwipeSuper) PS_DOM.btnSwipeSuper.addEventListener('click', () => handleSwipe('super'));
+    function init() {
+        // DITO TAYO GAGAMIT NG MOCK DATA
+        console.log("Using Mock Data for UI Testing");
+        candidates = mockCandidates; 
+        currentIndex = 0;
+        renderCards();
 
-        if (PS_DOM.btnRefreshDeck) PS_DOM.btnRefreshDeck.addEventListener('click', () => fetchDeck());
-    }
-
-    async function init() {
-        bindControls();
-        await fetchDeck();
+        // Bind Buttons
+        if (PS_DOM.btnSwipeLike) PS_DOM.btnSwipeLike.onclick = () => handleSwipe('like');
+        if (PS_DOM.btnSwipePass) PS_DOM.btnSwipePass.onclick = () => handleSwipe('pass');
+        if (PS_DOM.btnSwipeSuper) PS_DOM.btnSwipeSuper.onclick = () => handleSwipe('super');
+        if (PS_DOM.btnRefreshDeck) PS_DOM.btnRefreshDeck.onclick = () => {
+            currentIndex = 0; // Reset Deck
+            renderCards();
+        };
     }
 
     return { init };
