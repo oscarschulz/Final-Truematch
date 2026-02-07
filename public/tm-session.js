@@ -1,6 +1,6 @@
 // tm-session.js — shared helpers for localStorage state
 // Safe gamitin from any front-end module (auth, preferences, tier, dashboard, pay).
-
+import { getCurrentUser, loadPrefsForUser, savePrefsForUser } from './tm-session.js';
 export const PREFS_KEY = 'tm_prefs';
 export const PREFS_MAP_KEY = 'tm_prefs_by_user';
 
