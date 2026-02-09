@@ -173,7 +173,7 @@ async function hydrateAccountIdentity() {
                 const avatarUrl = u.avatarUrl || u.photoUrl || u.avatar || 'assets/images/truematch-mark.png';
 
                 const els = {
-                    'psWelcomeName': displayName.split(' ')[0],
+                    'psWelcomeName': displayName,
                     'psMiniName': displayName,
                     'psMiniPlan': planLabel,
                     'psSNameDisplay': displayName,
@@ -185,7 +185,13 @@ async function hydrateAccountIdentity() {
                     if (el) el.textContent = val;
                 }
 
-                ['psHeaderAvatar', 'psMiniAvatar', 'psSAvatar', 'psMatchUserImg', 'psStoryAvatar'].forEach(id => {
+                // Header status: show active plan + online
+                const headerStatus = document.querySelector('.ps-header-status');
+                if (headerStatus) {
+                    headerStatus.innerHTML = `<span class="ps-dot-green"></span> ${planLabel} • Active Now`;
+                }
+
+['psHeaderAvatar', 'psMiniAvatar', 'psSAvatar', 'psMatchUserImg', 'psStoryAvatar'].forEach(id => {
                     const img = document.getElementById(id);
                     if (img) img.src = avatarUrl;
                 });
@@ -817,9 +823,13 @@ export async function initUI() {
   // 2. Initialize Components
   initCanvasParticles();
   initNavigation();
+
+  // Remove Stories/Recent Moments rail (not needed on Premium Society)
+  const _momentsRail = document.querySelector('.ps-moments-rail-section');
+  if (_momentsRail) _momentsRail.remove();
   initNotifications();
   initChat();
-  initStoryViewer();
+  // (Removed) Story viewer for Premium Society
   initCreatorProfileModal();
   initCreatorsLogic();
   initPremiumLogic();
@@ -829,7 +839,7 @@ export async function initUI() {
 
   // 3. Render Sections (Backend-ready)
   // Papalitan mo ito ng "await fetchFromBackend()" pagkatapos
-  renderStories([]);   
+  // (Removed) Stories rail for Premium Society
   renderMessages([]);
   renderAdmirers([]);
 
