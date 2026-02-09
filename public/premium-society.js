@@ -768,31 +768,29 @@ function updateStats(curr, max) {
 
   /**
    * FIRE EMPTY ALERT
-   * Alert para sa mga Free users na naubusan ng swipes
+   * Alert kapag naubos ang daily swipes
    */
   function fireEmptyAlert() {
-    if (typeof Swal !== 'undefined') {
+    const msg = "You’ve hit today’s swipe limit. It will reset automatically.";
+    if (typeof Swal !== "undefined") {
       Swal.fire({
-        title: "Out of Swipes! 🛑",
-        text: "Jerwin, naubos mo na ang daily limit mo. Mag-upgrade sa Premium para maging unlimited!",
+        title: "Out of Swipes 🛑",
+        text: msg,
         icon: "warning",
         background: "#15151e",
         color: "#fff",
         confirmButtonColor: "#00aff0",
-        confirmButtonText: "Upgrade Now"
-      }).then((result) => {
-        if (result.isConfirmed) {
-          if (typeof switchTab === 'function') switchTab('premium');
-        }
+        confirmButtonText: "Okay",
       });
     } else {
-      alert("Out of Swipes! Wait for reset or upgrade to Premium.");
+      alert(msg);
     }
   }
 
   // I-expose ang init function para matawag sa core engine
   return { init };
-})(); 
+})();
+
 // --- END OF SWIPE CONTROLLER ---
 //at mula sa UI.js
 // assets/js/premium-society/ui.js
@@ -918,7 +916,7 @@ function renderAdmirers(admirers = []) {
 
     // Render cards with Lock Icon and Click-to-Upgrade interaction
     PS_DOM.admirerContainer.innerHTML = admirers.map(a => `
-    <div class="ps-admirer-card" onclick="switchTab('premium')" style="cursor:pointer;">
+    <div class="ps-admirer-card" onclick="window.openAdmirersInfo && window.openAdmirersInfo()" style="cursor:pointer;">
         <div class="ps-admirer-icon"><i class="fa-solid fa-lock"></i></div> <img class="ps-admirer-img" src="assets/images/truematch-mark.png" style="background:${a.color || getRandomColor()}">
         <h4 style="margin:5px 0 0; font-size:0.85rem;">${a.name || 'Secret'}</h4>
         <p class="ps-tiny ps-muted" style="margin:0;">${a.loc || 'Nearby'}</p>
@@ -1910,8 +1908,8 @@ function psEnforceSwipeAccess() {
   let title = "Premium Society Locked";
   let msg = "Exclusive access for Elite & Concierge members.";
   let icon = "fa-lock";
-  let btnText = "Upgrade Now";
-  let btnAction = "switchTab('premium')";
+  let btnText = "Back to Dashboard";
+  let btnAction = "window.location.href='dashboard.html'";
 
   // Pag-check ng detailed status mula sa PS_STATE
 // --- ETO ANG AYOS NA PENDING LOGIC (PHASE 7) ---
@@ -1966,6 +1964,8 @@ function initNavigation() {
 
 // --- UPDATED SWITCH TAB FUNCTION ---
 function switchTab(panelName) {
+  const panelExists = Array.from(PS_DOM.panels || []).some(p => p.dataset.panel === panelName);
+  if (!panelExists) panelName = "home";
   localStorage.setItem("ps_last_tab", panelName);
 
   // REMOVE OLD TAB CLASSES & ADD CURRENT TAB CLASS TO BODY
