@@ -102,9 +102,14 @@ export const PS_DOM = {
   giftPriceBtn: document.getElementById("psGiftPriceBtn"),
 };
 
-// --- CONNECTION BRIDGE: ITURO SA PORT 3000 ---
-// Eto ang nag-aayos ng 404 errors mo
-const API_BASE = 'http://localhost:3000'; 
+// --- API BASE ---
+// Production (https://itruematch.com): use same-origin (relative) requests.
+// Local file testing (file://): fallback to http://localhost:3000.
+// You can also override by setting window.API_BASE in the HTML.
+const IS_FILE_PROTOCOL = location.protocol === 'file:';
+const API_BASE = (typeof window !== 'undefined' && window.API_BASE)
+  ? String(window.API_BASE).replace(/\/$/, '')
+  : (IS_FILE_PROTOCOL ? 'http://localhost:3000' : '');
 
 // ==========================================
 // 2. GLOBAL STATE
