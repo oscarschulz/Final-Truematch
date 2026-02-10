@@ -2244,3 +2244,11 @@ body.light-mode .ps-nav-btn:hover {
     background: rgba(0, 0, 0, 0.03);
     color: #000;
 }
+/* =========================================================
+   FIX (Mobile): keep hamburger (dropdown menu) visible on ALL tabs
+   ========================================================= */
+@media (max-width: 768px) {
+  body.ps-theme .ps-mobile-toggle { display: flex !important; }
+  /* optional: keep hidden only when chat overlay is active */
+  body.ps-chat-open .ps-mobile-toggle { display: none !important; }
+}
