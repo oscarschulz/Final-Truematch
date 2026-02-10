@@ -102,14 +102,9 @@ export const PS_DOM = {
   giftPriceBtn: document.getElementById("psGiftPriceBtn"),
 };
 
-// --- API BASE ---
-// Production (https://itruematch.com): use same-origin (relative) requests.
-// Local file testing (file://): fallback to http://localhost:3000.
-// You can also override by setting window.API_BASE in the HTML.
-const IS_FILE_PROTOCOL = location.protocol === 'file:';
-const API_BASE = (typeof window !== 'undefined' && window.API_BASE)
-  ? String(window.API_BASE).replace(/\/$/, '')
-  : (IS_FILE_PROTOCOL ? 'http://localhost:3000' : '');
+// --- CONNECTION BRIDGE: ITURO SA PORT 3000 ---
+// Eto ang nag-aayos ng 404 errors mo
+const API_BASE = 'http://localhost:3000'; 
 
 // ==========================================
 // 2. GLOBAL STATE
@@ -173,7 +168,7 @@ async function hydrateAccountIdentity() {
                 const avatarUrl = u.avatarUrl || u.photoUrl || u.avatar || 'assets/images/truematch-mark.png';
 
                 const els = {
-                    'psWelcomeName': displayName,
+                    'psWelcomeName': displayName.split(' ')[0],
                     'psMiniName': displayName,
                     'psMiniPlan': planLabel,
                     'psSNameDisplay': displayName,
@@ -185,13 +180,7 @@ async function hydrateAccountIdentity() {
                     if (el) el.textContent = val;
                 }
 
-                // Header status: show active plan + online
-                const headerStatus = document.querySelector('.ps-header-status');
-                if (headerStatus) {
-                    headerStatus.innerHTML = `<span class="ps-dot-green"></span> ${planLabel} • Active Now`;
-                }
-
-['psHeaderAvatar', 'psMiniAvatar', 'psSAvatar', 'psMatchUserImg', 'psStoryAvatar'].forEach(id => {
+                ['psHeaderAvatar', 'psMiniAvatar', 'psSAvatar', 'psMatchUserImg', 'psStoryAvatar'].forEach(id => {
                     const img = document.getElementById(id);
                     if (img) img.src = avatarUrl;
                 });
@@ -271,40 +260,118 @@ function initOverlayObservers() {
 function initProfileMenu() {
   const profileBtn = document.querySelector(".ps-mini-profile");
   const menuPopup = document.getElementById("psUserMenuPopup");
-  let accounts = JSON.parse(localStorage.getItem("ps_accounts")) || [];
-  let currentUser = JSON.parse(localStorage.getItem("ps_current_user"));
 
-  if (accounts.length === 0 || !currentUser) {
-    const defaultUser = { id: "user_default", name: "Jerwin M. Lazaro", plan: "Premium Member", avatar: "assets/images/truematch-mark.png" };
-    accounts = [defaultUser];
-    currentUser = defaultUser;
-    localStorage.setItem("ps_accounts", JSON.stringify(accounts));
-    localStorage.setItem("ps_current_user", JSON.stringify(currentUser));
-  }
+  if (!profileBtn || !menuPopup) return;
+
+  const escapeHtml = (str) =>
+    String(str ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+
+  const getUiIdentity = () => {
+    const nameEl = document.getElementById("psMiniName");
+    const planEl = document.getElementById("psMiniPlan");
+    const avatarEl = document.getElementById("psMiniAvatar");
+
+    const fallbackName = (
+      PS_STATE?.me?.name ||
+      PS_STATE?.me?.fullName ||
+      PS_STATE?.me?.displayName ||
+      PS_STATE?.me?.username ||
+      "Member"
+    );
+
+    const name = (nameEl?.textContent || "").trim() || String(fallbackName).trim() || "Member";
+
+    const planFromUi = (planEl?.textContent || "").trim();
+    const planKey = psNormalizePlanKey(PS_STATE?.me?.plan || PS_STATE?.me?.tier || "free");
+    const planFallback = psPlanLabelFromKey(planKey);
+    const plan = planFromUi || planFallback || "Free Account";
+
+    const avatar =
+      avatarEl?.getAttribute("src") ||
+      PS_STATE?.me?.avatarUrl ||
+      PS_STATE?.me?.photoUrl ||
+      PS_STATE?.me?.avatar ||
+      "assets/images/truematch-mark.png";
+
+    return { name, plan, avatar };
+  };
 
   const renderAccountMenu = () => {
-    if (!menuPopup) return;
+    const u = getUiIdentity();
     menuPopup.innerHTML = `
       <div class="ps-menu-item ps-menu-current">
-        <img src="${currentUser.avatar}" style="width:35px; height:35px; border-radius:50%; border:2px solid #00aff0;">
+        <img src="${u.avatar}" style="width:35px; height:35px; border-radius:50%; border:2px solid #00aff0;" onerror="this.src='assets/images/truematch-mark.png'">
         <div style="display:flex; flex-direction:column; line-height:1.2;">
-          <span style="font-weight:700; font-size:0.9rem; color:#fff;">${currentUser.name}</span>
-          <span style="font-size:0.7rem; color:#00ff88;">● Active</span>
+          <span style="font-weight:700; font-size:0.9rem; color:#fff;">${escapeHtml(u.name)}</span>
+          <span style="font-size:0.7rem; color:#00ff88;">● Active <span style="color:#8b8b95;">• ${escapeHtml(u.plan)}</span></span>
         </div>
         <i class="fa-solid fa-check" style="margin-left:auto; color:#00ff88;"></i>
       </div>
-      <div class="ps-menu-item" onclick="window.handleAddAccount()">
-        <i class="fa-solid fa-plus-circle" style="color:#00aff0;"></i> <span>Add existing account</span>
+
+      <div class="ps-menu-item" onclick="window.handleBackToDashboard()">
+        <i class="fa-solid fa-arrow-left" style="color:#00aff0;"></i> <span>Back to dashboard</span>
       </div>
+
       <div class="ps-menu-item ps-menu-logout" onclick="window.handleLogout()">
         <i class="fa-solid fa-right-from-bracket"></i> <span>Log out</span>
       </div>`;
   };
 
-  if (profileBtn && menuPopup) {
-    profileBtn.onclick = (e) => { e.stopPropagation(); renderAccountMenu(); menuPopup.classList.toggle("active"); profileBtn.classList.toggle("active"); };
-    document.addEventListener("click", (e) => { if (!menuPopup.contains(e.target) && !profileBtn.contains(e.target)) { menuPopup.classList.remove("active"); profileBtn.classList.remove("active"); } });
-  }
+  // Back to Dashboard (replace old “Add existing account”)
+  window.handleBackToDashboard = () => {
+    try {
+      menuPopup.classList.remove("active");
+      profileBtn.classList.remove("active");
+    } catch {}
+    window.location.href = "dashboard.html";
+  };
+
+  // Ensure logout works from this page too
+  window.handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    } catch (e) {
+      // ignore
+    }
+
+    try {
+      // clear key app caches
+      [
+        "tm_user",
+        "tm_plan_override",
+        "ps_user_profile",
+        "ps_swipes_left",
+        "ps_reset_time",
+        "ps_matches",
+        "ps_chat_history",
+        "ps_accounts",
+        "ps_current_user"
+      ].forEach((k) => localStorage.removeItem(k));
+    } catch (e) {
+      // ignore
+    }
+
+    window.location.href = "auth.html";
+  };
+
+  profileBtn.onclick = (e) => {
+    e.stopPropagation();
+    renderAccountMenu();
+    menuPopup.classList.toggle("active");
+    profileBtn.classList.toggle("active");
+  };
+
+  document.addEventListener("click", (e) => {
+    if (!menuPopup.contains(e.target) && !profileBtn.contains(e.target)) {
+      menuPopup.classList.remove("active");
+      profileBtn.classList.remove("active");
+    }
+  });
 }
 
 function initRightSidebarInteractions() {
@@ -774,29 +841,31 @@ function updateStats(curr, max) {
 
   /**
    * FIRE EMPTY ALERT
-   * Alert kapag naubos ang daily swipes
+   * Alert para sa mga Free users na naubusan ng swipes
    */
   function fireEmptyAlert() {
-    const msg = "You’ve hit today’s swipe limit. It will reset automatically.";
-    if (typeof Swal !== "undefined") {
+    if (typeof Swal !== 'undefined') {
       Swal.fire({
-        title: "Out of Swipes 🛑",
-        text: msg,
+        title: "Out of Swipes! 🛑",
+        text: "Jerwin, naubos mo na ang daily limit mo. Mag-upgrade sa Premium para maging unlimited!",
         icon: "warning",
         background: "#15151e",
         color: "#fff",
         confirmButtonColor: "#00aff0",
-        confirmButtonText: "Okay",
+        confirmButtonText: "Upgrade Now"
+      }).then((result) => {
+        if (result.isConfirmed) {
+          if (typeof switchTab === 'function') switchTab('premium');
+        }
       });
     } else {
-      alert(msg);
+      alert("Out of Swipes! Wait for reset or upgrade to Premium.");
     }
   }
 
   // I-expose ang init function para matawag sa core engine
   return { init };
-})();
-
+})(); 
 // --- END OF SWIPE CONTROLLER ---
 //at mula sa UI.js
 // assets/js/premium-society/ui.js
@@ -823,13 +892,9 @@ export async function initUI() {
   // 2. Initialize Components
   initCanvasParticles();
   initNavigation();
-
-  // Remove Stories/Recent Moments rail (not needed on Premium Society)
-  const _momentsRail = document.querySelector('.ps-moments-rail-section');
-  if (_momentsRail) _momentsRail.remove();
   initNotifications();
   initChat();
-  // (Removed) Story viewer for Premium Society
+  initStoryViewer();
   initCreatorProfileModal();
   initCreatorsLogic();
   initPremiumLogic();
@@ -839,7 +904,7 @@ export async function initUI() {
 
   // 3. Render Sections (Backend-ready)
   // Papalitan mo ito ng "await fetchFromBackend()" pagkatapos
-  // (Removed) Stories rail for Premium Society
+  renderStories([]);   
   renderMessages([]);
   renderAdmirers([]);
 
@@ -926,7 +991,7 @@ function renderAdmirers(admirers = []) {
 
     // Render cards with Lock Icon and Click-to-Upgrade interaction
     PS_DOM.admirerContainer.innerHTML = admirers.map(a => `
-    <div class="ps-admirer-card" onclick="window.openAdmirersInfo && window.openAdmirersInfo()" style="cursor:pointer;">
+    <div class="ps-admirer-card" onclick="switchTab('premium')" style="cursor:pointer;">
         <div class="ps-admirer-icon"><i class="fa-solid fa-lock"></i></div> <img class="ps-admirer-img" src="assets/images/truematch-mark.png" style="background:${a.color || getRandomColor()}">
         <h4 style="margin:5px 0 0; font-size:0.85rem;">${a.name || 'Secret'}</h4>
         <p class="ps-tiny ps-muted" style="margin:0;">${a.loc || 'Nearby'}</p>
@@ -1259,6 +1324,23 @@ function initProfileEditLogic() {
 
     // A. SAVE LOCALLY (Backup / Optimistic UI)
     localStorage.setItem("ps_user_profile", JSON.stringify(profileData));
+
+    // Keep tm_user + in-memory state in sync (so sidebar name updates everywhere)
+    try {
+      const cached = JSON.parse(localStorage.getItem("tm_user") || "null");
+      if (cached && typeof cached === "object") {
+        const newName = (profileData.name || "").trim();
+        if (newName) {
+          cached.name = newName;
+          cached.fullName = newName;
+          cached.displayName = newName;
+        }
+        const newEmail = (profileData.email || "").trim();
+        if (newEmail) cached.email = newEmail;
+        localStorage.setItem("tm_user", JSON.stringify(cached));
+        PS_STATE.me = { ...(PS_STATE.me || {}), ...cached };
+      }
+    } catch (e) { /* ignore */ }
 
     // B. SAVE TO BACKEND (Laravel Server)
     if (window.showToast) showToast("Saving to server...");
@@ -1918,8 +2000,8 @@ function psEnforceSwipeAccess() {
   let title = "Premium Society Locked";
   let msg = "Exclusive access for Elite & Concierge members.";
   let icon = "fa-lock";
-  let btnText = "Back to Dashboard";
-  let btnAction = "window.location.href='dashboard.html'";
+  let btnText = "Upgrade Now";
+  let btnAction = "switchTab('premium')";
 
   // Pag-check ng detailed status mula sa PS_STATE
 // --- ETO ANG AYOS NA PENDING LOGIC (PHASE 7) ---
@@ -1974,8 +2056,6 @@ function initNavigation() {
 
 // --- UPDATED SWITCH TAB FUNCTION ---
 function switchTab(panelName) {
-  const panelExists = Array.from(PS_DOM.panels || []).some(p => p.dataset.panel === panelName);
-  if (!panelExists) panelName = "home";
   localStorage.setItem("ps_last_tab", panelName);
 
   // REMOVE OLD TAB CLASSES & ADD CURRENT TAB CLASS TO BODY
