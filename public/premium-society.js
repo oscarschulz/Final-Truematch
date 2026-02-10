@@ -293,7 +293,6 @@ function initOverlayObservers() {
 function initProfileMenu() {
   const profileBtn = document.querySelector(".ps-mini-profile");
   const menuPopup = document.getElementById("psUserMenuPopup");
-
   if (!profileBtn || !menuPopup) return;
 
   const escapeHtml = (str) =>
@@ -309,16 +308,16 @@ function initProfileMenu() {
     const planEl = document.getElementById("psMiniPlan");
     const avatarEl = document.getElementById("psMiniAvatar");
 
-    const fallbackName = (
+    const fallbackName =
       PS_STATE?.me?.name ||
       PS_STATE?.me?.fullName ||
       PS_STATE?.me?.displayName ||
       PS_STATE?.me?.username ||
-      "Member"
-    );
+      "Member";
 
     const name = (nameEl?.textContent || "").trim() || String(fallbackName).trim() || "Member";
 
+    // Prefer UI label if present, otherwise derive from PS_STATE
     const planFromUi = (planEl?.textContent || "").trim();
     const planKey = psNormalizePlanKey(PS_STATE?.me?.plan || PS_STATE?.me?.tier || "free");
     const planFallback = psPlanLabelFromKey(planKey);
@@ -334,7 +333,12 @@ function initProfileMenu() {
     return { name, plan, avatar };
   };
 
-  const renderAccountMenu = () => {
+  const closeMenu = () => {
+    menuPopup.classList.remove("active");
+    profileBtn.classList.remove("active");
+  };
+
+  const renderMenu = () => {
     const u = getUiIdentity();
     menuPopup.innerHTML = `
       <div class="ps-menu-item ps-menu-current">
@@ -343,37 +347,32 @@ function initProfileMenu() {
           <span style="font-weight:700; font-size:0.9rem; color:#fff;">${escapeHtml(u.name)}</span>
           <span style="font-size:0.7rem; color:#00ff88;">● Active <span style="color:#8b8b95;">• ${escapeHtml(u.plan)}</span></span>
         </div>
-        <i class="fa-solid fa-check" style="margin-left:auto; color:#00ff88;"></i>
       </div>
 
-      <div class="ps-menu-item" onclick="window.handleBackToDashboard()">
-        <i class="fa-solid fa-arrow-left" style="color:#00aff0;"></i> <span>Back to dashboard</span>
+      <div class="ps-menu-item" onclick="window.handleGoToDashboard()">
+        <i class="fa-solid fa-arrow-left" style="color:#00aff0;"></i>
+        <span>Go to Dashboard</span>
       </div>
 
       <div class="ps-menu-item ps-menu-logout" onclick="window.handleLogout()">
-        <i class="fa-solid fa-right-from-bracket"></i> <span>Log out</span>
-      </div>`;
+        <i class="fa-solid fa-right-from-bracket"></i>
+        <span>Log out</span>
+      </div>
+    `;
   };
 
-  // Back to Dashboard (replace old “Add existing account”)
-  window.handleBackToDashboard = () => {
-    try {
-      menuPopup.classList.remove("active");
-      profileBtn.classList.remove("active");
-    } catch {}
+  // Expose actions
+  window.handleGoToDashboard = () => {
+    closeMenu();
     window.location.href = "dashboard.html";
   };
 
-  // Ensure logout works from this page too
   window.handleLogout = async () => {
     try {
       await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
-    } catch (e) {
-      // ignore
-    }
+    } catch (_) {}
 
     try {
-      // clear key app caches
       [
         "tm_user",
         "tm_plan_override",
@@ -385,27 +384,25 @@ function initProfileMenu() {
         "ps_accounts",
         "ps_current_user"
       ].forEach((k) => localStorage.removeItem(k));
-    } catch (e) {
-      // ignore
-    }
+    } catch (_) {}
 
     window.location.href = "auth.html";
   };
 
-  profileBtn.onclick = (e) => {
+  // Toggle menu when clicking the card (including the 3-dots area)
+  profileBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    renderAccountMenu();
+    renderMenu();
     menuPopup.classList.toggle("active");
     profileBtn.classList.toggle("active");
-  };
+  });
 
+  // Close when clicking outside
   document.addEventListener("click", (e) => {
-    if (!menuPopup.contains(e.target) && !profileBtn.contains(e.target)) {
-      menuPopup.classList.remove("active");
-      profileBtn.classList.remove("active");
-    }
+    if (!menuPopup.contains(e.target) && !profileBtn.contains(e.target)) closeMenu();
   });
 }
+
 
 function initRightSidebarInteractions() {
   const upgradeBtn = document.getElementById("psBtnSidebarSubscribe");
