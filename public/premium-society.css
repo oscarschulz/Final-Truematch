@@ -2244,11 +2244,18 @@ body.light-mode .ps-nav-btn:hover {
     background: rgba(0, 0, 0, 0.03);
     color: #000;
 }
-/* =========================================================
-   FIX (Mobile): keep hamburger (dropdown menu) visible on ALL tabs
-   ========================================================= */
-@media (max-width: 768px) {
-  body.ps-theme .ps-mobile-toggle { display: flex !important; }
-  /* optional: keep hidden only when chat overlay is active */
-  body.ps-chat-open .ps-mobile-toggle { display: none !important; }
+
+/* ==========================================================
+   PATCH: Matches tab spacing
+   - Push matches content down (desktop + mobile)
+   - Prevent overlap with fixed mobile hamburger button
+   ========================================================== */
+.ps-panel[data-panel="matches"]{
+  padding-top: 32px !important;
+}
+
+@media (max-width: 768px){
+  .ps-panel[data-panel="matches"]{
+    padding-top: 92px !important;
+  }
 }
