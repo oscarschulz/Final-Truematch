@@ -1667,84 +1667,97 @@ app.post('/api/auth/login', async (req, res) => {
 
     
 
-// ✅ Demo accounts (demo1/demo2/demo3): fixed credentials + fixed tier/prefs
-const demo = TEST_BYPASS_ACCOUNTS[emailNorm];
-if (demo && pass === demo.password) {
-  const now = new Date();
-  const rule = PLAN_RULES[demo.plan] || PLAN_RULES.tier1;
-  const planStart = now.toISOString();
-  const planEnd = new Date(now.getTime() + rule.durationDays * DAY_MS).toISOString();
+    // ✅ DEV bypass accounts (demo1/demo2/demo3): auto-create + auto-activate tier/prefs
+    if (ALLOW_TEST_BYPASS && process.env.NODE_ENV !== 'production') {
+      const demo = TEST_BYPASS_ACCOUNTS[emailNorm];
+      if (demo && pass === demo.password) {
+        const now = new Date();
+        const rule = PLAN_RULES[demo.plan] || PLAN_RULES.tier1;
+        const planStart = now.toISOString();
+        const planEnd = new Date(now.getTime() + rule.durationDays * DAY_MS).toISOString();
 
-  if (hasFirebase) {
-    let userDoc;
-    try {
-      userDoc = await findUserByEmail(emailNorm);
-    } catch (dbErr) {
-      console.error('login DB lookup failed:', dbErr);
-      return res.status(503).json({
-        ok: false,
-        message: 'Auth database unavailable. Please try again.'
-      });
+        if (hasFirebase) {
+          let userDoc;
+          try {
+            try {
+              userDoc = await findUserByEmail(emailNorm);
+            } catch (dbErr) {
+              console.error('login DB lookup failed:', dbErr);
+              return res.status(503).json({
+                ok: false,
+                message: 'Auth database unavailable. Please try again.'
+              });
+            }
+
+          } catch (dbErr) {
+            console.error('login DB lookup failed:', dbErr);
+            return res.status(503).json({
+              ok: false,
+              message: 'Auth database unavailable. Please try again.'
+            });
+          }
+
+          const passwordHash = await bcrypt.hash(pass, 10);
+
+          if (!userDoc) {
+            userDoc = await createUserDoc({
+              email: emailNorm,
+              passwordHash,
+              name: demo.name,
+              city: demo.city,
+              plan: demo.plan,
+              planStart,
+              planEnd,
+              avatarUrl: '',
+              prefsSaved: true,
+              prefs: demo.prefs,
+              shortlist: [],
+              shortlistLastDate: null,
+              scheduledDates: [],
+              approvedProfiles: []
+            });
+          } else {
+            // If you previously created a broken demo doc (missing passwordHash), fix it here
+            const fields = {
+              name: demo.name,
+              city: demo.city,
+              plan: demo.plan,
+              planStart,
+              planEnd,
+              prefsSaved: true,
+              prefs: demo.prefs
+            };
+            if (!userDoc.passwordHash) fields.passwordHash = passwordHash;
+            userDoc = await updateUserByEmail(emailNorm, fields);
+          }
+
+          DB.prefs = userDoc.prefs || demo.prefs;
+          DB.user = publicUser(userDoc);
+          DB.user.prefsSaved = true;
+        } else {
+          // fallback: in-memory demo mode
+          DB.user.email = emailNorm;
+          DB.user.name = demo.name;
+          DB.user.city = demo.city;
+          DB.user.plan = demo.plan;
+          DB.user.planStart = planStart;
+          DB.user.planEnd = planEnd;
+          DB.user.planActive = true;
+          DB.user.prefsSaved = true;
+
+          DB.prefs = demo.prefs;
+          DB.users[emailNorm] = { ...DB.user };
+          DB.prefsByEmail[emailNorm] = DB.prefs;
+        }
+
+        // Cache + set session cookie so other pages show the right user
+        DB.users[emailNorm] = { ...DB.user };
+        DB.prefsByEmail[emailNorm] = DB.prefs;
+
+        setSession(res, emailNorm);
+        return res.json({ ok: true, user: DB.user, bypass: true });
+      }
     }
-
-    const passwordHash = await bcrypt.hash(pass, 10);
-
-    if (!userDoc) {
-      userDoc = await createUserDoc({
-        email: emailNorm,
-        passwordHash,
-        name: demo.name,
-        city: demo.city,
-        plan: demo.plan,
-        planStart,
-        planEnd,
-        avatarUrl: '',
-        prefsSaved: true,
-        prefs: demo.prefs,
-        shortlist: [],
-        shortlistLastDate: null,
-        scheduledDates: [],
-        approvedProfiles: []
-      });
-    } else {
-      const fields = {
-        name: demo.name,
-        city: demo.city,
-        plan: demo.plan,
-        planStart,
-        planEnd,
-        prefsSaved: true,
-        prefs: demo.prefs
-      };
-      if (!userDoc.passwordHash) fields.passwordHash = passwordHash;
-      userDoc = await updateUserByEmail(emailNorm, fields);
-    }
-
-    DB.prefs = userDoc.prefs || demo.prefs;
-    DB.user = publicUser(userDoc);
-    DB.user.prefsSaved = true;
-  } else {
-    DB.user.email = emailNorm;
-    DB.user.name = demo.name;
-    DB.user.city = demo.city;
-    DB.user.plan = demo.plan;
-    DB.user.planStart = planStart;
-    DB.user.planEnd = planEnd;
-    DB.user.planActive = true;
-    DB.user.prefsSaved = true;
-
-    DB.prefs = demo.prefs;
-    DB.users[emailNorm] = { ...DB.user };
-    DB.prefsByEmail[emailNorm] = DB.prefs;
-  }
-
-  DB.users[emailNorm] = { ...DB.user };
-  DB.prefsByEmail[emailNorm] = DB.prefs;
-
-  setSession(res, emailNorm);
-  return res.json({ ok: true, user: DB.user, bypass: true });
-}
-
 
 // ❗ Demo mode fallback (no Firebase)
     if (!hasFirebase) {
@@ -1955,6 +1968,20 @@ app.post('/api/auth/logout', (req, res) => {
   return res.json({ ok: true });
 });
 
+// ---------------- Auth: LOGOUT (alias) -------------------
+// Older frontends may call /api/logout; keep it compatible.
+app.post('/api/logout', (req, res) => {
+  clearSession(res);
+  setAnonState();
+  return res.json({ ok: true });
+});
+app.get('/api/logout', (req, res) => {
+  clearSession(res);
+  setAnonState();
+  return res.json({ ok: true });
+});
+
+
 // ---------------- Mock OAuth -------------------
 app.post('/api/auth/oauth/mock', (_req, res) => {
   if (!DB.user) DB.user = {};
@@ -2030,6 +2057,68 @@ app.get('/api/me', async (req, res) => {
     return res.status(500).json({ ok: false, user: null, message: 'internal error' });
   }
 });
+
+// ---------------- Account: CHANGE PASSWORD -------------------
+// Expected by tm-api.js (apiChangePassword)
+app.post('/api/me/password', async (req, res) => {
+  try {
+    const email = getSessionEmail(req);
+    if (!email) return res.status(401).json({ ok: false, message: 'Not logged in' });
+
+    const body = req.body || {};
+    const currentPassword = String(body.currentPassword || '').trim();
+    const newPassword = String(body.newPassword || '').trim();
+
+    if (!currentPassword) {
+      return res.status(400).json({ ok: false, message: 'current_password_required' });
+    }
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ ok: false, message: 'weak_password' });
+    }
+
+    // Load user
+    let meDoc = null;
+    if (hasFirebase && usersCollection) {
+      meDoc = await findUserByEmail(email);
+    } else {
+      meDoc = (DB.users && DB.users[email]) ? { ...DB.users[email] } : null;
+    }
+    if (!meDoc) return res.status(404).json({ ok: false, message: 'user_not_found' });
+
+    const existingHash = String(meDoc.passwordHash || '');
+    if (!existingHash) {
+      return res.status(400).json({ ok: false, message: 'password_not_set' });
+    }
+
+    const ok = await bcrypt.compare(currentPassword, existingHash);
+    if (!ok) {
+      return res.status(401).json({ ok: false, message: 'invalid_current_password' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    if (hasFirebase && usersCollection) {
+      await usersCollection.doc(meDoc.id).update({
+        passwordHash,
+        updatedAt: admin ? admin.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
+      });
+    } else {
+      if (!DB.users) DB.users = {};
+      DB.users[email] = { ...(DB.users[email] || {}), passwordHash };
+      if (DB.user && String(DB.user.email || '').toLowerCase() === String(email).toLowerCase()) {
+        DB.user.passwordHash = passwordHash;
+      }
+      saveUsersStore();
+    }
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[me password] error:', err);
+    return res.status(500).json({ ok: false, message: 'server_error' });
+  }
+});
+
+
 
 // ---------------- Recent Moments (Stories) -------------------
 // A "moment" is a short-lived media post (photo/video) that expires after 24 hours.
@@ -4705,6 +4794,15 @@ app.post('/api/me/premium/profile', async (req, res) => {
   }
 });
 
+
+
+
+// ---------------- Premium Society helpers -------------------
+function pickOneCandidate(candidates) {
+  if (!Array.isArray(candidates) || candidates.length === 0) return null;
+  const i = Math.floor(Math.random() * candidates.length);
+  return candidates[i] || null;
+}
 
 app.get('/api/premium-society/candidates', authMiddleware, async (req, res) => {
   try {
