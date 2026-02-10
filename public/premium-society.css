@@ -1394,13 +1394,14 @@ emoji-picker.active { display: flex; }
 
 /* MATCHES CONTAINER & SEARCH */
 .ps-matches-container { 
-    padding: 0 20px; 
+    /* Slight top spacing so the section doesn't feel glued to the very top (desktop/tablet) */
+    padding: 32px 20px 20px; 
     /* Allow list scroll if chat is closed */
     height: 100%;
     overflow-y: auto; 
-    padding-bottom: 20px;
     scrollbar-width: none;
 }
+
 .ps-matches-container::-webkit-scrollbar { display: none; }
 
 .ps-search-bar-wrapper { position: relative; margin-bottom: 25px; }
@@ -2243,5 +2244,14 @@ body.light-mode .ps-nav-btn:hover {
   body.ps-theme {
     overscroll-behavior-x: contain;
     overflow-x: hidden;
+  }
+}
+
+/* Matches tab spacing (mobile): push content down so the hamburger never overlaps the search bar */
+@media (max-width: 768px) {
+  .ps-panel[data-panel="matches"] .ps-matches-container {
+    padding-top: 88px; /* room for hamburger + safe area */
+    padding-left: 16px;
+    padding-right: 16px;
   }
 }
