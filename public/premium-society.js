@@ -120,27 +120,23 @@ const PS_STATE = {
 };
 
 function psNormalizePlanKey(rawPlan) {
-    const v = String(rawPlan || '').trim().toLowerCase();
-    if (v === 'elite' || v === 'tier2' || v === '2') return 'tier2';
-    if (v === 'concierge' || v === 'tier3' || v === '3') return 'tier3';
-    return 'free';
+  const s = String(rawPlan ?? '').toLowerCase().trim();
+  const compact = s.replace(/[\s_-]+/g, ''); // removes spaces, underscores, hyphens
+
+  if (!compact) return 'free';
+
+  // tier3 / concierge
+  if (compact.includes('tier3') || compact.includes('concierge') || compact === '3') return 'tier3';
+
+  // tier2 / elite
+  if (compact.includes('tier2') || compact.includes('elite') || compact === '2') return 'tier2';
+
+  // tier1 / plus
+  if (compact.includes('tier1') || compact.includes('plus') || compact === '1') return 'tier1';
+
+  return 'free';
 }
 
-function psPlanLabelFromKey(planKey) {
-    const key = psNormalizePlanKey(planKey);
-    if (key === 'tier2') return 'Elite Member';
-    if (key === 'tier3') return 'Concierge Member';
-    return 'Free Account';
-}
-
-function psHydratePremiumSocietyState(me) {
-    const planKey = psNormalizePlanKey(me?.plan || me?.tier);
-    const status = (me?.premiumStatus || 'none').toLowerCase();
-    
-    PS_STATE.premiumSociety.eligible = (planKey === 'tier2' || planKey === 'tier3');
-    PS_STATE.premiumSociety.approved = (PS_STATE.premiumSociety.eligible && status === 'approved');
-    PS_STATE.premiumSociety.status = status;
-}
 // ==========================================
 // 3. BACKEND SYNC: IDENTITY
 // ==========================================
