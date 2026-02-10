@@ -104,7 +104,9 @@ export const PS_DOM = {
 
 // --- CONNECTION BRIDGE: ITURO SA PORT 3000 ---
 // Eto ang nag-aayos ng 404 errors mo
-const API_BASE = 'http://localhost:3000'; 
+const API_BASE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+  ? 'http://localhost:3000'
+  : ''; 
 
 // ==========================================
 // 2. GLOBAL STATE
@@ -141,61 +143,96 @@ function psNormalizePlanKey(rawPlan) {
 // 3. BACKEND SYNC: IDENTITY
 // ==========================================
 async function hydrateAccountIdentity() {
-    console.log("🔄 Syncing Identity with Server (Port 3000)...");
+  const els = {
+    welcomeName: document.getElementById('psWelcomeName'),
+    profileName: document.getElementById('psProfileName'),
+    profileEmail: document.getElementById('psProfileEmail'),
+    profilePlan: document.getElementById('psProfilePlan'),
+    miniName: document.getElementById('psMiniName'),
+    miniPlan: document.getElementById('psMiniPlan')
+  };
+
+  const pickDisplayName = (u) => {
+    if (!u) return '';
+    const candidates = [
+      u.name,
+      u.fullName,
+      u.displayName,
+      u.username,
+      u.profile?.name,
+      u.profile?.displayName
+    ];
+    const name = candidates.find(v => typeof v === 'string' && v.trim().length);
+    return (name || '').trim();
+  };
+
+  const pickEmail = (u) => (u?.email || u?.profile?.email || '').trim();
+
+  const pickPlanRaw = (u) => (
+    u?.plan ?? u?.planKey ?? u?.plan_id ?? u?.subscriptionPlan ?? u?.subscriptionTier ??
+    u?.tier ?? u?.tierKey ?? u?.activePlan ?? u?.currentPlan
+  );
+
+  const applyIdentityToDom = (u) => {
+    if (!u) return;
+
+    const name = pickDisplayName(u);
+    const email = pickEmail(u);
+
+    const planKey = psNormalizePlanKey(pickPlanRaw(u));
+    const planLabel = psPlanLabelFromKey(planKey);
+
+    // Update global state
+    PS_STATE.me = u;
+    PS_STATE.planKey = planKey;
+    PS_STATE.planLabel = planLabel;
+
+    // Top greeting
+    if (els.welcomeName) els.welcomeName.textContent = name ? `${name}!` : 'there!';
+    // Settings header (if present)
+    if (els.profileName && name) els.profileName.textContent = name;
+    if (els.profileEmail && email) els.profileEmail.textContent = email;
+    if (els.profilePlan) els.profilePlan.textContent = planLabel;
+
+    // Mini account card
+    if (els.miniName && name) els.miniName.textContent = name;
+    if (els.miniPlan) els.miniPlan.textContent = planLabel;
+
+    // Keep tm_user fresh (merge so we don't accidentally lose fields like plan)
     try {
-        const res = await fetch(`${API_BASE}/api/me`, { credentials: 'include' }); 
-        if (res.ok) {
-            const data = await res.json();
-            if (data && data.ok && data.user) {
-                const u = data.user;
-                PS_STATE.me = u; 
-                psHydratePremiumSocietyState(u);
+      const existing = JSON.parse(localStorage.getItem('tm_user') || 'null');
+      const merged = (existing && typeof existing === 'object')
+        ? { ...existing, ...u }
+        : u;
+      localStorage.setItem('tm_user', JSON.stringify(merged));
+    } catch (_) {}
+  };
 
-                // --- ROBUST NAME LOGIC MULA SA LUMA ---
-                const displayName = (
-                    u.name || u.fullName || u.displayName || u.username ||
-                    (u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : "") ||
-                    u.applicantName || "Member"
-                ).trim();
-
-                const planKey = psNormalizePlanKey(u.plan || u.tier);
-                let planLabel = psPlanLabelFromKey(planKey);
-                if (u.planActive === false && planKey !== 'free') planLabel += " (Inactive)";
-                const avatarUrl = u.avatarUrl || u.photoUrl || u.avatar || 'assets/images/truematch-mark.png';
-
-                const els = {
-                    'psWelcomeName': displayName.split(' ')[0],
-                    'psMiniName': displayName,
-                    'psMiniPlan': planLabel,
-                    'psSNameDisplay': displayName,
-                    'psSEmailDisplay': u.email || '',
-                    'psSPlanBadge': planLabel
-                };
-                for (const [id, val] of Object.entries(els)) {
-                    const el = document.getElementById(id);
-                    if (el) el.textContent = val;
-                }
-
-                ['psHeaderAvatar', 'psMiniAvatar', 'psSAvatar', 'psMatchUserImg', 'psStoryAvatar'].forEach(id => {
-                    const img = document.getElementById(id);
-                    if (img) img.src = avatarUrl;
-                });
-
-                localStorage.setItem('tm_user', JSON.stringify(u));
-                return u; 
-            }
-        }
-    } catch (e) { 
-        console.error("❌ Connection failed to server. Checking local cache..."); 
+  // 1) Try server (preferred)
+  try {
+    const res = await fetch(`${API_BASE}/api/me`, { credentials: 'include' });
+    if (res.ok) {
+      const j = await res.json();
+      const u = j?.user || j?.me || j;
+      if (u) {
+        applyIdentityToDom(u);
+        return u;
+      }
     }
+  } catch (_) {
+    // ignore — fallback below
+  }
 
-    const localUser = JSON.parse(localStorage.getItem('tm_user'));
+  // 2) Fallback to cached user (still update UI)
+  try {
+    const localUser = JSON.parse(localStorage.getItem('tm_user') || 'null');
     if (localUser) {
-        PS_STATE.me = localUser;
-        psHydratePremiumSocietyState(localUser);
-        return localUser;
+      applyIdentityToDom(localUser);
+      return localUser;
     }
-    return null;
+  } catch (_) {}
+
+  return null;
 }
 
 // ==========================================
