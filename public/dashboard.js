@@ -166,11 +166,14 @@ function cacheDom() {
   DOM.dlgChat = document.getElementById('dlgChat');
   DOM.chatUserImg = document.getElementById('chatUserImg');
   DOM.chatUserName = document.getElementById('chatUserName');
+  // Backward-compat aliases (older code uses chatAvatar/chatName)
+  DOM.chatAvatar = DOM.chatUserImg;
+  DOM.chatName = DOM.chatUserName;
   DOM.chatBody = document.getElementById('chatBody');
   DOM.btnCloseChat = document.getElementById('btnCloseChat');
   DOM.chatInput = DOM.dlgChat ? DOM.dlgChat.querySelector('input.tm-input') : null;
   DOM.btnChatSend = DOM.dlgChat ? DOM.dlgChat.querySelector('button.btn.btn--primary') : null;
-  DOM.chatReceiptLine = DOM.dlgChat ? DOM.dlgChat.querySelector('.chat-head .chat-user p') : null;
+  DOM.chatReceiptLine = DOM.dlgChat ? DOM.dlgChat.querySelector('.chat-header p') : null;
 
   DOM.activeNearbyContainer = document.getElementById('activeNearbyContainer');
   DOM.btnNotifToggle = document.getElementById('btnNotifToggle');
@@ -930,15 +933,24 @@ async function openChatModal(name, imgColor, lastMsg, peerEmail, peerPhotoUrl) {
   state.currentChatPeerName = name || 'Match';
   state.currentChatPeerPhoto = peerPhotoUrl || '';
 
-  DOM.chatAvatar.style.background = imgColor || '#3AAFB9';
+  const avatarEl = DOM.chatUserImg || DOM.chatAvatar;
+  if (avatarEl) {
+    const isImg = avatarEl.tagName && avatarEl.tagName.toLowerCase() === 'img';
+    const hasPhoto = !!state.currentChatPeerPhoto;
+    if (isImg) {
+      avatarEl.src = hasPhoto ? state.currentChatPeerPhoto : 'assets/images/truematch-mark.png';
+      avatarEl.style.backgroundColor = hasPhoto ? 'transparent' : (imgColor || '#3AAFB9');
+      avatarEl.style.objectFit = hasPhoto ? 'cover' : 'contain';
+    } else {
+      avatarEl.style.background = imgColor || '#3AAFB9';
+      avatarEl.style.backgroundImage = hasPhoto ? `url('${state.currentChatPeerPhoto}')` : 'none';
+      avatarEl.style.backgroundSize = hasPhoto ? 'cover' : 'auto';
+      avatarEl.style.backgroundPosition = 'center';
+    }
+  }
 
-  // Prefer backend photo if available
-  const hasPhoto = !!state.currentChatPeerPhoto;
-  DOM.chatAvatar.style.backgroundImage = hasPhoto ? `url('${state.currentChatPeerPhoto}')` : 'none';
-  DOM.chatAvatar.style.backgroundSize = hasPhoto ? 'cover' : 'auto';
-  DOM.chatAvatar.style.backgroundPosition = hasPhoto ? 'center' : 'center';
-
-  DOM.chatName.textContent = state.currentChatPeerName;
+  const nameEl = DOM.chatUserName || DOM.chatName;
+  if (nameEl) nameEl.textContent = state.currentChatPeerName;
 
   // Reset header meta line
   if (DOM.chatReceiptLine) {
