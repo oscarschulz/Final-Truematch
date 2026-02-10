@@ -223,11 +223,9 @@ body.ps-theme {
 /* HIDE BUTTON KAPAG BUKAS ANG CHAT O CREATORS */
     /* FIX: Tinanggal natin dito ang .ps-tab-matches para lumabas ang menu button sa Matches Tab */
     body.ps-chat-open .ps-mobile-toggle,
-    body.ps-creator-open .ps-mobile-toggle,
-    body.ps-tab-creators .ps-mobile-toggle 
-    {
-        display: none !important;
-    }
+body.ps-creator-open .ps-mobile-toggle {
+  display: none !important;
+}
 
     /* ADDITIONAL FIX: Siguraduhing nasa ibabaw ang button sa Matches tab */
   /* --- UI CLEANUP: HIDE HAMBURGER ON MATCHES --- */
@@ -235,18 +233,7 @@ body.ps-theme {
 /* --- GLOBAL UI CLEANUP --- */
 
 /* 2. ITAGO ANG HAMBURGER MENU sa lahat ng sub-tabs para gesture navigation lang */
-/* --- HIDE HAMBURGER ON MOBILE GESTURE TABS --- */
-@media (max-width: 768px) {
-    /* Tatanggalin ang menu button sa Matches, Creators, Premium, at Settings */
-    body.ps-tab-matches .ps-mobile-toggle,
-    body.ps-tab-creators .ps-mobile-toggle,
-    body.ps-tab-premium .ps-mobile-toggle,
-    body.ps-tab-settings .ps-mobile-toggle,
-    body.ps-chat-open .ps-mobile-toggle {
-        display: none !important;
-    }
-
-    /* Siguraduhin na ang screen ay hindi nagba-bounce horizontal */
+/* Siguraduhin na ang screen ay hindi nagba-bounce horizontal */
     body.ps-theme {
         overscroll-behavior-x: none;
         overflow-x: hidden;
@@ -288,7 +275,6 @@ body.ps-theme {
         font-size: 0.8rem;
         padding: 6px 12px;
     }
-}
 
 /* --- D. SMALL MOBILE (Max 430px) --- */
 @media (max-width: 430px) {
@@ -431,7 +417,7 @@ body.ps-theme {
     .ps-main-feed { width: 100%; border-right: none; height: 100vh; overflow: hidden; padding-bottom: 0; }
 
     .ps-mobile-toggle, .ps-mobile-moments-toggle { 
-        display: flex; position: fixed; bottom: 20px; width: 50px; height: 50px; 
+        display: flex; position: fixed; top: 18px; bottom: auto; width: 50px; height: 50px; 
         border-radius: 50%; background: var(--ps-brand-color); border: none; 
         z-index: 5000; align-items: center; justify-content: center; 
         font-size: 1.2rem; cursor: pointer; box-shadow: 0 5px 20px rgba(0,0,0,0.5); 
@@ -2244,18 +2230,18 @@ body.light-mode .ps-nav-btn:hover {
     background: rgba(0, 0, 0, 0.03);
     color: #000;
 }
-
-/* ==========================================================
-   PATCH: Matches tab spacing
-   - Push matches content down (desktop + mobile)
-   - Prevent overlap with fixed mobile hamburger button
-   ========================================================== */
-.ps-panel[data-panel="matches"]{
-  padding-top: 32px !important;
+/* =========================================================
+   FIX (Mobile): keep hamburger (dropdown menu) visible on ALL tabs
+   ========================================================= */
+@media (max-width: 768px) {
+  body.ps-theme .ps-mobile-toggle { display: flex !important; }
+  /* optional: keep hidden only when chat overlay is active */
+  body.ps-chat-open .ps-mobile-toggle { display: none !important; }
 }
 
-@media (max-width: 768px){
-  .ps-panel[data-panel="matches"]{
-    padding-top: 92px !important;
+@media (max-width: 768px) {
+  body.ps-theme {
+    overscroll-behavior-x: contain;
+    overflow-x: hidden;
   }
 }
