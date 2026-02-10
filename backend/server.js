@@ -2032,13 +2032,6 @@ app.get('/api/me', async (req, res) => {
       preferences: prefs || null
     };
 
-    // Demo accounts: keep intended plan for staging/testing
-    const demo = TEST_BYPASS_ACCOUNTS.find(a => a.email === email);
-    if (demo) {
-      responseUser.plan = demo.plan;
-      responseUser.planActive = true;
-    }
-
     return res.json({
       ok: true,
       user: responseUser,
