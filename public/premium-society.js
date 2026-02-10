@@ -269,43 +269,136 @@ function initOverlayObservers() {
 }
 
 function initProfileMenu() {
-  const profileBtn = document.querySelector(".ps-mini-profile");
-  const menuPopup = document.getElementById("psUserMenuPopup");
-  let accounts = JSON.parse(localStorage.getItem("ps_accounts")) || [];
-  let currentUser = JSON.parse(localStorage.getItem("ps_current_user"));
+  const profileBtn = document.querySelector('.ps-mini-profile');
+  const menuPopup = document.getElementById('psUserMenuPopup');
+  if (!profileBtn || !menuPopup) return;
 
-  if (accounts.length === 0 || !currentUser) {
-    const defaultUser = { id: "user_default", name: "Jerwin M. Lazaro", plan: "Premium Member", avatar: "assets/images/truematch-mark.png" };
-    accounts = [defaultUser];
-    currentUser = defaultUser;
-    localStorage.setItem("ps_accounts", JSON.stringify(accounts));
-    localStorage.setItem("ps_current_user", JSON.stringify(currentUser));
-  }
+  // Ensure the whole card is clickable
+  profileBtn.style.pointerEvents = 'auto';
+  profileBtn.setAttribute('type', 'button');
 
-  const renderAccountMenu = () => {
-    if (!menuPopup) return;
+  const escapeHtml = (val) =>
+    String(val ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+
+  const DEFAULT_AVATAR =
+    'data:image/svg+xml;base64,' +
+    btoa(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+        <rect width="64" height="64" rx="20" fill="#0B1220"/>
+        <circle cx="32" cy="26" r="10" fill="#22D3EE"/>
+        <path d="M14 54c3-10 13-16 18-16s15 6 18 16" fill="#1E293B"/>
+      </svg>`
+    );
+
+  const getUiIdentity = () => {
+    const me = (window.PS_STATE && window.PS_STATE.me) ? window.PS_STATE.me : null;
+
+    const name =
+      (me && (me.name || me.displayName || me.fullName || me.username)) ||
+      document.getElementById('psMiniName')?.textContent?.trim() ||
+      'User';
+
+    const avatar =
+      (me && (me.avatar || me.photoURL || me.photoUrl || me.profilePhoto || me.profilePhotoUrl)) ||
+      DEFAULT_AVATAR;
+
+    return { name, avatar };
+  };
+
+  const closeMenu = () => {
+    profileBtn.setAttribute('aria-expanded', 'false');
+    menuPopup.classList.remove('active');
+  };
+
+  const renderMenu = () => {
+    const ui = getUiIdentity();
+
     menuPopup.innerHTML = `
       <div class="ps-menu-item ps-menu-current">
-        <img src="${currentUser.avatar}" style="width:35px; height:35px; border-radius:50%; border:2px solid #00aff0;">
+        <img src="${ui.avatar}" style="width:35px; height:35px; border-radius:50%; border:2px solid #00aff0;">
         <div style="display:flex; flex-direction:column; line-height:1.2;">
-          <span style="font-weight:700; font-size:0.9rem; color:#fff;">${currentUser.name}</span>
+          <span style="font-weight:700; font-size:0.9rem; color:#fff;">${escapeHtml(ui.name)}</span>
           <span style="font-size:0.7rem; color:#00ff88;">● Active</span>
         </div>
         <i class="fa-solid fa-check" style="margin-left:auto; color:#00ff88;"></i>
       </div>
-      <div class="ps-menu-item" onclick="window.handleAddAccount()">
-        <i class="fa-solid fa-plus-circle" style="color:#00aff0;"></i> <span>Add existing account</span>
+
+      <div class="ps-menu-item" data-action="dashboard">
+        <i class="fa-solid fa-arrow-left" style="color:#00aff0;"></i> <span>Go back to Dashboard</span>
       </div>
-      <div class="ps-menu-item ps-menu-logout" onclick="window.handleLogout()">
+
+      <div class="ps-menu-item ps-menu-logout" data-action="logout">
         <i class="fa-solid fa-right-from-bracket"></i> <span>Log out</span>
-      </div>`;
+      </div>
+    `;
   };
 
-  if (profileBtn && menuPopup) {
-    profileBtn.onclick = (e) => { e.stopPropagation(); renderAccountMenu(); menuPopup.classList.toggle("active"); profileBtn.classList.toggle("active"); };
-    document.addEventListener("click", (e) => { if (!menuPopup.contains(e.target) && !profileBtn.contains(e.target)) { menuPopup.classList.remove("active"); profileBtn.classList.remove("active"); } });
-  }
+  // Toggle menu on click
+  profileBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const isOpen = menuPopup.classList.contains('active');
+    if (isOpen) {
+      closeMenu();
+      return;
+    }
+
+    renderMenu();
+    profileBtn.setAttribute('aria-expanded', 'true');
+    menuPopup.classList.add('active');
+  });
+
+  // Handle menu actions (event delegation)
+  menuPopup.addEventListener('click', async (e) => {
+    const item = e.target.closest('.ps-menu-item');
+    if (!item) return;
+
+    const action = item.getAttribute('data-action');
+    if (!action) return;
+
+    if (action === 'dashboard') {
+      closeMenu();
+      window.location.href = 'dashboard.html';
+      return;
+    }
+
+    if (action === 'logout') {
+      closeMenu();
+      try {
+        await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+      } catch (_) {}
+
+      try {
+        localStorage.removeItem('tm_user');
+        localStorage.removeItem('tm_session');
+        localStorage.removeItem('ps_accounts');
+        localStorage.removeItem('ps_current_user');
+      } catch (_) {}
+
+      window.location.href = 'auth.html';
+    }
+  });
+
+  // Close on outside click
+  document.addEventListener('click', (e) => {
+    if (!menuPopup.classList.contains('active')) return;
+    if (profileBtn.contains(e.target) || menuPopup.contains(e.target)) return;
+    closeMenu();
+  });
+
+  // Close on ESC
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeMenu();
+  });
 }
+
+
 
 function initRightSidebarInteractions() {
   const upgradeBtn = document.getElementById("psBtnSidebarSubscribe");
