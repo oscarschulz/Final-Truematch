@@ -1667,97 +1667,84 @@ app.post('/api/auth/login', async (req, res) => {
 
     
 
-    // ✅ DEV bypass accounts (demo1/demo2/demo3): auto-create + auto-activate tier/prefs
-    if (ALLOW_TEST_BYPASS && process.env.NODE_ENV !== 'production') {
-      const demo = TEST_BYPASS_ACCOUNTS[emailNorm];
-      if (demo && pass === demo.password) {
-        const now = new Date();
-        const rule = PLAN_RULES[demo.plan] || PLAN_RULES.tier1;
-        const planStart = now.toISOString();
-        const planEnd = new Date(now.getTime() + rule.durationDays * DAY_MS).toISOString();
+// ✅ Demo accounts (demo1/demo2/demo3): fixed credentials + fixed tier/prefs
+const demo = TEST_BYPASS_ACCOUNTS[emailNorm];
+if (demo && pass === demo.password) {
+  const now = new Date();
+  const rule = PLAN_RULES[demo.plan] || PLAN_RULES.tier1;
+  const planStart = now.toISOString();
+  const planEnd = new Date(now.getTime() + rule.durationDays * DAY_MS).toISOString();
 
-        if (hasFirebase) {
-          let userDoc;
-          try {
-            try {
-              userDoc = await findUserByEmail(emailNorm);
-            } catch (dbErr) {
-              console.error('login DB lookup failed:', dbErr);
-              return res.status(503).json({
-                ok: false,
-                message: 'Auth database unavailable. Please try again.'
-              });
-            }
-
-          } catch (dbErr) {
-            console.error('login DB lookup failed:', dbErr);
-            return res.status(503).json({
-              ok: false,
-              message: 'Auth database unavailable. Please try again.'
-            });
-          }
-
-          const passwordHash = await bcrypt.hash(pass, 10);
-
-          if (!userDoc) {
-            userDoc = await createUserDoc({
-              email: emailNorm,
-              passwordHash,
-              name: demo.name,
-              city: demo.city,
-              plan: demo.plan,
-              planStart,
-              planEnd,
-              avatarUrl: '',
-              prefsSaved: true,
-              prefs: demo.prefs,
-              shortlist: [],
-              shortlistLastDate: null,
-              scheduledDates: [],
-              approvedProfiles: []
-            });
-          } else {
-            // If you previously created a broken demo doc (missing passwordHash), fix it here
-            const fields = {
-              name: demo.name,
-              city: demo.city,
-              plan: demo.plan,
-              planStart,
-              planEnd,
-              prefsSaved: true,
-              prefs: demo.prefs
-            };
-            if (!userDoc.passwordHash) fields.passwordHash = passwordHash;
-            userDoc = await updateUserByEmail(emailNorm, fields);
-          }
-
-          DB.prefs = userDoc.prefs || demo.prefs;
-          DB.user = publicUser(userDoc);
-          DB.user.prefsSaved = true;
-        } else {
-          // fallback: in-memory demo mode
-          DB.user.email = emailNorm;
-          DB.user.name = demo.name;
-          DB.user.city = demo.city;
-          DB.user.plan = demo.plan;
-          DB.user.planStart = planStart;
-          DB.user.planEnd = planEnd;
-          DB.user.planActive = true;
-          DB.user.prefsSaved = true;
-
-          DB.prefs = demo.prefs;
-          DB.users[emailNorm] = { ...DB.user };
-          DB.prefsByEmail[emailNorm] = DB.prefs;
-        }
-
-        // Cache + set session cookie so other pages show the right user
-        DB.users[emailNorm] = { ...DB.user };
-        DB.prefsByEmail[emailNorm] = DB.prefs;
-
-        setSession(res, emailNorm);
-        return res.json({ ok: true, user: DB.user, bypass: true });
-      }
+  if (hasFirebase) {
+    let userDoc;
+    try {
+      userDoc = await findUserByEmail(emailNorm);
+    } catch (dbErr) {
+      console.error('login DB lookup failed:', dbErr);
+      return res.status(503).json({
+        ok: false,
+        message: 'Auth database unavailable. Please try again.'
+      });
     }
+
+    const passwordHash = await bcrypt.hash(pass, 10);
+
+    if (!userDoc) {
+      userDoc = await createUserDoc({
+        email: emailNorm,
+        passwordHash,
+        name: demo.name,
+        city: demo.city,
+        plan: demo.plan,
+        planStart,
+        planEnd,
+        avatarUrl: '',
+        prefsSaved: true,
+        prefs: demo.prefs,
+        shortlist: [],
+        shortlistLastDate: null,
+        scheduledDates: [],
+        approvedProfiles: []
+      });
+    } else {
+      const fields = {
+        name: demo.name,
+        city: demo.city,
+        plan: demo.plan,
+        planStart,
+        planEnd,
+        prefsSaved: true,
+        prefs: demo.prefs
+      };
+      if (!userDoc.passwordHash) fields.passwordHash = passwordHash;
+      userDoc = await updateUserByEmail(emailNorm, fields);
+    }
+
+    DB.prefs = userDoc.prefs || demo.prefs;
+    DB.user = publicUser(userDoc);
+    DB.user.prefsSaved = true;
+  } else {
+    DB.user.email = emailNorm;
+    DB.user.name = demo.name;
+    DB.user.city = demo.city;
+    DB.user.plan = demo.plan;
+    DB.user.planStart = planStart;
+    DB.user.planEnd = planEnd;
+    DB.user.planActive = true;
+    DB.user.prefsSaved = true;
+
+    DB.prefs = demo.prefs;
+    DB.users[emailNorm] = { ...DB.user };
+    DB.prefsByEmail[emailNorm] = DB.prefs;
+  }
+
+  DB.users[emailNorm] = { ...DB.user };
+  DB.prefsByEmail[emailNorm] = DB.prefs;
+
+  setSession(res, emailNorm);
+  return res.json({ ok: true, user: DB.user, bypass: true });
+}
+
 
 // ❗ Demo mode fallback (no Firebase)
     if (!hasFirebase) {
