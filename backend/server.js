@@ -2894,6 +2894,62 @@ app.post('/api/me/profile', async (req, res) => {
 });
 
 // Change password (requires current password)
+
+// ---------------- Update Creator Status (Available / Away / Busy) ----------------
+app.post('/api/me/status', async (req, res) => {
+  try {
+    if (!DB.user || !DB.user.email) {
+      return res.status(401).json({ ok: false, message: 'not logged in' });
+    }
+
+    const raw = (req.body && req.body.status) ? req.body.status : '';
+    const v = String(raw || '').trim().toLowerCase();
+
+    const allowed = {
+      available: 'Available',
+      away: 'Away',
+      busy: 'Busy'
+    };
+
+    const canonical =
+      allowed[v] ||
+      (raw === 'Available' || raw === 'Away' || raw === 'Busy' ? raw : null);
+
+    if (!canonical) {
+      return res.status(400).json({ ok: false, message: 'invalid status' });
+    }
+
+    const email = String(DB.user.email || '').trim().toLowerCase();
+    const fields = {
+      creatorStatus: canonical,
+      creatorStatusUpdatedAt: new Date().toISOString()
+    };
+
+    if (hasFirebase && usersCollection) {
+      const existing = await findUserByEmail(email);
+      if (!existing) return res.status(404).json({ ok: false, message: 'user not found' });
+
+      await usersCollection.doc(existing.id).update(fields);
+
+      // Refresh memory
+      const updatedData = { ...existing, ...fields };
+      DB.users[email] = { ...updatedData, id: existing.id };
+      DB.user = publicUser({ id: existing.id, ...updatedData });
+
+    } else {
+      // Local/demo mode
+      Object.assign(DB.user, fields);
+      if (DB.users[email]) Object.assign(DB.users[email], fields);
+    }
+
+    return res.json({ ok: true, status: canonical });
+  } catch (e) {
+    console.error('POST /api/me/status error:', e);
+    return res.status(500).json({ ok: false, message: 'server error' });
+  }
+});
+
+
 app.post('/api/me/password', async (req, res) => {
   try {
     if (!DB.user || !DB.user.email) return res.status(401).json({ ok: false, message: 'not_logged_in' });

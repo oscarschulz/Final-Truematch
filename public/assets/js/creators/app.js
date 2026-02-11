@@ -126,6 +126,9 @@ async function tmHydrateCreatorsFromMe() {
   tmSetText('#creatorHeaderName', displayName);
   tmSetText('#creatorHeaderHandle', handle);
 
+  // Apply saved creator status
+  try { tmApplyCreatorStatus(user?.creatorStatus || user?.status || 'Available'); } catch {}
+
   if (bio && bio.trim()) tmSetText('#view-my-profile .profile-bio-text', bio);
   tmSetSrc('#view-my-profile .profile-avatar-main', user.avatarUrl);
   tmSetBgImage('#view-my-profile .profile-header-bg', user.headerUrl);
@@ -187,6 +190,222 @@ Swal.fire = function(args) {
     return originalSwalFire.call(this, config);
 };
 
+
+/* =========================
+   Profile: Share + Status
+   ========================= */
+
+let __tmProfileActionsBound = false;
+let __tmStatusMenuOpen = false;
+
+function tmNormalizeStatus(raw) {
+  const v = String(raw || '').trim().toLowerCase();
+  if (!v) return 'Available';
+  if (v === 'available' || v === 'online') return 'Available';
+  if (v === 'away') return 'Away';
+  if (v === 'busy' || v === 'dnd' || v === 'do not disturb') return 'Busy';
+  if (raw === 'Available' || raw === 'Away' || raw === 'Busy') return raw;
+  return 'Available';
+}
+
+function tmStatusColor(status) {
+  const s = tmNormalizeStatus(status);
+  if (s === 'Busy') return '#ff4d4f';
+  if (s === 'Away') return '#f5c542';
+  return '#46e85e';
+}
+
+function tmApplyCreatorStatus(status) {
+  const s = tmNormalizeStatus(status);
+  const color = tmStatusColor(s);
+
+  const label = document.getElementById('profile-status-label');
+  if (label) label.textContent = s;
+
+  const dot = document.getElementById('profile-status-dot');
+  if (dot) dot.style.background = color;
+
+  const sidebarDot = document.querySelector('.profile-header-card .status-indicator');
+  if (sidebarDot) sidebarDot.style.background = color;
+
+  const popDot = document.querySelector('#settings-popover .pop-online');
+  if (popDot) popDot.style.background = color;
+
+  const menu = document.getElementById('profile-status-menu');
+  if (menu) {
+    menu.querySelectorAll('.tm-status-item').forEach(btn => {
+      const isActive = tmNormalizeStatus(btn.getAttribute('data-status')) === s;
+      btn.style.background = isActive ? 'rgba(255,255,255,0.08)' : 'transparent';
+    });
+  }
+}
+
+async function tmApiSetCreatorStatus(status) {
+  const s = tmNormalizeStatus(status);
+  const res = await fetch('/api/me/status', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ status: s })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data || !data.ok) {
+    const msg = (data && data.message) ? data.message : 'Unable to save status';
+    throw new Error(msg);
+  }
+  return tmNormalizeStatus(data.status || s);
+}
+
+function tmGetProfileShareUrl() {
+  const base = window.location.origin + window.location.pathname;
+  return base + '#profile';
+}
+
+async function tmCopyToClipboard(text) {
+  const t = String(text || '');
+  if (!t) return false;
+
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(t);
+      return true;
+    }
+  } catch {}
+
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = t;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    return true;
+  } catch {}
+
+  return false;
+}
+
+function tmCloseStatusMenu() {
+  const menu = document.getElementById('profile-status-menu');
+  if (!menu) return;
+  menu.style.display = 'none';
+  menu.setAttribute('aria-hidden', 'true');
+  __tmStatusMenuOpen = false;
+}
+
+function tmOpenStatusMenu(anchorEl) {
+  const menu = document.getElementById('profile-status-menu');
+  if (!menu || !anchorEl) return;
+
+  const rect = anchorEl.getBoundingClientRect();
+
+  const margin = 10;
+  const menuW = Math.max(190, menu.offsetWidth || 190);
+  const menuH = Math.max(140, menu.offsetHeight || 140);
+
+  let left = rect.left;
+  let top = rect.bottom + 8;
+
+  left = Math.min(left, window.innerWidth - menuW - margin);
+  left = Math.max(margin, left);
+
+  if (top + menuH + margin > window.innerHeight) {
+    top = rect.top - menuH - 8;
+    if (top < margin) top = margin;
+  }
+
+  menu.style.left = left + 'px';
+  menu.style.top = top + 'px';
+  menu.style.display = 'block';
+  menu.setAttribute('aria-hidden', 'false');
+  __tmStatusMenuOpen = true;
+
+  const label = document.getElementById('profile-status-label');
+  tmApplyCreatorStatus(label ? label.textContent : 'Available');
+}
+
+function tmInitProfileShareAndStatus() {
+  if (__tmProfileActionsBound) return;
+  __tmProfileActionsBound = true;
+
+  const shareBtn = document.getElementById('btn-profile-share');
+  if (shareBtn) {
+    shareBtn.addEventListener('click', async () => {
+      try {
+        const url = tmGetProfileShareUrl();
+        const name = (document.getElementById('creatorHeaderName')?.textContent || 'My profile').trim();
+        const handle = (document.getElementById('creatorHeaderHandle')?.textContent || '').trim();
+        const title = handle ? `${name} (${handle})` : name;
+
+        if (navigator.share) {
+          try {
+            await navigator.share({ title, text: 'View my iTRUEMATCH creator profile', url });
+            if (TopToast && TopToast.success) TopToast.success('Shared');
+            return;
+          } catch {
+            // fallback to copy
+          }
+        }
+
+        const ok = await tmCopyToClipboard(url);
+        if (ok) TopToast?.success?.('Link copied');
+        else TopToast?.error?.('Copy failed');
+      } catch {
+        TopToast?.error?.('Share failed');
+      }
+    });
+  }
+
+  const statusTrigger = document.getElementById('profile-status-trigger');
+  const menu = document.getElementById('profile-status-menu');
+
+  if (statusTrigger && menu) {
+    statusTrigger.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (__tmStatusMenuOpen) tmCloseStatusMenu();
+      else tmOpenStatusMenu(statusTrigger);
+    });
+
+    menu.addEventListener('click', async (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest('.tm-status-item') : null;
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const next = btn.getAttribute('data-status') || 'Available';
+      try {
+        tmApplyCreatorStatus(next);
+        tmCloseStatusMenu();
+
+        const saved = await tmApiSetCreatorStatus(next);
+        tmApplyCreatorStatus(saved);
+        TopToast?.success?.('Status updated');
+      } catch (err) {
+        TopToast?.error?.(err?.message || 'Unable to save status');
+      }
+    });
+
+    document.addEventListener('click', () => {
+      if (__tmStatusMenuOpen) tmCloseStatusMenu();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && __tmStatusMenuOpen) tmCloseStatusMenu();
+    });
+
+    window.addEventListener('resize', () => {
+      if (__tmStatusMenuOpen) tmOpenStatusMenu(statusTrigger);
+    });
+  }
+}
+
+
 async function init() {
   console.log("App Init...");
   
@@ -234,7 +453,9 @@ async function init() {
   setupNavigation();
   await tmHydrateCreatorsFromMe();
 
-  setTimeout(() => { 
+  
+  tmInitProfileShareAndStatus();
+setTimeout(() => { 
       if(DOM.appLoader) { 
           DOM.appLoader.style.opacity = '0'; DOM.appLoader.style.visibility = 'hidden'; 
           setTimeout(() => { if(DOM.appLoader.parentNode) DOM.appLoader.parentNode.removeChild(DOM.appLoader); }, 500); 
@@ -641,7 +862,10 @@ function setupNavigation() {
 }
 
 function switchView(viewName) {
-    localStorage.setItem('tm_last_view', viewName);
+    
+  // Close transient overlays when changing views
+  try { tmCloseStatusMenu(); } catch {}
+localStorage.setItem('tm_last_view', viewName);
 
     // Close mobile settings drill-down (if open)
     if (typeof window.__tmCloseSettingsMobileDetail === 'function') {
