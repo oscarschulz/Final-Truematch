@@ -198,6 +198,97 @@ div:where(.swal2-container) button:where(.swal2-styled).swal2-cancel { backgroun
 /* ================= ONLYFANS STYLE CARDS UI ================= */
 .of-alert-box { background: rgba(255, 71, 87, 0.1); border: 1px solid #ff4757; color: var(--text); padding: 15px; border-radius: 4px; display: flex; align-items: center; gap: 15px; font-size: 0.95rem; line-height: 1.4; }
 .of-alert-box i { color: #ff4757; font-size: 1.2rem; flex-shrink: 0; }
+
+/* ======================================================
+   6. MOBILE FULL-SCREEN COMPOSER (Option C)
+   ====================================================== */
+.tm-compose-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 6500;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(12px);
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.tm-compose-sheet.is-open { display: flex; }
+
+.tm-compose-sheet .tm-sheet {
+  width: 100%;
+  max-width: 760px;
+  height: min(92dvh, 840px);
+  background: var(--bg);
+  border: 1px solid var(--border-color);
+  border-bottom: none;
+  border-radius: 20px 20px 0 0;
+  overflow: hidden;
+  transform: translateY(30px);
+  opacity: 0;
+  transition: transform 0.22s ease, opacity 0.22s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.tm-compose-sheet.is-open .tm-sheet {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.tm-sheet-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-color);
+  background: rgba(2, 4, 10, 0.95);
+  backdrop-filter: blur(10px);
+}
+body.tm-light .tm-sheet-header { background: rgba(255,255,255,0.95); }
+
+.tm-sheet-close {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color);
+  color: var(--text);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.tm-sheet-close:hover { background: rgba(255, 255, 255, 0.1); }
+
+.tm-sheet-title { font-weight: 800; font-size: 0.95rem; color: var(--text); }
+.tm-sheet-spacer { flex: 1; }
+
+.tm-sheet-body {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+
+/* When the composer is inside the sheet, tighten spacing a bit */
+#tmComposeSheetBody .compose-area {
+  margin: 0;
+}
+
+body.compose-sheet-open .mobile-bottom-nav { display: none !important; }
+body.compose-sheet-open .of-layout-container { overflow: hidden !important; }
+
+@media (max-width: 768px) {
+  .tm-compose-sheet { align-items: stretch; }
+  .tm-compose-sheet .tm-sheet {
+    height: 100dvh;
+    max-width: none;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+  .tm-sheet-body { padding-bottom: 24px; }
+}
 .of-alert-box a { color: var(--primary-cyan); text-decoration: none; font-weight: 600; }
 .of-info-box { background: rgba(0, 145, 234, 0.1); border: 1px solid #0091ea; color: var(--text); padding: 15px; border-radius: 4px; display: flex; align-items: center; gap: 15px; font-size: 0.95rem; }
 .of-info-box i { color: #0091ea; font-size: 1.2rem; flex-shrink: 0; }

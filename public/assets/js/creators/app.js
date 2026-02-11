@@ -211,6 +211,9 @@ async function init() {
   
   initNewPostButton();
   initSwipeGestures(); 
+
+  // Mobile full-screen composer (Option C)
+  ensureComposeSheet();
   
   injectSidebarToggles();
   ensureFooterHTML();
@@ -258,6 +261,11 @@ function initSwipeGestures() {
 
     function handleSwipe() {
         if (touchEndX > touchStartX + minSwipeDistance) {
+            // If compose sheet is open, close it first.
+            if (isComposeSheetOpen()) {
+                closeComposeSheet();
+                return;
+            }
             if (DOM.popover && DOM.popover.classList.contains('is-open')) {
                 DOM.popover.classList.remove('is-open');
                 return;
@@ -278,6 +286,140 @@ function initSwipeGestures() {
             }
         }
     }
+}
+
+// =============================================================
+// MOBILE FULL-SCREEN COMPOSER (Option C)
+// - Desktop: focus inline composer
+// - Mobile (<= 768px): open a full-screen sheet and move the existing
+//   .compose-area into it so Home module listeners still work.
+// =============================================================
+const tmComposeSheet = {
+    overlay: null,
+    body: null,
+    closeBtn: null,
+    isOpen: false,
+    originParent: null,
+    originNextSibling: null,
+    composeEl: null
+};
+
+function isMobileViewport() {
+    return window.matchMedia('(max-width: 768px)').matches;
+}
+
+function isComposeSheetOpen() {
+    return !!tmComposeSheet.isOpen;
+}
+
+function ensureComposeSheet() {
+    if (document.getElementById('tm-compose-sheet')) {
+        // If it already exists (e.g., hot reload), re-bind references.
+        tmComposeSheet.overlay = document.getElementById('tm-compose-sheet');
+        tmComposeSheet.body = document.getElementById('tmComposeSheetBody');
+        tmComposeSheet.closeBtn = document.getElementById('tmComposeSheetClose');
+        return;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.id = 'tm-compose-sheet';
+    overlay.className = 'tm-compose-sheet';
+    overlay.setAttribute('aria-hidden', 'true');
+    overlay.innerHTML = `
+        <div class="tm-sheet" role="dialog" aria-modal="true" aria-label="New post">
+            <div class="tm-sheet-header">
+                <button type="button" id="tmComposeSheetClose" class="tm-sheet-close" aria-label="Close">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+                <div class="tm-sheet-title">New post</div>
+                <div class="tm-sheet-spacer"></div>
+            </div>
+            <div class="tm-sheet-body" id="tmComposeSheetBody"></div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    tmComposeSheet.overlay = overlay;
+    tmComposeSheet.body = overlay.querySelector('#tmComposeSheetBody');
+    tmComposeSheet.closeBtn = overlay.querySelector('#tmComposeSheetClose');
+
+    if (tmComposeSheet.closeBtn) {
+        tmComposeSheet.closeBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            closeComposeSheet();
+        });
+    }
+
+    overlay.addEventListener('click', (e) => {
+        // Close only when clicking on the dimmed backdrop.
+        if (e.target === overlay) closeComposeSheet();
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && isComposeSheetOpen()) closeComposeSheet();
+    });
+
+    window.addEventListener('resize', () => {
+        // If user rotates / resizes to desktop while sheet is open, close it.
+        if (isComposeSheetOpen() && !isMobileViewport()) closeComposeSheet();
+    });
+}
+
+function openComposeSheet() {
+    ensureComposeSheet();
+    if (!tmComposeSheet.overlay || !tmComposeSheet.body) return;
+
+    // Always open over Home view.
+    switchView('home');
+
+    const composeEl = document.querySelector('#view-home .compose-area');
+    if (!composeEl) return;
+
+    if (!tmComposeSheet.originParent) {
+        tmComposeSheet.originParent = composeEl.parentNode;
+        tmComposeSheet.originNextSibling = composeEl.nextSibling;
+    }
+    tmComposeSheet.composeEl = composeEl;
+
+    // Move composer into the sheet (keeps listeners from home.js intact).
+    tmComposeSheet.body.innerHTML = '';
+    tmComposeSheet.body.appendChild(composeEl);
+
+    document.body.classList.add('compose-sheet-open');
+    tmComposeSheet.overlay.classList.add('is-open');
+    tmComposeSheet.overlay.setAttribute('aria-hidden', 'false');
+    tmComposeSheet.isOpen = true;
+
+    // Focus textarea after paint.
+    requestAnimationFrame(() => {
+        const ta = document.getElementById('compose-input');
+        if (ta) ta.focus();
+    });
+}
+
+function closeComposeSheet() {
+    if (!isComposeSheetOpen()) return;
+    ensureComposeSheet();
+    if (!tmComposeSheet.overlay) return;
+
+    // Restore composer back to its original place.
+    try {
+        const el = tmComposeSheet.composeEl;
+        if (el && tmComposeSheet.originParent) {
+            const parent = tmComposeSheet.originParent;
+            const next = tmComposeSheet.originNextSibling;
+            if (next && next.parentNode === parent) parent.insertBefore(el, next);
+            else parent.appendChild(el);
+        }
+    } catch (err) {
+        console.warn('Compose sheet restore failed:', err);
+    }
+
+    tmComposeSheet.overlay.classList.remove('is-open');
+    tmComposeSheet.overlay.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('compose-sheet-open');
+    tmComposeSheet.isOpen = false;
 }
 
 function setupGlobalEvents() {
@@ -327,12 +469,17 @@ function initNewPostButton() {
     const btnNewPost = document.querySelector('.btn-new-post');
     if (btnNewPost) {
         btnNewPost.addEventListener('click', () => {
+            // Desktop/tablet: focus the inline composer.
+            // Mobile: open the full-screen compose sheet (Option C).
+            if (isMobileViewport()) {
+                openComposeSheet();
+                return;
+            }
+
             switchView('home');
             window.scrollTo({ top: 0, behavior: 'smooth' });
-            const composeInput = document.querySelector('.compose-top input');
-            if (composeInput) {
-                setTimeout(() => composeInput.focus(), 300);
-            }
+            const ta = document.getElementById('compose-input');
+            if (ta) setTimeout(() => ta.focus(), 250);
         });
     }
 }
@@ -438,10 +585,10 @@ function setupNavigation() {
     if (mobAddCard) mobAddCard.addEventListener('click', () => switchView('add-card'));
     if (mobCollections) mobCollections.addEventListener('click', () => switchView('collections'));
     if (mobNotif) mobNotif.addEventListener('click', () => switchView('notifications'));
-    if (mobAdd) mobAdd.addEventListener('click', () => { 
-        switchView('home'); window.scrollTo(0,0);
-        const composeInput = document.querySelector('.compose-top input');
-        if (composeInput) setTimeout(() => composeInput.focus(), 300);
+    if (mobAdd) mobAdd.addEventListener('click', () => {
+        // Mobile: open compose sheet. (Desktop/tablet shouldn't hit this because
+        // bottom nav is hidden in CSS.)
+        openComposeSheet();
     });
     
     document.addEventListener('click', (e) => {
@@ -454,14 +601,10 @@ function setupNavigation() {
 function switchView(viewName) {
     localStorage.setItem('tm_last_view', viewName);
 
-    // Close Settings mobile detail (if open)
-    try { if (typeof window.__tmCloseSettingsMobileDetail === 'function') window.__tmCloseSettingsMobileDetail(); } catch (_) {}
-// If Settings mobile drill-down is open, close it on navigation.
-try {
-    if (typeof window.__tmCloseSettingsMobileDetail === 'function') {
-        window.__tmCloseSettingsMobileDetail();
+    // If a full-screen compose sheet is open, close it before navigating.
+    if (isComposeSheetOpen()) {
+        closeComposeSheet();
     }
-} catch (_) {}
 
     const viewSubscriptions = document.getElementById('view-subscriptions');
 
