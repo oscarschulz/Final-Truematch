@@ -4253,6 +4253,75 @@ app.post('/api/me/creator/apply', async (req, res) => {
   }
 });
 // ---------------- Creator Subscription (ILIPAT MO DITO SA LABAS) ----------------
+
+
+// Update creator profile details WITHOUT resetting status to pending.
+// Used by Settings > Edit Profile on creators page.
+app.post('/api/me/creator/profile', async (req, res) => {
+  try {
+    if (!DB.user) {
+      return res.status(401).json({ ok: false, error: 'Not logged in' });
+    }
+
+    const body = req.body || {};
+
+    const prev = (DB.user.creatorApplication && typeof DB.user.creatorApplication === 'object')
+      ? DB.user.creatorApplication
+      : {};
+
+    const next = { ...prev };
+
+    // Preserve status (do NOT force pending here)
+    const preservedStatus = safeStr(prev.status) || safeStr(DB.user.creatorStatus) || 'pending';
+    next.status = preservedStatus;
+
+    if (Object.prototype.hasOwnProperty.call(body, 'handle')) {
+      const h = safeStr(body.handle).replace(/^@/, '').trim();
+      if (h) next.handle = h;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, 'contentStyle')) {
+      next.contentStyle = safeStr(body.contentStyle);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, 'links')) {
+      next.links = safeStr(body.links);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, 'gender')) {
+      next.gender = safeStr(body.gender);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, 'price')) {
+      const p = Number(body.price);
+      if (!Number.isNaN(p)) next.price = p;
+    }
+
+    next.updatedAt = new Date().toISOString();
+
+    DB.user.creatorApplication = next;
+    DB.user.creatorStatus = preservedStatus;
+
+    if (DB.user.email && DB.users[DB.user.email]) {
+      DB.users[DB.user.email].creatorApplication = next;
+      DB.users[DB.user.email].creatorStatus = preservedStatus;
+    }
+
+    // Persist
+    if (DB.user.email) {
+      await updateUserByEmail(DB.user.email, {
+        creatorApplication: next,
+        creatorStatus: preservedStatus,
+      });
+    }
+
+    return res.json({ ok: true, creatorApplication: next });
+  } catch (e) {
+    console.error('creator/profile error', e);
+    return res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
 app.post('/api/me/creator/subscribe', async (req, res) => {
   try {
     if (!DB.user || !DB.user.email) {

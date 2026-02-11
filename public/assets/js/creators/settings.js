@@ -1,126 +1,217 @@
 import { DOM } from './dom.js';
+import { apiMe, apiPost } from './tm-api.js';
+
+let __meCache = null;
+
+function normKey(k) {
+  return String(k || '').trim().toLowerCase();
+}
+
+function parsePacked(packed) {
+  const map = new Map(); // normKey -> { key, value }
+  const raw = String(packed || '');
+  raw.split('|').forEach((part) => {
+    const s = String(part || '').trim();
+    if (!s) return;
+    const idx = s.indexOf(':');
+    if (idx === -1) return;
+    const key = s.slice(0, idx).trim();
+    const value = s.slice(idx + 1).trim();
+    map.set(normKey(key), { key, value });
+  });
+  return map;
+}
+
+function getPacked(map, key) {
+  const it = map.get(normKey(key));
+  return it ? it.value : '';
+}
+
+function setPacked(map, key, value) {
+  const v = String(value ?? '').trim();
+  const nk = normKey(key);
+  if (!v) {
+    map.delete(nk);
+    return;
+  }
+  const existing = map.get(nk);
+  map.set(nk, { key: existing?.key || String(key).trim(), value: v });
+}
+
+function mapToPacked(map) {
+  // Keep a stable order for the keys we care about, then append any extras.
+  const canonicalOrder = [
+    'Name',
+    'Bio',
+    'Location',
+    'Website URL',
+    'Languages',
+    'Category',
+    'Niche',
+    'Posting schedule',
+    'Boundaries',
+    'Style notes',
+  ];
+
+  const used = new Set();
+  const parts = [];
+
+  canonicalOrder.forEach((k) => {
+    const nk = normKey(k);
+    const it = map.get(nk);
+    if (it && it.value) {
+      parts.push(`${it.key}: ${it.value}`);
+      used.add(nk);
+    }
+  });
+
+  // Append any remaining keys (don’t lose existing data you might add later).
+  for (const [nk, it] of map.entries()) {
+    if (used.has(nk)) continue;
+    if (!it?.key || !it?.value) continue;
+    parts.push(`${it.key}: ${it.value}`);
+  }
+
+  return parts.join(' | ');
+}
+
+async function ensureMe(force = false) {
+  if (!force && __meCache) return __meCache;
+  const me = await apiMe();
+  __meCache = me;
+  return me;
+}
+
+function setActiveNav(el) {
+  document.querySelectorAll('.set-nav-item.active').forEach((x) => x.classList.remove('active'));
+  if (el) el.classList.add('active');
+}
+
+function renderSettingsTarget(target, me) {
+  if (!DOM?.rsSettingsView) return;
+
+  const src = document.getElementById(`set-content-${target}-source`);
+  DOM.rsSettingsView.innerHTML = '';
+  if (!src) return;
+
+  const clone = src.cloneNode(true);
+  clone.id = `set-content-${target}`;
+  clone.classList.remove('hidden');
+
+  // Ensure any "hidden" on children is removed (some blocks use hidden on the wrapper only, but safe)
+  clone.querySelectorAll('.hidden').forEach((n) => n.classList.remove('hidden'));
+
+  DOM.rsSettingsView.appendChild(clone);
+
+  // Header username placeholders (mobile + desktop)
+  const handle =
+    me?.user?.creatorApplication?.handle ||
+    me?.user?.username ||
+    me?.user?.handle ||
+    me?.user?.creatorHandle ||
+    '';
+  if (DOM.setHeaderUsername) DOM.setHeaderUsername.textContent = `@${handle || 'username'}`;
+  if (DOM.setHeaderUsernameMobile) DOM.setHeaderUsernameMobile.textContent = `@${handle || 'username'}`;
+
+  if (target === 'profile') {
+    hydrateCreatorProfileForm(clone, me);
+  }
+}
+
+function bindMetaCounter(container, fieldEl) {
+  const group = fieldEl?.closest?.('.ac-group');
+  if (!group) return;
+  const meta = group.querySelector('.field-meta span:last-child');
+  if (!meta) return;
+
+  const max = parseInt(fieldEl.getAttribute('maxlength') || '0', 10) || null;
+  const update = () => {
+    const len = String(fieldEl.value || '').length;
+    if (max) meta.textContent = `${len}/${max}`;
+    else meta.textContent = `${len}`;
+  };
+  fieldEl.addEventListener('input', update);
+  update();
+}
+
+function hydrateCreatorProfileForm(container, me) {
+  const packed = me?.user?.creatorApplication?.contentStyle || '';
+  const map = parsePacked(packed);
+
+  container.querySelectorAll('[data-creator-key]').forEach((el) => {
+    const key = el.getAttribute('data-creator-key');
+    if (!key) return;
+    const val = getPacked(map, key);
+    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+      el.value = val || '';
+      bindMetaCounter(container, el);
+    }
+  });
+
+  const btn = container.querySelector('[data-action="save-profile"]');
+  if (btn) {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      btn.classList.add('loading');
+      try {
+        await saveCreatorProfile(container);
+        // Reload so profile view and nav are instantly consistent everywhere.
+        window.location.reload();
+      } catch (e) {
+        console.error(e);
+        alert(e?.message || 'Failed to save. Please try again.');
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove('loading');
+      }
+    });
+  }
+}
+
+async function saveCreatorProfile(container) {
+  const me = await ensureMe(true);
+  const prevPacked = me?.user?.creatorApplication?.contentStyle || '';
+  const map = parsePacked(prevPacked);
+
+  container.querySelectorAll('[data-creator-key]').forEach((el) => {
+    const key = el.getAttribute('data-creator-key');
+    if (!key) return;
+    const val = (el.value ?? '').toString();
+    setPacked(map, key, val);
+  });
+
+  const nextPacked = mapToPacked(map);
+
+  const out = await apiPost('/api/me/creator/profile', {
+    contentStyle: nextPacked,
+  });
+
+  if (!out?.ok) {
+    throw new Error(out?.error || 'Save failed');
+  }
+
+  __meCache = null;
+  await ensureMe(true);
+}
 
 export function initSettings() {
-    // FIX: Use Event Delegation sa container (view-settings)
-    const settingsView = DOM.viewSettings;
-    const rsContainer = DOM.rsSettingsView;
-    const rightSidebar = document.getElementById('right-sidebar');
+  (async () => {
+  const me = await ensureMe(true);
 
-    if (settingsView) {
-        settingsView.addEventListener('click', (e) => {
-            // Check kung ang clinic ay .set-item o nasa loob nito
-            const item = e.target.closest('.set-item');
-            
-            if (item) {
-                // Remove active from all siblings
-                const allItems = settingsView.querySelectorAll('.set-item');
-                allItems.forEach(i => i.classList.remove('active'));
-                item.classList.add('active');
-                
-                // Load Content sa Right Sidebar
-                const target = item.dataset.target;
-                loadSettingsContent(target);
+  // Clicking settings left-menu items renders the matching content in the right panel.
+  document.querySelectorAll('.set-nav-item').forEach((el) => {
+    el.addEventListener('click', async () => {
+      const target = el.getAttribute('data-target');
+      if (!target) return;
+      setActiveNav(el);
+      const meFresh = await ensureMe(true);
+      renderSettingsTarget(target, meFresh);
+    });
+  });
 
-                // 🔥 MOBILE FIX: Buksan ang sidebar bilang Full Page Overlay
-                if (window.innerWidth <= 1024 && rightSidebar) {
-                    rightSidebar.classList.remove('hidden-sidebar');
-                    
-                    // Small timeout to allow removing 'hidden-sidebar' first properly
-                    requestAnimationFrame(() => {
-                        rightSidebar.classList.add('mobile-active');
-                    });
-                }
-            }
-        });
-    }
-
-    // Default Load (Kung nasa settings view na agad)
-    loadSettingsContent('profile');
-
-    function loadSettingsContent(target) {
-        if(!rsContainer) return;
-        
-        // Find content source inside the loaded settings HTML
-        const sourceId = `set-content-${target}-source`;
-        const sourceEl = document.getElementById(sourceId);
-
-        rsContainer.innerHTML = ''; // Clear previous
-
-        // 🔥 MOBILE FIX: Maglagay ng BACK BUTTON sa loob ng content
-        if (window.innerWidth <= 1024) {
-            const backBtn = document.createElement('div');
-            backBtn.className = 'settings-mobile-back';
-            const title = target.charAt(0).toUpperCase() + target.slice(1);
-            backBtn.innerHTML = `<i class="fa-solid fa-arrow-left"></i> ${title}`;
-            
-            // Pag kinlick ang Back, isasara ang overlay (SWIPE OUT)
-            backBtn.addEventListener('click', () => {
-                if(rightSidebar) {
-                    rightSidebar.classList.remove('mobile-active');
-                }
-            });
-            rsContainer.appendChild(backBtn);
-        }
-
-        if (sourceEl) {
-            const clone = sourceEl.cloneNode(true);
-            clone.id = ''; // Remove ID to avoid duplicates
-            clone.style.display = 'block'; 
-            rsContainer.appendChild(clone);
-
-            // --- RE-INITIALIZE TOGGLES FOR THE NEWLY CLONED CONTENT ---
-            if (target === 'security') {
-                setupPasswordToggles(rsContainer);
-            }
-            if (target === 'display') {
-                setupSettingsThemeToggle(rsContainer);
-            }
-
-        } else {
-            rsContainer.innerHTML += `<div style="padding:20px; text-align:center; color:gray;">Content for '${target}' coming soon.</div>`;
-        }
-    }
-
-    // --- HELPER: PASSWORD TOGGLE LOGIC ---
-    function setupPasswordToggles(container) {
-        container.addEventListener('click', (e) => {
-            if (e.target.classList.contains('fa-eye') || e.target.classList.contains('fa-eye-slash')) {
-                const icon = e.target;
-                const input = icon.previousElementSibling; // Assuming input is right before icon
-                if (input && input.tagName === 'INPUT') {
-                    if (input.type === 'password') {
-                        input.type = 'text';
-                        icon.classList.replace('fa-eye-slash', 'fa-eye');
-                        icon.style.color = 'var(--primary-cyan)';
-                    } else {
-                        input.type = 'password';
-                        icon.classList.replace('fa-eye', 'fa-eye-slash');
-                        icon.style.color = 'var(--muted)';
-                    }
-                }
-            }
-        });
-    }
-
-    // --- HELPER: SETTINGS THEME TOGGLE LOGIC ---
-    function setupSettingsThemeToggle(container) {
-        const toggle = container.querySelector('#setting-theme-toggle');
-        if (toggle) {
-            const isDark = document.body.classList.contains('tm-dark');
-            toggle.checked = isDark;
-
-            toggle.addEventListener('change', function() {
-                if (this.checked) {
-                    document.body.classList.remove('tm-light');
-                    document.body.classList.add('tm-dark');
-                } else {
-                    document.body.classList.remove('tm-dark');
-                    document.body.classList.add('tm-light');
-                }
-                
-                const popoverToggle = document.getElementById('themeToggle');
-                if(popoverToggle) popoverToggle.checked = this.checked;
-            });
-        }
-    }
+  // Default: open Profile edit
+  const first = document.querySelector('.set-nav-item[data-target="profile"]') || document.querySelector('.set-nav-item');
+  setActiveNav(first);
+  renderSettingsTarget('profile', me);
+  })().catch((e) => console.error('initSettings error', e));
 }

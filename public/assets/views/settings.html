@@ -88,7 +88,7 @@
     <div id="set-content-profile-source">
         <div class="rs-col-header" style="padding-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
             <h3 style="font-size:1.2rem;" data-lang="set_profile">EDIT PROFILE</h3>
-            <button class="btn-submit-card" style="width:auto; padding: 8px 20px; font-size:0.8rem; min-width:auto;">SAVE</button>
+            <button class="btn-submit-card" style="width:auto; padding: 8px 20px; font-size:0.8rem; min-width:auto;" data-action="save-profile" type="button">SAVE</button>
         </div>
         
         <div style="position:relative; margin-bottom:60px;">
@@ -105,25 +105,57 @@
             <div class="ac-group">
                 <label>Display Name</label>
                 <div class="input-with-icon" style="position:relative;">
-                    <input type="text" placeholder="Your Name" style="width:100%;">
+                    <input type="text" placeholder="Your Name" style="width:100%;" data-creator-key="Name">
                     <span class="char-count">0/50</span>
                 </div>
             </div>
             <div class="ac-group">
                 <label>Bio</label>
                 <div style="position:relative;">
-                    <textarea style="width:100%; resize:none; height:120px;" placeholder="Describe yourself..."></textarea>
+                    <textarea style="width:100%; resize:none; height:120px;" placeholder="Describe yourself..." data-creator-key="Bio"></textarea>
                     <span class="char-count" style="bottom:5px;">0/1000</span>
                 </div>
             </div>
             <div class="ac-group">
                 <label>Location</label>
-                <input type="text" placeholder="City, Country">
+                <input type="text" placeholder="City, Country" data-creator-key="Location">
             </div>
             <div class="ac-group">
                 <label>Website URL</label>
-                <input type="text" placeholder="https://">
+                <input type="text" placeholder="https://" data-creator-key="Website URL">
             </div>
+
+            <div class="ac-group">
+                <div class="ac-label">LANGUAGES</div>
+                <input type="text" class="field-input" data-creator-key="Languages" placeholder="e.g., Filipino, English">
+            </div>
+
+            <div class="ac-group">
+                <div class="ac-label">CATEGORY</div>
+                <input type="text" class="field-input" data-creator-key="Category" placeholder="e.g., Gaming">
+            </div>
+
+            <div class="ac-group">
+                <div class="ac-label">NICHE</div>
+                <input type="text" class="field-input" data-creator-key="Niche" placeholder="e.g., ASMR, Yoga">
+            </div>
+
+            <div class="ac-group">
+                <div class="ac-label">POSTING SCHEDULE</div>
+                <input type="text" class="field-input" data-creator-key="Posting schedule" placeholder="e.g., 1 post per day">
+            </div>
+
+            <div class="ac-group">
+                <div class="ac-label">BOUNDARIES</div>
+                <input type="text" class="field-input" data-creator-key="Boundaries" placeholder="e.g., What you won’t do">
+            </div>
+
+            <div class="ac-group">
+                <div class="ac-label">STYLE NOTES</div>
+                <textarea class="field-input" data-creator-key="Style notes" placeholder="Any style notes..." maxlength="1000" style="min-height: 110px;"></textarea>
+                <div class="field-meta"><span></span><span>0/1000</span></div>
+            </div>
+
         </div>
     </div>
 
