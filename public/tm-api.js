@@ -77,3 +77,16 @@ export async function apiChangePassword(currentPassword, newPassword) {
 
 // Backwards-compatible alias (older bundles may import apiSave)
 export const apiSave = apiSavePrefs;
+// ---- Creator-to-Creator Subscriptions (Following / Subscribers)
+export async function apiGetMySubscriptions(dir = '') {
+  const qs = dir ? `?dir=${encodeURIComponent(dir)}` : '';
+  return apiGet(`/api/me/subscriptions${qs}`);
+}
+
+export async function apiSubscribeToCreator(creatorEmail, durationDays = 30) {
+  return apiPost('/api/creator/subscribe', { creatorEmail, durationDays });
+}
+
+export async function apiUnsubscribeFromCreator(creatorEmail) {
+  return apiPost('/api/creator/unsubscribe', { creatorEmail });
+}

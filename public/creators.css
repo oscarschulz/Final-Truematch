@@ -1128,3 +1128,124 @@ div:where(.swal2-container) button:where(.swal2-styled).swal2-cancel:hover {
 @media (max-width: 768px){
   .tm-search-sheet{ border-radius:16px; max-height:88vh; }
 }
+/* =========================
+   SUBSCRIPTIONS VIEW (Option 2)
+   ========================= */
+
+.subs-search-wrap{
+  display:none;
+  padding: 10px 15px;
+  border-bottom: 1px solid var(--border-color);
+}
+.subs-search-wrap.is-open{ display:block; }
+
+.subs-search-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.03);
+}
+.subs-search-row input{
+  flex:1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 14px;
+}
+.subs-search-row button{
+  border:none;
+  background: transparent;
+  cursor:pointer;
+  color: var(--muted);
+}
+
+.subs-filter-row{
+  padding: 10px 15px;
+  border-bottom: 1px solid var(--border-color);
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+}
+
+.subs-list{
+  padding: 12px 15px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+.subs-item{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.02);
+}
+
+.subs-avatar{
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(255,255,255,0.08);
+  flex-shrink:0;
+}
+
+.subs-meta{
+  flex:1;
+  min-width:0;
+}
+.subs-name{
+  font-weight:700;
+  font-size:14px;
+  color: var(--text);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.subs-handle{
+  font-size:12px;
+  color: var(--muted);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.subs-badge{
+  font-size:11px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border:1px solid var(--border-color);
+  color: var(--muted);
+}
+.subs-badge.active{
+  color:#64E9EE;
+  border-color: rgba(100,233,238,0.4);
+}
+
+.subs-empty{
+  display:none;
+  padding: 70px 18px;
+  text-align:center;
+  color: var(--muted);
+}
+.subs-empty h3{
+  margin: 8px 0 10px;
+  color: var(--text);
+  font-size: 16px;
+}
+.subs-empty .cta-pill{
+  margin-top: 16px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}

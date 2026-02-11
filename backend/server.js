@@ -1494,7 +1494,7 @@ function publicUser(doc) {
     uid: doc.uid || doc.id || doc.userId || null,
     email,
     name: doc.name || doc.fullName || '',
-    
+    handle: doc.handle || doc.username || (doc.creatorApplication && doc.creatorApplication.handle) || '',
     city: doc.city || doc.location || '',
     avatarUrl: doc.avatarUrl || doc.avatar || '',
     creatorStatus: doc.creatorStatus ?? doc.creator_status ?? null,
@@ -4409,6 +4409,251 @@ app.post('/api/me/creator/subscribe', async (req, res) => {
   }
 });
 // server.js
+// ---------------- Creator-to-Creator Subscriptions (Following / Subscribers) ----------------
+const CREATOR_SUBS_COLLECTION = process.env.CREATOR_SUBS_COLLECTION || 'iTrueMatchCreatorSubscriptions';
+
+function _b64url(str) {
+  return Buffer.from(String(str || '').toLowerCase(), 'utf8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function _subDocId(subscriberEmail, creatorEmail) {
+  return `${_b64url(subscriberEmail)}__${_b64url(creatorEmail)}`;
+}
+
+function _normalizeEmail(e) {
+  return String(e || '').trim().toLowerCase();
+}
+
+function _tsToMs(t) {
+  if (!t) return null;
+  if (typeof t === 'number') return t;
+  if (t._seconds) return (t._seconds * 1000) + Math.floor((t._nanoseconds || 0) / 1e6);
+  if (t.seconds) return (t.seconds * 1000) + Math.floor((t.nanoseconds || 0) / 1e6);
+  if (t.toMillis) return t.toMillis();
+  return null;
+}
+
+function _computeSubFlags(sub, nowMs) {
+  const endAtMs = _tsToMs(sub.endAt) || null;
+  const startAtMs = _tsToMs(sub.startAt) || null;
+  const rawStatus = String(sub.status || '').toLowerCase();
+  let status = rawStatus || (endAtMs && endAtMs > nowMs ? 'active' : 'expired');
+  if (!endAtMs && status === '') status = 'active';
+  const isCancelled = status === 'cancelled' || status === 'canceled';
+  const isActive = !isCancelled && (!endAtMs || endAtMs > nowMs) && status !== 'expired';
+  if (isCancelled) status = 'cancelled';
+  if (!isActive && status === 'active') status = 'expired';
+  return { status, isActive, startAtMs, endAtMs };
+}
+
+async function _publicUserByEmailCached(email, cache) {
+  const key = _normalizeEmail(email);
+  if (!key) return null;
+  if (cache.has(key)) return cache.get(key);
+  try {
+    const u = await findUserByEmail(key);
+    const pu = u ? publicUser(u) : { email: key, name: '', handle: '', avatarUrl: '', verified: false };
+    cache.set(key, pu);
+    return pu;
+  } catch (e) {
+    const pu = { email: key, name: '', handle: '', avatarUrl: '', verified: false };
+    cache.set(key, pu);
+    return pu;
+  }
+}
+
+async function _listSubsFor(email, direction /* 'subscribed' | 'subscribers' */, limit = 250) {
+  const me = _normalizeEmail(email);
+  const nowMs = Date.now();
+
+  // Local fallback (if Firebase not enabled)
+  if (!hasFirebase || !firestore) {
+    DB.creatorSubs = DB.creatorSubs || {};
+    const items = Object.values(DB.creatorSubs)
+      .filter((x) => (direction === 'subscribed' ? _normalizeEmail(x.subscriberEmail) === me : _normalizeEmail(x.creatorEmail) === me))
+      .slice(0, limit)
+      .map((x) => {
+        const flags = _computeSubFlags(x, nowMs);
+        const otherEmail = direction === 'subscribed' ? x.creatorEmail : x.subscriberEmail;
+        return {
+          id: x.id || _subDocId(x.subscriberEmail, x.creatorEmail),
+          subscriberEmail: _normalizeEmail(x.subscriberEmail),
+          creatorEmail: _normalizeEmail(x.creatorEmail),
+          startAt: x.startAt || null,
+          endAt: x.endAt || null,
+          status: flags.status,
+          isActive: flags.isActive,
+          otherEmail: _normalizeEmail(otherEmail),
+          otherUser: { email: _normalizeEmail(otherEmail), name: '', handle: '', avatarUrl: '', verified: false },
+        };
+      });
+
+    const active = items.filter((it) => it.isActive).length;
+    const expired = items.length - active;
+    return { items, counts: { all: items.length, active, expired } };
+  }
+
+  const field = direction === 'subscribed' ? 'subscriberEmail' : 'creatorEmail';
+  const snap = await firestore
+    .collection(CREATOR_SUBS_COLLECTION)
+    .where(field, '==', me)
+    .limit(limit)
+    .get();
+
+  const cache = new Map();
+  const items = await Promise.all(
+    snap.docs.map(async (d) => {
+      const sub = d.data() || {};
+      const subscriberEmail = _normalizeEmail(sub.subscriberEmail || '');
+      const creatorEmail = _normalizeEmail(sub.creatorEmail || '');
+      const flags = _computeSubFlags(sub, nowMs);
+      const otherEmail = direction === 'subscribed' ? creatorEmail : subscriberEmail;
+      const otherUser = await _publicUserByEmailCached(otherEmail, cache);
+
+      return {
+        id: d.id,
+        subscriberEmail,
+        creatorEmail,
+        startAt: sub.startAt || null,
+        endAt: sub.endAt || null,
+        status: flags.status,
+        isActive: flags.isActive,
+        otherEmail,
+        otherUser,
+        updatedAt: sub.updatedAt || null,
+        createdAt: sub.createdAt || null,
+      };
+    })
+  );
+
+  items.sort((a, b) => {
+    const am = _tsToMs(a.updatedAt) || _tsToMs(a.createdAt) || 0;
+    const bm = _tsToMs(b.updatedAt) || _tsToMs(b.createdAt) || 0;
+    return bm - am;
+  });
+
+  const active = items.filter((it) => it.isActive).length;
+  const expired = items.length - active;
+  return { items, counts: { all: items.length, active, expired } };
+}
+
+app.get('/api/me/subscriptions', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req) || (DB.user && DB.user.email) || '');
+    if (!me) return res.status(401).json({ ok: false, message: 'Not logged in' });
+
+    const dir = String(req.query.dir || '').toLowerCase();
+    const wantSubscribed = !dir || dir === 'subscribed' || dir === 'subscribedto';
+    const wantSubscribers = !dir || dir === 'subscribers' || dir === 'fans';
+
+    const [subscribed, subscribers] = await Promise.all([
+      wantSubscribed ? _listSubsFor(me, 'subscribed') : Promise.resolve({ items: [], counts: { all: 0, active: 0, expired: 0 } }),
+      wantSubscribers ? _listSubsFor(me, 'subscribers') : Promise.resolve({ items: [], counts: { all: 0, active: 0, expired: 0 } }),
+    ]);
+
+    return res.json({ ok: true, subscribed, subscribers, ts: Date.now() });
+  } catch (e) {
+    console.error('GET /api/me/subscriptions error', e);
+    return res.status(500).json({ ok: false, message: 'Server error' });
+  }
+});
+
+// For testing / future payment integration
+app.post('/api/creator/subscribe', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req) || (DB.user && DB.user.email) || '');
+    if (!me) return res.status(401).json({ ok: false, message: 'Not logged in' });
+
+    const creatorEmail = _normalizeEmail(req.body && req.body.creatorEmail);
+    const durationDays = Math.max(1, Math.min(365, parseInt((req.body && req.body.durationDays) || '30', 10) || 30));
+
+    if (!creatorEmail) return res.status(400).json({ ok: false, message: 'creatorEmail is required' });
+    if (creatorEmail === me) return res.status(400).json({ ok: false, message: "You can't subscribe to yourself" });
+
+    const creatorDoc = await findUserByEmail(creatorEmail);
+    if (!creatorDoc) return res.status(404).json({ ok: false, message: 'Creator not found' });
+
+    const nowMs = Date.now();
+
+    const id = _subDocId(me, creatorEmail);
+    if (!hasFirebase || !firestore) {
+      DB.creatorSubs = DB.creatorSubs || {};
+      DB.creatorSubs[id] = {
+        id,
+        subscriberEmail: me,
+        creatorEmail,
+        status: 'active',
+        startAt: nowMs,
+        endAt: nowMs + durationDays * 24 * 60 * 60 * 1000,
+        createdAt: DB.creatorSubs[id]?.createdAt || nowMs,
+        updatedAt: nowMs,
+      };
+      return res.json({ ok: true, subscribed: true, id });
+    }
+
+    const ref = firestore.collection(CREATOR_SUBS_COLLECTION).doc(id);
+    const existing = await ref.get();
+    const prev = existing.exists ? (existing.data() || {}) : {};
+    const prevEndMs = _tsToMs(prev.endAt) || 0;
+    const baseMs = Math.max(nowMs, prevEndMs);
+    const newEndMs = baseMs + durationDays * 24 * 60 * 60 * 1000;
+
+    await ref.set(
+      {
+        subscriberEmail: me,
+        creatorEmail,
+        status: 'active',
+        startAt: prev.startAt || new Date(nowMs),
+        endAt: new Date(newEndMs),
+        createdAt: prev.createdAt || new Date(nowMs),
+        updatedAt: new Date(nowMs),
+      },
+      { merge: true }
+    );
+
+    return res.json({ ok: true, subscribed: true, id });
+  } catch (e) {
+    console.error('POST /api/creator/subscribe error', e);
+    return res.status(500).json({ ok: false, message: 'Server error' });
+  }
+});
+
+app.post('/api/creator/unsubscribe', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req) || (DB.user && DB.user.email) || '');
+    if (!me) return res.status(401).json({ ok: false, message: 'Not logged in' });
+
+    const creatorEmail = _normalizeEmail(req.body && req.body.creatorEmail);
+    if (!creatorEmail) return res.status(400).json({ ok: false, message: 'creatorEmail is required' });
+
+    const id = _subDocId(me, creatorEmail);
+    const nowMs = Date.now();
+
+    if (!hasFirebase || !firestore) {
+      DB.creatorSubs = DB.creatorSubs || {};
+      if (DB.creatorSubs[id]) {
+        DB.creatorSubs[id].status = 'cancelled';
+        DB.creatorSubs[id].endAt = nowMs;
+        DB.creatorSubs[id].updatedAt = nowMs;
+      }
+      return res.json({ ok: true, unsubscribed: true, id });
+    }
+
+    await firestore.collection(CREATOR_SUBS_COLLECTION).doc(id).set(
+      { status: 'cancelled', endAt: new Date(nowMs), updatedAt: new Date(nowMs) },
+      { merge: true }
+    );
+
+    return res.json({ ok: true, unsubscribed: true, id });
+  } catch (e) {
+    console.error('POST /api/creator/unsubscribe error', e);
+    return res.status(500).json({ ok: false, message: 'Server error' });
+  }
+});
 
 // ---------------- Premium Society Application ----------------
 app.post('/api/me/premium/apply', async (req, res) => {

@@ -123,6 +123,25 @@ const DOM = {
   viewNotif: document.getElementById('view-notifications'),
   viewMessages: document.getElementById('view-messages'),
   viewCollections: document.getElementById('view-collections'),
+    viewSubscriptions: document.getElementById('view-subscriptions'),
+
+    subsSearchBtn: document.getElementById('subs-btn-search'),
+    subsSearchRow: document.getElementById('subs-search-row'),
+    subsSearchInput: document.getElementById('subs-search-input'),
+    subsSearchClear: document.getElementById('subs-search-clear'),
+
+    subsTabs: [...document.querySelectorAll('[data-subs-tab]')],
+    subsFilterBtns: [...document.querySelectorAll('[data-subs-filter]')],
+
+    subsList: document.getElementById('subs-list'),
+    subsEmpty: document.getElementById('subs-empty'),
+    subsLoading: document.getElementById('subs-loading'),
+
+    subsCountTo: document.getElementById('subs-count-to'),
+    subsCountFrom: document.getElementById('subs-count-from'),
+    subsCountActive: document.getElementById('subs-count-active'),
+    subsCountExpired: document.getElementById('subs-count-expired'),
+    subsCountAll: document.getElementById('subs-count-all'),
   
   // Need to reference Main Column for dynamic resizing
   mainFeedColumn: document.querySelector('.main-feed-column'),
@@ -310,6 +329,7 @@ async function init() {
     if (DOM.viewNotif) DOM.viewNotif.style.display = 'none';
     if (DOM.viewMessages) DOM.viewMessages.style.display = 'none';
     if (DOM.viewCollections) DOM.viewCollections.style.display = 'none';
+    if (DOM.viewSubscriptions) DOM.viewSubscriptions.style.display = 'none';
 
     // 2. Reset Layout Classes (Standardize first)
     if (DOM.mainFeedColumn) DOM.mainFeedColumn.classList.remove('narrow-view');
@@ -355,6 +375,20 @@ async function init() {
         // Initial Render
         renderCollections();
     }
+    else if (viewName === 'subscriptions') {
+        // *** APPLY ADAPTIVE LAYOUT FOR SUBSCRIPTIONS ***
+        if (DOM.mainFeedColumn) DOM.mainFeedColumn.classList.add('narrow-view');
+        if (DOM.rightSidebar) DOM.rightSidebar.classList.add('wide-view');
+
+        // Sidebar: keep suggestions
+        if(DOM.rsSuggestions) DOM.rsSuggestions.classList.remove('hidden');
+        if(DOM.rsCollections) DOM.rsCollections.classList.add('hidden');
+
+        if (DOM.viewSubscriptions) DOM.viewSubscriptions.style.display = 'block';
+        if (DOM.navSubs) setActive(DOM.navSubs);
+
+        loadSubscriptionsView(true);
+    }
     else if (viewName === 'home') {
         // Reset Right Sidebar to Suggestions
         if(DOM.rsSuggestions) DOM.rsSuggestions.classList.remove('hidden');
@@ -385,43 +419,344 @@ async function init() {
   if (DOM.navMessages) DOM.navMessages.addEventListener('click', (e) => { e.preventDefault(); switchView('messages'); });
   if (DOM.navCollections) DOM.navCollections.addEventListener('click', (e) => { e.preventDefault(); switchView('collections'); });
   
-  // NEW: Subscriptions Link Behavior (Goes to Collections -> Following)
+  // Subscriptions Link Behavior (Option 2)
   if (DOM.navSubs) {
-      DOM.navSubs.addEventListener('click', (e) => {
-          e.preventDefault();
-          switchView('collections'); // Use collections layout logic
-          
-          // MANUAL OVERRIDE: Highlight Subscriptions, Unhighlight Collections
-          DOM.navCollections.classList.remove('active');
-          if(DOM.navCollections.querySelector('i')) DOM.navCollections.querySelector('i').classList.replace('fa-solid', 'fa-regular');
-          setActive(DOM.navSubs);
-
-          // Force "User Lists" Tab active
-          if(colDOM.tabUsers) colDOM.tabUsers.click();
-
-          // Force Open "Following" list
-          const followingCol = COLLECTIONS_DB.find(c => c.id === 'following');
-          if(followingCol) {
-              updateRightSidebarContent(followingCol);
-              
-              // Highlight "Following" in the list
-              setTimeout(() => {
-                  const items = document.querySelectorAll('.c-list-item');
-                  items.forEach(el => {
-                      if(el.querySelector('.c-item-name').innerText === 'Following') {
-                          el.classList.add('active');
-                      } else {
-                          el.classList.remove('active');
-                      }
-                  });
-              }, 50);
-          }
+      DOM.navSubs.addEventListener('click', () => {
+          switchView('subscriptions');
+          loadSubscriptionsView(true);
       });
   }
-  
+
   if (DOM.mobHome) DOM.mobHome.addEventListener('click', (e) => { e.preventDefault(); switchView('home'); });
   if (DOM.mobNotif) DOM.mobNotif.addEventListener('click', (e) => { e.preventDefault(); switchView('notifications'); });
   if (DOM.mobMessages) DOM.mobMessages.addEventListener('click', (e) => { e.preventDefault(); switchView('messages'); });
+
+
+  // -------------
+  // Subscriptions logic (Option 2: Subscribed To + Subscribers) — real data only
+  const SUBS_STATE = {
+    tab: 'subscribed',   // 'subscribed' | 'subscribers'
+    filter: 'active',    // 'active' | 'expired' | 'all'
+    q: '',
+    loaded: false,
+    loading: false,
+    data: { subscribed: [], subscribers: [] }
+  };
+
+  function setSubsTab(tab) {
+    SUBS_STATE.tab = tab;
+    (DOM.subsTabs || []).forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-subs-tab') === tab);
+    });
+    renderSubscriptions();
+  }
+
+  function setSubsFilter(filter) {
+    SUBS_STATE.filter = filter;
+    (DOM.subsFilterBtns || []).forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-subs-filter') === filter);
+    });
+    renderSubscriptions();
+  }
+
+  function showSubsLoading(show) {
+    SUBS_STATE.loading = !!show;
+    if (DOM.subsLoading) DOM.subsLoading.classList.toggle('show', !!show);
+  }
+
+  function showSubsEmpty(show) {
+    if (DOM.subsEmpty) DOM.subsEmpty.classList.toggle('show', !!show);
+  }
+
+  function toggleSubsSearch(forceOpen = null) {
+    if (!DOM.subsSearchRow) return;
+    const willOpen = (forceOpen === null) ? DOM.subsSearchRow.classList.contains('hidden') : !!forceOpen;
+    DOM.subsSearchRow.classList.toggle('hidden', !willOpen);
+    if (willOpen && DOM.subsSearchInput) DOM.subsSearchInput.focus();
+    if (!willOpen) {
+      SUBS_STATE.q = '';
+      if (DOM.subsSearchInput) DOM.subsSearchInput.value = '';
+      renderSubscriptions();
+    }
+  }
+
+  function parseDateMaybe(v) {
+    if (!v) return null;
+    try {
+      if (typeof v === 'number') {
+        const ms = (v < 2_000_000_000) ? v * 1000 : v;
+        return new Date(ms);
+      }
+      if (typeof v === 'string') {
+        const d = new Date(v);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      if (typeof v === 'object' && v.seconds) return new Date(v.seconds * 1000);
+      return null;
+    } catch { return null; }
+  }
+
+  function normalizeSubItem(item) {
+    if (!item) return null;
+
+    if (typeof item === 'string') {
+      const raw = item.trim();
+      const handle = raw.startsWith('@') ? raw : ('@' + raw.replace(/^@/, ''));
+      return {
+        id: raw,
+        name: raw.replace(/^@/, ''),
+        handle,
+        avatar: '',
+        status: 'active',
+        startedAt: null,
+        endsAt: null,
+        plan: ''
+      };
+    }
+
+    const name = item.name || item.displayName || item.fullName || item.username || item.handle || 'Unknown';
+    const handleRaw = item.handle || item.username || item.userHandle || item.slug || '';
+    const handle = handleRaw ? (handleRaw.startsWith('@') ? handleRaw : ('@' + handleRaw)) : '';
+    const avatar = item.avatar || item.photoURL || item.photo || item.profilePhoto || item.profilePicture || item.image || '';
+    const plan = item.plan || item.tier || item.package || item.subscriptionPlan || '';
+
+    const startedAt = parseDateMaybe(item.startedAt || item.startAt || item.subscribedAt || item.createdAt || item.startDate);
+    const endsAt = parseDateMaybe(item.endsAt || item.endAt || item.expiresAt || item.expiry || item.endDate);
+
+    let statusRaw = (item.status || item.state || item.subscriptionStatus || '').toString().toLowerCase();
+    if (!statusRaw) statusRaw = (item.active === false ? 'expired' : 'active');
+
+    let status = (statusRaw.includes('exp') || statusRaw.includes('end')) ? 'expired' : 'active';
+    if (endsAt && endsAt.getTime() < Date.now()) status = 'expired';
+
+    return {
+      id: item.id || item.uid || item.userId || item.email || item.handle || name,
+      name,
+      handle,
+      avatar,
+      status,
+      startedAt,
+      endsAt,
+      plan
+    };
+  }
+
+  function fmtDate(d) {
+    if (!d) return '';
+    try {
+      return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: '2-digit' });
+    } catch { return ''; }
+  }
+
+  function buildMetaLine(sub) {
+    const parts = [];
+    if (sub.plan) parts.push(sub.plan);
+    if (sub.startedAt) parts.push('Since ' + fmtDate(sub.startedAt));
+    if (sub.endsAt) parts.push((sub.status === 'active' ? 'Ends ' : 'Ended ') + fmtDate(sub.endsAt));
+    return parts.join(' • ');
+  }
+
+  async function apiGetJson(url) {
+    const res = await fetch(url, { method: 'GET', credentials: 'include', headers: { 'Accept': 'application/json' } });
+    const text = await res.text();
+    let json = null;
+    try { json = text ? JSON.parse(text) : null; } catch { json = null; }
+    return { ok: res.ok, status: res.status, json };
+  }
+
+  async function fetchSubscriptions() {
+    const r1 = await apiGetJson('/api/me/subscriptions');
+    if (r1.ok && r1.json) {
+      const j = r1.json;
+      const subscribed = j.subscribed || j.subscribedTo || j.to || j.following || [];
+      const subscribers = j.subscribers || j.from || j.fans || [];
+      return {
+        subscribed: (Array.isArray(subscribed) ? subscribed : []).map(normalizeSubItem).filter(Boolean),
+        subscribers: (Array.isArray(subscribers) ? subscribers : []).map(normalizeSubItem).filter(Boolean)
+      };
+    }
+
+    const r2 = await apiGetJson('/api/me');
+    if (r2.ok && r2.json) {
+      const u = r2.json.user || r2.json.me || r2.json;
+      const s = u.subscriptions || u.subs || {};
+      const subscribed = s.subscribed || s.subscribedTo || u.subscribed || u.subscribedTo || [];
+      const subscribers = s.subscribers || u.subscribers || [];
+      return {
+        subscribed: (Array.isArray(subscribed) ? subscribed : []).map(normalizeSubItem).filter(Boolean),
+        subscribers: (Array.isArray(subscribers) ? subscribers : []).map(normalizeSubItem).filter(Boolean)
+      };
+    }
+
+    return { subscribed: [], subscribers: [] };
+  }
+
+  function renderSubscriptions() {
+    if (!DOM.viewSubscriptions || !DOM.subsList) return;
+
+    const listAll = (SUBS_STATE.tab === 'subscribers') ? SUBS_STATE.data.subscribers : SUBS_STATE.data.subscribed;
+
+    const activeCount = listAll.filter(x => x.status === 'active').length;
+    const expiredCount = listAll.filter(x => x.status === 'expired').length;
+
+    if (DOM.subsCountTo) DOM.subsCountTo.textContent = SUBS_STATE.data.subscribed.length;
+    if (DOM.subsCountFrom) DOM.subsCountFrom.textContent = SUBS_STATE.data.subscribers.length;
+
+    if (DOM.subsCountActive) DOM.subsCountActive.textContent = activeCount;
+    if (DOM.subsCountExpired) DOM.subsCountExpired.textContent = expiredCount;
+    if (DOM.subsCountAll) DOM.subsCountAll.textContent = listAll.length;
+
+    const q = (SUBS_STATE.q || '').trim().toLowerCase();
+    let list = listAll.slice();
+
+    if (SUBS_STATE.filter !== 'all') list = list.filter(x => x.status === SUBS_STATE.filter);
+    if (q) {
+      list = list.filter(x =>
+        (x.name || '').toLowerCase().includes(q) ||
+        (x.handle || '').toLowerCase().includes(q) ||
+        (x.id || '').toLowerCase().includes(q)
+      );
+    }
+
+    DOM.subsList.innerHTML = '';
+
+    if (SUBS_STATE.loading) {
+      showSubsEmpty(false);
+      return;
+    }
+
+    if (!list.length) {
+      showSubsEmpty(true);
+      return;
+    }
+
+    showSubsEmpty(false);
+
+    list.forEach(sub => {
+      const row = document.createElement('div');
+      row.className = 'subs-user';
+
+      const left = document.createElement('div');
+      left.className = 'left';
+
+      const img = document.createElement('img');
+      img.alt = sub.name || 'User';
+      img.src = sub.avatar || 'https://i.pravatar.cc/120?img=12';
+      img.onerror = () => { img.src = 'https://i.pravatar.cc/120?img=12'; };
+
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+
+      const name = document.createElement('div');
+      name.className = 'name';
+      name.textContent = sub.name || 'Unknown';
+
+      const handle = document.createElement('div');
+      handle.className = 'handle';
+      handle.textContent = sub.handle || '';
+
+      meta.appendChild(name);
+      meta.appendChild(handle);
+
+      left.appendChild(img);
+      left.appendChild(meta);
+
+      const right = document.createElement('div');
+      right.className = 'right';
+
+      const mini = document.createElement('div');
+      mini.className = 'subs-mini';
+      mini.textContent = buildMetaLine(sub);
+
+      const badge = document.createElement('div');
+      badge.className = 'subs-badge ' + (sub.status === 'active' ? 'active' : 'expired');
+      badge.textContent = sub.status === 'active' ? 'ACTIVE' : 'EXPIRED';
+
+      right.appendChild(mini);
+      right.appendChild(badge);
+
+      row.appendChild(left);
+      row.appendChild(right);
+
+      row.addEventListener('click', () => {
+        const metaLine = buildMetaLine(sub);
+        Swal.fire({
+          title: sub.name || 'Subscription',
+          html: `<div style="color:#b9c1c6; font-size:13px; margin-top:6px;">
+                  <div>${sub.handle ? sub.handle : ''}</div>
+                  <div style="margin-top:8px;">${metaLine ? metaLine : ''}</div>
+                  <div style="margin-top:10px; font-weight:800; color:${sub.status === 'active' ? 'var(--accent)' : '#ff6384'};">
+                    ${sub.status.toUpperCase()}
+                  </div>
+                </div>`,
+          background: '#0b0f14',
+          color: '#fff',
+          showCancelButton: true,
+          confirmButtonText: 'Copy handle',
+          cancelButtonText: 'Close'
+        }).then(r => {
+          if (r.isConfirmed && sub.handle) {
+            navigator.clipboard.writeText(sub.handle).then(() => toast('Copied!')).catch(() => toast('Copy failed'));
+          }
+        });
+      });
+
+      DOM.subsList.appendChild(row);
+    });
+  }
+
+  async function loadSubscriptionsView(force = false) {
+    if (!DOM.viewSubscriptions) return;
+
+    if (SUBS_STATE.loaded && !force) {
+      renderSubscriptions();
+      return;
+    }
+
+    showSubsLoading(true);
+    showSubsEmpty(false);
+
+    try {
+      const data = await fetchSubscriptions();
+      SUBS_STATE.data = data;
+      SUBS_STATE.loaded = true;
+      renderSubscriptions();
+    } catch (e) {
+      console.error('Subscriptions load failed:', e);
+      SUBS_STATE.data = { subscribed: [], subscribers: [] };
+      SUBS_STATE.loaded = true;
+      renderSubscriptions();
+    } finally {
+      showSubsLoading(false);
+    }
+  }
+
+  // Subscriptions UI events
+  (DOM.subsTabs || []).forEach(btn => {
+    btn.addEventListener('click', () => setSubsTab(btn.getAttribute('data-subs-tab')));
+  });
+
+  (DOM.subsFilterBtns || []).forEach(btn => {
+    btn.addEventListener('click', () => setSubsFilter(btn.getAttribute('data-subs-filter')));
+  });
+
+  if (DOM.subsSearchBtn) DOM.subsSearchBtn.addEventListener('click', () => toggleSubsSearch());
+  if (DOM.subsSearchClear) DOM.subsSearchClear.addEventListener('click', () => {
+    SUBS_STATE.q = '';
+    if (DOM.subsSearchInput) DOM.subsSearchInput.value = '';
+    renderSubscriptions();
+    if (DOM.subsSearchInput) DOM.subsSearchInput.focus();
+  });
+
+  if (DOM.subsSearchInput) {
+    DOM.subsSearchInput.addEventListener('input', (e) => {
+      SUBS_STATE.q = e.target.value || '';
+      renderSubscriptions();
+    });
+    DOM.subsSearchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') toggleSubsSearch(false);
+    });
+  }
 
   // ============================================
   // GLOBAL INTERACTIONS
