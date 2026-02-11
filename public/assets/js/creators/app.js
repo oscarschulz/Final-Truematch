@@ -9,6 +9,131 @@ import { initSettings } from './settings.js';
 import { initProfilePage } from './profile.js'; // Import logic
 import { COLLECTIONS_DB } from './data.js';
 
+// ---------------- Creators Sync: hydrate from /api/me ----------------
+async function tmApiMe() {
+  const res = await fetch('/api/me', { method: 'GET', credentials: 'include' });
+  return res.json().catch(() => null);
+}
+
+function tmSplitPipes(str) {
+  if (!str) return [];
+  return String(str).split('|').map(s => s.trim()).filter(Boolean);
+}
+
+function tmGetPacked(packed, label) {
+  if (!packed || !label) return '';
+  const want = String(label).trim().toLowerCase();
+  for (const seg of tmSplitPipes(packed)) {
+    const idx = seg.indexOf(':');
+    if (idx === -1) continue;
+    const key = seg.slice(0, idx).trim().toLowerCase();
+    if (key === want) return seg.slice(idx + 1).trim();
+  }
+  return '';
+}
+
+function tmSetText(selOrEl, text) {
+  const el = typeof selOrEl === 'string' ? document.querySelector(selOrEl) : selOrEl;
+  if (el) el.textContent = text;
+}
+function tmSetSrc(selOrEl, src) {
+  const el = typeof selOrEl === 'string' ? document.querySelector(selOrEl) : selOrEl;
+  if (el && src) el.src = src;
+}
+function tmSetBgImage(selOrEl, url) {
+  const el = typeof selOrEl === 'string' ? document.querySelector(selOrEl) : selOrEl;
+  if (!el || !url) return;
+  el.style.backgroundImage = `url('${url}')`;
+  el.style.backgroundSize = 'cover';
+  el.style.backgroundPosition = 'center';
+}
+
+function tmUpsertCreatorMetaBlock(meta) {
+  const bioEl = document.querySelector('#view-my-profile .profile-bio-text');
+  if (!bioEl) return;
+
+  const rows = [
+    ['Location', meta.location],
+    ['Languages', meta.languages],
+    ['Category', meta.category],
+    ['Niche', meta.niche],
+    ['Posting schedule', meta.postingSchedule],
+    ['Boundaries', meta.boundaries],
+    ['Style notes', meta.styleNotes]
+  ].filter(([, v]) => v && String(v).trim());
+
+  let wrap = document.getElementById('tmCreatorMeta');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'tmCreatorMeta';
+    wrap.style.marginTop = '10px';
+    wrap.style.padding = '10px 12px';
+    wrap.style.border = '1px solid var(--border-color)';
+    wrap.style.borderRadius = '12px';
+    wrap.style.background = 'rgba(255,255,255,0.02)';
+    bioEl.insertAdjacentElement('afterend', wrap);
+  }
+
+  if (!rows.length) {
+    wrap.remove();
+    return;
+  }
+
+  wrap.innerHTML = `
+    <div style="font-weight:600;margin-bottom:6px;">Creator details</div>
+    ${rows.map(([k,v]) => `
+      <div style="display:flex;gap:10px;margin:4px 0;">
+        <div style="min-width:120px;color:var(--muted);font-size:12px;">${k}</div>
+        <div style="color:var(--text);font-size:13px;line-height:1.35;">${String(v)}</div>
+      </div>
+    `).join('')}
+  `;
+}
+
+async function tmHydrateCreatorsFromMe() {
+  const data = await tmApiMe();
+  if (!data || !data.ok || !data.user) return;
+
+  const user = data.user;
+  const app = user.creatorApplication || null;
+
+  const packed = app?.contentStyle || '';
+  const displayName = tmGetPacked(packed, 'Display name') || user.name || 'Your Name';
+  const handleRaw = (app?.handle || user.username || '').replace(/^@/, '');
+  const handle = handleRaw ? `@${handleRaw}` : '@username';
+
+  const bio = tmGetPacked(packed, 'Bio');
+  const meta = {
+    location: tmGetPacked(packed, 'Location'),
+    languages: tmGetPacked(packed, 'Languages'),
+    category: tmGetPacked(packed, 'Category'),
+    niche: tmGetPacked(packed, 'Niche'),
+    postingSchedule: tmGetPacked(packed, 'Posting schedule'),
+    boundaries: tmGetPacked(packed, 'Boundaries'),
+    styleNotes: tmGetPacked(packed, 'Style notes')
+  };
+
+  // Left profile card
+  tmSetText('#creatorProfileName', displayName);
+  tmSetText('#creatorProfileUsername', handle);
+  tmSetSrc('#creatorProfileAvatar', user.avatarUrl);
+
+  // Popover
+  tmSetText('#creatorPopoverName', displayName);
+  tmSetText('#creatorPopoverHandle', handle);
+
+  // Profile header (view-my-profile)
+  tmSetText('#creatorHeaderName', displayName);
+  tmSetText('#creatorHeaderHandle', handle);
+
+  if (bio && bio.trim()) tmSetText('#view-my-profile .profile-bio-text', bio);
+  tmSetSrc('#view-my-profile .profile-avatar-main', user.avatarUrl);
+  tmSetBgImage('#view-my-profile .profile-header-bg', user.headerUrl);
+
+  // Optional: show the rest of the application details under the bio
+  tmUpsertCreatorMetaBlock(meta);
+}
+
 // 🔥 TOAST CONFIGURATION 🔥
 const TopToast = Swal.mixin({
   toast: true, 
@@ -104,7 +229,8 @@ async function init() {
   }
 
   setupNavigation();
-  
+  await tmHydrateCreatorsFromMe();
+
   setTimeout(() => { 
       if(DOM.appLoader) { 
           DOM.appLoader.style.opacity = '0'; DOM.appLoader.style.visibility = 'hidden'; 
