@@ -986,6 +986,8 @@ try {
 // Goal: pass = never show again, like/superlike = stored actions, mutual (like|superlike) => match
 const SWIPES_COLLECTION = process.env.SWIPES_COLLECTION || 'iTrueMatchSwipes';
 const MATCHES_COLLECTION = process.env.MATCHES_COLLECTION || 'iTrueMatchMatches';
+const PS_SWIPES_COLLECTION = process.env.PS_SWIPES_COLLECTION || 'iTrueMatchPSSwipes';
+const PS_MATCHES_COLLECTION = process.env.PS_MATCHES_COLLECTION || 'iTrueMatchPSMatches';
 
 function _b64url(str) {
   return Buffer.from(String(str || ''), 'utf8')
@@ -1017,6 +1019,192 @@ const _swipeCache = new Map(); // email -> { ts, map }
 // email -> { ts, emails: string[] }
 const _matchEmailsCache = new Map();
 const _CACHE_TTL_MS = 15 * 1000;
+
+// ---------------------------------------------------------------------
+// Premium Society (PS) - separate swipe + match persistence
+// Keeps PS swipes/matches isolated from the main dashboard matching engine.
+// ---------------------------------------------------------------------
+const _psSwipeCache = new Map(); // email -> { ts, map }
+const _psMatchEmailsCache = new Map(); // email -> { ts, emails: string[] }
+
+function _ps_setSwipeCache(fromEmail, toEmail, type) {
+  const from = String(fromEmail || '').toLowerCase();
+  const to = String(toEmail || '').toLowerCase();
+  if (!from || !to) return;
+
+  const cached = _psSwipeCache.get(from);
+  if (cached && cached.map) {
+    cached.map[to] = { type: String(type || '').toLowerCase(), ts: Date.now() };
+    cached.ts = Date.now();
+  }
+}
+
+async function _ps_getSwipeMapFor(email) {
+  const e = String(email || '').toLowerCase();
+  if (!e) return {};
+
+  if (!hasFirebase || !firestore) {
+    return (DB.psSwipes && DB.psSwipes[e]) ? DB.psSwipes[e] : {};
+  }
+
+  const cached = _psSwipeCache.get(e);
+  if (cached && (Date.now() - cached.ts) < _CACHE_TTL_MS) return cached.map;
+
+  const snap = await firestore
+    .collection(PS_SWIPES_COLLECTION)
+    .where('from', '==', e)
+    .limit(5000)
+    .get();
+
+  const map = {};
+  for (const d of snap.docs) {
+    const v = d.data() || {};
+    const to = String(v.to || '').toLowerCase();
+    const type = String(v.type || '').toLowerCase();
+    if (!to || !type) continue;
+    map[to] = { type, ts: Number(v.ts) || Date.now() };
+  }
+
+  _psSwipeCache.set(e, { ts: Date.now(), map });
+  return map;
+}
+
+async function _ps_saveSwipe(fromEmail, toEmail, type) {
+  const from = String(fromEmail || '').toLowerCase();
+  const to = String(toEmail || '').toLowerCase();
+  const t = String(type || '').toLowerCase();
+  if (!from || !to || !t) return;
+
+  if (!DB.psSwipes) DB.psSwipes = {};
+  if (!DB.psSwipes[from]) DB.psSwipes[from] = {};
+  DB.psSwipes[from][to] = { type: t, ts: Date.now() };
+  _ps_setSwipeCache(from, to, t);
+
+  if (hasFirebase && firestore) {
+    await firestore.collection(PS_SWIPES_COLLECTION).doc(_swipeDocId(from, to)).set(
+      { from, to, type: t, ts: Date.now() },
+      { merge: true }
+    );
+  }
+}
+
+async function _ps_saveMatch(emailA, emailB, actionA, actionB) {
+  const a = String(emailA || '').toLowerCase();
+  const b = String(emailB || '').toLowerCase();
+  if (!a || !b || a === b) return false;
+
+  // In-memory adjacency list (non-Firebase mode + quick lookups)
+  if (!DB.psMatches) DB.psMatches = {};
+  DB.psMatches[a] = Array.isArray(DB.psMatches[a]) ? DB.psMatches[a] : [];
+  DB.psMatches[b] = Array.isArray(DB.psMatches[b]) ? DB.psMatches[b] : [];
+  if (!DB.psMatches[a].includes(b)) DB.psMatches[a].push(b);
+  if (!DB.psMatches[b].includes(a)) DB.psMatches[b].push(a);
+
+  // Optional meta for sorting in non-Firebase mode
+  if (!DB.psMatchMeta) DB.psMatchMeta = {};
+  const createdAtMs = Date.now();
+  const [x, y] = [a, b].sort();
+  const docId = _matchDocId(x, y);
+
+  DB.psMatchMeta[docId] = {
+    createdAtMs: DB.psMatchMeta[docId]?.createdAtMs || createdAtMs,
+    updatedAtMs: createdAtMs,
+  };
+
+  _psMatchEmailsCache.delete(a);
+  _psMatchEmailsCache.delete(b);
+
+  if (!hasFirebase || !firestore) return true;
+
+  // Persist canonical match doc (pair-sorted) + both actions
+  const xAction = (x === a) ? actionA : actionB;
+  const yAction = (y === b) ? actionB : actionA;
+
+  await firestore.collection(PS_MATCHES_COLLECTION).doc(docId).set({
+    a: x,
+    b: y,
+    aAction: xAction || null,
+    bAction: yAction || null,
+    createdAtMs: DB.psMatchMeta[docId]?.createdAtMs || createdAtMs,
+    updatedAtMs: createdAtMs,
+  }, { merge: true });
+
+  return true;
+}
+
+async function _ps_getMatchEmails(email) {
+  const e = String(email || '').toLowerCase();
+  if (!e) return [];
+
+  if (!hasFirebase || !firestore) {
+    return Array.isArray(DB.psMatches && DB.psMatches[e]) ? DB.psMatches[e].slice() : [];
+  }
+
+  const cached = _psMatchEmailsCache.get(e);
+  if (cached && (Date.now() - cached.ts) < _CACHE_TTL_MS) return cached.emails;
+
+  const [snapA, snapB] = await Promise.all([
+    firestore.collection(PS_MATCHES_COLLECTION).where('a', '==', e).get(),
+    firestore.collection(PS_MATCHES_COLLECTION).where('b', '==', e).get(),
+  ]);
+
+  const out = [];
+  snapA.forEach((d) => { const v = d.data(); if (v && v.b) out.push(String(v.b).toLowerCase()); });
+  snapB.forEach((d) => { const v = d.data(); if (v && v.a) out.push(String(v.a).toLowerCase()); });
+
+  const uniq = Array.from(new Set(out));
+  _psMatchEmailsCache.set(e, { ts: Date.now(), emails: uniq });
+  return uniq;
+}
+
+async function _ps_getMatchPairs(email) {
+  const e = String(email || '').toLowerCase();
+  if (!e) return [];
+
+  if (!hasFirebase || !firestore) {
+    const others = Array.isArray(DB.psMatches && DB.psMatches[e]) ? DB.psMatches[e] : [];
+    const pairs = [];
+    for (const o of others) {
+      const other = String(o || '').toLowerCase();
+      if (!other) continue;
+      const docId = _matchDocId(e, other);
+      const meta = (DB.psMatchMeta && DB.psMatchMeta[docId]) ? DB.psMatchMeta[docId] : {};
+      pairs.push({ otherEmail: other, createdAtMs: meta.createdAtMs || null, updatedAtMs: meta.updatedAtMs || null });
+    }
+    return pairs;
+  }
+
+  const [snapA, snapB] = await Promise.all([
+    firestore.collection(PS_MATCHES_COLLECTION).where('a', '==', e).get(),
+    firestore.collection(PS_MATCHES_COLLECTION).where('b', '==', e).get(),
+  ]);
+
+  const tmp = [];
+  snapA.forEach((d) => {
+    const v = d.data() || {};
+    if (!v.b) return;
+    tmp.push({ otherEmail: String(v.b).toLowerCase(), createdAtMs: Number(v.createdAtMs) || null, updatedAtMs: Number(v.updatedAtMs) || null });
+  });
+  snapB.forEach((d) => {
+    const v = d.data() || {};
+    if (!v.a) return;
+    tmp.push({ otherEmail: String(v.a).toLowerCase(), createdAtMs: Number(v.createdAtMs) || null, updatedAtMs: Number(v.updatedAtMs) || null });
+  });
+
+  const byOther = new Map();
+  for (const it of tmp) {
+    if (!it.otherEmail) continue;
+    const prev = byOther.get(it.otherEmail);
+    if (!prev) byOther.set(it.otherEmail, it);
+    else {
+      const prevU = prev.updatedAtMs || 0;
+      const curU = it.updatedAtMs || 0;
+      if (curU >= prevU) byOther.set(it.otherEmail, it);
+    }
+  }
+  return Array.from(byOther.values());
+}
+
 
 async function _getSwipeMapFor(email) {
   const e = String(email || '').toLowerCase();
@@ -4892,7 +5080,7 @@ app.get('/api/premium-society/candidates', authMiddleware, async (req, res) => {
       });
     }
 
-    const mySwipes = await _getSwipeMapFor(myEmail);
+    const mySwipes = await _ps_getSwipeMapFor(myEmail);
     const candidates = [];
 
     if (hasFirebase && usersCollection) {
@@ -4959,7 +5147,9 @@ app.post('/api/premium-society/action', authMiddleware, async (req, res) => {
 
     const targetEmail = String((req.body && req.body.targetEmail) || '').trim().toLowerCase();
     const action = String((req.body && req.body.action) || '').trim().toLowerCase();
-    if (!targetEmail) return res.status(400).json({ ok: false, message: 'Missing targetEmail' });
+    if (!targetEmail || !['like','pass','super','superlike'].includes(action)) {
+      return res.status(400).json({ ok: false, message: 'Invalid swipe payload' });
+    }
 
     // Verify actor is Premium Society member
     let meDoc = null;
@@ -4993,19 +5183,20 @@ app.post('/api/premium-society/action', authMiddleware, async (req, res) => {
       return res.status(400).json({ ok: false, code: 'target_not_premium_society', message: 'You can only swipe on Premium Society members.' });
     }
 
-    const type = _getSwipeType(action);
-    await _saveSwipe(myEmail, targetEmail, type);
+    const type = (action === 'super' || action === 'superlike') ? 'superlike' : (action === 'like' ? 'like' : 'pass');
+    await _ps_saveSwipe(myEmail, targetEmail, type);
 
     let isMatch = false;
     let matchId = null;
 
     if (_isPositiveSwipe(type)) {
-      const theirSwipes = await _getSwipeMapFor(targetEmail);
-      const theirType = theirSwipes[myEmail] || null;
-      if (_isPositiveSwipe(theirType)) {
+      const theirSwipes = await _ps_getSwipeMapFor(targetEmail);
+      const theirType = (theirSwipes && theirSwipes[myEmail]) ? theirSwipes[myEmail].type : null;
+      const isMutual = _isPositiveSwipe(type) && _isPositiveSwipe(theirType);
+      if (isMutual) {
         isMatch = true;
-        const saved = await _saveMatch(myEmail, targetEmail);
-        matchId = saved && saved.id ? saved.id : null;
+        await _ps_saveMatch(myEmail, targetEmail, type, theirType);
+        matchId = _matchDocId(myEmail, targetEmail);
       }
     }
 
@@ -5015,13 +5206,76 @@ app.post('/api/premium-society/action', authMiddleware, async (req, res) => {
     return res.status(500).json({ ok: false, message: 'Server error' });
   }
 });
+
+// ---------------------------------------------------------------------
+// Premium Society - Matches (ONLY from Premium Society swipes)
+// ---------------------------------------------------------------------
+app.get('/api/premium-society/matches', authMiddleware, async (req, res) => {
+  try {
+    const myEmail = String(req.user && req.user.email ? req.user.email : '').trim().toLowerCase();
+    if (!myEmail) return res.status(401).json({ ok: false, message: 'Not authenticated' });
+
+    // Verify actor is Premium Society member
+    let meDoc = null;
+    if (hasFirebase) meDoc = await findUserByEmail(myEmail);
+    else meDoc = (DB.users && DB.users[myEmail]) ? { ...DB.users[myEmail] } : (DB.user ? { ...DB.user } : null);
+
+    if (!meDoc) return res.status(404).json({ ok: false, message: 'User not found' });
+
+    const mePublic = publicUser({ id: meDoc.id, ...meDoc });
+    if (!psIsPremiumSocietyMember(mePublic)) {
+      return res.status(403).json({ ok: false, code: 'not_premium_society', message: 'Premium Society members only' });
+    }
+
+    const pairs = await _ps_getMatchPairs(myEmail);
+    pairs.sort((a, b) => {
+      const at = Number(a.updatedAtMs || a.createdAtMs || 0);
+      const bt = Number(b.updatedAtMs || b.createdAtMs || 0);
+      return bt - at;
+    });
+
+    const matches = [];
+    for (const p of pairs.slice(0, 200)) {
+      const otherEmail = String(p.otherEmail || '').toLowerCase();
+      if (!otherEmail) continue;
+
+      let otherDoc = null;
+      if (hasFirebase) otherDoc = await findUserByEmail(otherEmail);
+      else otherDoc = (DB.users && DB.users[otherEmail]) ? { ...DB.users[otherEmail] } : null;
+
+      if (!otherDoc) continue;
+
+      const pu = publicUser({ id: otherDoc.id, ...otherDoc });
+      // extra safety: keep Premium Society list clean
+      if (!psIsPremiumSocietyMember(pu)) continue;
+
+      matches.push({
+        id: otherEmail,
+        email: otherEmail,
+        name: pu.name || pu.fullName || pu.displayName || pu.username || 'Member',
+        username: pu.username || null,
+        age: pu.age || null,
+        city: pu.city || pu.location || null,
+        photoUrl: pu.avatarUrl || pu.photoUrl || pu.avatar || 'assets/images/truematch-mark.png',
+        createdAtMs: p.createdAtMs || null,
+        updatedAtMs: p.updatedAtMs || null
+      });
+    }
+
+    return res.json({ ok: true, matches });
+  } catch (err) {
+    console.error('Premium Society matches error:', err);
+    return res.status(500).json({ ok: false, message: 'Server error' });
+  }
+});
+
 // =======================================================================
 app.get('/api/swipe/candidates', async (req, res) => {
   try {
     const myEmail = String(((req.user && req.user.email) || (DB.user && DB.user.email) || '')).toLowerCase();
     if (!myEmail) return res.status(401).json({ ok: false, error: 'Not authenticated' });
 
-    const mySwipes = await _getSwipeMapFor(myEmail);
+    const mySwipes = await _ps_getSwipeMapFor(myEmail);
 
     // ✅ Use real user doc (not only DB.user)
     const userDoc = (DB.users && DB.users[myEmail]) || DB.user || {};

@@ -611,6 +611,8 @@ export const SwipeController = (() => {
           color: '#fff',
           confirmButtonColor: '#00aff0'
         });
+        // ensure Matches tab refresh reflects this Premium Society match
+        _psMatchesLastFetched = 0;
       }
       
       // C. SYNC STATS: Kunin ang "truth" mula sa server (Handle null as unlimited)
@@ -2022,6 +2024,99 @@ function initNavigation() {
 }
 
 // --- UPDATED SWITCH TAB FUNCTION ---
+// ==========================================
+// Premium Society Matches (backend synced)
+// Only matches created from Premium Society swipes will appear here.
+// ==========================================
+let _psMatchesLastFetched = 0;
+
+function _psFormatTime(ts) {
+  const t = Number(ts || 0);
+  if (!t) return '';
+  const d = new Date(t);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleDateString();
+}
+
+function _psSafeName(v) {
+  const s = String(v || '').trim();
+  return s || 'Member';
+}
+
+async function psLoadMatches(force = false) {
+  if (!PS_DOM.matchesContainer) return;
+
+  if (!force && (Date.now() - _psMatchesLastFetched) < 4000) return;
+  _psMatchesLastFetched = Date.now();
+
+  try {
+    // lightweight loading state
+    PS_DOM.matchesContainer.innerHTML = `<div style="padding:20px; text-align:center; color:#666;">Loading matches...</div>`;
+
+    const res = await fetch(`${API_BASE}/api/premium-society/matches`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data || data.ok !== true) {
+      const msg = (data && data.message) ? data.message : 'Failed to load matches.';
+      PS_DOM.matchesContainer.innerHTML = `<div style="padding:20px; text-align:center; color:#666;">${msg}</div>`;
+      if (PS_DOM.newMatchesRail) PS_DOM.newMatchesRail.innerHTML = '';
+      if (PS_DOM.newMatchCount) PS_DOM.newMatchCount.textContent = '0';
+      return;
+    }
+
+    const matches = Array.isArray(data.matches) ? data.matches : [];
+
+    // NEW MATCHES RAIL
+    if (PS_DOM.newMatchesRail) {
+      PS_DOM.newMatchesRail.innerHTML = '';
+      matches.slice(0, 12).forEach((m) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ps-newmatch';
+        const img = document.createElement('img');
+        img.className = 'ps-newmatch-avatar';
+        img.alt = _psSafeName(m.name || m.username);
+        img.src = m.photoUrl || 'assets/images/truematch-mark.png';
+        btn.appendChild(img);
+
+        btn.addEventListener('click', () => {
+          const label = _psSafeName(m.name || (m.username ? '@' + String(m.username).replace(/^@/, '') : 'Member'));
+          if (window.openChat) window.openChat(label);
+          // keep tab on matches - chat UI will overlay
+        });
+
+        PS_DOM.newMatchesRail.appendChild(btn);
+      });
+    }
+
+    if (PS_DOM.newMatchCount) PS_DOM.newMatchCount.textContent = String(matches.length);
+
+    // MESSAGES LIST (use existing renderMessages UI)
+    const messages = matches.map((m) => {
+      const label = _psSafeName(m.name || (m.username ? '@' + String(m.username).replace(/^@/, '') : 'Member'));
+      return {
+        name: label.replace(/'/g, "\'"),
+        avatar: m.photoUrl || 'assets/images/truematch-mark.png',
+        time: _psFormatTime(m.updatedAtMs || m.createdAtMs),
+        text: 'Tap to chat',
+        unread: false
+      };
+    });
+
+    renderMessages(messages);
+  } catch (err) {
+    console.error('psLoadMatches error:', err);
+    PS_DOM.matchesContainer.innerHTML = `<div style="padding:20px; text-align:center; color:#666;">Failed to load matches.</div>`;
+    if (PS_DOM.newMatchesRail) PS_DOM.newMatchesRail.innerHTML = '';
+    if (PS_DOM.newMatchCount) PS_DOM.newMatchCount.textContent = '0';
+  }
+}
+
 function switchTab(panelName) {
   localStorage.setItem("ps_last_tab", panelName);
 
@@ -2053,6 +2148,11 @@ function switchTab(panelName) {
   });
   if (PS_DOM.sidebar && PS_DOM.sidebar.classList.contains("ps-is-open"))
     PS_DOM.sidebar.classList.remove("ps-is-open");
+
+  // Load Premium Society matches (isolated from dashboard matches)
+  if (panelName === "matches") {
+    psLoadMatches();
+  }
 }
 
 function initMobileMenu() {
