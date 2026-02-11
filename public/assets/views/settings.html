@@ -5,6 +5,36 @@
         .crypto-pill { display: inline-flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 6px 12px; border-radius: 20px; font-size: 0.8rem; color: var(--muted); }
         body.tm-light .crypto-pill { background: #e4e6eb; border-color: #ccc; color: #333; }
         body.tm-light select option { background-color: #fff; color: #000; }
+        /* Mobile Settings: drill-down view (next page) */
+        .settings-mobile-detail {
+        position: fixed;
+        inset: 0;
+        background: var(--bg);
+        z-index: 2147483000;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 90px; /* space for bottom nav */
+        transform: translateX(100%);
+        transition: transform 0.22s ease;
+    }
+        .settings-mobile-detail.is-open { transform: translateX(0); }
+        .settings-mobile-detail .tm-mobile-detail-header{
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            background: var(--bg);
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        .settings-mobile-detail .tm-mobile-back{
+            cursor: pointer;
+            margin-right: 12px;
+            color: var(--text);
+            font-size: 0.95rem;
+        }
+        @media (min-width: 1025px) {
+        .settings-mobile-detail { display: none !important; }
+    }
+
     </style>
 
     <div class="feed-top-header">
@@ -81,7 +111,10 @@
             <i class="fa-solid fa-chevron-right"></i>
         </div>
     </div>
+    <!-- Mobile drill-down container (renders selected settings content as a "next page") -->
+    <div id="settings-mobile-detail" class="settings-mobile-detail hidden" aria-hidden="true"></div>
 </div>
+
 
 <div style="display:none;"> 
     
@@ -105,14 +138,14 @@
             <div class="ac-group">
                 <label>Display Name</label>
                 <div class="input-with-icon" style="position:relative;">
-                    <input type="text" placeholder="Your Name" style="width:100%;" data-creator-key="Name">
+                    <input type="text" placeholder="Your Name" style="width:100%;" data-creator-key="Display name" maxlength="50">
                     <span class="char-count">0/50</span>
                 </div>
             </div>
             <div class="ac-group">
                 <label>Bio</label>
                 <div style="position:relative;">
-                    <textarea style="width:100%; resize:none; height:120px;" placeholder="Describe yourself..." data-creator-key="Bio"></textarea>
+                    <textarea style="width:100%; resize:none; height:120px;" placeholder="Describe yourself..." data-creator-key="Bio" maxlength="1000"></textarea>
                     <span class="char-count" style="bottom:5px;">0/1000</span>
                 </div>
             </div>

@@ -98,7 +98,7 @@ async function tmHydrateCreatorsFromMe() {
   const app = user.creatorApplication || null;
 
   const packed = app?.contentStyle || '';
-  const displayName = tmGetPacked(packed, 'Display name') || user.name || 'Your Name';
+  const displayName = tmGetPacked(packed, 'Display name') || tmGetPacked(packed, 'Name') || user.name || 'Your Name';
   const handleRaw = (app?.handle || user.username || '').replace(/^@/, '');
   const handle = handleRaw ? `@${handleRaw}` : '@username';
 
@@ -454,6 +454,15 @@ function setupNavigation() {
 function switchView(viewName) {
     localStorage.setItem('tm_last_view', viewName);
 
+    // Close Settings mobile detail (if open)
+    try { if (typeof window.__tmCloseSettingsMobileDetail === 'function') window.__tmCloseSettingsMobileDetail(); } catch (_) {}
+// If Settings mobile drill-down is open, close it on navigation.
+try {
+    if (typeof window.__tmCloseSettingsMobileDetail === 'function') {
+        window.__tmCloseSettingsMobileDetail();
+    }
+} catch (_) {}
+
     const viewSubscriptions = document.getElementById('view-subscriptions');
 
     const views = [
@@ -510,7 +519,7 @@ function switchView(viewName) {
         if(DOM.rightSidebar) DOM.rightSidebar.classList.add('hidden-sidebar');
         if (DOM.viewMessages) DOM.viewMessages.style.display = 'flex'; 
         if (DOM.mainFeedColumn) DOM.mainFeedColumn.style.display = 'flex';
-        updateActiveNav('nav-link-messages', 'mob-nav-msg');
+        updateActiveNav('nav-link-messages', null);
         if(DOM.chatHistoryContainer && DOM.chatHistoryContainer.innerHTML.trim() === "") loadChat(1); 
     } 
     else if (viewName === 'profile') {
