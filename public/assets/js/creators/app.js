@@ -405,15 +405,14 @@ function setupNavigation() {
         });
     }
 
+
     if (DOM.navSubs) {
         DOM.navSubs.addEventListener('click', (e) => { 
             e.preventDefault(); 
-            switchView('collections'); 
-            updateActiveNav('nav-link-subs', null);
-            const followingData = COLLECTIONS_DB.find(c => c.id === 'following');
-            if(followingData) updateRightSidebarContent(followingData);
+            switchView('subscriptions'); 
         }); 
     }
+
 
     document.querySelectorAll('.pop-item').forEach(link => {
         link.addEventListener('click', (e) => {
@@ -455,8 +454,10 @@ function setupNavigation() {
 function switchView(viewName) {
     localStorage.setItem('tm_last_view', viewName);
 
+    const viewSubscriptions = document.getElementById('view-subscriptions');
+
     const views = [
-        DOM.viewHome, DOM.viewNotif, DOM.viewMessages, DOM.viewCollections, 
+        DOM.viewHome, DOM.viewNotif, DOM.viewMessages, DOM.viewCollections, viewSubscriptions,
         DOM.viewAddCard, DOM.viewYourCards, DOM.viewBecomeCreator, 
         DOM.viewMyProfile, DOM.viewSettings
     ];
@@ -531,6 +532,14 @@ function switchView(viewName) {
         if (DOM.rsCollections) DOM.rsCollections.classList.remove('hidden');
         updateActiveNav('nav-link-collections', 'mob-nav-collections'); 
         renderCollections(); 
+    }
+
+    else if (viewName === 'subscriptions') {
+        targetView = viewSubscriptions;
+        if (DOM.mainFeedColumn) DOM.mainFeedColumn.classList.add('narrow-view');
+        if (DOM.rightSidebar) DOM.rightSidebar.classList.add('wide-view');
+        if (DOM.rsSuggestions && window.innerWidth > 1024) DOM.rsSuggestions.classList.remove('hidden');
+        updateActiveNav('nav-link-subs', null);
     }
     else if (viewName === 'settings') {
         targetView = DOM.viewSettings;

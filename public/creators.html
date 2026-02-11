@@ -353,6 +353,35 @@
       </div>
       
       <div id="container-collections"></div> 
+
+      <div id="view-subscriptions" style="display: none;">
+        <div class="feed-top-header">
+          <div class="header-content" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+              <div style="display:flex; align-items:center; gap:15px;">
+                  <i class="fa-solid fa-arrow-left back-btn" onclick="document.getElementById('nav-link-home').click()"></i>
+                  <h2>SUBSCRIPTIONS</h2>
+              </div>
+              <div style="display:flex; gap:20px; font-size:1.1rem; color:var(--text);">
+                  <i class="fa-solid fa-magnifying-glass" id="subs-btn-search" style="cursor:pointer;" title="Search"></i>
+              </div>
+          </div>
+        </div>
+
+        <div style="padding: 10px 15px; border-bottom: 1px solid var(--border-color); display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="n-pill active" type="button">Active 0</button>
+          <button class="n-pill" type="button">Expired 0</button>
+        </div>
+
+        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding: 80px 15px; color: var(--muted); text-align:center;">
+          <div class="empty-icon-wrap" style="margin-bottom:12px;"><i class="fa-regular fa-folder-open"></i></div>
+          <div style="font-size: 14px; margin-bottom: 14px;">No subscriptions yet</div>
+          <button type="button" onclick="document.getElementById('nav-link-home').click()"
+            style="background: transparent; border: 1px solid var(--border-color); color: var(--text); padding: 10px 14px; border-radius: 10px; cursor: pointer;">
+            Explore creators
+          </button>
+        </div>
+      </div>
+
       <div id="container-settings"></div>    
       <div id="container-notifications"></div> 
       <div id="container-messages"></div>    
