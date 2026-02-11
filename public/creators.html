@@ -29,7 +29,7 @@
       <div class="sidebar-inner">
         <div class="profile-header-card" id="trigger-profile-card">
           <div class="ph-avatar-container">
-            <img src="assets/images/truematch-mark.png" alt="Profile" style="background:#000;">
+            <img id="creatorProfileAvatar" src="assets/images/truematch-mark.png" alt="Profile" style="background:#000;">
             <div class="status-indicator"></div>
           </div>
           <div class="ph-user-details">
@@ -195,8 +195,8 @@
                   <p class="ac-desc">We are fully compliant with Payment Card Industry Data Security Standards.</p>
                   
                   <div class="ac-form-grid">
-                      <div class="ac-group"><label>Country</label><div class="custom-select-wrapper"><select><option>Select Country</option></select><i class="fa-solid fa-chevron-down"></i></div></div>
-                      <div class="ac-group"><label>State / Province</label><div class="custom-select-wrapper"><select><option>Select State</option></select><i class="fa-solid fa-chevron-down"></i></div></div>
+                      <div class="ac-group"><label>Country</label><input type="text" placeholder="Enter country"></div>
+                      <div class="ac-group"><label>State / Province</label><input type="text" placeholder="Enter state / province"></div>
                   </div>
 
                   <div class="ac-group"><label>Address</label><input type="text" placeholder=""></div>
@@ -492,17 +492,11 @@
                 <div class="ac-form-grid">
                     <div class="ac-group">
                         <label>Country</label>
-                        <div class="custom-select-wrapper">
-                            <select><option>Select Country</option></select>
-                            <i class="fa-solid fa-chevron-down"></i>
-                        </div>
+                        <input type="text" placeholder="Enter country">
                     </div>
                     <div class="ac-group">
                         <label>State / Province</label>
-                        <div class="custom-select-wrapper">
-                            <select><option>Select State</option></select>
-                            <i class="fa-solid fa-chevron-down"></i>
-                        </div>
+                        <input type="text" placeholder="Enter state / province">
                     </div>
                 </div>
 

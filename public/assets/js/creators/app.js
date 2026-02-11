@@ -115,7 +115,7 @@ async function tmHydrateCreatorsFromMe() {
 
   // Left profile card
   tmSetText('#creatorProfileName', displayName);
-  tmSetText('#creatorProfileUsername', handle);
+  tmSetText('#creatorProfileHandle', handle);
   tmSetSrc('#creatorProfileAvatar', user.avatarUrl);
 
   // Popover
