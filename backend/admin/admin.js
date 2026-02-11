@@ -5,9 +5,7 @@ const API_BASE = window.API_BASE || '';
 
 async function apiCall(endpoint, method = 'GET', body = null) {
   try {
-    const adminKey = localStorage.getItem('tm_admin_key') || '';
     const headers = { 'Content-Type': 'application/json' };
-    if (adminKey) headers['x-admin-key'] = adminKey;
 
     const opts = { method, headers, credentials: 'include' };
     if (body) opts.body = JSON.stringify(body);
@@ -690,7 +688,6 @@ document.getElementById('form-confirmed').addEventListener('submit', async (e) =
 // Logout
 document.getElementById('btn-logout-admin')?.addEventListener('click', async () => {
   try { await apiCall('/api/admin/logout', 'POST'); } catch (_) {}
-  localStorage.removeItem('tm_admin_key');
   window.location.href = '/admin-login.html';
 });
 

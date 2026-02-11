@@ -11,6 +11,9 @@ const fs = require('fs');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const cookieParser = require('cookie-parser');
+
+const crypto = require('crypto');
+const { AsyncLocalStorage } = require('async_hooks');
 const IS_PROD = process.env.NODE_ENV === 'production';
 
 // Google OAuth token verifier (lazy)
@@ -114,6 +117,9 @@ app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 
 app.use(cookieParser());
+
+// AsyncLocalStorage scope for each request
+app.use((req, res, next) => als.run({ user: __globalUser, prefs: __globalPrefs }, () => next()));
 // =========================
 // Public vs protected HTML gating (Variant B)
 // =========================
@@ -261,6 +267,43 @@ const DB = {
   // and media may be stored in Firebase Storage; otherwise we use local disk JSON persistence.
   moments: []
 };
+
+/* =========================
+   Request-scoped DB.user / DB.prefs (fix concurrency bug)
+   - Many routes mutate DB.user / DB.prefs based on the current request (tm_email cookie).
+   - Without isolation, concurrent requests can overwrite each other's session state.
+   - AsyncLocalStorage keeps these values per-request without rewriting all routes.
+   ========================= */
+const als = new AsyncLocalStorage();
+let __globalUser = DB.user;
+let __globalPrefs = DB.prefs;
+
+Object.defineProperty(DB, 'user', {
+  configurable: true,
+  get() {
+    const store = als.getStore();
+    return store ? store.user : __globalUser;
+  },
+  set(v) {
+    const store = als.getStore();
+    if (store) store.user = v;
+    else __globalUser = v;
+  }
+});
+
+Object.defineProperty(DB, 'prefs', {
+  configurable: true,
+  get() {
+    const store = als.getStore();
+    return store ? store.prefs : __globalPrefs;
+  },
+  set(v) {
+    const store = als.getStore();
+    if (store) store.prefs = v;
+    else __globalPrefs = v;
+  }
+});
+
 const SERVER_SWIPE_COUNTS = {}; 
 const STRICT_DAILY_LIMIT = 20;
 // ---------------- Disk persistence (fallback when Firebase is OFF) ----------------
@@ -571,20 +614,7 @@ function authMiddleware(req, res, next) {
 }
 
 // ============================================================
-// [INSERT 1] ADMIN MIDDLEWARE (Ilagay sa taas, bago ang routes)
-// ============================================================
-function requireAdmin(req, res, next) {
-  // Siguraduhin na ang DB variable ay accessible. 
-  // Kung iba ang variable name ng database mo, palitan ang 'DB'.
-  const user = (typeof DB !== 'undefined' && DB.user) ? DB.user : null;
-  
-  if (user && user.isAdmin === true) {
-    return next(); // Allowed
-  }
-  
-  console.log('[AdminGuard] Blocked access attempt.');
-  return res.status(403).json({ ok: false, message: 'Access denied: Admins only' });
-}
+
 
 
 // Public Config (Safe)
@@ -804,21 +834,59 @@ const ADMIN_COOKIE_OPTS = {
   maxAge: 1000 * 60 * 60 * 8
 };
 
+
+const ADMIN_TOKEN_TTL_MS = 1000 * 60 * 60 * 8; // 8 hours (match cookie maxAge)
+
+function createAdminToken() {
+  const ts = String(Date.now());
+  const sig = crypto.createHmac('sha256', String(ADMIN_ACCESS_KEY)).update(ts).digest('hex');
+  return `v1.${ts}.${sig}`;
+}
+
+function validateAdminToken(token) {
+  try {
+    if (!token) return false;
+    const parts = String(token).split('.');
+    if (parts.length !== 3) return false;
+    if (parts[0] !== 'v1') return false;
+
+    const tsStr = parts[1];
+    const sig = parts[2] || '';
+    const ts = Number(tsStr);
+    if (!Number.isFinite(ts)) return false;
+
+    const age = Date.now() - ts;
+    if (age < 0 || age > ADMIN_TOKEN_TTL_MS) return false;
+
+    const expected = crypto.createHmac('sha256', String(ADMIN_ACCESS_KEY)).update(String(tsStr)).digest('hex');
+    if (expected.length !== sig.length) return false;
+
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig));
+  } catch {
+    return false;
+  }
+}
+
 function getProvidedAdminKey(req) {
   const headerKey = req.headers['x-admin-key'];
   const bodyKey = req.body && req.body.adminKey;
   const queryKey = req.query && req.query.adminKey;
   const cookieKey = req.cookies && req.cookies[ADMIN_COOKIE_NAME];
-  return headerKey || bodyKey || queryKey || cookieKey || '';
+  return cookieKey || headerKey || bodyKey || queryKey || '';
 }
 
 function isValidAdminKey(key) {
   if (!key) return false;
-  return String(key) === String(ADMIN_ACCESS_KEY);
+  // Primary: signed token stored in httpOnly cookie
+  if (validateAdminToken(key)) return true;
+
+  // Dev-only escape hatch: allow raw ADMIN_ACCESS_KEY for manual testing
+  if (!IS_PROD && String(key) === String(ADMIN_ACCESS_KEY)) return true;
+
+  return false;
 }
 
-
-// Small middleware helper: require a valid admin key (header/body/query/cookie)
+// Small middleware helper: require a valid admin token (cookie) or dev key
 function requireAdmin(req, res, next) {
   try {
     const providedKey = getProvidedAdminKey(req);
@@ -1259,8 +1327,17 @@ verified: Boolean(doc.verified),
 }
 
 async function findUserByEmail(email) {
-  if (!hasFirebase || !usersCollection) return null;
-  const snap = await usersCollection.where('email', '==', email).limit(1).get();
+  const emailNorm = String(email || '').trim().toLowerCase();
+  if (!emailNorm) return null;
+
+  // Local JSON store fallback
+  if (!hasFirebase || !usersCollection) {
+    const u = (DB.users && typeof DB.users === 'object') ? DB.users[emailNorm] : null;
+    if (!u) return null;
+    return { id: u.id || u._id || null, ...u, email: emailNorm };
+  }
+
+  const snap = await usersCollection.where('email', '==', emailNorm).limit(1).get();
   if (snap.empty) return null;
 
   const docSnap = snap.docs[0];
@@ -1268,23 +1345,46 @@ async function findUserByEmail(email) {
 }
 
 async function createUserDoc(data) {
-  if (!hasFirebase || !usersCollection) return null;
+  const emailNorm = String((data && data.email) || '').trim().toLowerCase();
+  const createdAtLocal = new Date();
+
+  // Local JSON store fallback
+  if (!hasFirebase || !usersCollection) {
+    if (!emailNorm) return null;
+    const id = `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    DB.users = DB.users && typeof DB.users === 'object' ? DB.users : {};
+    const doc = { id, ...data, email: emailNorm, createdAt: createdAtLocal };
+    DB.users[emailNorm] = { ...doc };
+    saveUsersStore();
+    return doc;
+  }
 
   const ref = await usersCollection.add({
     ...data,
     createdAt: admin
       ? admin.firestore.FieldValue.serverTimestamp()
-      : new Date()
+      : createdAtLocal
   });
 
   return { id: ref.id, ...data };
 }
 
-async function updateUserByEmail(email, fields) {
-  if (!hasFirebase || !usersCollection) return null;
 
-  const existing = await findUserByEmail(email);
+async function updateUserByEmail(email, fields) {
+  const emailNorm = String(email || '').trim().toLowerCase();
+  if (!emailNorm) return null;
+
+  const existing = await findUserByEmail(emailNorm);
   if (!existing) return null;
+
+  // Local JSON store fallback
+  if (!hasFirebase || !usersCollection) {
+    DB.users = DB.users && typeof DB.users === 'object' ? DB.users : {};
+    const next = { ...existing, ...fields, email: emailNorm };
+    DB.users[emailNorm] = { ...next };
+    saveUsersStore();
+    return next;
+  }
 
   await usersCollection.doc(existing.id).update(fields);
   return { ...existing, ...fields };
@@ -1322,7 +1422,6 @@ async function uploadAvatarDataUrlToStorage(email, avatarDataUrl, prevAvatarPath
     } catch {}
   }
 
-  const crypto = require('crypto');
   const token = (crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex'));
 
   const safeEmail = String(email || 'user')
@@ -1968,20 +2067,6 @@ app.post('/api/auth/logout', (req, res) => {
   return res.json({ ok: true });
 });
 
-// ---------------- Auth: LOGOUT (alias) -------------------
-// Older frontends may call /api/logout; keep it compatible.
-app.post('/api/logout', (req, res) => {
-  clearSession(res);
-  setAnonState();
-  return res.json({ ok: true });
-});
-app.get('/api/logout', (req, res) => {
-  clearSession(res);
-  setAnonState();
-  return res.json({ ok: true });
-});
-
-
 // ---------------- Mock OAuth -------------------
 app.post('/api/auth/oauth/mock', (_req, res) => {
   if (!DB.user) DB.user = {};
@@ -2057,68 +2142,6 @@ app.get('/api/me', async (req, res) => {
     return res.status(500).json({ ok: false, user: null, message: 'internal error' });
   }
 });
-
-// ---------------- Account: CHANGE PASSWORD -------------------
-// Expected by tm-api.js (apiChangePassword)
-app.post('/api/me/password', async (req, res) => {
-  try {
-    const email = getSessionEmail(req);
-    if (!email) return res.status(401).json({ ok: false, message: 'Not logged in' });
-
-    const body = req.body || {};
-    const currentPassword = String(body.currentPassword || '').trim();
-    const newPassword = String(body.newPassword || '').trim();
-
-    if (!currentPassword) {
-      return res.status(400).json({ ok: false, message: 'current_password_required' });
-    }
-    if (!newPassword || newPassword.length < 6) {
-      return res.status(400).json({ ok: false, message: 'weak_password' });
-    }
-
-    // Load user
-    let meDoc = null;
-    if (hasFirebase && usersCollection) {
-      meDoc = await findUserByEmail(email);
-    } else {
-      meDoc = (DB.users && DB.users[email]) ? { ...DB.users[email] } : null;
-    }
-    if (!meDoc) return res.status(404).json({ ok: false, message: 'user_not_found' });
-
-    const existingHash = String(meDoc.passwordHash || '');
-    if (!existingHash) {
-      return res.status(400).json({ ok: false, message: 'password_not_set' });
-    }
-
-    const ok = await bcrypt.compare(currentPassword, existingHash);
-    if (!ok) {
-      return res.status(401).json({ ok: false, message: 'invalid_current_password' });
-    }
-
-    const passwordHash = await bcrypt.hash(newPassword, 10);
-
-    if (hasFirebase && usersCollection) {
-      await usersCollection.doc(meDoc.id).update({
-        passwordHash,
-        updatedAt: admin ? admin.firestore.FieldValue.serverTimestamp() : new Date().toISOString()
-      });
-    } else {
-      if (!DB.users) DB.users = {};
-      DB.users[email] = { ...(DB.users[email] || {}), passwordHash };
-      if (DB.user && String(DB.user.email || '').toLowerCase() === String(email).toLowerCase()) {
-        DB.user.passwordHash = passwordHash;
-      }
-      saveUsersStore();
-    }
-
-    return res.json({ ok: true });
-  } catch (err) {
-    console.error('[me password] error:', err);
-    return res.status(500).json({ ok: false, message: 'server_error' });
-  }
-});
-
-
 
 // ---------------- Recent Moments (Stories) -------------------
 // A "moment" is a short-lived media post (photo/video) that expires after 24 hours.
@@ -2682,6 +2705,72 @@ app.post('/api/me/profile', async (req, res) => {
   }
 });
 
+// Change password (requires current password)
+app.post('/api/me/password', async (req, res) => {
+  try {
+    if (!DB.user || !DB.user.email) return res.status(401).json({ ok: false, message: 'not_logged_in' });
+
+    const emailNorm = String(DB.user.email).trim().toLowerCase();
+    const { currentPassword, newPassword } = req.body || {};
+
+    const cur = String(currentPassword || '');
+    const nxt = String(newPassword || '');
+
+    if (!nxt || nxt.length < 8) {
+      return res.status(400).json({ ok: false, message: 'password_too_short' });
+    }
+
+    const user = await findUserByEmail(emailNorm);
+    if (!user) return res.status(404).json({ ok: false, message: 'user_not_found' });
+
+    if (user.passwordHash) {
+      const ok = await bcrypt.compare(cur, String(user.passwordHash));
+      if (!ok) return res.status(401).json({ ok: false, message: 'wrong_password' });
+    } else if (cur) {
+      // If no passwordHash exists yet but currentPassword was provided, treat as mismatch
+      return res.status(401).json({ ok: false, message: 'wrong_password' });
+    }
+
+    const passwordHash = await bcrypt.hash(nxt, 10);
+    await updateUserByEmail(emailNorm, { passwordHash });
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('POST /api/me/password error:', e);
+    return res.status(500).json({ ok: false, message: 'server error' });
+  }
+});
+
+// Update simple settings used by Premium Society settings UI
+app.post('/api/me/settings', async (req, res) => {
+  try {
+    if (!DB.user || !DB.user.email) return res.status(401).json({ ok: false, message: 'not_logged_in' });
+
+    const emailNorm = String(DB.user.email).trim().toLowerCase();
+    const distanceKm = Number(req.body && req.body.distanceKm);
+    const maxAge = Number(req.body && req.body.maxAge);
+
+    // Merge into existing prefs (prefsByEmail is the canonical store in demo/local mode)
+    const existing = (DB.prefsByEmail && DB.prefsByEmail[emailNorm]) ? DB.prefsByEmail[emailNorm] : (DB.prefs || {});
+    const next = { ...(existing || {}) };
+
+    if (Number.isFinite(distanceKm) && distanceKm > 0) next.distanceKm = Math.round(distanceKm);
+    if (Number.isFinite(maxAge) && maxAge > 17) next.ageMax = Math.round(maxAge);
+
+    DB.prefs = next;
+    DB.prefsByEmail[emailNorm] = next;
+    savePrefsStore();
+
+    // Mirror onto the user record for convenience (optional)
+    await updateUserByEmail(emailNorm, { settings: { ...(DB.user.settings || {}), distanceKm: next.distanceKm, maxAge: next.ageMax } });
+
+    return res.json({ ok: true, settings: { distanceKm: next.distanceKm, maxAge: next.ageMax } });
+  } catch (e) {
+    console.error('POST /api/me/settings error:', e);
+    return res.status(500).json({ ok: false, message: 'server error' });
+  }
+});
+
 // ---------------- KPIs demo (optional) -------------------
 app.get('/api/kpis', (_req, res) => {
   // You can update this later to use real counters if needed
@@ -2873,14 +2962,9 @@ app.post('/api/admin/login', (req, res) => {
     const userInput = (username || email || '').toString().trim();
     const pass = (password || '').toString();
 
-    let ok = false;
-
-    if (
+    const ok =
       userInput === ADMIN_LOGIN_USERNAME &&
-      pass === ADMIN_LOGIN_PASSWORD
-    ) {
-      ok = true;
-    }
+      pass === ADMIN_LOGIN_PASSWORD;
 
     if (!ok) {
       return res
@@ -2888,11 +2972,11 @@ app.post('/api/admin/login', (req, res) => {
         .json({ ok: false, message: 'invalid_admin_credentials' });
     }
 
-    // Set httpOnly cookie so admin pages + API can work without exposing the key in URLs
-    res.cookie(ADMIN_COOKIE_NAME, ADMIN_ACCESS_KEY, ADMIN_COOKIE_OPTS);
+    // Issue a short-lived signed token in an httpOnly cookie (no admin key is returned to the browser)
+    const token = createAdminToken();
+    res.cookie(ADMIN_COOKIE_NAME, token, ADMIN_COOKIE_OPTS);
 
-    // Keep returning the key too (backward compatible with older admin JS)
-    return res.json({ ok: true, adminKey: ADMIN_ACCESS_KEY });
+    return res.json({ ok: true });
   } catch (err) {
     console.error('admin login error:', err);
     return res.status(500).json({ ok: false, message: 'server error' });
@@ -2902,12 +2986,6 @@ app.post('/api/admin/login', (req, res) => {
 // Simple “who am I” check for admin
 app.get('/api/admin/me', (req, res) => {
   try {
-    const providedKey = getProvidedAdminKey(req);
-    if (!isValidAdminKey(providedKey)) {
-      return res
-        .status(401)
-        .json({ ok: false, message: 'admin_unauthorized' });
-    }
     return res.json({ ok: true });
   } catch (err) {
     console.error('admin me error:', err);
@@ -2943,6 +3021,8 @@ app.get('/api/admin/users', requireAdmin, async (req, res) => {
       usersArr = snap.docs.map(d => publicUser({ id: d.id, ...d.data() })).filter(Boolean);
     } else if (Array.isArray(DB.users)) {
       usersArr = DB.users.map(u => publicUser(u)).filter(Boolean);
+    } else if (DB.users && typeof DB.users === 'object') {
+      usersArr = Object.values(DB.users).map(u => publicUser(u)).filter(Boolean);
     }
 
     if (finalTier !== 'all') {
@@ -2979,7 +3059,7 @@ app.get('/api/admin/users', requireAdmin, async (req, res) => {
   }
 });
 
-app.get('/api/admin/state', async (req, res) => {
+app.get('/api/admin/state', requireAdmin, async (req, res) => {
   try {
     const providedKey = getProvidedAdminKey(req);
     if (!isValidAdminKey(providedKey)) {
@@ -3469,8 +3549,6 @@ app.post('/api/plan/choose', async (req, res) => {
 //
 // Optional:
 // - COINBASE_FULFILL_AT = PENDING | COMPLETED   (default: PENDING)
-
-const crypto = require('crypto');
 
 const COINBASE_API_BASE = 'https://api.commerce.coinbase.com';
 const COINBASE_API_KEY =
@@ -4521,11 +4599,7 @@ app.get('/api/matches', authMiddleware, async (req, res) => {
   }
 });
 // Public config to expose client IDs (safe values only)
-app.get('/api/config', (req, res) => {
-  res.json({
-    googleClientId: process.env.GOOGLE_CLIENT_ID || ''
-  });
-});
+
 
 // ---------------- Email Verification (OTP) -------------------
 let _mailer = null;
@@ -4794,15 +4868,6 @@ app.post('/api/me/premium/profile', async (req, res) => {
   }
 });
 
-
-
-
-// ---------------- Premium Society helpers -------------------
-function pickOneCandidate(candidates) {
-  if (!Array.isArray(candidates) || candidates.length === 0) return null;
-  const i = Math.floor(Math.random() * candidates.length);
-  return candidates[i] || null;
-}
 
 app.get('/api/premium-society/candidates', authMiddleware, async (req, res) => {
   try {

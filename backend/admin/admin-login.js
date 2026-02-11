@@ -55,14 +55,8 @@ form?.addEventListener('submit', async (e) => {
     return;
   }
 
-  // Save admin key locally so admin.js can send it as x-admin-key
-  try {
-    const keyToStore = out.adminKey || '';
-    localStorage.setItem('tm_admin_key', keyToStore);
-  } catch (err) {
-    console.error('Failed to store admin key in localStorage', err);
-  }
-
-  // Go to admin space
-  location.replace('/admin.html');
+  // Go to admin space (or a specified next url)
+  const params = new URLSearchParams(window.location.search);
+  const next = params.get('next');
+  location.replace(next ? next : '/admin.html');
 });
