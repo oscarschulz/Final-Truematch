@@ -451,6 +451,9 @@ async function init() {
   }
 
   setupNavigation();
+  tmBindProfileBackButton();
+  tmBindPopoverCollections();
+  tmInitGlobalSearch();
   await tmHydrateCreatorsFromMe();
 
   
@@ -995,6 +998,14 @@ localStorage.setItem('tm_last_view', viewName);
         }
     }
 
+    // Apply saved post-search filter when returning to Home
+    if (viewName === 'home') {
+        const _q = localStorage.getItem('tm_post_search_query') || '';
+        tmApplyInlinePostFilter(_q);
+        const _in = document.getElementById('global-post-search-input');
+        if (_in && _in.value !== _q) _in.value = _q;
+    }
+
     injectSidebarToggles();
 }
 
@@ -1040,6 +1051,351 @@ function ensureFooterHTML() {
         `;
         setupNavigation();
     }
+}
+
+// =============================================================
+// GLOBAL SEARCH (Posts + Subscriptions Search Icon)
+// - Desktop: typing in right sidebar search filters feed (Home)
+// - Mobile/Tablet: opens full-screen search overlay (Option C)
+// - Subscriptions search icon opens overlay (mode: subscriptions)
+// =============================================================
+const tmSearchUI = {
+    overlay: null,
+    sheet: null,
+    input: null,
+    body: null,
+    closeBtn: null,
+    mode: 'posts',
+    lastQuery: ''
+};
+
+function tmEnsureSearchOverlay() {
+    if (document.getElementById('tm-search-overlay')) {
+        tmSearchUI.overlay = document.getElementById('tm-search-overlay');
+        tmSearchUI.sheet = tmSearchUI.overlay.querySelector('.tm-search-sheet');
+        tmSearchUI.input = document.getElementById('tmSearchInput');
+        tmSearchUI.body = document.getElementById('tmSearchBody');
+        tmSearchUI.closeBtn = document.getElementById('tmSearchClose');
+        return;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.id = 'tm-search-overlay';
+    overlay.className = 'tm-search-overlay';
+    overlay.setAttribute('aria-hidden', 'true');
+    overlay.innerHTML = `
+        <div class="tm-search-sheet" role="dialog" aria-modal="true" aria-label="Search">
+            <div class="tm-search-head">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                <input id="tmSearchInput" class="tm-search-input" type="text" placeholder="Search..." autocomplete="off" />
+                <button type="button" id="tmSearchClose" class="tm-search-close" aria-label="Close search">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div id="tmSearchBody" class="tm-search-body"></div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    tmSearchUI.overlay = overlay;
+    tmSearchUI.sheet = overlay.querySelector('.tm-search-sheet');
+    tmSearchUI.input = document.getElementById('tmSearchInput');
+    tmSearchUI.body = document.getElementById('tmSearchBody');
+    tmSearchUI.closeBtn = document.getElementById('tmSearchClose');
+
+    // Close (button)
+    tmSearchUI.closeBtn.addEventListener('click', tmCloseSearch);
+
+    // Close (tap outside)
+    tmSearchUI.overlay.addEventListener('click', (e) => {
+        if (!tmSearchUI.sheet.contains(e.target)) tmCloseSearch();
+    });
+
+    // ESC close
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && tmSearchUI.overlay.classList.contains('is-open')) tmCloseSearch();
+    });
+
+    // Search input handler
+    tmSearchUI.input.addEventListener('input', () => {
+        const q = (tmSearchUI.input.value || '').trim();
+        tmSearchUI.lastQuery = q;
+        if (tmSearchUI.mode === 'subscriptions') {
+            tmRenderSubscriptionsSearch(q);
+        } else {
+            tmRenderPostSearch(q);
+        }
+    });
+
+    tmSearchUI.input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+        }
+    });
+}
+
+function tmOpenSearch(mode = 'posts', presetQuery = '') {
+    tmEnsureSearchOverlay();
+    tmSearchUI.mode = mode;
+
+    const ph = (mode === 'subscriptions') ? 'Search subscriptions...' : 'Search posts...';
+    tmSearchUI.input.setAttribute('placeholder', ph);
+
+    const saved = (mode === 'posts') ? (localStorage.getItem('tm_post_search_query') || '') : '';
+    const q = (presetQuery != null ? presetQuery : '').trim() || saved;
+
+    tmSearchUI.overlay.classList.add('is-open');
+    tmSearchUI.overlay.setAttribute('aria-hidden', 'false');
+    tmSearchUI.input.value = q;
+    tmSearchUI.lastQuery = q;
+
+    // Initial render
+    if (mode === 'subscriptions') {
+        tmRenderSubscriptionsSearch(q);
+    } else {
+        tmRenderPostSearch(q);
+    }
+
+    setTimeout(() => tmSearchUI.input.focus(), 50);
+}
+
+function tmCloseSearch() {
+    if (!tmSearchUI.overlay) return;
+    tmSearchUI.overlay.classList.remove('is-open');
+    tmSearchUI.overlay.setAttribute('aria-hidden', 'true');
+}
+
+function tmReadPostsFromStorage() {
+    try {
+        const raw = localStorage.getItem('tm_user_posts');
+        const posts = raw ? JSON.parse(raw) : [];
+        return Array.isArray(posts) ? posts : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function tmRenderPostSearch(query) {
+    if (!tmSearchUI.body) return;
+
+    const q = (query || '').trim().toLowerCase();
+    const posts = tmReadPostsFromStorage()
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    if (!q) {
+        const recent = posts.slice(0, 10);
+        if (!recent.length) {
+            tmSearchUI.body.innerHTML = `<div class="tm-search-hint">No posts yet.</div>`;
+            return;
+        }
+        tmSearchUI.body.innerHTML = `
+            <div class="tm-search-hint">Recent posts</div>
+            ${recent.map(p => tmPostResultHTML(p)).join('')}
+        `;
+        tmBindResultClicks('posts');
+        return;
+    }
+
+    const results = posts.filter(p => String(p.text || '').toLowerCase().includes(q)).slice(0, 25);
+
+    if (!results.length) {
+        tmSearchUI.body.innerHTML = `<div class="tm-search-hint">No matching posts.</div>`;
+        return;
+    }
+
+    tmSearchUI.body.innerHTML = `
+        <div class="tm-search-hint">${results.length} result${results.length === 1 ? '' : 's'}</div>
+        ${results.map(p => tmPostResultHTML(p)).join('')}
+    `;
+    tmBindResultClicks('posts');
+}
+
+function tmPostResultHTML(p) {
+    const text = String(p.text || '').trim();
+    const snippet = text.length > 140 ? (text.slice(0, 140) + '...') : text;
+    const ts = p.timestamp ? new Date(p.timestamp) : null;
+    const meta = ts ? ts.toLocaleString() : '';
+    const safeSnippet = snippet
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+    return `
+        <div class="tm-search-result" data-post-id="${p.id}">
+            <div class="title">${safeSnippet || 'Untitled post'}</div>
+            <div class="meta">${meta}</div>
+        </div>
+    `;
+}
+
+function tmBindResultClicks(type) {
+    if (!tmSearchUI.body) return;
+    tmSearchUI.body.querySelectorAll('.tm-search-result').forEach(el => {
+        el.addEventListener('click', () => {
+            if (type === 'posts') {
+                const postId = el.getAttribute('data-post-id');
+                tmCloseSearch();
+                if (postId) {
+                    localStorage.setItem('tm_post_search_query', tmSearchUI.lastQuery || '');
+                    const input = document.getElementById('global-post-search-input');
+                    if (input) input.value = tmSearchUI.lastQuery || '';
+                    switchView('home');
+                    setTimeout(() => tmScrollToPost(postId), 180);
+                }
+            }
+        });
+    });
+}
+
+function tmScrollToPost(postId) {
+    const el = document.getElementById(`post-${postId}`);
+    if (!el) return;
+
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('tm-search-highlight');
+    setTimeout(() => el.classList.remove('tm-search-highlight'), 2000);
+}
+
+// Inline filtering for the Home feed (desktop search bar)
+function tmApplyInlinePostFilter(query) {
+    const feed = document.getElementById('creator-feed');
+    if (!feed) return;
+
+    const q = (query || '').trim().toLowerCase();
+    const posts = Array.from(feed.querySelectorAll('.post-card'));
+    const emptyState = feed.querySelector('.feed-empty-state');
+
+    let visibleCount = 0;
+    posts.forEach(card => {
+        const txt = (card.innerText || '').toLowerCase();
+        const show = !q || txt.includes(q);
+        card.style.display = show ? '' : 'none';
+        if (show) visibleCount++;
+    });
+
+    if (emptyState) {
+        // If there are no posts at all, leave the original empty state intact.
+        const hasAnyPosts = posts.length > 0;
+        if (!hasAnyPosts) {
+            emptyState.style.display = '';
+            return;
+        }
+        if (q && visibleCount === 0) {
+            emptyState.style.display = '';
+            const p = emptyState.querySelector('p');
+            if (p) p.textContent = 'No matching posts';
+        } else {
+            emptyState.style.display = 'none';
+            const p = emptyState.querySelector('p');
+            if (p) p.textContent = 'No posts to show';
+        }
+    }
+}
+
+function tmRenderSubscriptionsSearch(query) {
+    if (!tmSearchUI.body) return;
+
+    // Future-proof: if subscription cards exist, filter them. For now, show a helpful state.
+    const subsView = document.getElementById('view-subscriptions');
+    const cards = subsView ? Array.from(subsView.querySelectorAll('.subscription-card, .sub-card, .sub-item')) : [];
+    const q = (query || '').trim().toLowerCase();
+
+    if (!cards.length) {
+        tmSearchUI.body.innerHTML = `
+            <div class="tm-search-hint">
+                No subscriptions to search yet.
+                <br><br>
+                Tip: Use the Home search to find creators, then subscribe.
+            </div>
+        `;
+        return;
+    }
+
+    let match = 0;
+    cards.forEach(c => {
+        const txt = (c.innerText || '').toLowerCase();
+        const show = !q || txt.includes(q);
+        c.style.display = show ? '' : 'none';
+        if (show) match++;
+    });
+
+    tmSearchUI.body.innerHTML = `<div class="tm-search-hint">${match} result${match === 1 ? '' : 's'}</div>`;
+}
+
+function tmInitGlobalSearch() {
+    const input = document.getElementById('global-post-search-input');
+    const btn = document.getElementById('global-post-search-btn');
+    const subsBtn = document.getElementById('subs-btn-search');
+
+    const saved = localStorage.getItem('tm_post_search_query') || '';
+    if (input && saved && input.value !== saved) input.value = saved;
+
+    if (input) {
+        input.addEventListener('input', () => {
+            const q = input.value || '';
+            localStorage.setItem('tm_post_search_query', q);
+            tmApplyInlinePostFilter(q);
+        });
+
+        input.addEventListener('focus', () => {
+            // Mobile: open overlay instead of inline filtering UI.
+            if (window.innerWidth <= 768) tmOpenSearch('posts', input.value || '');
+        });
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                if (window.innerWidth <= 1024) {
+                    e.preventDefault();
+                    tmOpenSearch('posts', input.value || '');
+                }
+            }
+        });
+    }
+
+    if (btn) {
+        btn.addEventListener('click', () => {
+            if (window.innerWidth <= 1024) {
+                tmOpenSearch('posts', input ? (input.value || '') : '');
+            } else {
+                if (input) input.focus();
+            }
+        });
+    }
+
+    if (subsBtn) {
+        subsBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            tmOpenSearch('subscriptions', '');
+        });
+    }
+}
+
+// =============================================================
+// MOBILE BACK BUTTON (Profile) + POP-OVER COLLECTIONS FIX
+// =============================================================
+function tmBindProfileBackButton() {
+    const btn = document.getElementById('profile-back-btn');
+    if (!btn || btn.dataset.bound === '1') return;
+    btn.dataset.bound = '1';
+
+    btn.addEventListener('click', () => {
+        const prev = localStorage.getItem('tm_prev_view');
+        if (prev && prev !== 'profile') switchView(prev);
+        else switchView('home');
+    });
+}
+
+function tmBindPopoverCollections() {
+    const btn = document.getElementById('btn-pop-collections');
+    if (!btn || btn.dataset.bound === '1') return;
+    btn.dataset.bound = '1';
+
+    btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const pop = document.getElementById('settings-popover');
+        if (pop) pop.classList.remove('is-open');
+        switchView('collections');
+    });
 }
 
 document.addEventListener('DOMContentLoaded', init);

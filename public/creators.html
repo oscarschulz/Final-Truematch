@@ -390,7 +390,7 @@
 
     <aside class="right-sidebar" id="right-sidebar">
       <div class="sidebar-inner" id="rs-suggestions-view">
-        <div class="search-bar"><input type="text" name="global_search" placeholder="Search posts"><i class="fa-solid fa-magnifying-glass"></i></div>
+        <div class="search-bar"><input type="text" id="global-post-search-input" name="global_search" placeholder="Search posts" autocomplete="off"><i class="fa-solid fa-magnifying-glass" id="global-post-search-btn" role="button" aria-label="Search"></i></div>
         <div class="suggestions-header"><span class="title">SUGGESTIONS</span><div class="sugg-actions"><i class="fa-solid fa-rotate"></i></div></div>
         <div class="suggestion-list">
             <div style="text-align:center; padding:20px; color:var(--muted); font-size:0.9rem;">
@@ -479,7 +479,7 @@
     </div>
 
     <div class="pop-content-full">
-        <div class="pop-group"><a href="#" class="pop-item"><i class="fa-regular fa-user"></i> <span data-lang="pop_profile">My profile</span></a><a href="#" class="pop-item"><i class="fa-regular fa-bookmark"></i> <span data-lang="pop_col">Collections</span></a><a href="#" class="pop-item" id="btn-settings-pop"><i class="fa-solid fa-gear"></i> <span data-lang="pop_set">Settings</span></a></div>
+        <div class="pop-group"><a href="#" class="pop-item"><i class="fa-regular fa-user"></i> <span data-lang="pop_profile">My profile</span></a><a href="#" class="pop-item" id="btn-pop-collections"><i class="fa-regular fa-bookmark"></i> <span data-lang="pop_col">Collections</span></a><a href="#" class="pop-item" id="btn-settings-pop"><i class="fa-solid fa-gear"></i> <span data-lang="pop_set">Settings</span></a></div>
         <div class="pop-divider"></div>
         <div class="pop-group"><a href="#" class="pop-item"><i class="fa-regular fa-credit-card"></i> <span data-lang="pop_cards">Your cards</span> <span class="muted" data-lang="pop_cards_sub">(to subscribe)</span></a><a href="#" class="pop-item"><i class="fa-solid fa-building-columns"></i> <span data-lang="pop_creator">Become a creator</span> <span class="muted" data-lang="pop_creator_sub">(to earn)</span></a></div>
         <div class="pop-divider"></div>
