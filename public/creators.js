@@ -74,6 +74,7 @@ async function hydrateCreatorIdentity() {
 
   let name = fallbackName;
   let handle = fallbackHandle;
+  let bioText = '';
 
   if (app) {
     // handle is explicit
@@ -82,6 +83,9 @@ async function hydrateCreatorIdentity() {
     // display name is packed into contentStyle by dashboard.js
     const packedName = extractPackedField(app.contentStyle, 'Display name');
     if (packedName) name = packedName;
+
+    // bio is also packed by dashboard.js ("Bio: ...")
+    bioText = extractPackedField(app.contentStyle, 'Bio');
   }
 
   // Targets across the page
@@ -109,6 +113,25 @@ async function hydrateCreatorIdentity() {
   });
 
   handleTargets.forEach(el => setText(el, handle));
+
+  // Sync Bio (header + setup textarea)
+  const bioTargets = Array.from(document.querySelectorAll('.profile-bio-text')).filter(Boolean);
+  if (bioTargets.length) {
+    const fallbackBio = bioTargets[0].textContent || '';
+    const nextBio = (bioText || '').trim();
+    if (nextBio) {
+      bioTargets.forEach(el => { el.textContent = nextBio; });
+    } else {
+      // keep existing placeholder
+      bioTargets.forEach(el => { el.textContent = fallbackBio; });
+    }
+  }
+
+  const setupBio = document.getElementById('setup-bio');
+  if (setupBio && !setupBio.value) {
+    const nextBio = (bioText || '').trim();
+    if (nextBio) setupBio.value = nextBio;
+  }
 }
 
 
