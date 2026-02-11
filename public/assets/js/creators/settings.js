@@ -122,6 +122,69 @@ function isDesktop() {
   return window.innerWidth > 1024;
 }
 
+function tmToast(title, icon = 'info') {
+  try {
+    if (window.Swal && typeof window.Swal.fire === 'function') {
+      window.Swal.fire({
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 2600,
+        timerProgressBar: true,
+        icon,
+        title,
+      });
+      return;
+    }
+  } catch (_) {}
+  // Fallback
+  console.log(title);
+}
+
+function bindDisplayControls(container) {
+  if (!container) return;
+
+  const themeToggle = container.querySelector('#setting-theme-toggle');
+  if (themeToggle && !themeToggle.__tmBound) {
+    themeToggle.__tmBound = true;
+
+    // Sync initial state from body class
+    themeToggle.checked = document.body.classList.contains('tm-dark');
+
+    themeToggle.addEventListener('change', () => {
+      const on = !!themeToggle.checked;
+
+      document.body.classList.toggle('tm-dark', on);
+      document.body.classList.toggle('tm-light', !on);
+
+      // Sync any global theme toggle if present
+      try {
+        if (DOM?.themeToggle) DOM.themeToggle.checked = on;
+      } catch (_) {}
+
+      // Persist (optional)
+      try { localStorage.setItem('tm_theme', on ? 'dark' : 'light'); } catch (_) {}
+    });
+  }
+
+  const langSelect = container.querySelector('#settings-lang-select');
+  if (langSelect && !langSelect.__tmBound) {
+    langSelect.__tmBound = true;
+
+    // Restore saved language (if any)
+    try {
+      const saved = localStorage.getItem('tm_lang');
+      if (saved) langSelect.value = saved;
+    } catch (_) {}
+
+    langSelect.addEventListener('change', () => {
+      try { localStorage.setItem('tm_lang', langSelect.value); } catch (_) {}
+      tmToast('Language saved. Refresh to apply.', 'success');
+    });
+  }
+}
+
+
 function setActiveMenuItem(el) {
   document.querySelectorAll('.set-item.active').forEach((x) => x.classList.remove('active'));
   if (el) el.classList.add('active');
@@ -189,8 +252,9 @@ function openMobileDetail(target, me) {
 
   host.appendChild(clone);
 
-  // Hydrate (profile form only)
+  // Hydrate
   if (target === 'profile') hydrateCreatorProfileForm(clone, me);
+  if (target === 'display') bindDisplayControls(clone, me);
 
   // Slide in
   requestAnimationFrame(() => host.classList.add('is-open'));
@@ -210,6 +274,7 @@ function renderSettingsTargetDesktop(target, me) {
   DOM.rsSettingsView.appendChild(clone);
 
   if (target === 'profile') hydrateCreatorProfileForm(clone, me);
+  if (target === 'display') bindDisplayControls(clone, me);
 }
 
 function bindMetaCounter(fieldEl) {

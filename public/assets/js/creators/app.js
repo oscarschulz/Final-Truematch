@@ -565,13 +565,55 @@ function setupNavigation() {
         link.addEventListener('click', (e) => {
             const text = link.innerText.trim().toLowerCase();
             const popover = document.getElementById('settings-popover');
-            if(popover) popover.classList.remove('is-open');
+            if (popover) popover.classList.remove('is-open');
 
-            if (text.includes('cards')) { e.preventDefault(); switchView('your-cards'); }
-            else if (text.includes('add card')) { e.preventDefault(); switchView('add-card'); }
-            else if (text.includes('settings')) { e.preventDefault(); switchView('settings'); }
-            else if (text.includes('profile')) { e.preventDefault(); switchView('profile'); }
-            else if (text.includes('creator') || text.includes('banking')) { e.preventDefault(); switchView('become-creator'); }
+            // Map popover items → views (Choice set by user)
+            if (text.includes('cards')) { 
+                e.preventDefault(); 
+                switchView('your-cards'); 
+            }
+            else if (text.includes('add card')) { 
+                e.preventDefault(); 
+                switchView('add-card'); 
+            }
+            else if (text.includes('settings')) { 
+                e.preventDefault(); 
+                switchView('settings'); 
+            }
+            else if (text.includes('collections')) { 
+                e.preventDefault(); 
+                switchView('collections'); 
+            }
+            else if (text.includes('profile')) { 
+                e.preventDefault(); 
+                switchView('profile'); 
+            }
+            else if (text.includes('creator') || text.includes('banking')) { 
+                e.preventDefault(); 
+                switchView('become-creator'); 
+            }
+            else if (text.includes('help')) {
+                // Help=B → open Messages and start a support chat context
+                e.preventDefault();
+                switchView('messages');
+                try { TopToast.fire({ icon: 'info', title: 'Support chat opened' }); } catch(_) {}
+                window.setTimeout(() => {
+                    try { loadChat(1); } catch(_) {}
+                    // Try to focus the chat input if it exists
+                    const input =
+                        document.querySelector('#chat-input') ||
+                        document.querySelector('#message-input') ||
+                        document.querySelector('textarea[name="message"]') ||
+                        document.querySelector('.chat-input textarea') ||
+                        document.querySelector('#view-messages textarea');
+                    if (input) input.focus();
+                }, 180);
+            }
+            else if (text.includes('language')) {
+                // Lang=B → coming soon
+                e.preventDefault();
+                try { TopToast.fire({ icon: 'info', title: 'Language picker coming soon' }); } catch(_) {}
+            }
         });
     });
 
@@ -600,6 +642,11 @@ function setupNavigation() {
 
 function switchView(viewName) {
     localStorage.setItem('tm_last_view', viewName);
+
+    // Close mobile settings drill-down (if open)
+    if (typeof window.__tmCloseSettingsMobileDetail === 'function') {
+        try { window.__tmCloseSettingsMobileDetail(); } catch(_) {}
+    }
 
     // If a full-screen compose sheet is open, close it before navigating.
     if (isComposeSheetOpen()) {
