@@ -32,6 +32,38 @@ function tmGetPacked(packed, label) {
   return '';
 }
 
+
+
+function tmSetPacked(packed, label, value) {
+  const want = String(label || '').trim().toLowerCase();
+  const v = (value === null || value === undefined) ? '' : String(value);
+  const segs = tmSplitPipes(packed);
+  let found = false;
+  const out = segs.map(seg => {
+    const idx = seg.indexOf(':');
+    if (idx === -1) return seg;
+    const key = seg.slice(0, idx).trim().toLowerCase();
+    if (key !== want) return seg;
+    found = true;
+    return `${label}: ${v}`.trim();
+  }).filter(Boolean);
+
+  if (!found) {
+    out.push(`${label}: ${v}`.trim());
+  }
+
+  // Remove empty values
+  const cleaned = out.filter(s => {
+    const idx = s.indexOf(':');
+    if (idx === -1) return true;
+    const val = s.slice(idx + 1).trim();
+    return val.length > 0;
+  });
+
+  return cleaned.join(' | ');
+}
+
+let tmMeCache = null;
 function tmSetText(selOrEl, text) {
   const el = typeof selOrEl === 'string' ? document.querySelector(selOrEl) : selOrEl;
   if (el) el.textContent = text;
@@ -96,6 +128,8 @@ async function tmHydrateCreatorsFromMe() {
 
   const user = data.user;
   const app = user.creatorApplication || null;
+  tmMeCache = user;
+  try { window.__tmMe = user; } catch {}
 
   const packed = app?.contentStyle || '';
   const displayName = tmGetPacked(packed, 'Display name') || tmGetPacked(packed, 'Name') || user.name || 'Your Name';
@@ -132,10 +166,386 @@ async function tmHydrateCreatorsFromMe() {
   if (bio && bio.trim()) tmSetText('#view-my-profile .profile-bio-text', bio);
   tmSetSrc('#view-my-profile .profile-avatar-main', user.avatarUrl);
   tmSetBgImage('#view-my-profile .profile-header-bg', user.headerUrl);
+// Local header fallback (client-side)
+try {
+  const k = `tm_creator_header_${String(user?.email || '').toLowerCase()}`;
+  const localHdr = window.localStorage ? (window.localStorage.getItem(k) || '') : '';
+  if ((!user.headerUrl || !String(user.headerUrl).trim()) && localHdr) {
+    tmSetBgImage('#view-my-profile .profile-header-bg', localHdr);
+  }
+} catch {}
 
   // Optional: show the rest of the application details under the bio
   tmUpsertCreatorMetaBlock(meta);
 }
+
+
+
+// =============================================================
+// DATA #3 — BANK DETAILS (Become a Creator)
+// - Bio text + live char count
+// - Header + Avatar image picker (client preview)
+// - Save → /api/me/profile (avatar) + /api/me/creator/profile (bio)
+// - Header image is stored client-side (until backend field exists)
+// =============================================================
+const tmBankState = {
+  uiReady: false,
+  saving: false,
+  initialBio: '',
+  pendingAvatarDataUrl: '',
+  pendingHeaderDataUrl: '',
+  lastEmail: ''
+};
+
+const tmBankUI = {
+  view: null,
+  bio: null,
+  count: null,
+  saveBtn: null,
+  header: null,
+  headerCam: null,
+  avatar: null,
+  avatarCam: null,
+  avatarSpan: null,
+  avatarImg: null,
+  inputAvatar: null,
+  inputHeader: null
+};
+
+function tmBankHeaderKey(email) {
+  const e = String(email || '').toLowerCase();
+  return e ? `tm_creator_header_${e}` : 'tm_creator_header';
+}
+
+function tmGetMeUser() {
+  try { return tmMeCache || window.__tmMe || null; } catch { return tmMeCache || null; }
+}
+
+function tmGetMeBio() {
+  const u = tmGetMeUser();
+  const packed = u?.creatorApplication?.contentStyle || '';
+  return tmGetPacked(packed, 'Bio') || '';
+}
+
+function tmInitials(name) {
+  const s = String(name || '').trim();
+  if (!s) return 'ME';
+  const parts = s.split(/\s+/).filter(Boolean);
+  const a = parts[0]?.[0] || '';
+  const b = parts.length > 1 ? (parts[parts.length - 1]?.[0] || '') : (parts[0]?.[1] || '');
+  return (a + b).toUpperCase() || 'ME';
+}
+
+function tmEnsureBankingUI() {
+  if (tmBankState.uiReady) return true;
+
+  tmBankUI.view = document.getElementById('view-become-creator');
+  if (!tmBankUI.view) return false;
+
+  tmBankUI.bio = document.getElementById('setup-bio');
+  tmBankUI.count = tmBankUI.view.querySelector('.char-count');
+  tmBankUI.saveBtn = tmBankUI.view.querySelector('.btn-save-setup');
+
+  tmBankUI.header = tmBankUI.view.querySelector('.setup-header-img');
+  tmBankUI.headerCam = tmBankUI.header ? tmBankUI.header.querySelector('.cam-circle') : null;
+
+  tmBankUI.avatar = tmBankUI.view.querySelector('.setup-avatar-placeholder');
+  tmBankUI.avatarCam = tmBankUI.avatar ? tmBankUI.avatar.querySelector('.avatar-cam-overlay') : null;
+  tmBankUI.avatarSpan = tmBankUI.avatar ? tmBankUI.avatar.querySelector('span') : null;
+
+  // Hidden inputs
+  const mkInput = (name) => {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = 'image/*';
+    inp.style.display = 'none';
+    inp.setAttribute('aria-hidden', 'true');
+    inp.dataset.tm = name;
+    tmBankUI.view.appendChild(inp);
+    return inp;
+  };
+  tmBankUI.inputAvatar = mkInput('avatar');
+  tmBankUI.inputHeader = mkInput('header');
+
+  tmBankState.uiReady = true;
+  return true;
+}
+
+function tmUpdateBioCount() {
+  if (!tmBankUI.bio || !tmBankUI.count) return;
+  const n = String(tmBankUI.bio.value || '').length;
+  tmBankUI.count.textContent = `${n}/1000`;
+}
+
+function tmApplyHeaderPreview(dataUrl) {
+  if (!tmBankUI.header) return;
+  if (dataUrl) {
+    tmBankUI.header.style.backgroundImage = `url('${dataUrl}')`;
+    tmBankUI.header.style.backgroundSize = 'cover';
+    tmBankUI.header.style.backgroundPosition = 'center';
+  } else {
+    tmBankUI.header.style.backgroundImage = '';
+  }
+}
+
+function tmApplyAvatarPreview(dataUrl) {
+  if (!tmBankUI.avatar) return;
+
+  // Create / reuse <img> inside placeholder
+  if (!tmBankUI.avatarImg) {
+    const img = document.createElement('img');
+    img.alt = 'Avatar';
+    img.style.width = '100%';
+    img.style.height = '100%';
+    img.style.objectFit = 'cover';
+    img.style.borderRadius = '50%';
+    img.style.position = 'absolute';
+    img.style.inset = '0';
+    img.style.zIndex = '0';
+    tmBankUI.avatar.insertBefore(img, tmBankUI.avatar.firstChild);
+    tmBankUI.avatarImg = img;
+  }
+
+  if (dataUrl) {
+    tmBankUI.avatarImg.src = dataUrl;
+    if (tmBankUI.avatarSpan) tmBankUI.avatarSpan.style.visibility = 'hidden';
+  } else {
+    tmBankUI.avatarImg.removeAttribute('src');
+    if (tmBankUI.avatarSpan) tmBankUI.avatarSpan.style.visibility = 'visible';
+  }
+}
+
+function tmHasBankingChanges() {
+  const bioNow = String(tmBankUI.bio?.value || '').trim();
+  const bioChanged = bioNow !== String(tmBankState.initialBio || '').trim();
+  return !!(bioChanged || tmBankState.pendingAvatarDataUrl || tmBankState.pendingHeaderDataUrl);
+}
+
+function tmSetBankingSaveEnabled() {
+  if (!tmBankUI.saveBtn) return;
+  const can = tmHasBankingChanges() && !tmBankState.saving;
+  tmBankUI.saveBtn.disabled = !can;
+}
+
+function tmReadFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = () => reject(new Error('Unable to read image'));
+    fr.readAsDataURL(file);
+  });
+}
+
+function tmDownscaleDataUrl(dataUrl, maxDim = 512, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const w0 = img.naturalWidth || img.width || 0;
+      const h0 = img.naturalHeight || img.height || 0;
+      if (!w0 || !h0) return resolve(String(dataUrl || ''));
+
+      const scale = Math.min(1, maxDim / Math.max(w0, h0));
+      const w = Math.max(1, Math.round(w0 * scale));
+      const h = Math.max(1, Math.round(h0 * scale));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+
+      // Use JPEG for size
+      const out = canvas.toDataURL('image/jpeg', quality);
+      resolve(out);
+    };
+    img.onerror = () => reject(new Error('Invalid image file'));
+    img.src = String(dataUrl || '');
+  });
+}
+
+async function tmCompressImageFile(file, { maxDim = 512, quality = 0.82 } = {}) {
+  const raw = await tmReadFileAsDataUrl(file);
+  return tmDownscaleDataUrl(raw, maxDim, quality);
+}
+
+async function tmPostJson(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {})
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data || data.ok !== true) {
+    const msg = data?.message || data?.error || `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
+function tmLoadBankingFromCache() {
+  if (!tmEnsureBankingUI()) return;
+
+  const u = tmGetMeUser();
+  const bio = tmGetMeBio();
+
+  // Bio
+  if (tmBankUI.bio) tmBankUI.bio.value = bio || '';
+  tmBankState.initialBio = bio || '';
+  tmUpdateBioCount();
+
+  // Initials
+  const nm = (document.getElementById('creatorProfileName')?.textContent || u?.name || 'Me');
+  if (tmBankUI.avatarSpan) tmBankUI.avatarSpan.textContent = tmInitials(nm);
+
+  // Avatar preview (from me)
+  const av = u?.avatarUrl || '';
+  tmApplyAvatarPreview(av);
+
+  // Header preview (local only, until backend field exists)
+  try {
+    const email = u?.email || '';
+    const k = tmBankHeaderKey(email);
+    const localHdr = window.localStorage ? (window.localStorage.getItem(k) || '') : '';
+    if (localHdr) tmApplyHeaderPreview(localHdr);
+  } catch {}
+
+  // Reset pending
+  tmBankState.pendingAvatarDataUrl = '';
+  tmBankState.pendingHeaderDataUrl = '';
+  tmSetBankingSaveEnabled();
+}
+
+async function tmSaveBanking() {
+  if (!tmEnsureBankingUI()) return;
+  if (tmBankState.saving) return;
+
+  const u = tmGetMeUser();
+  const email = u?.email || '';
+
+  const bioNow = String(tmBankUI.bio?.value || '').trim();
+  const bioChanged = bioNow !== String(tmBankState.initialBio || '').trim();
+
+  const hasPending = !!(bioChanged || tmBankState.pendingAvatarDataUrl || tmBankState.pendingHeaderDataUrl);
+  if (!hasPending) {
+    tmSetBankingSaveEnabled();
+    return;
+  }
+
+  tmBankState.saving = true;
+  if (tmBankUI.saveBtn) {
+    tmBankUI.saveBtn.disabled = true;
+    tmBankUI.saveBtn.textContent = 'Saving...';
+  }
+
+  try {
+    // Avatar → backend
+    if (tmBankState.pendingAvatarDataUrl) {
+      await tmPostJson('/api/me/profile', { avatarDataUrl: tmBankState.pendingAvatarDataUrl });
+      tmBankState.pendingAvatarDataUrl = '';
+    }
+
+    // Header → local (until backend exists)
+    if (tmBankState.pendingHeaderDataUrl) {
+      try {
+        const k = tmBankHeaderKey(email);
+        window.localStorage && window.localStorage.setItem(k, tmBankState.pendingHeaderDataUrl);
+      } catch {}
+      tmBankState.pendingHeaderDataUrl = '';
+    }
+
+    // Bio → creator application
+    if (bioChanged) {
+      const prevPacked = u?.creatorApplication?.contentStyle || '';
+      const nextPacked = tmSetPacked(prevPacked, 'Bio', bioNow);
+      await tmPostJson('/api/me/creator/profile', { contentStyle: nextPacked });
+      tmBankState.initialBio = bioNow;
+    }
+
+    // Refresh shared UI
+    try { await tmHydrateCreatorsFromMe(); } catch {}
+    tmLoadBankingFromCache();
+
+    try { TopToast.fire({ icon: 'success', title: 'Saved' }); } catch {}
+  } catch (err) {
+    console.error('Bank details save error:', err);
+    try { TopToast.fire({ icon: 'error', title: err?.message || 'Unable to save' }); } catch {}
+  } finally {
+    tmBankState.saving = false;
+    if (tmBankUI.saveBtn) tmBankUI.saveBtn.textContent = 'Save changes';
+    tmSetBankingSaveEnabled();
+  }
+}
+
+function tmInitBankingView() {
+  if (!tmEnsureBankingUI()) return;
+
+  if (tmBankUI.view.dataset.boundBank === '1') return;
+  tmBankUI.view.dataset.boundBank = '1';
+
+  // Bio input
+  if (tmBankUI.bio) {
+    tmBankUI.bio.addEventListener('input', () => {
+      tmUpdateBioCount();
+      tmSetBankingSaveEnabled();
+    });
+  }
+
+  // Avatar picker
+  const openAvatar = () => tmBankUI.inputAvatar && tmBankUI.inputAvatar.click();
+  if (tmBankUI.avatarCam) tmBankUI.avatarCam.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openAvatar(); });
+  if (tmBankUI.avatar) tmBankUI.avatar.addEventListener('click', (e) => { if (e.target === tmBankUI.avatarCam) return; openAvatar(); });
+
+  if (tmBankUI.inputAvatar) {
+    tmBankUI.inputAvatar.addEventListener('change', async () => {
+      const f = tmBankUI.inputAvatar.files && tmBankUI.inputAvatar.files[0];
+      tmBankUI.inputAvatar.value = '';
+      if (!f) return;
+      try {
+        const dataUrl = await tmCompressImageFile(f, { maxDim: 512, quality: 0.82 });
+        tmBankState.pendingAvatarDataUrl = dataUrl;
+        tmApplyAvatarPreview(dataUrl);
+        tmSetBankingSaveEnabled();
+      } catch (e) {
+        try { TopToast.fire({ icon: 'error', title: e?.message || 'Invalid image' }); } catch {}
+      }
+    });
+  }
+
+  // Header picker
+  const openHeader = () => tmBankUI.inputHeader && tmBankUI.inputHeader.click();
+  if (tmBankUI.headerCam) tmBankUI.headerCam.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openHeader(); });
+  if (tmBankUI.header) tmBankUI.header.addEventListener('click', (e) => { if (e.target === tmBankUI.headerCam) return; openHeader(); });
+
+  if (tmBankUI.inputHeader) {
+    tmBankUI.inputHeader.addEventListener('change', async () => {
+      const f = tmBankUI.inputHeader.files && tmBankUI.inputHeader.files[0];
+      tmBankUI.inputHeader.value = '';
+      if (!f) return;
+      try {
+        const dataUrl = await tmCompressImageFile(f, { maxDim: 1200, quality: 0.82 });
+        tmBankState.pendingHeaderDataUrl = dataUrl;
+        tmApplyHeaderPreview(dataUrl);
+        tmSetBankingSaveEnabled();
+      } catch (e) {
+        try { TopToast.fire({ icon: 'error', title: e?.message || 'Invalid image' }); } catch {}
+      }
+    });
+  }
+
+  // Save
+  if (tmBankUI.saveBtn) tmBankUI.saveBtn.addEventListener('click', (e) => { e.preventDefault(); tmSaveBanking(); });
+
+  // Initial load
+  tmLoadBankingFromCache();
+}
+
+function tmEnterBankingView() {
+  // Ensure listeners + load latest cached values
+  tmInitBankingView();
+  tmLoadBankingFromCache();
+}
+
 
 // 🔥 TOAST CONFIGURATION 🔥
 const TopToast = Swal.mixin({
@@ -455,6 +865,7 @@ async function init() {
   tmBindPopoverCollections();
   tmInitGlobalSearch();
   await tmHydrateCreatorsFromMe();
+  try { tmInitBankingView(); } catch (e) { console.error(e); }
 
   
   tmInitProfileShareAndStatus();
@@ -1009,6 +1420,11 @@ localStorage.setItem('tm_last_view', viewName);
     // Subscriptions: load & render data when entering the view
     if (viewName === 'subscriptions') {
         try { tmEnterSubscriptionsView(); } catch (e) { console.error(e); }
+    }
+
+    // Bank details (Become a Creator): load & render data when entering the view
+    if (viewName === 'become-creator') {
+        try { tmEnterBankingView(); } catch (e) { console.error(e); }
     }
 
     injectSidebarToggles();
