@@ -7,7 +7,7 @@ import { initWallet } from './wallet.js';
 import { loadView } from './loader.js';
 import { initSettings } from './settings.js';
 import { initProfilePage } from './profile.js'; // Import logic
-import { COLLECTIONS_DB } from './data.js';
+import { COLLECTIONS_DB, DEFAULT_AVATAR, getMySubscriptions } from './data.js';
 
 // ---------------- Creators Sync: hydrate from /api/me ----------------
 async function tmApiMe() {
@@ -1006,6 +1006,11 @@ localStorage.setItem('tm_last_view', viewName);
         if (_in && _in.value !== _q) _in.value = _q;
     }
 
+    // Subscriptions: load & render data when entering the view
+    if (viewName === 'subscriptions') {
+        try { tmEnterSubscriptionsView(); } catch (e) { console.error(e); }
+    }
+
     injectSidebarToggles();
 }
 
@@ -1369,6 +1374,313 @@ function tmInitGlobalSearch() {
         });
     }
 }
+
+
+// =============================================================
+// SUBSCRIPTIONS (Data #1)
+// - Fetch /api/me/subscriptions
+// - Render list of creators you subscribed to
+// - Active/Expired pill counts + filtering
+// - Cards include .subscription-card so search overlay works
+// =============================================================
+const tmSubsState = {
+    uiReady: false,
+    loading: false,
+    filter: (localStorage.getItem('tm_subs_filter') || 'active'),
+    data: null,
+    fetchedAt: 0
+};
+
+let tmSubsUI = {
+    view: null,
+    pills: [],
+    pillActive: null,
+    pillExpired: null,
+    pillsBar: null,
+    listWrap: null,
+    emptyWrap: null,
+    emptyText: null
+};
+
+function tmTsToMs(t) {
+    if (!t) return 0;
+    if (typeof t === 'number') return t;
+    if (typeof t === 'string') {
+        const n = Date.parse(t);
+        if (!Number.isNaN(n)) return n;
+        const p = parseInt(t, 10);
+        return Number.isNaN(p) ? 0 : p;
+    }
+    if (typeof t === 'object') {
+        try {
+            if (typeof t.toMillis === 'function') return t.toMillis();
+        } catch (_) {}
+        if (typeof t.seconds === 'number') return t.seconds * 1000;
+        if (typeof t._seconds === 'number') return t._seconds * 1000;
+    }
+    return 0;
+}
+
+function tmFmtDate(ms) {
+    if (!ms) return '';
+    try {
+        return new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    } catch (_) {
+        return '';
+    }
+}
+
+function tmEnsureSubscriptionsUI() {
+    const view = document.getElementById('view-subscriptions');
+    if (!view) return false;
+
+    // Pills
+    const pills = Array.from(view.querySelectorAll('button.n-pill'));
+    const pillActive = pills[0] || null;
+    const pillExpired = pills[1] || null;
+    const pillsBar = pillActive ? pillActive.closest('div') : null;
+
+    // Existing empty state (the big centered block)
+    const icon = view.querySelector('.empty-icon-wrap');
+    const emptyWrap = icon ? icon.parentElement : null;
+    const emptyText = emptyWrap ? emptyWrap.querySelector('p') : null;
+
+    // List wrapper (inject once, UI stays the same when empty)
+    let listWrap = view.querySelector('#subs-list-wrap');
+    if (!listWrap && pillsBar) {
+        listWrap = document.createElement('div');
+        listWrap.id = 'subs-list-wrap';
+        listWrap.style.padding = '12px 15px 20px';
+        listWrap.style.display = 'none';
+        pillsBar.insertAdjacentElement('afterend', listWrap);
+    }
+
+    tmSubsUI = { view, pills, pillActive, pillExpired, pillsBar, listWrap, emptyWrap, emptyText };
+
+    // Bind pill events once
+    if (pillActive && pillActive.dataset.bound !== '1') {
+        pillActive.dataset.bound = '1';
+        pillActive.addEventListener('click', () => tmSetSubsFilter('active'));
+    }
+    if (pillExpired && pillExpired.dataset.bound !== '1') {
+        pillExpired.dataset.bound = '1';
+        pillExpired.addEventListener('click', () => tmSetSubsFilter('expired'));
+    }
+
+    tmSubsState.uiReady = true;
+    tmApplySubsPillActive();
+    return true;
+}
+
+function tmApplySubsPillActive() {
+    const { pillActive, pillExpired } = tmSubsUI;
+    if (pillActive) pillActive.classList.toggle('active', tmSubsState.filter === 'active');
+    if (pillExpired) pillExpired.classList.toggle('active', tmSubsState.filter === 'expired');
+}
+
+function tmUpdateSubsPillsCounts(counts) {
+    const active = Number(counts?.active || 0);
+    const expired = Number(counts?.expired || 0);
+
+    if (tmSubsUI.pillActive) {
+        tmSubsUI.pillActive.innerHTML = `<i class="fa-solid fa-check"></i> Active ${active}`;
+    }
+    if (tmSubsUI.pillExpired) {
+        tmSubsUI.pillExpired.innerHTML = `<i class="fa-regular fa-hourglass-half"></i> Expired ${expired}`;
+    }
+}
+
+function tmSetSubsEmpty(text) {
+    if (tmSubsUI.emptyText) tmSubsUI.emptyText.textContent = text || 'No subscriptions yet.';
+    if (tmSubsUI.emptyWrap) tmSubsUI.emptyWrap.style.display = 'flex';
+    if (tmSubsUI.listWrap) tmSubsUI.listWrap.style.display = 'none';
+}
+
+function tmSetSubsLoading() {
+    if (!tmSubsUI.listWrap) return;
+    if (tmSubsUI.emptyWrap) tmSubsUI.emptyWrap.style.display = 'none';
+    tmSubsUI.listWrap.style.display = 'block';
+    tmSubsUI.listWrap.innerHTML = `
+        <div style="color:var(--muted); text-align:center; padding:28px 0; font-weight:700;">
+            Loading subscriptions...
+        </div>
+    `;
+}
+
+function tmBuildSubCard(it) {
+    const other = it?.otherUser || {};
+    const name = (other.name || '').trim() || (other.handle ? `@${String(other.handle).replace(/^@/, '')}` : '') || (it.otherEmail || 'Unknown');
+    const handleRaw = (other.handle || '').trim().replace(/^@/, '');
+    const handle = handleRaw ? `@${handleRaw}` : (it.otherEmail ? it.otherEmail : '');
+    const avatar = other.avatarUrl || DEFAULT_AVATAR;
+    const verified = !!other.verified;
+    const isActive = !!it.isActive;
+    const endMs = tmTsToMs(it.endAt);
+    const endLabel = endMs ? tmFmtDate(endMs) : '';
+
+    const card = document.createElement('div');
+    card.className = 'sugg-card subscription-card';
+    card.dataset.subStatus = isActive ? 'active' : 'expired';
+    card.style.cursor = 'default';
+
+    const banner = document.createElement('div');
+    banner.className = 'sugg-banner';
+    // No cover image in API yet; use a nice gradient
+    banner.style.backgroundImage = isActive
+        ? 'linear-gradient(135deg, rgba(58,175,185,0.45), rgba(100,233,238,0.18))'
+        : 'linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02))';
+
+    const badge = document.createElement('div');
+    badge.className = 'sugg-badge';
+    badge.textContent = isActive ? 'ACTIVE' : 'EXPIRED';
+
+    banner.appendChild(badge);
+    card.appendChild(banner);
+
+    const details = document.createElement('div');
+    details.className = 'sugg-details';
+
+    const avWrap = document.createElement('div');
+    avWrap.className = 'sugg-avatar-wrap';
+
+    const img = document.createElement('img');
+    img.alt = name;
+    img.src = avatar;
+    img.loading = 'lazy';
+    avWrap.appendChild(img);
+
+    // Active indicator dot (only for active)
+    if (isActive) {
+        const dot = document.createElement('div');
+        dot.className = 'online-dot';
+        avWrap.appendChild(dot);
+    }
+
+    const text = document.createElement('div');
+    text.className = 'sugg-text';
+
+    const nameRow = document.createElement('div');
+    nameRow.className = 'sugg-name';
+    nameRow.textContent = name;
+
+    if (verified) {
+        const v = document.createElement('i');
+        v.className = 'fa-solid fa-circle-check';
+        v.style.color = 'var(--primary-cyan)';
+        v.style.fontSize = '0.9rem';
+        nameRow.appendChild(v);
+    }
+
+    const handleRow = document.createElement('div');
+    handleRow.className = 'sugg-handle';
+    handleRow.textContent = handle;
+
+    const meta = document.createElement('div');
+    meta.style.marginTop = '8px';
+    meta.style.fontSize = '0.8rem';
+    meta.style.color = 'var(--muted)';
+    meta.textContent = isActive
+        ? (endLabel ? `Expires: ${endLabel}` : 'Active')
+        : (endLabel ? `Expired: ${endLabel}` : 'Expired');
+
+    text.appendChild(nameRow);
+    text.appendChild(handleRow);
+    text.appendChild(meta);
+
+    details.appendChild(avWrap);
+    details.appendChild(text);
+
+    card.appendChild(details);
+    return card;
+}
+
+function tmRenderSubscriptionsList() {
+    if (!tmSubsState.data || !tmSubsUI.view) {
+        tmSetSubsEmpty('No subscriptions yet.');
+        return;
+    }
+
+    const pack = tmSubsState.data?.subscribed || { items: [], counts: { active: 0, expired: 0 } };
+    const itemsAll = Array.isArray(pack.items) ? pack.items : [];
+    const counts = pack.counts || { active: 0, expired: 0 };
+
+    tmUpdateSubsPillsCounts(counts);
+    tmApplySubsPillActive();
+
+    // Filter
+    const items = itemsAll.filter(it => (tmSubsState.filter === 'active' ? !!it.isActive : !it.isActive));
+
+    if (!itemsAll.length) {
+        tmSetSubsEmpty('No subscriptions yet.');
+        return;
+    }
+
+    if (!items.length) {
+        tmSetSubsEmpty(tmSubsState.filter === 'active' ? 'No active subscriptions.' : 'No expired subscriptions.');
+        return;
+    }
+
+    if (tmSubsUI.emptyWrap) tmSubsUI.emptyWrap.style.display = 'none';
+    if (!tmSubsUI.listWrap) return;
+
+    tmSubsUI.listWrap.style.display = 'block';
+    tmSubsUI.listWrap.innerHTML = '';
+    items.forEach(it => tmSubsUI.listWrap.appendChild(tmBuildSubCard(it)));
+}
+
+async function tmLoadSubscriptions(force = false) {
+    if (!tmSubsState.uiReady) return;
+    if (tmSubsState.loading) return;
+
+    const now = Date.now();
+    const fresh = tmSubsState.data && (now - (tmSubsState.fetchedAt || 0) < 15000);
+    if (!force && fresh) {
+        tmRenderSubscriptionsList();
+        return;
+    }
+
+    tmSubsState.loading = true;
+    tmSetSubsLoading();
+
+    try {
+        const payload = await getMySubscriptions();
+        if (!payload || payload.ok !== true) {
+            tmSubsState.data = { ok: false, subscribed: { items: [], counts: { all: 0, active: 0, expired: 0 } } };
+            tmSubsState.fetchedAt = Date.now();
+            tmSetSubsEmpty(payload?.message || 'No subscriptions yet.');
+            return;
+        }
+
+        tmSubsState.data = payload;
+        tmSubsState.fetchedAt = Date.now();
+        tmRenderSubscriptionsList();
+    } catch (err) {
+        console.error('Subscriptions load error:', err);
+        tmSetSubsEmpty('Unable to load subscriptions.');
+        try { TopToast.fire({ icon: 'error', title: 'Unable to load subscriptions' }); } catch (_) {}
+    } finally {
+        tmSubsState.loading = false;
+    }
+}
+
+function tmSetSubsFilter(next) {
+    const f = (next === 'expired') ? 'expired' : 'active';
+    tmSubsState.filter = f;
+    localStorage.setItem('tm_subs_filter', f);
+    tmApplySubsPillActive();
+    tmRenderSubscriptionsList();
+}
+
+function tmEnterSubscriptionsView() {
+    if (!tmEnsureSubscriptionsUI()) return;
+
+    // Ensure counts reset while loading (prevents stale UI)
+    tmUpdateSubsPillsCounts(tmSubsState.data?.subscribed?.counts || { active: 0, expired: 0 });
+
+    // Load/refresh
+    tmLoadSubscriptions(false);
+}
+
 
 // =============================================================
 // MOBILE BACK BUTTON (Profile) + POP-OVER COLLECTIONS FIX

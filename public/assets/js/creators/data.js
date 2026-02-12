@@ -112,3 +112,45 @@ export const TRANSLATIONS = {
         card_footer_2: 'Fenix Internet LLC, 1000 N.West Street, Suite 1200, Wilmington, Delaware, 19801 USA'
     }
 };
+
+// =============================================================
+// API HELPERS (shared)
+// =============================================================
+export function tmApiBase() {
+    const raw = (typeof window !== 'undefined' && window.API_BASE) ? String(window.API_BASE) : '';
+    return raw.replace(/\/+$/, '');
+}
+
+export function tmApiUrl(path) {
+    const base = tmApiBase();
+    if (!path) return base || '';
+    const p = String(path);
+    if (!base) return p;
+    if (p.startsWith('http://') || p.startsWith('https://')) return p;
+    if (p.startsWith('/')) return base + p;
+    return base + '/' + p;
+}
+
+export async function apiGetJson(path, opts = {}) {
+    const url = tmApiUrl(path);
+    const res = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+        headers: { 'Accept': 'application/json', ...(opts.headers || {}) },
+        ...opts
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+        const msg = data?.message || `Request failed (${res.status})`;
+        const err = new Error(msg);
+        err.status = res.status;
+        err.data = data;
+        throw err;
+    }
+    return data;
+}
+
+export async function getMySubscriptions({ dir } = {}) {
+    const q = dir ? `?dir=${encodeURIComponent(dir)}` : '';
+    return apiGetJson(`/api/me/subscriptions${q}`);
+}
