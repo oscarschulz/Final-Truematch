@@ -275,6 +275,381 @@ async function rsLoadUsersForCollection(col) {
   rsSetUsersEmptyState(true, 'No users yet');
 }
 
+
+// ===============================
+// Right Sidebar: Media (Vault) logic (Data #9)
+// - Drives the MEDIA mode in the right sidebar (#rs-view-type-media)
+// - Search + Sort + Grid toggle + Filter pills
+// ===============================
+const RS_MEDIA = {
+  filter: 'all',
+  search: '',
+  sort: 'recent', // 'recent' | 'oldest'
+  cols: (() => {
+    const n = parseInt(localStorage.getItem('tm_rs_media_cols') || '3', 10);
+    return (n == 2 || n == 3) ? n : 3;
+  })()
+};
+let _mediaBound = false;
+
+function rsMediaKeyFromText(txt) {
+  const t = String(txt || '').trim().toLowerCase();
+  if (t == 'all') return 'all';
+  if (t.startsWith('photo')) return 'image';
+  if (t.startsWith('video')) return 'video';
+  if (t.startsWith('audio')) return 'audio';
+  if (t.startsWith('other')) return 'other';
+  if (t.startsWith('locked')) return 'locked';
+  return 'all';
+}
+
+function rsMediaSetHeaderLabel() {
+  const el = document.querySelector('#rs-view-type-media .media-header-row .section-title');
+  if (!el) return;
+  el.textContent = (RS_MEDIA.sort === 'oldest') ? 'OLDEST' : 'RECENT';
+}
+
+function rsMediaSetActivePill(key) {
+  const pills = document.querySelectorAll('#rs-view-type-media .media-filter-chips .n-pill');
+  pills.forEach(p => p.classList.remove('active'));
+  let want = key;
+  // Sidebar uses text labels, not data attributes
+  pills.forEach(p => {
+    const k = rsMediaKeyFromText(p.textContent);
+    if (k === want) p.classList.add('active');
+  });
+}
+
+function rsSyncMainVaultPills(filterKey) {
+  const allowed = ['all','image','video'];
+  const k = allowed.includes(filterKey) ? filterKey : 'all';
+  const pills = document.querySelectorAll('#vault-sub-tabs .n-pill');
+  if (!pills || !pills.length) return;
+  pills.forEach(p => {
+    p.classList.toggle('active', String(p.dataset.type || '') === k);
+  });
+  try { currentMediaFilter = k; } catch(e) {}
+}
+
+function rsShowMediaView() {
+  if (DOM.rsTitle) DOM.rsTitle.innerText = 'VAULT';
+
+  if (DOM.rsCollections) DOM.rsCollections.classList.remove('hidden');
+  if (DOM.rsSuggestions) DOM.rsSuggestions.classList.add('hidden');
+
+  if (DOM.rsViewUsers) DOM.rsViewUsers.classList.add('hidden');
+  if (DOM.rsViewMedia) DOM.rsViewMedia.classList.remove('hidden');
+
+  // Mobile: ensure open + back button
+  if (window.innerWidth <= 1024) {
+    const header = document.querySelector('.rs-col-header');
+    if (header && !header.querySelector('.settings-mobile-back')) {
+      const backBtn = document.createElement('div');
+      backBtn.className = 'settings-mobile-back';
+      backBtn.innerHTML = `<i class="fa-solid fa-arrow-left"></i> BACK`;
+      backBtn.addEventListener('click', () => {
+        if (DOM.rightSidebar) DOM.rightSidebar.classList.remove('mobile-active');
+      });
+      header.insertBefore(backBtn, header.firstChild);
+    }
+
+    if (DOM.rightSidebar) {
+      DOM.rightSidebar.classList.remove('hidden-sidebar');
+      DOM.rightSidebar.classList.add('mobile-active');
+    }
+  }
+}
+
+function rsMediaNormalize(m) {
+  const src = m?.src || m?.url || '';
+  let type = String(m?.type || '').toLowerCase();
+  if (!type) {
+    if (String(src).startsWith('data:video')) type = 'video';
+    else if (String(src).startsWith('data:audio')) type = 'audio';
+    else if (String(src).startsWith('data:image')) type = 'image';
+    else type = 'other';
+  }
+  if (type == 'photo') type = 'image';
+
+  const createdAt = Number(m?.createdAt || m?.ts || m?.id || 0) || 0;
+  const name = String(m?.name || '').trim();
+  const locked = !!m?.locked || type == 'locked';
+
+  return {
+    id: m?.id,
+    src,
+    type,
+    name,
+    createdAt,
+    date: m?.date || '',
+    locked
+  };
+}
+
+function rsMediaApply(items) {
+  let list = Array.isArray(items) ? items.slice() : [];
+
+  // Filter
+  const f = RS_MEDIA.filter;
+  if (f && f !== 'all') {
+    if (f === 'locked') list = list.filter(x => !!x.locked);
+    else list = list.filter(x => x.type === f);
+  }
+
+  // Search
+  const q = String(RS_MEDIA.search || '').trim().toLowerCase();
+  if (q) {
+    list = list.filter(x => {
+      return (
+        String(x.name || '').toLowerCase().includes(q) ||
+        String(x.type || '').toLowerCase().includes(q) ||
+        String(x.date || '').toLowerCase().includes(q)
+      );
+    });
+  }
+
+  // Sort
+  if (RS_MEDIA.sort === 'oldest') list.sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
+  else list.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+
+  return list;
+}
+
+function rsRenderMedia() {
+  const view = document.getElementById('rs-view-type-media');
+  if (!view) return;
+
+  const grid = document.getElementById('rs-media-grid-content');
+  const empty = document.getElementById('rs-media-empty-state');
+  if (!grid || !empty) return;
+
+  rsMediaSetHeaderLabel();
+
+  let raw = []
+  try { raw = getMediaFromStorage(); } catch(e) { raw = []; }
+  const items = rsMediaApply((raw || []).map(rsMediaNormalize));
+
+  grid.innerHTML = '';
+  grid.style.display = 'grid';
+  grid.style.gridTemplateColumns = `repeat(${RS_MEDIA.cols}, 1fr)`;
+  grid.style.gap = '8px';
+  grid.style.padding = '10px 0';
+
+  if (!items.length) {
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+
+  items.forEach((m) => {
+    const cell = document.createElement('div');
+    cell.style.position = 'relative';
+    cell.style.aspectRatio = '1/1';
+    cell.style.borderRadius = '10px';
+    cell.style.overflow = 'hidden';
+    cell.style.cursor = 'pointer';
+    cell.style.border = '1px solid var(--border-color)';
+    cell.style.background = '#000';
+
+    if (m.type === 'image' && m.src) {
+      const img = document.createElement('img');
+      img.src = m.src;
+      img.alt = '';
+      img.style.width = '100%';
+      img.style.height = '100%';
+      img.style.objectFit = 'cover';
+      cell.appendChild(img);
+    } else if (m.type === 'video' && m.src) {
+      const vid = document.createElement('video');
+      vid.src = m.src;
+      vid.muted = true;
+      vid.playsInline = true;
+      vid.preload = 'metadata';
+      vid.style.width = '100%';
+      vid.style.height = '100%';
+      vid.style.objectFit = 'cover';
+      cell.appendChild(vid);
+    } else {
+      const ph = document.createElement('div');
+      ph.style.width = '100%';
+      ph.style.height = '100%';
+      ph.style.display = 'flex';
+      ph.style.alignItems = 'center';
+      ph.style.justifyContent = 'center';
+      ph.style.color = 'var(--muted)';
+      ph.style.fontSize = '18px';
+      const icon = (m.type === 'audio') ? 'fa-music' : 'fa-file-lines';
+      ph.innerHTML = `<i class="fa-solid ${icon}"></i>`;
+      cell.appendChild(ph);
+    }
+
+    const badge = document.createElement('div');
+    badge.style.position = 'absolute';
+    badge.style.left = '8px';
+    badge.style.bottom = '8px';
+    badge.style.padding = '4px 6px';
+    badge.style.borderRadius = '999px';
+    badge.style.fontSize = '11px';
+    badge.style.background = 'rgba(0,0,0,0.55)';
+    badge.style.border = '1px solid rgba(255,255,255,0.12)';
+    badge.style.color = '#fff';
+    const label = (m.type === 'image') ? 'PHOTO' : (m.type === 'video' ? 'VIDEO' : m.type.toUpperCase());
+    badge.textContent = label;
+    cell.appendChild(badge);
+
+    if (m.type === 'video') {
+      const play = document.createElement('div');
+      play.style.position = 'absolute';
+      play.style.right = '8px';
+      play.style.top = '8px';
+      play.style.width = '26px';
+      play.style.height = '26px';
+      play.style.borderRadius = '999px';
+      play.style.display = 'flex';
+      play.style.alignItems = 'center';
+      play.style.justifyContent = 'center';
+      play.style.background = 'rgba(0,0,0,0.55)';
+      play.style.border = '1px solid rgba(255,255,255,0.12)';
+      play.style.color = '#fff';
+      play.innerHTML = '<i class="fa-solid fa-play" style="font-size:12px;"></i>';
+      cell.appendChild(play);
+    }
+
+    if (m.locked) {
+      const lock = document.createElement('div');
+      lock.style.position = 'absolute';
+      lock.style.inset = '0';
+      lock.style.display = 'flex';
+      lock.style.alignItems = 'center';
+      lock.style.justifyContent = 'center';
+      lock.style.background = 'rgba(0,0,0,0.45)';
+      lock.style.color = '#fff';
+      lock.innerHTML = '<i class="fa-solid fa-lock"></i>';
+      cell.appendChild(lock);
+    }
+
+    cell.addEventListener('click', () => {
+      let title = (m.name || '').trim() || 'Vault item';
+      let html = '';
+      let imageUrl = null;
+
+      if (m.locked) {
+        html = `<div style="padding:10px 0; color:var(--text);">This item is locked.</div>`;
+      } else if (m.type === 'image') {
+        imageUrl = m.src;
+      } else if (m.type === 'video') {
+        html = `<video src="${m.src}" controls autoplay style="width:100%; border-radius:12px;"></video>`;
+      } else if (m.type === 'audio') {
+        html = `<audio src="${m.src}" controls autoplay style="width:100%;"></audio>`;
+      } else {
+        html = `<div style="padding:10px 0; color:var(--text);">Preview not available for this file type.</div>`;
+      }
+
+      Swal.fire({
+        title,
+        html: html || undefined,
+        imageUrl: imageUrl || undefined,
+        imageAlt: 'media',
+        showConfirmButton: false,
+        showDenyButton: true,
+        denyButtonText: 'Delete',
+        denyButtonColor: '#ff4d6d',
+        background: '#0d1423',
+        color: '#fff'
+      }).then((r) => {
+        if (!r.isDenied) return;
+        deleteMediaFromStorage(m.id);
+        try { rsToast('success', 'Deleted'); } catch(e) {}
+        try { renderCollections(); } catch(e) {}
+        try { rsRenderMedia(); } catch(e) {}
+      });
+    });
+
+    grid.appendChild(cell);
+  });
+}
+
+function rsBindMediaSidebar() {
+  if (_mediaBound) return;
+  const view = document.getElementById('rs-view-type-media');
+  if (!view) return;
+  _mediaBound = true;
+
+  // Tool icons
+  const iconSearch = view.querySelector('.media-header-row .header-tools .fa-magnifying-glass');
+  const iconGrid = view.querySelector('.media-header-row .header-tools .fa-table-cells-large');
+  const iconSort = view.querySelector('.media-header-row .header-tools .fa-bars-staggered');
+
+  if (iconSearch) {
+    iconSearch.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      Swal.fire({
+        title: 'Search media',
+        input: 'text',
+        inputValue: RS_MEDIA.search || '',
+        inputPlaceholder: 'Type to filter',
+        showCancelButton: true,
+        confirmButtonText: 'Apply',
+        confirmButtonColor: '#64E9EE',
+        background: '#0d1423',
+        color: '#fff'
+      }).then((r) => {
+        if (!r.isConfirmed) return;
+        RS_MEDIA.search = String(r.value || '').trim();
+        rsRenderMedia();
+      });
+    });
+  }
+
+  if (iconGrid) {
+    iconGrid.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      RS_MEDIA.cols = (RS_MEDIA.cols == 3) ? 2 : 3;
+      localStorage.setItem('tm_rs_media_cols', String(RS_MEDIA.cols));
+      rsRenderMedia();
+      try { rsToast('success', `Grid: ${RS_MEDIA.cols} cols`); } catch(err) {}
+    });
+  }
+
+  if (iconSort) {
+    iconSort.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      RS_MEDIA.sort = (RS_MEDIA.sort === 'recent') ? 'oldest' : 'recent';
+      rsMediaSetHeaderLabel();
+      rsRenderMedia();
+      try { rsToast('success', RS_MEDIA.sort === 'oldest' ? 'Sorted: oldest' : 'Sorted: recent'); } catch(err) {}
+    });
+  }
+
+  // Filter pills
+  const chipWrap = view.querySelector('.media-filter-chips');
+  if (chipWrap) {
+    chipWrap.addEventListener('click', (e) => {
+      const btn = e.target.closest('.n-pill');
+      if (!btn) return;
+      const key = rsMediaKeyFromText(btn.textContent);
+      RS_MEDIA.filter = key;
+      rsMediaSetActivePill(key);
+
+      // Sync main Vault tabs when possible
+            // Keep main Vault pills in sync for (all|image|video)
+      if (key === 'all' || key === 'image' || key === 'video') {
+        rsSyncMainVaultPills(key);
+        try { renderCollections(); } catch(err) {}
+      }
+
+      rsRenderMedia();
+    });
+  }
+
+  // Set defaults
+  rsMediaSetHeaderLabel();
+  rsMediaSetActivePill(RS_MEDIA.filter);
+}
+
 export function initCollections(TopToast) {
     _TopToast = TopToast;
 
@@ -359,9 +734,11 @@ export function initCollections(TopToast) {
                 subTabsContainer.style.display = 'flex';
             }
             
-            // Hide "Fans" Sidebar, Show Default Suggestions instead
-            if(rsCollections) rsCollections.classList.add('hidden');
-            if(rsSuggestions) rsSuggestions.classList.remove('hidden');
+            // Right sidebar: switch to Vault Media mode
+            if (rsSuggestions) rsSuggestions.classList.add('hidden');
+            if (rsCollections) rsCollections.classList.remove('hidden');
+            rsShowMediaView();
+            rsRenderMedia();
 
             renderCollections();
         });
@@ -374,7 +751,10 @@ export function initCollections(TopToast) {
             pill.addEventListener('click', () => {
                 vaultPills.forEach(p => p.classList.remove('active'));
                 pill.classList.add('active');
-                currentMediaFilter = pill.dataset.type; 
+                currentMediaFilter = pill.dataset.type;
+                RS_MEDIA.filter = currentMediaFilter;
+                rsMediaSetActivePill(RS_MEDIA.filter);
+                rsRenderMedia();
                 renderCollections();
             });
         });
@@ -403,7 +783,9 @@ export function initCollections(TopToast) {
                 const mediaItem = {
                     id: Date.now(),
                     src: base64String,
-                    type: file.type.startsWith('video') ? 'video' : 'image',
+                    name: file.name || '',
+                    type: file.type.startsWith('video') ? 'video' : (file.type.startsWith('image') ? 'image' : (file.type.startsWith('audio') ? 'audio' : 'other')),
+                    createdAt: Date.now(),
                     date: new Date().toLocaleDateString()
                 };
                 saveMediaToStorage(mediaItem);
@@ -473,8 +855,12 @@ export function initCollections(TopToast) {
         });
     }
 
+    // 7. RIGHT SIDEBAR FILTERS (Media - Vault)
+    rsBindMediaSidebar();
+
     // Initial Render
     renderCollections();
+    rsRenderMedia();
 }
 
 // --- RENDERING LOGIC ---
@@ -489,6 +875,9 @@ export function renderCollections(filter = '') {
     // MODE: VAULT (MEDIA GALLERY)
     // ==========================================
     if (currentColType === 'post') {
+        // Keep right sidebar in Media mode while in Vault
+        try { rsShowMediaView(); } catch(e) {}
+        try { rsRenderMedia(); } catch(e) {}
         grid.style.display = 'grid';
         grid.style.gridTemplateColumns = 'repeat(3, 1fr)';
         grid.style.gap = '5px';
