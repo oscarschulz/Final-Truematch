@@ -562,6 +562,193 @@ const TopToast = Swal.mixin({
   }
 });
 
+// =============================================================
+// Language (Data #6)
+// - Popover Language picker (English / Español / Filipino / Русский)
+// - Persist in localStorage (tm_lang)
+// - Apply to elements with [data-lang] in creators.html
+// =============================================================
+const TM_LANG_KEY = 'tm_lang';
+
+const TM_LANGS = {
+  en: {
+    label: 'English',
+    strings: {
+      nav_home: 'Home',
+      nav_notif: 'Notifications',
+      nav_msg: 'Messages',
+      nav_col: 'Collections',
+      nav_subs: 'Subscriptions',
+      nav_card: 'Add card',
+      nav_profile: 'My profile',
+      nav_more: 'More',
+      nav_post: 'NEW POST',
+
+      pop_profile: 'My profile',
+      pop_col: 'Collections',
+      pop_set: 'Settings',
+      pop_cards: 'Your cards',
+      pop_cards_sub: '(to subscribe)',
+      pop_creator: 'Become a creator',
+      pop_creator_sub: '(to earn)',
+      pop_help: 'Help and support',
+      pop_dark: 'Dark mode',
+      pop_logout: 'Log out'
+    }
+  },
+  es: {
+    label: 'Español',
+    strings: {
+      nav_home: 'Inicio',
+      nav_notif: 'Notificaciones',
+      nav_msg: 'Mensajes',
+      nav_col: 'Colecciones',
+      nav_subs: 'Suscripciones',
+      nav_card: 'Agregar tarjeta',
+      nav_profile: 'Mi perfil',
+      nav_more: 'Más',
+      nav_post: 'NUEVO POST',
+
+      pop_profile: 'Mi perfil',
+      pop_col: 'Colecciones',
+      pop_set: 'Ajustes',
+      pop_cards: 'Tus tarjetas',
+      pop_cards_sub: '(para suscribirte)',
+      pop_creator: 'Conviértete en creador',
+      pop_creator_sub: '(para ganar)',
+      pop_help: 'Ayuda y soporte',
+      pop_dark: 'Modo oscuro',
+      pop_logout: 'Cerrar sesión'
+    }
+  },
+  tl: {
+    label: 'Filipino',
+    strings: {
+      nav_home: 'Home',
+      nav_notif: 'Notifications',
+      nav_msg: 'Messages',
+      nav_col: 'Collections',
+      nav_subs: 'Subscriptions',
+      nav_card: 'Add card',
+      nav_profile: 'My profile',
+      nav_more: 'More',
+      nav_post: 'NEW POST',
+
+      pop_profile: 'My profile',
+      pop_col: 'Collections',
+      pop_set: 'Settings',
+      pop_cards: 'Your cards',
+      pop_cards_sub: '(to subscribe)',
+      pop_creator: 'Become a creator',
+      pop_creator_sub: '(to earn)',
+      pop_help: 'Help and support',
+      pop_dark: 'Dark mode',
+      pop_logout: 'Log out'
+    }
+  },
+  ru: {
+    label: 'Русский',
+    strings: {
+      nav_home: 'Главная',
+      nav_notif: 'Уведомления',
+      nav_msg: 'Сообщения',
+      nav_col: 'Коллекции',
+      nav_subs: 'Подписки',
+      nav_card: 'Добавить карту',
+      nav_profile: 'Профиль',
+      nav_more: 'Ещё',
+      nav_post: 'НОВЫЙ ПОСТ',
+
+      pop_profile: 'Профиль',
+      pop_col: 'Коллекции',
+      pop_set: 'Настройки',
+      pop_cards: 'Ваши карты',
+      pop_cards_sub: '(для подписки)',
+      pop_creator: 'Стать автором',
+      pop_creator_sub: '(чтобы заработать)',
+      pop_help: 'Помощь и поддержка',
+      pop_dark: 'Тёмный режим',
+      pop_logout: 'Выйти'
+    }
+  }
+};
+
+function tmGetLang() {
+  try {
+    const v = localStorage.getItem(TM_LANG_KEY);
+    if (v && TM_LANGS[v]) return v;
+  } catch (_) {}
+  return 'en';
+}
+
+function tmUpdateLangLabel(langCode) {
+  const el = document.getElementById('popover-lang-label');
+  const lang = TM_LANGS[langCode] || TM_LANGS.en;
+  if (!el) return;
+  el.innerHTML = `<i class="fa-solid fa-globe"></i> ${lang.label}`;
+}
+
+function tmApplyLang(langCode) {
+  const code = TM_LANGS[langCode] ? langCode : 'en';
+  const lang = TM_LANGS[code] || TM_LANGS.en;
+
+  try { document.documentElement.setAttribute('lang', code); } catch (_) {}
+
+  try {
+    document.querySelectorAll('[data-lang]').forEach((node) => {
+      const key = node.getAttribute('data-lang');
+      const v = lang.strings[key];
+      if (typeof v === 'string' && v.length) node.textContent = v;
+    });
+  } catch (_) {}
+
+  tmUpdateLangLabel(code);
+
+  try {
+    const sel = document.querySelector('#settings-lang-select');
+    if (sel) sel.value = code;
+  } catch (_) {}
+}
+
+function tmSetLang(langCode) {
+  const code = TM_LANGS[langCode] ? langCode : 'en';
+  try { localStorage.setItem(TM_LANG_KEY, code); } catch (_) {}
+  tmApplyLang(code);
+  try { TopToast.fire({ icon: 'success', title: 'Language saved' }); } catch (_) {}
+}
+
+async function tmOpenLangPicker() {
+  const current = tmGetLang();
+  const opts = Object.entries(TM_LANGS).reduce((acc, [k, v]) => {
+    acc[k] = v.label;
+    return acc;
+  }, {});
+
+  if (!window.Swal || typeof window.Swal.fire !== 'function') {
+    const keys = Object.keys(TM_LANGS);
+    const idx = Math.max(0, keys.indexOf(current));
+    const next = keys[(idx + 1) % keys.length] || 'en';
+    tmSetLang(next);
+    return;
+  }
+
+  const res = await window.Swal.fire({
+    title: 'Language',
+    input: 'select',
+    inputOptions: opts,
+    inputValue: current,
+    showCancelButton: true,
+    confirmButtonText: 'Save',
+    cancelButtonText: 'Cancel',
+    heightAuto: false
+  });
+
+  if (res && res.isConfirmed) {
+    tmSetLang(res.value || 'en');
+  }
+}
+
+
 // 🔥 SWEETALERT FIX 🔥
 const originalSwalFire = Swal.fire;
 Swal.fire = function(args) {
@@ -826,6 +1013,9 @@ async function init() {
       loadView('container-collections', 'assets/views/collections.html')
   ]);
   
+  // Apply saved language (before modules render dynamic UI)
+  try { tmApplyLang(tmGetLang()); } catch (e) { console.error(e); }
+
   // Initialize Modules
   initHome(TopToast);
   initNotifications();
@@ -1163,6 +1353,23 @@ function initProfileTabs() {
         });
     }
 
+
+
+    // Language picker (popover)
+    const __tmLangLabel = document.getElementById('popover-lang-label');
+    if (__tmLangLabel && !__tmLangLabel.__tmBound) {
+        __tmLangLabel.__tmBound = true;
+        __tmLangLabel.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            try {
+                const pop = document.getElementById('settings-popover');
+                if (pop) pop.classList.remove('is-open');
+            } catch (_) {}
+            try { tmOpenLangPicker(); } catch (err) { console.error(err); }
+        });
+    }
+
     if(btnEdit) {
         btnEdit.addEventListener('click', () => {
             switchView('settings');
@@ -1246,9 +1453,9 @@ function setupNavigation() {
                 }, 180);
             }
             else if (text.includes('language')) {
-                // Lang=B → coming soon
+                // Language picker
                 e.preventDefault();
-                try { TopToast.fire({ icon: 'info', title: 'Language picker coming soon' }); } catch(_) {}
+                try { tmOpenLangPicker(); } catch (err) { console.error(err); }
             }
         });
     });
