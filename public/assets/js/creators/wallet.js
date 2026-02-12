@@ -51,6 +51,49 @@ function tmParseExp(raw) {
   return { month: m, year: y };
 }
 
+function tmFormatExpValue(raw) {
+  const digits = String(raw || '').replace(/\D+/g, '').slice(0, 6); // MM + (YY|YYYY)
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+}
+
+function tmBindExpAutoFormat(root) {
+  if (!root) return;
+  const { exp } = tmGetFieldsFromCardForm(root);
+  if (!exp) return;
+
+  // Avoid double-binding
+  if (exp.dataset.tmExpBound === '1') return;
+  exp.dataset.tmExpBound = '1';
+
+  // Helpful hints for mobile keyboards / autofill
+  try { exp.setAttribute('inputmode', 'numeric'); } catch {}
+  try { exp.setAttribute('autocomplete', 'cc-exp'); } catch {}
+  try { exp.setAttribute('maxlength', '7'); } catch {} // MM/YYYY or MM/YY
+
+  const handler = () => {
+    const prev = exp.value || '';
+    const prevPos = (typeof exp.selectionStart === 'number') ? exp.selectionStart : prev.length;
+    const digitsBefore = prev.slice(0, prevPos).replace(/\D+/g, '').length;
+
+    const formatted = tmFormatExpValue(prev);
+    exp.value = formatted;
+
+    // Keep caret near the same logical digit position
+    if (document.activeElement === exp && typeof exp.setSelectionRange === 'function') {
+      let pos = 0;
+      let seen = 0;
+      while (pos < formatted.length && seen < digitsBefore) {
+        if (/\d/.test(formatted[pos])) seen += 1;
+        pos += 1;
+      }
+      try { exp.setSelectionRange(pos, pos); } catch {}
+    }
+  };
+
+  exp.addEventListener('input', handler, { passive: true });
+}
+
 function tmGetFieldsFromCardForm(root) {
   // Map by label text inside .ac-group
   const out = {
@@ -356,6 +399,7 @@ export function initWallet(TopToast) {
   }
 
   // Save from modal
+  tmBindExpAutoFormat(modal);
   if (modal && btnSubmitModal) {
     tmBindFormSubmit({
       root: modal,
@@ -375,6 +419,7 @@ export function initWallet(TopToast) {
   // -----------------------------
   const viewAddCard = DOM.viewAddCard;
   if (viewAddCard) {
+    tmBindExpAutoFormat(viewAddCard);
     const btnSubmitPage = viewAddCard.querySelector('.btn-submit-card');
     tmBindFormSubmit({
       root: viewAddCard,
