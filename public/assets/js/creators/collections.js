@@ -126,8 +126,9 @@ function rsApplyFilter(items) {
   const f = String(RS_USERS.filter || 'all').toLowerCase();
   if (f === 'active') out = out.filter(x => x.isActive);
   if (f === 'expired') out = out.filter(x => !x.isActive);
-  // restricted / blocked filters are placeholders for now (0)
-  if (f === 'restricted' || f === 'blocked') out = []; 
+  // restricted / blocked lists are stored locally (Data #10)
+  if (f === 'restricted') out = rsLoadLocalUsers('tm_restricted_users');
+  if (f === 'blocked') out = rsLoadLocalUsers('tm_blocked_users');
 
   // search
   const q = String(RS_USERS.search || '').trim().toLowerCase();
@@ -161,7 +162,11 @@ function rsRenderUsers() {
   list.innerHTML = '';
 
   if (!filtered.length) {
-    rsSetUsersEmptyState(true, RS_USERS.search ? 'No users found' : 'No users yet');
+    const f = String(RS_USERS.filter || 'all').toLowerCase();
+    const msg = RS_USERS.search ? 'No users found'
+      : (f === 'restricted' ? 'No restricted users'
+      : (f === 'blocked' ? 'No blocked users' : 'No users yet'));
+    rsSetUsersEmptyState(true, msg);
     return;
   }
 
@@ -196,8 +201,7 @@ function rsRenderUsers() {
     `;
 
     row.addEventListener('click', () => {
-      // Placeholder: we can later open their profile page / chat.
-      rsToast('info', 'Open user profile (next)');
+      rsOpenUserActions(u);
     });
 
     list.appendChild(row);
@@ -220,6 +224,156 @@ function rsLoadLocalUsers(key) {
     return [];
   }
 }
+
+// ===============================
+// Data #10: Restricted / Blocked lists (local)
+// - Persisted in localStorage (tm_restricted_users, tm_blocked_users)
+// - Click a user row to manage: Restrict / Block / Unrestrict / Unblock
+// ===============================
+function rsUserKey(u) {
+  const email = String(u?.email || '').trim().toLowerCase();
+  if (email) return `e:${email}`;
+  const handle = String(u?.handle || '').trim().replace(/^@/, '').toLowerCase();
+  if (handle) return `h:${handle}`;
+  const name = String(u?.name || '').trim().toLowerCase();
+  if (name) return `n:${name}`;
+  return '';
+}
+
+function rsLoadLocalUsersRaw(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    const arr = JSON.parse(raw || '[]');
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function rsSaveLocalUsersRaw(key, arr) {
+  try {
+    localStorage.setItem(key, JSON.stringify(Array.isArray(arr) ? arr : []));
+  } catch {}
+}
+
+function rsHasLocalUser(key, u) {
+  const k = rsUserKey(u);
+  if (!k) return false;
+  const arr = rsLoadLocalUsersRaw(key);
+  return arr.some(x => rsUserKey(x) === k);
+}
+
+function rsUpsertLocalUser(key, u) {
+  const k = rsUserKey(u);
+  if (!k) return;
+
+  const now = Date.now();
+  const obj = {
+    email: u?.email || '',
+    name: u?.name || '',
+    handle: u?.handle || '',
+    avatarUrl: u?.avatar || u?.avatarUrl || '',
+    verified: !!u?.verified,
+    ts: now
+  };
+
+  const arr = rsLoadLocalUsersRaw(key);
+  const kept = arr.filter(x => rsUserKey(x) !== k);
+  kept.unshift(obj);
+  rsSaveLocalUsersRaw(key, kept.slice(0, 500));
+}
+
+function rsRemoveLocalUser(key, u) {
+  const k = rsUserKey(u);
+  if (!k) return;
+  const arr = rsLoadLocalUsersRaw(key);
+  rsSaveLocalUsersRaw(key, arr.filter(x => rsUserKey(x) !== k));
+}
+
+function rsRefreshRestrictedBlockedCounts() {
+  try {
+    const restricted = rsLoadLocalUsers('tm_restricted_users');
+    const blocked = rsLoadLocalUsers('tm_blocked_users');
+    RS_USERS.counts.restricted = restricted.length;
+    RS_USERS.counts.blocked = blocked.length;
+    rsSetChipLabels(RS_USERS.counts);
+  } catch {}
+}
+
+function rsOpenUserActions(u) {
+  const isRestricted = rsHasLocalUser('tm_restricted_users', u);
+  const isBlocked = rsHasLocalUser('tm_blocked_users', u);
+
+  const title = u.name || (u.handle ? `@${String(u.handle).replace(/^@/, '')}` : 'User');
+  const sub = u.handle ? `@${String(u.handle).replace(/^@/, '')}` : (u.email || '');
+  const check = u.verified ? `<i class="fa-solid fa-circle-check" style="margin-left:6px; font-size:12px; color: var(--primary-cyan);"></i>` : '';
+
+  const badge = isBlocked
+    ? `<span style="font-size:10px; font-weight:900; padding:4px 10px; border-radius:999px; background: rgba(255,77,79,0.12); color: #ff4d4f; border: 1px solid rgba(255,77,79,0.25);">BLOCKED</span>`
+    : (isRestricted
+      ? `<span style="font-size:10px; font-weight:900; padding:4px 10px; border-radius:999px; background: rgba(245,197,66,0.14); color: #f5c542; border: 1px solid rgba(245,197,66,0.25);">RESTRICTED</span>`
+      : '');
+
+  Swal.fire({
+    title: '',
+    html: `
+      <div style="display:flex; align-items:center; gap:12px; text-align:left;">
+        <img src="${u.avatar || BLANK_IMG}" alt="" style="width:44px; height:44px; border-radius:50%; object-fit:cover; border:1px solid var(--border-color); background:#000;">
+        <div style="min-width:0;">
+          <div style="display:flex; align-items:center; gap:0; font-weight:900; font-size:14px; color: var(--text);">
+            <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 230px;">${title}</span>${check}
+          </div>
+          <div style="color: var(--muted); font-size:12px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 240px;">${sub}</div>
+          <div style="margin-top:8px;">${badge}</div>
+        </div>
+      </div>
+      <div style="margin-top:14px; color: var(--muted); font-size:12px; line-height:1.45;">
+        Manage this user. (Messaging/profile opening can be added next.)
+      </div>
+    `,
+    showCancelButton: true,
+    cancelButtonText: 'Close',
+    showConfirmButton: true,
+    confirmButtonText: isRestricted ? 'UNRESTRICT' : 'RESTRICT',
+    confirmButtonColor: '#f5c542',
+    showDenyButton: true,
+    denyButtonText: isBlocked ? 'UNBLOCK' : 'BLOCK',
+    denyButtonColor: '#ff4d4f',
+    background: '#0d1423',
+    color: '#fff'
+  }).then((r) => {
+    if (r.isConfirmed) {
+      if (isRestricted) {
+        rsRemoveLocalUser('tm_restricted_users', u);
+        rsToast('success', 'Unrestricted');
+      } else {
+        rsUpsertLocalUser('tm_restricted_users', u);
+        // Block overrides restrict, so remove from blocked if needed
+        rsRemoveLocalUser('tm_blocked_users', u);
+        rsToast('success', 'Restricted');
+      }
+      rsRefreshRestrictedBlockedCounts();
+      rsRenderUsers();
+      return;
+    }
+
+    if (r.isDenied) {
+      if (isBlocked) {
+        rsRemoveLocalUser('tm_blocked_users', u);
+        rsToast('success', 'Unblocked');
+      } else {
+        rsUpsertLocalUser('tm_blocked_users', u);
+        // Remove from restricted if blocked
+        rsRemoveLocalUser('tm_restricted_users', u);
+        rsToast('success', 'Blocked');
+      }
+      rsRefreshRestrictedBlockedCounts();
+      rsRenderUsers();
+      return;
+    }
+  });
+}
+
 
 async function rsLoadUsersForCollection(col) {
   const id = String(col?.id || '').toLowerCase();
