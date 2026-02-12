@@ -1128,124 +1128,255 @@ div:where(.swal2-container) button:where(.swal2-styled).swal2-cancel:hover {
 @media (max-width: 768px){
   .tm-search-sheet{ border-radius:16px; max-height:88vh; }
 }
-/* =========================
-   SUBSCRIPTIONS VIEW (Option 2)
-   ========================= */
+/* ===============================
+   SUBSCRIPTIONS TAB — UI FIX (Mobile + Desktop)
+   Paste this block at the VERY BOTTOM of creators.css
+   =============================== */
 
-.subs-search-wrap{
-  display:none;
-  padding: 10px 15px;
-  border-bottom: 1px solid var(--border-color);
+/* Make the subscriptions header layout stack properly (your HTML currently places the subs UI inside the header flex row) */
+#view-subscriptions .feed-top-header .header-content{
+  display:flex !important;
+  flex-direction:column !important;
+  align-items:stretch !important;
+  justify-content:flex-start !important;
+  gap:12px !important;
 }
-.subs-search-wrap.is-open{ display:block; }
 
-.subs-search-row{
+/* Keep the back + title row clean */
+#view-subscriptions .feed-top-header .header-content > div:first-child{
+  width:100%;
+}
+
+/* Tabs (Subscribed To / Subscribers) */
+#view-subscriptions .subs-tabs-row{
+  width:100%;
+  display:flex;
+  gap:10px;
+  padding: 6px 0 0;
+}
+#view-subscriptions .subs-tab{
+  flex:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  padding:10px 12px;
+  border-radius:999px;
+  border:1px solid var(--border-color);
+  background: rgba(255,255,255,0.03);
+  color: var(--text);
+  font-weight:800;
+  font-size:12px;
+  letter-spacing:0.4px;
+  cursor:pointer;
+  transition: transform .15s ease, border-color .15s ease, background .15s ease;
+}
+#view-subscriptions .subs-tab:hover{ transform: translateY(-1px); }
+#view-subscriptions .subs-tab.active{
+  background: rgba(100,233,238,0.12);
+  border-color: rgba(100,233,238,0.35);
+  box-shadow: 0 0 0 1px rgba(100,233,238,0.16) inset;
+}
+#view-subscriptions .subs-tab .count{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:26px;
+  height:22px;
+  padding:0 9px;
+  border-radius:999px;
+  border:1px solid rgba(100,233,238,0.28);
+  background: rgba(100,233,238,0.10);
+  color: var(--accent);
+  font-weight:900;
+  font-size:12px;
+}
+
+/* Search row */
+#view-subscriptions .subs-search-row{
+  width:100%;
   display:flex;
   align-items:center;
   gap:10px;
-  padding: 10px 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 999px;
+  margin-top:6px;
+  padding:10px 12px;
+  border-radius:14px;
+  border:1px solid var(--border-color);
   background: rgba(255,255,255,0.03);
 }
-.subs-search-row input{
+#view-subscriptions .subs-search-row i{ color: var(--muted); }
+#view-subscriptions .subs-search-row input{
   flex:1;
   background: transparent;
   border: none;
   outline: none;
   color: var(--text);
-  font-size: 14px;
+  font-size:14px;
 }
-.subs-search-row button{
-  border:none;
-  background: transparent;
-  cursor:pointer;
-  color: var(--muted);
-}
+#view-subscriptions .subs-search-row .x{ cursor:pointer; }
 
-.subs-filter-row{
-  padding: 10px 15px;
-  border-bottom: 1px solid var(--border-color);
+/* Status filter pills */
+#view-subscriptions .subs-filters-row{
+  width:100%;
   display:flex;
-  gap:10px;
   flex-wrap:wrap;
+  gap:8px;
+  margin-top:6px;
+  padding-bottom:2px;
+}
+#view-subscriptions .subs-filters-row .n-pill{
+  border-radius:999px;
+  padding:8px 10px;
+  font-size:12px;
+  font-weight:800;
+  letter-spacing:0.2px;
+}
+#view-subscriptions .subs-filters-row .n-pill span{
+  margin-left:6px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:22px;
+  height:18px;
+  padding:0 7px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.05);
+  color: var(--text);
+  font-weight:900;
+  font-size:11px;
+}
+#view-subscriptions .subs-filters-row .n-pill.active span{
+  border-color: rgba(100,233,238,0.28);
+  background: rgba(100,233,238,0.10);
+  color: var(--accent);
 }
 
-.subs-list{
-  padding: 12px 15px;
+/* Loading + list spacing */
+#view-subscriptions .subs-loading{
+  padding: 14px 15px;
+  color: var(--muted);
+  font-size: 13px;
+}
+#view-subscriptions .subs-list{
+  padding: 10px 15px 18px;
   display:flex;
   flex-direction:column;
   gap:10px;
 }
 
-.subs-item{
+/* User rows */
+#view-subscriptions .subs-user{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  padding:12px 12px;
+  border-radius:16px;
+  border:1px solid var(--border-color);
+  background: rgba(255,255,255,0.03);
+  cursor:pointer;
+  transition: transform .15s ease, border-color .15s ease, background .15s ease;
+}
+#view-subscriptions .subs-user:hover{
+  transform: translateY(-1px);
+  border-color: rgba(255,255,255,0.22);
+  background: rgba(255,255,255,0.045);
+}
+#view-subscriptions .subs-user .left{
   display:flex;
   align-items:center;
   gap:12px;
-  padding: 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 14px;
-  background: rgba(255,255,255,0.02);
-}
-
-.subs-avatar{
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  object-fit: cover;
-  background: rgba(255,255,255,0.08);
-  flex-shrink:0;
-}
-
-.subs-meta{
-  flex:1;
   min-width:0;
 }
-.subs-name{
-  font-weight:700;
+#view-subscriptions .subs-user .left img{
+  width:44px;
+  height:44px;
+  border-radius:50%;
+  object-fit:cover;
+  border:1px solid rgba(255,255,255,0.12);
+}
+#view-subscriptions .subs-user .meta{ min-width:0; }
+#view-subscriptions .subs-user .name{
+  font-weight:900;
   font-size:14px;
   color: var(--text);
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
+  line-height:1.1;
 }
-.subs-handle{
+#view-subscriptions .subs-user .handle{
+  margin-top:4px;
   font-size:12px;
   color: var(--muted);
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
+  max-width: 40ch;
 }
-
-.subs-badge{
+#view-subscriptions .subs-user .right{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+  gap:6px;
+  text-align:right;
+}
+#view-subscriptions .subs-mini{
   font-size:11px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border:1px solid var(--border-color);
   color: var(--muted);
+  max-width: 34ch;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
 }
-.subs-badge.active{
-  color:#64E9EE;
-  border-color: rgba(100,233,238,0.4);
+#view-subscriptions .subs-badge{
+  font-size:10px;
+  font-weight:900;
+  letter-spacing:0.9px;
+  padding:4px 10px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.05);
+}
+#view-subscriptions .subs-badge.active{
+  border-color: rgba(100,233,238,0.28);
+  background: rgba(100,233,238,0.10);
+  color: var(--accent);
+}
+#view-subscriptions .subs-badge.expired{
+  border-color: rgba(255,99,132,0.28);
+  background: rgba(255,99,132,0.10);
+  color: #ff8aa2;
 }
 
-.subs-empty{
-  display:none;
-  padding: 70px 18px;
-  text-align:center;
-  color: var(--muted);
+/* Mobile: make rows easier to read */
+@media (max-width: 520px){
+  #view-subscriptions .subs-tabs-row{ gap:8px; }
+  #view-subscriptions .subs-tab{ font-size:11px; padding:9px 10px; }
+
+  #view-subscriptions .subs-user{
+    flex-direction:column;
+    align-items:stretch;
+  }
+  #view-subscriptions .subs-user .right{
+    flex-direction:row;
+    justify-content:space-between;
+    align-items:center;
+    text-align:left;
+  }
+  #view-subscriptions .subs-mini{
+    max-width: 60vw;
+  }
+  #view-subscriptions .subs-user .handle{ max-width: 60vw; }
 }
-.subs-empty h3{
-  margin: 8px 0 10px;
-  color: var(--text);
-  font-size: 16px;
-}
-.subs-empty .cta-pill{
-  margin-top: 16px;
-  padding: 10px 14px;
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
+
+/* Desktop: align tabs + filters nicer */
+@media (min-width: 960px){
+  #view-subscriptions .feed-top-header .header-content{
+    gap:14px !important;
+  }
+  #view-subscriptions .subs-tabs-row{
+    max-width: 420px;
+  }
+  #view-subscriptions .subs-filters-row{
+    justify-content:flex-start;
+  }
 }
