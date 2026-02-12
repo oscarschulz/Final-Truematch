@@ -1,11 +1,283 @@
 import { DOM } from './dom.js';
-import { COLLECTIONS_DB, BLANK_IMG } from './data.js';
+import { COLLECTIONS_DB, BLANK_IMG, DEFAULT_AVATAR, getMySubscriptions } from './data.js';
 
 // TODO: Backend Integration - Replace LocalStorage with API Endpoints
 let currentColType = 'user'; // 'user' (Lists) or 'post' (Vault)
 let currentMediaFilter = 'all'; // 'all', 'image', 'video'
 
+
+// ===============================
+// Right Sidebar: Users list logic (Data #5)
+// - Drives the chips (All/Active/Expired/Restricted/Blocked)
+// - Renders a user list for system lists (Fans / Following)
+// - Search + Sort (Recent / Name)
+// ===============================
+let _TopToast = null;
+
+const RS_USERS = {
+  listId: 'fans',   // 'fans' | 'following' | 'restricted' | 'blocked' | 'custom'
+  filter: 'all',    // 'all' | 'active' | 'expired' | 'restricted' | 'blocked'
+  search: '',
+  sort: 'recent',   // 'recent' | 'name'
+  items: [],
+  counts: { all: 0, active: 0, expired: 0, restricted: 0, blocked: 0 }
+};
+
+function rsToast(icon, title) {
+  try {
+    if (_TopToast) _TopToast.fire({ icon, title });
+  } catch (_) {}
+}
+
+function rsGetChips() {
+  return Array.from(document.querySelectorAll('#rs-view-type-users .filter-chips .chip'));
+}
+
+function rsSetChipLabels(counts) {
+  const chips = rsGetChips();
+  if (!chips.length) return;
+
+  const map = [
+    { key: 'all', label: 'All' },
+    { key: 'active', label: 'Active' },
+    { key: 'expired', label: 'Expired' },
+    { key: 'restricted', label: 'Restricted' },
+    { key: 'blocked', label: 'Blocked' }
+  ];
+
+  map.forEach((m, i) => {
+    if (!chips[i]) return;
+    const n = (counts && typeof counts[m.key] === 'number') ? counts[m.key] : 0;
+    chips[i].textContent = `${m.label} ${n}`;
+  });
+}
+
+function rsSetChipActive(filterKey) {
+  const chips = rsGetChips();
+  chips.forEach(c => c.classList.remove('active'));
+  const map = { all: 0, active: 1, expired: 2, restricted: 3, blocked: 4 };
+  const idx = map[String(filterKey || 'all').toLowerCase()] ?? 0;
+  if (chips[idx]) chips[idx].classList.add('active');
+}
+
+function rsEnsureUsersListContainer() {
+  const host = document.getElementById('rs-view-type-users');
+  if (!host) return null;
+
+  let list = document.getElementById('rs-users-list');
+  if (list) return list;
+
+  list = document.createElement('div');
+  list.id = 'rs-users-list';
+  list.style.display = 'flex';
+  list.style.flexDirection = 'column';
+  list.style.gap = '0';
+  list.style.marginTop = '10px';
+  list.style.borderTop = '1px solid var(--border-color)';
+  list.style.background = 'transparent';
+
+  const empty = host.querySelector('.rs-col-empty');
+  if (empty) empty.insertAdjacentElement('beforebegin', list);
+  else host.appendChild(list);
+
+  return list;
+}
+
+function rsSetUsersEmptyState(show, text) {
+  const host = document.getElementById('rs-view-type-users');
+  if (!host) return;
+
+  const empty = host.querySelector('.rs-col-empty');
+  if (empty) {
+    empty.style.display = show ? '' : 'none';
+    if (text) {
+      const span = empty.querySelector('span');
+      if (span) span.textContent = text;
+    }
+  }
+}
+
+function rsNormalizeSubItem(it) {
+  const u = (it && it.otherUser) ? it.otherUser : {};
+  const name = (u && u.name) ? String(u.name) : '';
+  const handle = (u && u.handle) ? String(u.handle) : '';
+  const avatar = (u && u.avatarUrl) ? String(u.avatarUrl) : (DEFAULT_AVATAR || BLANK_IMG);
+  const verified = !!(u && u.verified);
+  const email = (it && it.otherEmail) ? String(it.otherEmail) : (u && u.email ? String(u.email) : '');
+  const ts = (it && (it.updatedAt || it.createdAt)) ? (new Date(it.updatedAt || it.createdAt).getTime() || 0) : 0;
+  const isActive = !!(it && it.isActive);
+  return { email, name, handle, avatar, verified, isActive, ts };
+}
+
+function rsNormalizeSimpleUser(it) {
+  const email = it?.email ? String(it.email) : '';
+  const name = it?.name ? String(it.name) : '';
+  const handle = it?.handle ? String(it.handle) : '';
+  const avatar = it?.avatarUrl ? String(it.avatarUrl) : (DEFAULT_AVATAR || BLANK_IMG);
+  const verified = !!it?.verified;
+  const ts = it?.ts ? Number(it.ts) : 0;
+  return { email, name, handle, avatar, verified, isActive: true, ts };
+}
+
+function rsApplyFilter(items) {
+  let out = Array.isArray(items) ? [...items] : [];
+
+  // filter
+  const f = String(RS_USERS.filter || 'all').toLowerCase();
+  if (f === 'active') out = out.filter(x => x.isActive);
+  if (f === 'expired') out = out.filter(x => !x.isActive);
+  // restricted / blocked filters are placeholders for now (0)
+  if (f === 'restricted' || f === 'blocked') out = []; 
+
+  // search
+  const q = String(RS_USERS.search || '').trim().toLowerCase();
+  if (q) {
+    out = out.filter(x =>
+      (x.name || '').toLowerCase().includes(q) ||
+      (x.handle || '').toLowerCase().includes(q) ||
+      (x.email || '').toLowerCase().includes(q)
+    );
+  }
+
+  // sort
+  if (RS_USERS.sort === 'name') {
+    out.sort((a, b) => {
+      const an = (a.name || a.handle || a.email || '').toLowerCase();
+      const bn = (b.name || b.handle || b.email || '').toLowerCase();
+      return an.localeCompare(bn);
+    });
+  } else {
+    out.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  }
+
+  return out;
+}
+
+function rsRenderUsers() {
+  const list = rsEnsureUsersListContainer();
+  if (!list) return;
+
+  const filtered = rsApplyFilter(RS_USERS.items);
+  list.innerHTML = '';
+
+  if (!filtered.length) {
+    rsSetUsersEmptyState(true, RS_USERS.search ? 'No users found' : 'No users yet');
+    return;
+  }
+
+  rsSetUsersEmptyState(false);
+
+  filtered.forEach((u) => {
+    const row = document.createElement('div');
+    row.className = 'rs-user-row';
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '10px';
+    row.style.padding = '10px 4px';
+    row.style.borderBottom = '1px solid var(--border-color)';
+    row.style.cursor = 'pointer';
+
+    const pill = u.isActive
+      ? `<span style="margin-left:auto; font-size:10px; font-weight:900; padding:4px 10px; border-radius:999px; background: rgba(100,233,238,0.14); color: var(--primary-cyan); border: 1px solid rgba(100,233,238,0.25);">ACTIVE</span>`
+      : `<span style="margin-left:auto; font-size:10px; font-weight:900; padding:4px 10px; border-radius:999px; background: rgba(255,255,255,0.06); color: var(--muted); border: 1px solid rgba(255,255,255,0.12);">EXPIRED</span>`;
+
+    const check = u.verified ? `<i class="fa-solid fa-circle-check" style="margin-left:6px; font-size:12px; color: var(--primary-cyan);"></i>` : '';
+
+    row.innerHTML = `
+      <img src="${u.avatar || BLANK_IMG}" alt="" style="width:38px; height:38px; border-radius:50%; object-fit:cover; border:1px solid var(--border-color); background:#000;">
+      <div style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+        <div style="display:flex; align-items:center; gap:0; min-width:0;">
+          <span style="font-weight:900; font-size:13px; color: var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 160px;">${u.name || (u.handle ? u.handle : 'User')}</span>
+          ${check}
+        </div>
+        <span style="font-size:12px; color: var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 180px;">${u.handle ? `@${u.handle.replace(/^@/, '')}` : (u.email || '')}</span>
+      </div>
+      ${pill}
+    `;
+
+    row.addEventListener('click', () => {
+      // Placeholder: we can later open their profile page / chat.
+      rsToast('info', 'Open user profile (next)');
+    });
+
+    list.appendChild(row);
+  });
+}
+
+function rsSetSortLabel() {
+  const head = document.querySelector('#rs-view-type-users .filter-head span');
+  if (!head) return;
+  head.textContent = (RS_USERS.sort === 'name') ? 'NAME A-Z' : 'RECENT';
+}
+
+function rsLoadLocalUsers(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    const arr = JSON.parse(raw || '[]');
+    if (!Array.isArray(arr)) return [];
+    return arr.map(rsNormalizeSimpleUser);
+  } catch {
+    return [];
+  }
+}
+
+async function rsLoadUsersForCollection(col) {
+  const id = String(col?.id || '').toLowerCase();
+
+  // Default state
+  RS_USERS.listId = id || 'custom';
+  RS_USERS.filter = 'all';
+  RS_USERS.search = '';
+  RS_USERS.sort = 'recent';
+  RS_USERS.items = [];
+  RS_USERS.counts = { all: 0, active: 0, expired: 0, restricted: 0, blocked: 0 };
+
+  rsSetUsersEmptyState(true, 'Loading...');
+  rsSetSortLabel();
+  rsSetChipActive('all');
+  rsSetChipLabels(RS_USERS.counts);
+  rsRenderUsers();
+
+  // Restricted / Blocked placeholders from localStorage
+  const restricted = rsLoadLocalUsers('tm_restricted_users');
+  const blocked = rsLoadLocalUsers('tm_blocked_users');
+  RS_USERS.counts.restricted = restricted.length;
+  RS_USERS.counts.blocked = blocked.length;
+
+  // Fans / Following from backend
+  if (id === 'fans' || id === 'following') {
+    try {
+      const dir = (id === 'fans') ? 'fans' : 'subscribed';
+      const data = await getMySubscriptions({ dir });
+      const pack = (id === 'fans') ? (data?.subscribers || {}) : (data?.subscribed || {});
+      const items = Array.isArray(pack.items) ? pack.items : [];
+      const counts = pack.counts || { all: items.length, active: items.filter(x => !!x.isActive).length, expired: 0 };
+
+      RS_USERS.items = items.map(rsNormalizeSubItem);
+      RS_USERS.counts.all = Number(counts.all || RS_USERS.items.length) || 0;
+      RS_USERS.counts.active = Number(counts.active || 0) || 0;
+      RS_USERS.counts.expired = Number(counts.expired || 0) || Math.max(0, RS_USERS.counts.all - RS_USERS.counts.active);
+
+      rsSetChipLabels(RS_USERS.counts);
+      rsSetUsersEmptyState(RS_USERS.counts.all === 0, 'No users yet');
+      rsRenderUsers();
+      return;
+    } catch (e) {
+      console.error('rsLoadUsersForCollection error', e);
+      rsSetUsersEmptyState(true, 'Failed to load');
+      rsSetChipLabels(RS_USERS.counts);
+      return;
+    }
+  }
+
+  // For other lists: show empty (until you add data sources)
+  rsSetChipLabels(RS_USERS.counts);
+  rsSetUsersEmptyState(true, 'No users yet');
+}
+
 export function initCollections(TopToast) {
+    _TopToast = TopToast;
+
     
     // 1. EVENT LISTENERS FOR SEARCH
     if (DOM.colBtnSearch) DOM.colBtnSearch.addEventListener('click', () => { 
@@ -140,6 +412,64 @@ export function initCollections(TopToast) {
             };
             reader.readAsDataURL(file);
             fileInput.value = '';
+        });
+    }
+
+
+    // 6. RIGHT SIDEBAR FILTERS (Users)
+    const rsUsersView = document.getElementById('rs-view-type-users');
+    if (rsUsersView) {
+        const iconSearch = rsUsersView.querySelector('.fh-icons .fa-magnifying-glass');
+        const iconSort = rsUsersView.querySelector('.fh-icons .fa-arrow-down-short-wide');
+
+        if (iconSearch) {
+            iconSearch.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                Swal.fire({
+                    title: 'Search users',
+                    input: 'text',
+                    inputValue: RS_USERS.search || '',
+                    inputPlaceholder: 'Name, handle, or email',
+                    showCancelButton: true,
+                    confirmButtonText: 'Search',
+                    confirmButtonColor: '#64E9EE',
+                    background: '#0d1423',
+                    color: '#fff'
+                }).then((r) => {
+                    if (!r.isConfirmed) return;
+                    RS_USERS.search = String(r.value || '').trim();
+                    rsRenderUsers();
+                });
+            });
+        }
+
+        if (iconSort) {
+            iconSort.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                RS_USERS.sort = (RS_USERS.sort === 'recent') ? 'name' : 'recent';
+                rsSetSortLabel();
+                rsRenderUsers();
+                rsToast('success', RS_USERS.sort === 'name' ? 'Sorted by name' : 'Sorted by recent');
+            });
+        }
+
+        rsUsersView.addEventListener('click', (e) => {
+            const chip = e.target.closest('.chip');
+            if (!chip) return;
+
+            const txt = String(chip.textContent || '').trim().toLowerCase();
+            const key =
+                txt.startsWith('active') ? 'active' :
+                txt.startsWith('expired') ? 'expired' :
+                txt.startsWith('restricted') ? 'restricted' :
+                txt.startsWith('blocked') ? 'blocked' :
+                'all';
+
+            RS_USERS.filter = key;
+            rsSetChipActive(key);
+            rsRenderUsers();
         });
     }
 
@@ -342,6 +672,10 @@ export function updateRightSidebarContent(col) {
 
     if (DOM.rsViewUsers) DOM.rsViewUsers.classList.remove('hidden');
     if (DOM.rsViewMedia) DOM.rsViewMedia.classList.add('hidden');
+
+    // Load user data into the right sidebar (Fans / Following)
+    rsLoadUsersForCollection(col);
+    rsSetChipActive('all');
     
     // Mobile Back Button Logic
     if (window.innerWidth <= 1024) {
