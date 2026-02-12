@@ -154,3 +154,130 @@ export async function getMySubscriptions({ dir } = {}) {
     const q = dir ? `?dir=${encodeURIComponent(dir)}` : '';
     return apiGetJson(`/api/me/subscriptions${q}`);
 }
+
+// =============================================================
+// LOCAL CARDS STORAGE (Client-only)
+// Notes:
+// - This is UI-only for now (no payment processing).
+// - We DO NOT store full card numbers or CVC.
+// =============================================================
+const TM_CARDS_KEY = 'tm_cards_v1';
+
+function tmSafeParse(json, fallback) {
+    try {
+        const v = JSON.parse(json);
+        return (v === null || v === undefined) ? fallback : v;
+    } catch {
+        return fallback;
+    }
+}
+
+function tmSafeString(v) {
+    return (v === null || v === undefined) ? '' : String(v);
+}
+
+export function tmCardsGetAll() {
+    if (typeof window === 'undefined' || !window.localStorage) return [];
+    const raw = window.localStorage.getItem(TM_CARDS_KEY);
+    const arr = tmSafeParse(raw, []);
+    if (!Array.isArray(arr)) return [];
+
+    // Normalize
+    return arr
+        .filter(Boolean)
+        .map((c) => ({
+            id: tmSafeString(c.id),
+            brand: tmSafeString(c.brand) || 'card',
+            last4: tmSafeString(c.last4),
+            expMonth: tmSafeString(c.expMonth),
+            expYear: tmSafeString(c.expYear),
+            nameOnCard: tmSafeString(c.nameOnCard),
+            email: tmSafeString(c.email),
+            country: tmSafeString(c.country),
+            state: tmSafeString(c.state),
+            address: tmSafeString(c.address),
+            city: tmSafeString(c.city),
+            zip: tmSafeString(c.zip),
+            createdAt: tmSafeString(c.createdAt),
+            isPrimary: !!c.isPrimary
+        }))
+        .filter(c => !!c.id);
+}
+
+function tmCardsSaveAll(cards) {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    window.localStorage.setItem(TM_CARDS_KEY, JSON.stringify(cards || []));
+}
+
+export function tmCardsAdd(card) {
+    const cards = tmCardsGetAll();
+    const c = {
+        id: tmSafeString(card?.id),
+        brand: tmSafeString(card?.brand) || 'card',
+        last4: tmSafeString(card?.last4),
+        expMonth: tmSafeString(card?.expMonth),
+        expYear: tmSafeString(card?.expYear),
+        nameOnCard: tmSafeString(card?.nameOnCard),
+        email: tmSafeString(card?.email),
+        country: tmSafeString(card?.country),
+        state: tmSafeString(card?.state),
+        address: tmSafeString(card?.address),
+        city: tmSafeString(card?.city),
+        zip: tmSafeString(card?.zip),
+        createdAt: tmSafeString(card?.createdAt) || (new Date().toISOString()),
+        isPrimary: !!card?.isPrimary
+    };
+
+    if (!c.id) throw new Error('Missing card id');
+    if (!c.last4 || c.last4.length !== 4) throw new Error('Missing last4');
+
+    // If this is the first card, auto primary.
+    if (!cards.length) c.isPrimary = true;
+
+    // If setting primary, unset others.
+    if (c.isPrimary) {
+        cards.forEach(x => { x.isPrimary = false; });
+    }
+
+    cards.unshift(c);
+    tmCardsSaveAll(cards);
+    return c;
+}
+
+export function tmCardsRemove(cardId) {
+    const id = tmSafeString(cardId);
+    const cards = tmCardsGetAll();
+    const next = cards.filter(c => c.id !== id);
+
+    // Keep at least one primary if cards remain
+    if (next.length && !next.some(c => c.isPrimary)) {
+        next[0].isPrimary = true;
+    }
+
+    tmCardsSaveAll(next);
+    return next;
+}
+
+export function tmCardsSetPrimary(cardId) {
+    const id = tmSafeString(cardId);
+    const cards = tmCardsGetAll();
+    let found = false;
+    cards.forEach(c => {
+        if (c.id === id) {
+            c.isPrimary = true;
+            found = true;
+        } else {
+            c.isPrimary = false;
+        }
+    });
+    if (!found) throw new Error('Card not found');
+    tmCardsSaveAll(cards);
+    return cards;
+}
+
+export function tmCardsMask(card) {
+    const brand = tmSafeString(card?.brand).toLowerCase();
+    const last4 = tmSafeString(card?.last4);
+    const label = brand ? brand.toUpperCase() : 'CARD';
+    return `${label} •••• ${last4}`;
+}
