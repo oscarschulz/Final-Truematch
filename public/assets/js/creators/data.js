@@ -281,3 +281,83 @@ export function tmCardsMask(card) {
     const label = brand ? brand.toUpperCase() : 'CARD';
     return `${label} •••• ${last4}`;
 }
+
+// =============================================================
+// Wallet (Data #7)
+// - Persist wallet rebill preference
+// - Simple local transaction log for Wallet "Latest transactions"
+// =============================================================
+
+const TM_WALLET_PREFS_KEY = 'tm_wallet_prefs_v1';
+const TM_WALLET_TX_KEY = 'tm_wallet_tx_v1';
+
+function tmSafeJsonParse(raw, fallback) {
+  try { return JSON.parse(raw); } catch { return fallback; }
+}
+
+function tmSafeJsonStringify(obj, fallback = 'null') {
+  try { return JSON.stringify(obj); } catch { return fallback; }
+}
+
+function tmReadLS(key, fallback) {
+  try {
+    const v = localStorage.getItem(key);
+    if (v == null) return fallback;
+    return v;
+  } catch {
+    return fallback;
+  }
+}
+
+function tmWriteLS(key, value) {
+  try { localStorage.setItem(key, value); } catch { /* ignore */ }
+}
+
+export function tmWalletPrefsGet() {
+  const raw = tmReadLS(TM_WALLET_PREFS_KEY, null);
+  const prefs = raw ? tmSafeJsonParse(raw, null) : null;
+  return prefs && typeof prefs === 'object' ? prefs : { rebillPrimary: false };
+}
+
+export function tmWalletPrefsSet(nextPrefs) {
+  const cur = tmWalletPrefsGet();
+  const merged = { ...cur, ...(nextPrefs || {}) };
+  // normalize
+  merged.rebillPrimary = !!merged.rebillPrimary;
+  tmWriteLS(TM_WALLET_PREFS_KEY, tmSafeJsonStringify(merged, '{"rebillPrimary":false}'));
+  return merged;
+}
+
+function tmTxNormalize(tx) {
+  const nowIso = (() => { try { return new Date().toISOString(); } catch { return String(Date.now()); } })();
+  const t = tx && typeof tx === 'object' ? tx : {};
+  return {
+    id: String(t.id || `tx_${Math.random().toString(16).slice(2)}_${Date.now()}`),
+    title: String(t.title || 'Activity'),
+    amount: typeof t.amount === 'number' ? t.amount : 0,
+    type: String(t.type || 'activity'),
+    createdAt: String(t.createdAt || nowIso)
+  };
+}
+
+export function tmTransactionsGet() {
+  const raw = tmReadLS(TM_WALLET_TX_KEY, null);
+  const arr = raw ? tmSafeJsonParse(raw, []) : [];
+  if (!Array.isArray(arr)) return [];
+  const norm = arr.map(tmTxNormalize);
+  // sort latest first
+  norm.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  return norm;
+}
+
+export function tmTransactionsAdd(tx) {
+  const list = tmTransactionsGet();
+  const t = tmTxNormalize(tx);
+  const next = [t, ...list].slice(0, 25);
+  tmWriteLS(TM_WALLET_TX_KEY, tmSafeJsonStringify(next, '[]'));
+  return next;
+}
+
+export function tmTransactionsClear() {
+  tmWriteLS(TM_WALLET_TX_KEY, '[]');
+}

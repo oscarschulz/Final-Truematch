@@ -4,7 +4,11 @@ import {
   tmCardsAdd,
   tmCardsRemove,
   tmCardsSetPrimary,
-  tmCardsMask
+  tmCardsMask,
+  tmWalletPrefsGet,
+  tmWalletPrefsSet,
+  tmTransactionsGet,
+  tmTransactionsAdd
 } from './data.js';
 
 // =============================================================
@@ -365,6 +369,106 @@ function tmInstallAutoRefresh() {
   }
 }
 
+
+// -----------------------------
+// Wallet preference + transactions (Data #7)
+// -----------------------------
+function tmFormatNiceDate(iso) {
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return String(iso || '');
+    return d.toLocaleString(undefined, { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return String(iso || '');
+  }
+}
+
+function tmEnsureWalletTxList() {
+  const root = document.getElementById('rs-wallet-view');
+  if (!root) return null;
+
+  // The empty state lives inside the second wallet-widget-card > .ww-body
+  const body = root.querySelectorAll('.wallet-widget-card .ww-body')[1] || root.querySelector('.wallet-widget-card .ww-body');
+  if (!body) return null;
+
+  let list = body.querySelector('#tm-wallet-tx-list');
+  if (list) return list;
+
+  list = document.createElement('div');
+  list.id = 'tm-wallet-tx-list';
+  list.style.display = 'flex';
+  list.style.flexDirection = 'column';
+  list.style.gap = '10px';
+  list.style.marginTop = '6px';
+
+  // Insert after the "LATEST TRANSACTIONS" label (the <small>)
+  const small = body.querySelector('small');
+  if (small) small.insertAdjacentElement('afterend', list);
+  else body.appendChild(list);
+
+  return list;
+}
+
+function tmRenderWalletTransactions() {
+  const root = document.getElementById('rs-wallet-view');
+  if (!root) return;
+
+  const body = root.querySelectorAll('.wallet-widget-card .ww-body')[1] || root.querySelector('.wallet-widget-card .ww-body');
+  if (!body) return;
+
+  const empty = body.querySelector('.ww-empty');
+  const list = tmEnsureWalletTxList();
+  if (!list) return;
+
+  const tx = tmTransactionsGet();
+  if (!tx.length) {
+    list.innerHTML = '';
+    if (empty) empty.style.display = '';
+    return;
+  }
+
+  if (empty) empty.style.display = 'none';
+
+  list.innerHTML = tx.slice(0, 8).map((t) => {
+    const icon = (t.type === 'payment')
+      ? '<i class="fa-solid fa-bag-shopping" style="opacity:0.9;"></i>'
+      : '<i class="fa-regular fa-clock" style="opacity:0.85;"></i>';
+
+    const amount = (typeof t.amount === 'number' && t.amount !== 0)
+      ? `<span style="margin-left:auto; font-weight:900; color: var(--text);">$${Math.abs(t.amount).toFixed(2)}</span>`
+      : '<span style="margin-left:auto; font-weight:900; color: var(--muted);">—</span>';
+
+    return `
+      <div class="tm-wallet-tx" style="display:flex; align-items:center; gap:10px; padding: 10px 10px; border: 1px solid var(--border-color); border-radius: 14px; background: rgba(255,255,255,0.02);">
+        <div style="font-size:16px;">${icon}</div>
+        <div style="display:flex; flex-direction:column; gap:3px; min-width:0;">
+          <div style="font-weight:850; color: var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${String(t.title || 'Activity')}</div>
+          <div style="font-size:12px; color: var(--muted);">${tmFormatNiceDate(t.createdAt)}</div>
+        </div>
+        ${amount}
+      </div>
+    `;
+  }).join('');
+}
+
+function tmBindWalletRebillToggle(toast) {
+  const root = document.getElementById('rs-wallet-view');
+  if (!root) return;
+
+  const toggle = root.querySelector('.ww-toggle-row input[type="checkbox"]');
+  if (!toggle) return;
+
+  // Set initial
+  const prefs = tmWalletPrefsGet();
+  toggle.checked = !!prefs.rebillPrimary;
+
+  toggle.addEventListener('change', () => {
+    const next = tmWalletPrefsSet({ rebillPrimary: !!toggle.checked });
+    try { toast.fire({ icon: 'success', title: next.rebillPrimary ? 'Wallet set as primary for rebills' : 'Wallet rebills disabled' }); } catch(_) {}
+  }, { passive: true });
+}
+
+
 export function initWallet(TopToast) {
   const toast = TopToast;
 
@@ -406,7 +510,9 @@ export function initWallet(TopToast) {
       submitBtn: btnSubmitModal,
       getAgeConfirmed: () => !!document.getElementById('ageCheckModal')?.checked,
       toast,
-      onSuccess: () => {
+      onSuccess: (card) => {
+        try { tmTransactionsAdd({ type: 'activity', title: `Card added • ${tmCardsMask(card)}`, amount: 0 }); } catch(_) {}
+        tmRenderWalletTransactions();
         closeModal();
         // Optional: take user to Your Cards view
         setTimeout(() => tmNavigateToYourCards(), 50);
@@ -426,7 +532,9 @@ export function initWallet(TopToast) {
       submitBtn: btnSubmitPage,
       getAgeConfirmed: () => !!document.getElementById('ageCheck')?.checked,
       toast,
-      onSuccess: () => {
+      onSuccess: (card) => {
+        try { tmTransactionsAdd({ type: 'activity', title: `Card added • ${tmCardsMask(card)}`, amount: 0 }); } catch(_) {}
+        tmRenderWalletTransactions();
         // Navigate to Your Cards so they immediately see saved card(s)
         setTimeout(() => tmNavigateToYourCards(), 50);
       }
@@ -447,13 +555,19 @@ export function initWallet(TopToast) {
 
     try {
       if (action === 'tm-card-remove') {
+        const before = tmCardsGetAll().find(x => x.id === id);
         tmCardsRemove(id);
         tmRenderCardsList();
+        try { tmTransactionsAdd({ type: 'activity', title: `Card removed • ${before ? tmCardsMask(before) : '****'}`, amount: 0 }); } catch(_) {}
+        tmRenderWalletTransactions();
         try { toast.fire({ icon: 'success', title: 'Card removed' }); } catch (_) {}
       }
       if (action === 'tm-card-primary') {
+        const before = tmCardsGetAll().find(x => x.id === id);
         tmCardsSetPrimary(id);
         tmRenderCardsList();
+        try { tmTransactionsAdd({ type: 'activity', title: `Primary card set • ${before ? tmCardsMask(before) : '****'}`, amount: 0 }); } catch(_) {}
+        tmRenderWalletTransactions();
         try { toast.fire({ icon: 'success', title: 'Primary card updated' }); } catch (_) {}
       }
     } catch (err) {
@@ -464,4 +578,9 @@ export function initWallet(TopToast) {
 
   // Auto-refresh list when Your Cards view opens
   tmInstallAutoRefresh();
+
+  // Wallet (Data #7)
+  tmBindWalletRebillToggle(toast);
+  tmRenderWalletTransactions();
 }
+
