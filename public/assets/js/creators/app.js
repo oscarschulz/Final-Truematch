@@ -864,6 +864,7 @@ async function init() {
   tmBindProfileBackButton();
   tmBindPopoverCollections();
   tmInitGlobalSearch();
+  tmInitSuggestionsSidebar();
   await tmHydrateCreatorsFromMe();
   try { tmInitBankingView(); } catch (e) { console.error(e); }
 
@@ -2125,5 +2126,219 @@ function tmBindPopoverCollections() {
         switchView('collections');
     });
 }
+
+
+// =============================================================
+// RIGHT SIDEBAR: SUGGESTIONS (Data #4)
+// - Uses GET /api/swipe/candidates as a simple source of accounts
+// - Renders cards in #rs-suggestions-view .suggestion-list
+// - Refresh icon rotates + refetches
+// - "Hide suggestion" stored in localStorage
+// =============================================================
+let __tmSuggestionsBound = false;
+
+function tmEscHtml(v) {
+  return String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function tmGetSuggEls() {
+  const root = document.getElementById('rs-suggestions-view');
+  if (!root) return {};
+  return {
+    root,
+    list: root.querySelector('.suggestion-list'),
+    refresh: root.querySelector('.sugg-actions i.fa-rotate')
+  };
+}
+
+function tmGetHiddenSuggestions() {
+  try { return JSON.parse(localStorage.getItem('tm_hidden_suggestions') || '[]') || []; }
+  catch { return []; }
+}
+
+function tmSetHiddenSuggestions(arr) {
+  try { localStorage.setItem('tm_hidden_suggestions', JSON.stringify(arr || [])); } catch {}
+}
+
+function tmSetSuggestionsCache(payload) {
+  try { localStorage.setItem('tm_suggestions_cache', JSON.stringify(payload)); } catch {}
+}
+
+function tmGetSuggestionsCache() {
+  try { return JSON.parse(localStorage.getItem('tm_suggestions_cache') || 'null'); }
+  catch { return null; }
+}
+
+function tmDeriveHandle(id, name) {
+  const raw = String(id || '').trim();
+  if (raw.includes('@')) return '@' + raw.split('@')[0].replace(/[^a-zA-Z0-9._]/g, '').slice(0, 18);
+  const base = String(name || 'member').toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9._]/g, '');
+  return '@' + (base || 'member').slice(0, 18);
+}
+
+function tmRenderSuggestions(items, meta = {}) {
+  const { list } = tmGetSuggEls();
+  if (!list) return;
+
+  const hidden = new Set(tmGetHiddenSuggestions());
+  const rows = (items || []).filter(x => x && !hidden.has(x.id));
+
+  if (!rows.length) {
+    const msg = meta?.message || 'No suggestions';
+    list.innerHTML = `<div style="text-align:center; padding:20px; color:var(--muted); font-size:0.9rem;">${tmEscHtml(msg)}</div>`;
+    return;
+  }
+
+  list.innerHTML = rows.slice(0, 6).map((u) => {
+    const id = tmEscHtml(u.id || '');
+    const name = tmEscHtml(u.name || 'Member');
+    const city = tmEscHtml(u.city || '');
+    const age = (u.age != null) ? Number(u.age) : null;
+    const avatar = tmEscHtml(u.photoUrl || u.avatarUrl || 'assets/images/truematch-mark.png');
+    const handle = tmEscHtml(tmDeriveHandle(u.id, u.name));
+    const badge = tmEscHtml(u.badge || 'MEMBER');
+    const dot = (Math.random() < 0.35) ? `<div class="online-dot" title="Online"></div>` : ``;
+
+    // Banner: reuse avatar (safe + consistent). If image fails, CSS bg shows.
+    return `
+      <div class="sugg-card" data-sugg-id="${id}">
+        <div class="sugg-banner" style="background-image:url('${avatar}')">
+          <div class="sugg-badge">${badge}</div>
+          <div class="sugg-menu" role="button" aria-label="Options"><i class="fa-solid fa-ellipsis"></i></div>
+        </div>
+        <div class="sugg-details">
+          <div class="sugg-avatar-wrap">
+            <img src="${avatar}" alt="${name}">
+            ${dot}
+          </div>
+          <div class="sugg-text">
+            <div class="sugg-name">${name}${age ? `, ${age}` : ''}</div>
+            <div class="sugg-handle">${handle}${city ? ` • ${city}` : ''}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Bind click handlers (modal + hide)
+  list.querySelectorAll('.sugg-card').forEach(card => {
+    const id = card.getAttribute('data-sugg-id') || '';
+
+    // Options menu -> hide
+    const menu = card.querySelector('.sugg-menu');
+    if (menu) {
+      menu.addEventListener('click', (e) => {
+        e.stopPropagation();
+        Swal.fire({
+          title: 'Suggestion',
+          text: 'Hide this suggestion?',
+          showCancelButton: true,
+          confirmButtonText: 'Hide',
+          confirmButtonColor: '#64E9EE',
+          cancelButtonText: 'Cancel',
+          background: '#0d1423',
+          color: '#fff'
+        }).then((r) => {
+          if (r.isConfirmed) {
+            const hiddenArr = tmGetHiddenSuggestions();
+            if (!hiddenArr.includes(id)) hiddenArr.push(id);
+            tmSetHiddenSuggestions(hiddenArr);
+            // Remove visually
+            card.remove();
+            if (!list.querySelector('.sugg-card')) {
+              list.innerHTML = `<div style="text-align:center; padding:20px; color:var(--muted); font-size:0.9rem;">No suggestions</div>`;
+            }
+            try { TopToast.fire({ icon: 'success', title: 'Hidden' }); } catch {}
+          }
+        });
+      });
+    }
+
+    // Click card -> quick view
+    card.addEventListener('click', () => {
+      const name = card.querySelector('.sugg-name')?.textContent || 'Member';
+      const handle = card.querySelector('.sugg-handle')?.textContent || '';
+      const avatar = card.querySelector('img')?.getAttribute('src') || 'assets/images/truematch-mark.png';
+
+      Swal.fire({
+        title: tmEscHtml(name),
+        html: `
+          <div style="display:flex; flex-direction:column; align-items:center; gap:10px;">
+            <img src="${tmEscHtml(avatar)}" alt="" style="width:84px; height:84px; border-radius:50%; object-fit:cover; border:2px solid #64E9EE;" />
+            <div style="color:var(--muted); font-size:0.9rem;">${tmEscHtml(handle)}</div>
+            <div style="color:var(--muted); font-size:0.85rem; margin-top:6px;">Tip: Use Home search to explore posts & creators.</div>
+          </div>
+        `,
+        confirmButtonText: 'Close',
+        confirmButtonColor: '#64E9EE',
+        background: '#0d1423',
+        color: '#fff'
+      });
+    });
+  });
+}
+
+async function tmFetchSuggestionsFromApi() {
+  const res = await fetch('/api/swipe/candidates', { method: 'GET', credentials: 'include' });
+  const data = await res.json().catch(() => null);
+  if (!data || data.ok === false) {
+    const err = (data && (data.error || data.message)) || (res.status === 401 ? 'Not authenticated' : 'Unable to load suggestions');
+    throw new Error(err);
+  }
+  return data;
+}
+
+async function tmRefreshSuggestions(opts = { force: false }) {
+  const { list, refresh } = tmGetSuggEls();
+  if (!list) return;
+
+  // cache (10 minutes)
+  if (!opts.force) {
+    const cached = tmGetSuggestionsCache();
+    const ts = cached?.ts || 0;
+    if (cached && Array.isArray(cached.items) && (Date.now() - ts) < 10 * 60 * 1000) {
+      tmRenderSuggestions(cached.items, cached.meta || {});
+      return;
+    }
+  }
+
+  // loading state
+  list.innerHTML = `<div style="text-align:center; padding:20px; color:var(--muted); font-size:0.9rem;">Loading…</div>`;
+  if (refresh) refresh.classList.add('fa-spin');
+
+  try {
+    const payload = await tmFetchSuggestionsFromApi();
+    const items = Array.isArray(payload.candidates) ? payload.candidates : [];
+    const meta = { message: payload.message || '' };
+
+    tmSetSuggestionsCache({ ts: Date.now(), items, meta });
+    tmRenderSuggestions(items, meta);
+  } catch (e) {
+    tmRenderSuggestions([], { message: e?.message || 'Unable to load suggestions' });
+    try { TopToast.fire({ icon: 'error', title: e?.message || 'Unable to load suggestions' }); } catch {}
+  } finally {
+    if (refresh) refresh.classList.remove('fa-spin');
+  }
+}
+
+function tmInitSuggestionsSidebar() {
+  if (__tmSuggestionsBound) return;
+  __tmSuggestionsBound = true;
+
+  const { refresh } = tmGetSuggEls();
+  if (refresh && refresh.dataset.bound !== '1') {
+    refresh.dataset.bound = '1';
+    refresh.addEventListener('click', () => tmRefreshSuggestions({ force: true }));
+  }
+
+  // initial render (cache-first then fetch)
+  tmRefreshSuggestions({ force: false });
+}
+
 
 document.addEventListener('DOMContentLoaded', init);
