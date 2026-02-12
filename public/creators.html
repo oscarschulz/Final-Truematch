@@ -12,43 +12,6 @@
   <script src="https://cdn.jsdelivr.net/npm/picmo@latest/dist/umd/index.js"></script>
   
   <link rel="stylesheet" href="assets/css/creators/global.css" />
-
-  <style>
-    /* Subscriptions (Option 2) */
-    .subs-tabs-row{display:flex;gap:10px;flex-wrap:wrap;padding:10px 15px;border-bottom:1px solid var(--border-color);}
-    .subs-tab{background:transparent;border:1px solid var(--border-color);color:var(--text);padding:8px 12px;border-radius:999px;cursor:pointer;font-weight:700;font-size:12px;letter-spacing:.06em;text-transform:uppercase;display:flex;gap:8px;align-items:center;}
-    .subs-tab.active{border-color:var(--accent);box-shadow:0 0 0 1px rgba(100,233,238,.15) inset;}
-    .subs-tab .count{background:rgba(255,255,255,.06);padding:2px 8px;border-radius:999px;font-weight:800;font-size:12px;}
-    .subs-search-row{display:flex;gap:10px;align-items:center;padding:10px 15px;border-bottom:1px solid var(--border-color);}
-    .subs-search-row.hidden{display:none;}
-    .subs-search-row input{flex:1;background:rgba(255,255,255,.03);border:1px solid var(--border-color);color:var(--text);padding:10px 12px;border-radius:12px;outline:none;}
-    .subs-search-row .x{cursor:pointer;color:var(--muted);}
-    .subs-filters-row{padding:10px 15px;border-bottom:1px solid var(--border-color);display:flex;gap:10px;flex-wrap:wrap;}
-    .subs-filters-row .n-pill{display:flex;gap:8px;align-items:center;}
-    .subs-list{padding:12px 15px;display:flex;flex-direction:column;gap:10px;}
-    .subs-user{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 12px;border:1px solid var(--border-color);border-radius:16px;background:rgba(255,255,255,.02);cursor:pointer;}
-    .subs-user:hover{background:rgba(255,255,255,.03);}
-    .subs-user .left{display:flex;gap:12px;align-items:center;min-width:0;}
-    .subs-user img{width:42px;height:42px;border-radius:12px;object-fit:cover;border:1px solid rgba(255,255,255,.08);}
-    .subs-user .meta{min-width:0;display:flex;flex-direction:column;gap:3px;}
-    .subs-user .name{font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-    .subs-user .handle{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-    .subs-user .right{display:flex;gap:8px;align-items:center;}
-    .subs-badge{font-size:11px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.12);color:var(--text);}
-    .subs-badge.active{border-color:rgba(100,233,238,.35);color:var(--accent);}
-    .subs-badge.expired{border-color:rgba(255,99,132,.35);color:#ff6384;}
-    .subs-mini{font-size:11px;color:var(--muted);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-    .subs-empty{display:none;flex-direction:column;align-items:center;justify-content:center;padding:80px 15px;color:var(--muted);text-align:center;}
-    .subs-empty.show{display:flex;}
-    .subs-loading{display:none;justify-content:center;padding:18px 15px;color:var(--muted);font-size:13px;}
-    .subs-loading.show{display:flex;}
-    @media (max-width: 640px){
-      .subs-tabs-row{flex-wrap:nowrap;overflow-x:auto;}
-      .subs-tab{white-space:nowrap;}
-      .subs-mini{display:none;}
-    }
-  </style>
-
 </head>
 
 <body class="tm-dark">
@@ -398,32 +361,18 @@
                   <i class="fa-solid fa-arrow-left back-btn" onclick="document.getElementById('nav-link-home').click()"></i>
                   <h2>SUBSCRIPTIONS</h2>
               </div>
-              
-        <div class="subs-tabs-row">
-          <button class="subs-tab active" type="button" data-subs-tab="subscribed">
-            SUBSCRIBED TO <span class="count" id="subs-count-to">0</span>
-          </button>
-          <button class="subs-tab" type="button" data-subs-tab="subscribers">
-            SUBSCRIBERS <span class="count" id="subs-count-from">0</span>
-          </button>
+              <div style="display:flex; gap:20px; font-size:1.1rem; color:var(--text);">
+                  <i class="fa-solid fa-magnifying-glass" id="subs-btn-search" style="cursor:pointer;" title="Search"></i>
+              </div>
+          </div>
         </div>
 
-        <div class="subs-search-row hidden" id="subs-search-row">
-          <i class="fa-solid fa-magnifying-glass"></i>
-          <input id="subs-search-input" type="text" placeholder="Search subscriptions..." autocomplete="off">
-          <i class="fa-solid fa-xmark x" id="subs-search-clear" title="Clear"></i>
+        <div style="padding: 10px 15px; border-bottom: 1px solid var(--border-color); display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="n-pill active" type="button">Active 0</button>
+          <button class="n-pill" type="button">Expired 0</button>
         </div>
 
-        <div class="subs-filters-row">
-          <button class="n-pill active" type="button" data-subs-filter="active" id="subs-filter-active">Active <span id="subs-count-active">0</span></button>
-          <button class="n-pill" type="button" data-subs-filter="expired" id="subs-filter-expired">Expired <span id="subs-count-expired">0</span></button>
-          <button class="n-pill" type="button" data-subs-filter="all" id="subs-filter-all">All <span id="subs-count-all">0</span></button>
-        </div>
-
-        <div class="subs-loading" id="subs-loading">Loading...</div>
-        <div class="subs-list" id="subs-list"></div>
-
-        <div class="subs-empty" id="subs-empty">
+        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding: 80px 15px; color: var(--muted); text-align:center;">
           <div class="empty-icon-wrap" style="margin-bottom:12px;"><i class="fa-regular fa-folder-open"></i></div>
           <div style="font-size: 14px; margin-bottom: 14px;">No subscriptions yet</div>
           <button type="button" onclick="document.getElementById('nav-link-home').click()"
@@ -431,7 +380,6 @@
             Explore creators
           </button>
         </div>
-
       </div>
 
       <div id="container-settings"></div>    
@@ -682,7 +630,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <script src="creators.js"></script>
+  <script type="module" src="assets/js/creators/app.js"></script>
   
   <script>
   // Background Animation
