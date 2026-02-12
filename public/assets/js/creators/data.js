@@ -155,6 +155,11 @@ export async function getMySubscriptions({ dir } = {}) {
     return apiGetJson(`/api/me/subscriptions${q}`);
 }
 
+
+export async function getMyPayments() {
+    return apiGetJson('/api/me/payments');
+}
+
 // =============================================================
 // LOCAL CARDS STORAGE (Client-only)
 // Notes:
@@ -360,4 +365,64 @@ export function tmTransactionsAdd(tx) {
 
 export function tmTransactionsClear() {
   tmWriteLS(TM_WALLET_TX_KEY, '[]');
+}
+
+
+// =============================================================
+// Payments History (Data #8)
+// - Local cache for payments list (used as fallback if API not available)
+// =============================================================
+const TM_PAYMENTS_KEY = 'tm_payments_v1';
+
+function tmPayNormalize(p) {
+  const nowIso = (() => { try { return new Date().toISOString(); } catch { return String(Date.now()); } })();
+  const x = p && typeof p === 'object' ? p : {};
+
+  let amt = null;
+  if (typeof x.amount === 'number') amt = x.amount;
+  else if (x.amount === null || x.amount === undefined || x.amount === '') amt = null;
+  else {
+    const n = Number(x.amount);
+    amt = Number.isNaN(n) ? null : n;
+  }
+
+  return {
+    id: String(x.id || `pay_${Math.random().toString(16).slice(2)}_${Date.now()}`),
+    type: String(x.type || 'payment'),
+    title: String(x.title || x.description || 'Payment'),
+    description: String(x.description || ''),
+    status: String(x.status || 'succeeded'),
+    currency: String(x.currency || 'USD'),
+    amount: amt,
+    createdAt: String(x.createdAt || nowIso)
+  };
+}
+
+export function tmPaymentsGet() {
+  const raw = tmReadLS(TM_PAYMENTS_KEY, null);
+  const arr = raw ? tmSafeJsonParse(raw, []) : [];
+  if (!Array.isArray(arr)) return [];
+  const norm = arr.map(tmPayNormalize);
+  norm.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  return norm;
+}
+
+export function tmPaymentsSetAll(items) {
+  const arr = Array.isArray(items) ? items : [];
+  const norm = arr.map(tmPayNormalize);
+  // sort latest first and cap
+  norm.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const next = norm.slice(0, 100);
+  tmWriteLS(TM_PAYMENTS_KEY, tmSafeJsonStringify(next, '[]'));
+  return next;
+}
+
+export function tmPaymentsAdd(item) {
+  const list = tmPaymentsGet();
+  const p = tmPayNormalize(item);
+  // de-dupe by id
+  const filtered = list.filter(x => x.id !== p.id);
+  const next = [p, ...filtered].slice(0, 100);
+  tmWriteLS(TM_PAYMENTS_KEY, tmSafeJsonStringify(next, '[]'));
+  return next;
 }

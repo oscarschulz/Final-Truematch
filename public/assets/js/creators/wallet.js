@@ -8,7 +8,11 @@ import {
   tmWalletPrefsGet,
   tmWalletPrefsSet,
   tmTransactionsGet,
-  tmTransactionsAdd
+  tmTransactionsAdd,
+  getMySubscriptions,
+  getMyPayments,
+  tmPaymentsGet,
+  tmPaymentsSetAll
 } from './data.js';
 
 // =============================================================
@@ -338,6 +342,13 @@ function tmBindFormSubmit({
   });
 }
 
+
+function tmIsPaymentsTabActive() {
+  const wrap = DOM.tabContentPayments;
+  if (!wrap) return false;
+  return !wrap.classList.contains('hidden');
+}
+
 function tmInstallAutoRefresh() {
   const view = DOM.viewYourCards;
   if (!view) return;
@@ -345,11 +356,15 @@ function tmInstallAutoRefresh() {
   const refreshIfVisible = () => {
     try {
       const cs = window.getComputedStyle(view);
-      if (cs && cs.display !== 'none' && cs.visibility !== 'hidden') {
-        tmRenderCardsList();
-      }
+      if (cs && cs.display === 'none') return;
     } catch {
-      // fallback
+      // ignore
+    }
+
+    // If Payments tab is active, refresh Payments history; otherwise refresh cards list.
+    if (tmIsPaymentsTabActive()) {
+      tmEnterPaymentsTab(false);
+    } else {
       tmRenderCardsList();
     }
   };
@@ -363,12 +378,299 @@ function tmInstallAutoRefresh() {
   // Also refresh when tabs toggle inside view-your-cards
   if (DOM.btnTabCards) {
     DOM.btnTabCards.addEventListener('click', () => {
-      // allow DOM to settle
       setTimeout(() => tmRenderCardsList(), 0);
+    });
+  }
+
+  if (DOM.btnTabPayments) {
+    DOM.btnTabPayments.addEventListener('click', () => {
+      setTimeout(() => tmEnterPaymentsTab(false), 0);
     });
   }
 }
 
+
+
+// =============================================================
+// Payments History (Data #8)
+// - Lives inside view-your-cards > PAYMENTS tab
+// - Uses /api/me/payments (server) and falls back to Subscriptions + local cache
+// =============================================================
+const tmPayState = {
+  uiReady: false,
+  loading: false,
+  data: null,
+  fetchedAt: 0
+};
+
+let tmPayUI = {
+  wrap: null,
+  list: null,
+  emptyWrap: null,
+  emptyText: null
+};
+
+function tmPayTsToMs(t) {
+  if (!t) return 0;
+  if (typeof t === 'number') return t;
+  if (typeof t === 'string') {
+    const n = Date.parse(t);
+    if (!Number.isNaN(n)) return n;
+    const p = parseInt(t, 10);
+    return Number.isNaN(p) ? 0 : p;
+  }
+  if (typeof t === 'object') {
+    try { if (typeof t.toMillis === 'function') return t.toMillis(); } catch (_) {}
+    if (typeof t.seconds === 'number') return t.seconds * 1000;
+    if (typeof t._seconds === 'number') return t._seconds * 1000;
+  }
+  return 0;
+}
+
+function tmPayFmtDate(ms) {
+  if (!ms) return '';
+  try {
+    return new Date(ms).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  } catch {
+    return '';
+  }
+}
+
+function tmPayFmtMoney(amount, currency = 'USD') {
+  if (amount === null || amount === undefined || Number.isNaN(Number(amount))) return '';
+  const n = Number(amount);
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency: String(currency || 'USD') }).format(n);
+  } catch {
+    return `${n.toFixed(2)} ${currency || ''}`.trim();
+  }
+}
+
+function tmEnsurePaymentsUI() {
+  const wrap = DOM.tabContentPayments;
+  if (!wrap) return false;
+
+  const emptyWrap = wrap.querySelector('.rs-col-empty-state');
+  const emptyText = emptyWrap ? emptyWrap.querySelector('p') : null;
+
+  let list = wrap.querySelector('#tm-payments-list');
+  if (!list) {
+    list = document.createElement('div');
+    list.id = 'tm-payments-list';
+    list.style.display = 'none';
+    list.style.padding = '6px 0 0';
+    // Insert before empty state so empty remains at bottom
+    if (emptyWrap) wrap.insertBefore(list, emptyWrap);
+    else wrap.appendChild(list);
+  }
+
+  tmPayUI = { wrap, list, emptyWrap, emptyText };
+  tmPayState.uiReady = true;
+  return true;
+}
+
+function tmSetPaymentsEmpty(text) {
+  if (tmPayUI.emptyText) tmPayUI.emptyText.textContent = text || 'No payments yet.';
+  if (tmPayUI.emptyWrap) tmPayUI.emptyWrap.style.display = '';
+  if (tmPayUI.list) tmPayUI.list.style.display = 'none';
+}
+
+function tmSetPaymentsLoading() {
+  if (!tmPayUI.list) return;
+  if (tmPayUI.emptyWrap) tmPayUI.emptyWrap.style.display = 'none';
+  tmPayUI.list.style.display = 'block';
+  tmPayUI.list.innerHTML = `
+    <div style="color:var(--muted); text-align:center; padding:22px 0; font-weight:700;">
+      Loading payments...
+    </div>
+  `;
+}
+
+function tmBuildPaymentRow(p) {
+  const row = document.createElement('div');
+  row.style.display = 'flex';
+  row.style.alignItems = 'center';
+  row.style.justifyContent = 'space-between';
+  row.style.gap = '10px';
+  row.style.padding = '12px 12px';
+  row.style.border = '1px solid var(--border-color)';
+  row.style.borderRadius = '14px';
+  row.style.background = 'rgba(255,255,255,0.02)';
+  row.style.marginBottom = '10px';
+
+  const left = document.createElement('div');
+  left.style.minWidth = '0';
+
+  const title = document.createElement('div');
+  title.style.fontWeight = '800';
+  title.style.fontSize = '0.95rem';
+  title.style.display = 'flex';
+  title.style.alignItems = 'center';
+  title.style.gap = '8px';
+
+  const icon = document.createElement('i');
+  icon.className = 'fa-solid fa-receipt';
+  icon.style.color = 'var(--primary-cyan)';
+
+  const titleTxt = document.createElement('span');
+  titleTxt.textContent = p.title || 'Payment';
+
+  title.appendChild(icon);
+  title.appendChild(titleTxt);
+
+  const meta = document.createElement('div');
+  meta.style.color = 'var(--muted)';
+  meta.style.fontSize = '0.8rem';
+  meta.style.marginTop = '4px';
+
+  const dt = tmPayFmtDate(tmPayTsToMs(p.createdAt));
+  const status = (p.status || '').toUpperCase();
+  meta.textContent = [dt, status].filter(Boolean).join(' • ');
+
+  if (p.description) {
+    const desc = document.createElement('div');
+    desc.style.color = 'var(--muted)';
+    desc.style.fontSize = '0.8rem';
+    desc.style.marginTop = '2px';
+    desc.style.whiteSpace = 'nowrap';
+    desc.style.overflow = 'hidden';
+    desc.style.textOverflow = 'ellipsis';
+    desc.textContent = p.description;
+    left.appendChild(title);
+    left.appendChild(meta);
+    left.appendChild(desc);
+  } else {
+    left.appendChild(title);
+    left.appendChild(meta);
+  }
+
+  const right = document.createElement('div');
+  right.style.textAlign = 'right';
+  right.style.whiteSpace = 'nowrap';
+
+  const amt = document.createElement('div');
+  amt.style.fontWeight = '900';
+  amt.style.fontSize = '0.95rem';
+  const money = tmPayFmtMoney(p.amount, p.currency);
+  amt.textContent = money || '—';
+
+  right.appendChild(amt);
+
+  row.appendChild(left);
+  row.appendChild(right);
+
+  return row;
+}
+
+function tmRenderPaymentsList(items) {
+  if (!tmPayUI.list) return;
+
+  const arr = Array.isArray(items) ? items : [];
+  if (!arr.length) {
+    tmSetPaymentsEmpty('No payments yet.');
+    return;
+  }
+
+  if (tmPayUI.emptyWrap) tmPayUI.emptyWrap.style.display = 'none';
+  tmPayUI.list.style.display = 'block';
+  tmPayUI.list.innerHTML = '';
+
+  arr.forEach(p => tmPayUI.list.appendChild(tmBuildPaymentRow(p)));
+}
+
+function tmBuildPaymentsFromSubs(subItems) {
+  const list = Array.isArray(subItems) ? subItems : [];
+  const mapped = list.map((it) => {
+    const other = it?.otherUser || {};
+    const handleRaw = (other.handle || '').trim().replace(/^@/, '');
+    const who = handleRaw ? `@${handleRaw}` : (other.name || it.otherEmail || 'creator');
+    const startAt = it.startAt || it.createdAt || it.updatedAt || null;
+    return {
+      id: String(it.id || `${it.subscriberEmail || 'me'}_${it.creatorEmail || 'creator'}_${String(startAt || '')}`),
+      type: 'subscription',
+      title: 'Subscription',
+      description: `Subscribed to ${who}`,
+      status: it.isActive ? 'active' : 'expired',
+      currency: 'USD',
+      amount: null,
+      createdAt: startAt || new Date().toISOString()
+    };
+  });
+
+  mapped.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  return mapped;
+}
+
+async function tmLoadPayments(force = false) {
+  if (!tmPayState.uiReady) return;
+  if (tmPayState.loading) return;
+
+  const now = Date.now();
+  const fresh = tmPayState.data && (now - (tmPayState.fetchedAt || 0) < 15000);
+  if (!force && fresh) {
+    tmRenderPaymentsList(tmPayState.data);
+    return;
+  }
+
+  tmPayState.loading = true;
+  tmSetPaymentsLoading();
+
+  try {
+    // Try Payments API
+    let items = null;
+    try {
+      const payload = await getMyPayments();
+      if (payload && payload.ok === true && Array.isArray(payload.items)) {
+        items = payload.items;
+      }
+    } catch (err) {
+      // expected if endpoint not deployed yet
+      items = null;
+    }
+
+    // Fallback: build from Subscriptions
+    if (!items) {
+      try {
+        const subs = await getMySubscriptions({ dir: 'subscribed' });
+        const subItems = subs?.subscribed?.items || subs?.items || [];
+        if (Array.isArray(subItems) && subItems.length) {
+          items = tmBuildPaymentsFromSubs(subItems);
+        }
+      } catch (_) {
+        // ignore
+      }
+    }
+
+    // Final fallback: local cache
+    if (!items) {
+      items = tmPaymentsGet();
+    }
+
+    // Cache
+    if (Array.isArray(items)) {
+      tmPayState.data = items;
+      tmPayState.fetchedAt = Date.now();
+      try { tmPaymentsSetAll(items); } catch (_) {}
+      tmRenderPaymentsList(items);
+    } else {
+      tmPayState.data = [];
+      tmPayState.fetchedAt = Date.now();
+      tmSetPaymentsEmpty('No payments yet.');
+    }
+
+  } catch (err) {
+    console.error('Payments load error:', err);
+    tmSetPaymentsEmpty('Unable to load payments.');
+    try { TopToast.fire({ icon: 'error', title: 'Unable to load payments' }); } catch (_) {}
+  } finally {
+    tmPayState.loading = false;
+  }
+}
+
+function tmEnterPaymentsTab(force = false) {
+  if (!tmEnsurePaymentsUI()) return;
+  tmLoadPayments(!!force);
+}
 
 // -----------------------------
 // Wallet preference + transactions (Data #7)
@@ -583,4 +885,3 @@ export function initWallet(TopToast) {
   tmBindWalletRebillToggle(toast);
   tmRenderWalletTransactions();
 }
-

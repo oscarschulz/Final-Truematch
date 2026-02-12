@@ -4412,6 +4412,8 @@ app.post('/api/me/creator/subscribe', async (req, res) => {
 // ---------------- Creator-to-Creator Subscriptions (Following / Subscribers) ----------------
 const CREATOR_SUBS_COLLECTION = process.env.CREATOR_SUBS_COLLECTION || 'iTrueMatchCreatorSubscriptions';
 
+const PAYMENTS_COLLECTION = process.env.PAYMENTS_COLLECTION || 'iTrueMatchPayments';
+
 function _b64url(str) {
   return Buffer.from(String(str || '').toLowerCase(), 'utf8')
     .toString('base64')
@@ -4558,6 +4560,106 @@ app.get('/api/me/subscriptions', async (req, res) => {
     return res.json({ ok: true, subscribed, subscribers, ts: Date.now() });
   } catch (e) {
     console.error('GET /api/me/subscriptions error', e);
+    return res.status(500).json({ ok: false, message: 'Server error' });
+  }
+});
+
+
+// ---------------- Payments History (Data #8) ----------------
+async function _listPaymentsFor(payerEmail, limit = 50) {
+  const me = _normalizeEmail(payerEmail);
+  if (!me) return [];
+
+  // Firestore (preferred)
+  if (hasFirebase && firestore) {
+    try {
+      const snap = await firestore
+        .collection(PAYMENTS_COLLECTION)
+        .where('payerEmail', '==', me)
+        .limit(limit)
+        .get();
+
+      const items = [];
+      snap.forEach((doc) => {
+        const d = doc.data() || {};
+        items.push({ id: doc.id, ...d });
+      });
+
+      // sort latest first
+      items.sort((a, b) => {
+        const am = _tsToMs(a.createdAt) || Date.parse(a.createdAt || '') || 0;
+        const bm = _tsToMs(b.createdAt) || Date.parse(b.createdAt || '') || 0;
+        return bm - am;
+      });
+
+      return items;
+    } catch (e) {
+      // ignore and fallback
+    }
+  }
+
+  // In-memory fallback
+  const list = Array.isArray(DB.payments) ? DB.payments : [];
+  const mine = list.filter((p) => _normalizeEmail(p.payerEmail) === me);
+  mine.sort((a, b) => {
+    const am = _tsToMs(a.createdAt) || Date.parse(a.createdAt || '') || 0;
+    const bm = _tsToMs(b.createdAt) || Date.parse(b.createdAt || '') || 0;
+    return bm - am;
+  });
+  return mine.slice(0, limit);
+}
+
+async function _derivePaymentsFromSubs(payerEmail, limit = 50) {
+  const me = _normalizeEmail(payerEmail);
+  if (!me) return [];
+  const pack = await _listSubsFor(me, 'subscribed');
+  const items = (pack && Array.isArray(pack.items)) ? pack.items : [];
+
+  const mapped = items.map((s) => {
+    const other = s.otherUser || {};
+    const handle = other.handle ? String(other.handle).replace(/^@/, '') : '';
+    const who = handle ? `@${handle}` : (other.name || s.creatorEmail || 'creator');
+    const createdAt = s.startAt || s.createdAt || s.updatedAt || new Date().toISOString();
+    return {
+      id: `sub_${s.id || _subDocId(me, s.creatorEmail || '')}`,
+      type: 'subscription',
+      title: 'Subscription',
+      description: `Subscribed to ${who}`,
+      status: s.isActive ? 'active' : 'expired',
+      currency: 'USD',
+      amount: null,
+      payerEmail: me,
+      createdAt
+    };
+  });
+
+  mapped.sort((a, b) => {
+    const am = _tsToMs(a.createdAt) || Date.parse(a.createdAt || '') || 0;
+    const bm = _tsToMs(b.createdAt) || Date.parse(b.createdAt || '') || 0;
+    return bm - am;
+  });
+
+  return mapped.slice(0, limit);
+}
+
+app.get('/api/me/payments', async (req, res) => {
+  try {
+    if (!DB.user || !DB.user.email) {
+      return res.status(401).json({ ok: false, message: 'Not logged in' });
+    }
+
+    const me = _normalizeEmail(DB.user.email);
+
+    let items = await _listPaymentsFor(me, 50);
+
+    // If no real payment records exist yet, show subscription history as a useful fallback.
+    if (!items || items.length === 0) {
+      items = await _derivePaymentsFromSubs(me, 50);
+    }
+
+    return res.json({ ok: true, items, counts: { all: items.length } });
+  } catch (e) {
+    console.error('payments list error', e);
     return res.status(500).json({ ok: false, message: 'Server error' });
   }
 });
