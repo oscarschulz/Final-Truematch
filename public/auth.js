@@ -590,8 +590,8 @@ function tmShowLoader(title, sub, small) {
     const btnBack = document.getElementById('btnForgotBack');
     const btnChange = document.getElementById('btnForgotChange');
     const btnResend = document.getElementById('btnForgotResend');
-    const err = document.getElementById('forgotError');
-    const info = document.getElementById('forgotInfo');
+    const errEls = [document.getElementById('forgotError'), document.getElementById('forgotError2')].filter(Boolean);
+    const infoEls = [document.getElementById('forgotInfo'), document.getElementById('forgotInfo2')].filter(Boolean);
     const inEmail = document.getElementById('forgotEmail') || document.getElementById('forgotEmailInput');
     const inOtp = document.getElementById('forgotOtpInput');
     const otpWrap = document.getElementById('forgotOtpWrap');
@@ -601,16 +601,32 @@ function tmShowLoader(title, sub, small) {
     let resetToken = null;
     let otpEmail = null;
 
+    // Keep OTP input numeric (defense-in-depth for mobile keyboards)
+    if (inOtp && !inOtp.dataset.tmBound) {
+      inOtp.dataset.tmBound = '1';
+      inOtp.addEventListener('input', () => {
+        const raw = String(inOtp.value || '');
+        const digits = raw.replace(/\D+/g, '').slice(0, 6);
+        if (digits !== raw) inOtp.value = digits;
+      });
+    }
+
     function setErr(msg = "") {
-      if (!err) return;
-      err.textContent = msg || "";
-      err.style.display = msg ? "block" : "none";
+      for (const el of errEls) {
+        try {
+          el.textContent = msg || "";
+          el.style.display = msg ? "block" : "none";
+        } catch {}
+      }
     }
 
     function setInfo(msg = "") {
-      if (!info) return;
-      info.textContent = msg || "";
-      info.style.display = msg ? "block" : "none";
+      for (const el of infoEls) {
+        try {
+          el.textContent = msg || "";
+          el.style.display = msg ? "block" : "none";
+        } catch {}
+      }
     }
 
     function clearParams(keys = []) {
@@ -718,6 +734,10 @@ function tmShowLoader(title, sub, small) {
 
       // Move to OTP + new password step.
       showStep2Otp(email);
+
+      if (String(out?.message || '') === 'resend_wait') {
+        setInfo('A code was sent recently. Please check your inbox/spam.');
+      }
     });
 
     btnResend?.addEventListener('click', async () => {
@@ -760,6 +780,19 @@ function tmShowLoader(title, sub, small) {
       if (!p1 || p1.length < 8) { setErr("Password must be at least 8 characters."); return; }
       if (p1 !== p2) { setErr("Passwords do not match."); return; }
 
+      if (!resetToken) {
+        const code = String(inOtp?.value || '').trim();
+        if (!otpEmail) {
+          setErr('Please start again: enter your email to receive a code.');
+          showStep1('');
+          return;
+        }
+        if (!code || code.length !== 6) {
+          setErr('Enter the 6-digit code.');
+          return;
+        }
+      }
+
       btnChange.disabled = true;
       setErr("");
       setInfo("Updating password...");
@@ -774,8 +807,10 @@ function tmShowLoader(title, sub, small) {
         setInfo("");
         if (out?.message === 'weak_password') {
           setErr("Password is too weak.");
-        } else if (!resetToken && out?.message === 'invalid_or_expired_code') {
+        } else if (!resetToken && String(out?.message || '') === 'invalid_or_expired_code') {
           setErr("Invalid or expired code. Please request a new one.");
+        } else if (!resetToken && String(out?.message || '').includes('email') && String(out?.message || '').includes('code')) {
+          setErr("Please enter the 6-digit code and try again.");
         } else {
           setErr(resetToken ? "Could not reset password. Request a new reset link." : "Could not reset password. Try again.");
         }
