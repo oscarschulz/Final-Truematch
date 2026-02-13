@@ -14,8 +14,6 @@
     return `${location.origin}`;
   })();
 
-  const IS_LOCAL_DEV = (location.protocol === "file:") || (location.hostname === "localhost") || (location.hostname === "127.0.0.1");
-
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
@@ -161,64 +159,46 @@
     return (any || "").toLowerCase();
   }
 
-  async function callAPI(path, payload = {}, opts = {}) {
-    const timeoutMs = Number(opts.timeoutMs || 12000);
-    const allowOfflineDemo = !!opts.allowOfflineDemo && IS_LOCAL_DEV;
-
+  async function callAPI(path, payload = {}) {
     try {
       const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), timeoutMs);
-
+      const id = setTimeout(() => controller.abort(), 1500);
       const res = await fetch(API_BASE + path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(payload || {}),
+        body: JSON.stringify(payload),
         signal: controller.signal
       });
-
       clearTimeout(id);
-
       const ok = res.ok;
       const status = res.status;
       let data = null;
-
       try { data = await res.json(); } catch {}
-
       return { ok, status, ...(data || {}) };
-    } catch (err) {
-      // Never auto-success in production. Offline demo is only allowed on localhost/file.
-      if (allowOfflineDemo) return { ok: true, demo: true, status: 0 };
-      return { ok: false, status: 0, message: "network_error" };
+    } catch {
+      return { ok: true, demo: true, status: 0 };
     }
   }
 
-  async function apiGet(path, opts = {}) {
-    const timeoutMs = Number(opts.timeoutMs || 12000);
-    const allowOfflineDemo = !!opts.allowOfflineDemo && IS_LOCAL_DEV;
-
+  async function apiGet(path) {
     try {
       const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), timeoutMs);
-
-      const res = await fetch(API_BASE + path, {
+      const id = setTimeout(() => controller.abort(), 1000);
+      const res = await fetch(API_BASE + path, { 
         credentials: "include",
-        signal: controller.signal
+        signal: controller.signal 
       });
-
       clearTimeout(id);
-
       let data = null;
       try { data = await res.json(); } catch {}
-
       return data;
-    } catch (err) {
-      if (allowOfflineDemo) return { ok: true, demo: true, status: 0 };
+    } catch {
       return null;
     }
   }
 
-function tmShowLoader(title, sub, small) {
+  function tmShowLoader(title, sub, small) {
     try {
       if (window.TMLoader && typeof window.TMLoader.show === "function") {
         window.TMLoader.show(title, sub, small);
@@ -325,7 +305,7 @@ function tmShowLoader(title, sub, small) {
       return true;
     }
     saveLocalUser({ email, name: d.name, plan: d.plan });
-    try { await callAPI("/api/auth/login", { email, password: pass }, { allowOfflineDemo: true }); } catch {}
+    try { await callAPI("/api/auth/login", { email, password: pass }); } catch {}
     const extra = new URLSearchParams({ demo: "1", prePlan: d.plan });
     finishLogin(extra.toString());
     return true;
@@ -521,7 +501,7 @@ function tmShowLoader(title, sub, small) {
         const payload = Object.fromEntries(fd.entries());
         payload.name = payload.name || payload.fullName || '';
         try { delete payload.fullName; } catch (e) {}
-        const out = await callAPI("/api/auth/register", payload, { allowOfflineDemo: true });
+        const out = await callAPI("/api/auth/register", payload);
         const ok = !!(out?.ok || out?.created || out?.status === 200 || out?.status === 201 || out?.demo);
         if (!ok) {
           alert(out?.message || "Signup failed.");
@@ -546,7 +526,7 @@ function tmShowLoader(title, sub, small) {
         const email = String($("#loginEmail")?.value || "").trim();
         const password = String($("#loginPass")?.value || "").trim();
         if (await tryDemoLogin(email, password)) return;
-        const res = await callAPI("/api/auth/login", { email, password }, { allowOfflineDemo: true });
+        const res = await callAPI("/api/auth/login", { email, password });
         const offline = !!(res && (res.demo || res.status === 0));
         const ok = !!(res && (res.ok || offline));
         if (!ok) {
@@ -569,7 +549,7 @@ function tmShowLoader(title, sub, small) {
       e.preventDefault();
       try { tmShowLoader('Signing in…','Opening Google'); } catch {}
       try {
-        const r = await callAPI("/api/auth/oauth/mock", { provider: "google" }, { allowOfflineDemo: true });
+        const r = await callAPI("/api/auth/oauth/mock", { provider: "google" });
         saveLocalUser(r?.user || { email: "google@demo.local", name: "Google User" });
         const extra = new URLSearchParams();
         if (r?.demo || r?.status === 0) extra.set("demo", "1");
@@ -579,267 +559,268 @@ function tmShowLoader(title, sub, small) {
   });
 
   whenReady(() => {
-    const btnOpenForgot = document.getElementById('btnOpenForgot');
-    const dlgForgot = document.getElementById('dlgForgot');
-    const step1 = document.getElementById('forgotStep1');
-    const step2 = document.getElementById('forgotStep2');
-    const btnCancel = document.getElementById('btnForgotCancel');
-    const btnCloseForgot = document.getElementById('btnCloseForgot') || document.getElementById('btnCloseForgotX');
-    const btnCloseForgotX = document.getElementById('btnCloseForgotX');
-    const btnVerify = document.getElementById('btnForgotVerify');
-    const btnBack = document.getElementById('btnForgotBack');
-    const btnChange = document.getElementById('btnForgotChange');
-    const btnResend = document.getElementById('btnForgotResend');
-    const errEls = [document.getElementById('forgotError'), document.getElementById('forgotError2')].filter(Boolean);
-    const infoEls = [document.getElementById('forgotInfo'), document.getElementById('forgotInfo2')].filter(Boolean);
-    const inEmail = document.getElementById('forgotEmail') || document.getElementById('forgotEmailInput');
-    const inOtp = document.getElementById('forgotOtpInput');
-    const otpWrap = document.getElementById('forgotOtpWrap');
-    const inPass1 = document.getElementById('forgotNewPass');
-    const inPass2 = document.getElementById('forgotNewPass2') || document.getElementById('forgotConfirmPass');
+  const btnOpenForgot   = document.getElementById('btnOpenForgot');
+  const dlgForgot       = document.getElementById('dlgForgot');
+  const step1           = document.getElementById('forgotStep1');
+  const step2           = document.getElementById('forgotStep2');
+  const btnCancel       = document.getElementById('btnForgotCancel');
+  const btnCloseForgotX = document.getElementById('btnCloseForgotX');
+  const btnVerify       = document.getElementById('btnForgotVerify');
+  const btnBack         = document.getElementById('btnForgotBack');
+  const btnChange       = document.getElementById('btnForgotChange');
+  const btnResend       = document.getElementById('btnForgotResend');
 
-    let resetToken = null;
-    let otpEmail = null;
+  const inEmail   = document.getElementById('forgotEmailInput');
+  const inOtp     = document.getElementById('forgotOtpInput');
+  const inPass1   = document.getElementById('forgotNewPass');
+  const inPass2   = document.getElementById('forgotConfirmPass');
+  const pInfo     = document.getElementById('forgotInfo');
+  const pError    = document.getElementById('forgotError');
 
-    // Keep OTP input numeric (defense-in-depth for mobile keyboards)
-    if (inOtp && !inOtp.dataset.tmBound) {
-      inOtp.dataset.tmBound = '1';
-      inOtp.addEventListener('input', () => {
-        const raw = String(inOtp.value || '');
-        const digits = raw.replace(/\D+/g, '').slice(0, 6);
-        if (digits !== raw) inOtp.value = digits;
+  if (!dlgForgot || !step1 || !step2) return;
+  if (dlgForgot.dataset.tmBound === "1") return;
+  dlgForgot.dataset.tmBound = "1";
+
+  let otpEmail = null;
+
+  const setText = (el, txt) => { if (el) el.textContent = txt; };
+
+  function hideMsgs() {
+    if (pInfo)  { pInfo.style.display  = 'none'; setText(pInfo, ''); }
+    if (pError) { pError.style.display = 'none'; setText(pError, ''); }
+  }
+
+  // Reuse the same <p> nodes for step1 + step2 by moving them.
+  function ensureMsgsIn(stepEl) {
+    if (!stepEl) return;
+    const actions = stepEl.querySelector('.modal-actions');
+    if (pInfo && pInfo.parentElement !== stepEl)  stepEl.insertBefore(pInfo, actions || null);
+    if (pError && pError.parentElement !== stepEl) stepEl.insertBefore(pError, actions || null);
+  }
+
+  function showError(msg, stepEl = null) {
+    hideMsgs();
+    if (stepEl) ensureMsgsIn(stepEl);
+    if (pError) {
+      setText(pError, msg || 'Something went wrong.');
+      pError.style.display = 'block';
+    } else {
+      alert(msg || 'Something went wrong.');
+    }
+  }
+
+  function showInfo(msg, stepEl = null) {
+    hideMsgs();
+    if (stepEl) ensureMsgsIn(stepEl);
+    if (pInfo) {
+      setText(pInfo, msg || '');
+      pInfo.style.display = 'block';
+    }
+  }
+
+  function gotoStep(which) {
+    if (which === 1) {
+      ensureMsgsIn(step1);
+      step1.style.display = 'block';
+      step2.style.display = 'none';
+      if (inOtp) inOtp.value = '';
+    } else {
+      ensureMsgsIn(step2);
+      step1.style.display = 'none';
+      step2.style.display = 'block';
+      setTimeout(() => { try { inOtp && inOtp.focus(); } catch {} }, 50);
+    }
+  }
+
+  function resetForgotUI() {
+    otpEmail = null;
+    hideMsgs();
+    if (inEmail) inEmail.value = '';
+    if (inOtp)   inOtp.value = '';
+    if (inPass1) inPass1.value = '';
+    if (inPass2) inPass2.value = '';
+    gotoStep(1);
+  }
+
+  // Robust JSON POST (no "demo ok" fallback; longer timeout for email + hashing)
+  async function postJson(path, body, timeoutMs = 15000) {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch(API_BASE + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body || {}),
+        signal: controller.signal
       });
+
+      const status = res.status;
+      let data = null;
+      try { data = await res.json(); } catch {}
+
+      return { ok: res.ok, status, ...(data || {}) };
+    } catch (e) {
+      return { ok: false, status: 0, message: e?.name === 'AbortError' ? 'request_timeout' : (e?.message || 'network_error') };
+    } finally {
+      clearTimeout(t);
     }
+  }
 
-    function setErr(msg = "") {
-      for (const el of errEls) {
-        try {
-          el.textContent = msg || "";
-          el.style.display = msg ? "block" : "none";
-        } catch {}
-      }
-    }
+  function friendlyMsg(code) {
+    const m = String(code || '').trim();
+    if (!m) return 'Something went wrong.';
+    if (m === 'weak_password') return 'Password must be 8–72 chars and include uppercase, lowercase, and a number.';
+    if (m === 'invalid_or_expired_code') return 'Invalid or expired code. Tap “Resend code” and try again.';
+    if (m === 'too_many_requests') return 'Too many attempts. Please wait a bit and try again.';
+    if (m === 'resend_wait') return 'Please wait a bit before resending the code.';
+    if (m === 'request_timeout') return 'Request timed out. Please try again.';
+    if (m === 'network_error') return 'Network error. Please check your connection and try again.';
+    return m.replace(/_/g, ' ');
+  }
 
-    function setInfo(msg = "") {
-      for (const el of infoEls) {
-        try {
-          el.textContent = msg || "";
-          el.style.display = msg ? "block" : "none";
-        } catch {}
-      }
-    }
-
-    function clearParams(keys = []) {
-      const url = new URL(window.location.href);
-      keys.forEach(k => url.searchParams.delete(k));
-      history.replaceState(null, "", url.toString());
-    }
-
-    function showStep1(message = "") {
-      resetToken = null;
-      otpEmail = null;
-      step1.style.display = "";
-      step2.style.display = "none";
-      setErr("");
-      setInfo(message || "");
-      if (inEmail) inEmail.value = "";
-      if (inOtp) inOtp.value = "";
-      if (inPass1) inPass1.value = "";
-      if (inPass2) inPass2.value = "";
-    }
-
-    function showStep2Link(token) {
-      resetToken = String(token || "").trim();
-      otpEmail = null;
-      step1.style.display = "none";
-      step2.style.display = "";
-      setErr("");
-      setInfo("");
-
-      // Link reset does not need OTP input
-      if (otpWrap) otpWrap.style.display = "none";
-      if (btnResend) btnResend.style.display = "none";
-
-      if (inOtp) inOtp.value = "";
-      if (inPass1) inPass1.value = "";
-      if (inPass2) inPass2.value = "";
-    }
-
-    function showStep2Otp(email) {
-      resetToken = null;
-      otpEmail = String(email || "").trim().toLowerCase();
-      step1.style.display = "none";
-      step2.style.display = "";
-      setErr("");
-      setInfo("We sent a 6-digit code to your email (if an account exists).\nEnter it below to reset your password.");
-
-      if (otpWrap) otpWrap.style.display = "";
-      if (btnResend) btnResend.style.display = "";
-
-      if (inOtp) {
-        inOtp.value = "";
-        setTimeout(() => { try { inOtp.focus(); } catch {} }, 50);
-      }
-      if (inPass1) inPass1.value = "";
-      if (inPass2) inPass2.value = "";
-    }
-
-    function closeDialog() {
-      try {
-        if (dlgForgot && typeof dlgForgot.close === 'function') dlgForgot.close();
-        else dlgForgot?.removeAttribute?.('open');
-      } catch {}
-    }
-
-    btnOpenForgot?.addEventListener('click', (e) => {
+  // Open modal
+  if (btnOpenForgot) {
+    btnOpenForgot.addEventListener('click', (e) => {
       e.preventDefault();
-      showStep1("");
-      try {
-        if (dlgForgot && typeof dlgForgot.showModal === 'function') dlgForgot.showModal();
-        else dlgForgot?.setAttribute?.('open', '');
-      } catch {}
+      resetForgotUI();
+      try { dlgForgot.showModal(); } catch { dlgForgot.setAttribute('open', ''); }
+      setTimeout(() => { try { inEmail && inEmail.focus(); } catch {} }, 50);
     });
+  }
 
-    btnCancel?.addEventListener('click', () => {
-      closeDialog();
-      clearParams(['mode', 'token']);
-      setActiveTab('login');
-      setParam('mode', 'login');
-    });
+  // Click outside closes dialog
+  dlgForgot.addEventListener('click', (e) => {
+    const rect = dlgForgot.getBoundingClientRect();
+    const inDialog =
+      rect.top <= e.clientY && e.clientY <= rect.top + rect.height &&
+      rect.left <= e.clientX && e.clientX <= rect.left + rect.width;
+    if (!inDialog) { try { dlgForgot.close(); } catch {} }
+  });
 
-    btnCloseForgot?.addEventListener('click', () => {
-      closeDialog();
-      clearParams(['mode', 'token']);
-      setActiveTab('login');
-      setParam('mode', 'login');
-    });
+  if (btnCancel) btnCancel.addEventListener('click', () => { try { dlgForgot.close(); } catch {} });
+  if (btnCloseForgotX) btnCloseForgotX.addEventListener('click', () => { try { dlgForgot.close(); } catch {} });
 
-    btnVerify?.addEventListener('click', async () => {
-      const email = (inEmail?.value || "").trim();
-      if (!email) { setErr("Enter your email."); return; }
+  // Step 1: send OTP
+  if (btnVerify) {
+    btnVerify.addEventListener('click', async () => {
+      const email = String(inEmail?.value || '').trim().toLowerCase();
+      if (!email) return showError('Please enter your email.', step1);
 
       btnVerify.disabled = true;
-      setErr("");
-      setInfo("Sending code...");
+      const originalText = btnVerify.textContent;
+      btnVerify.textContent = 'SENDING…';
 
-      const out = await callAPI("/api/auth/forgot/send-otp", { email }, { timeoutMs: 15000 });
+      try {
+        // Always move to step2 on OK to avoid email enumeration.
+        const out = await postJson('/api/auth/forgot/send-otp', { email });
+        if (!out.ok) {
+          showError(friendlyMsg(out.message || out.error), step1);
+          return;
+        }
 
-      btnVerify.disabled = false;
+        otpEmail = email;
+        gotoStep(2);
 
-      if (!out?.ok) {
-        setInfo("");
-        setErr("Could not send code. Try again.");
+        // Show a generic message (even if account doesn't exist).
+        showInfo('If an account exists for this email, we sent a 6-digit code.', step2);
+      } finally {
+        btnVerify.textContent = originalText;
+        btnVerify.disabled = false;
+      }
+    });
+  }
+
+  // Back to step1
+  if (btnBack) {
+    btnBack.addEventListener('click', () => {
+      hideMsgs();
+      gotoStep(1);
+      setTimeout(() => { try { inEmail && inEmail.focus(); } catch {} }, 50);
+    });
+  }
+
+  // Step2: resend
+  if (btnResend) {
+    btnResend.addEventListener('click', async () => {
+      const email = String(otpEmail || '').trim().toLowerCase();
+      if (!email) {
+        showError('Please enter your email again.', step2);
         return;
       }
 
-      // Move to OTP + new password step.
-      showStep2Otp(email);
-
-      if (String(out?.message || '') === 'resend_wait') {
-        setInfo('A code was sent recently. Please check your inbox/spam.');
-      }
-    });
-
-    btnResend?.addEventListener('click', async () => {
-      const email = (otpEmail || (inEmail?.value || "")).trim();
-      if (!email) { setErr("Enter your email."); return; }
       btnResend.disabled = true;
-      setErr("");
-      setInfo("Resending code...");
+      const originalText = btnResend.textContent;
+      btnResend.textContent = 'RESENDING…';
+
       try {
-        const out = await callAPI("/api/auth/forgot/send-otp", { email }, { timeoutMs: 15000 });
-        if (!out?.ok) {
-          setInfo("");
-          setErr("Could not resend code. Try again.");
-        } else {
-          setErr("");
-          setInfo("If an account exists, we sent a new code.\nPlease check your inbox/spam.");
+        const out = await postJson('/api/auth/forgot/send-otp', { email });
+        if (!out.ok) {
+          showError(friendlyMsg(out.message || out.error), step2);
+          return;
         }
+
+        const msg = (out.message === 'resend_wait')
+          ? 'Please wait a bit before resending the code.'
+          : 'If an account exists, we resent the code. Check your inbox/spam.';
+        showInfo(msg, step2);
       } finally {
+        btnResend.textContent = originalText;
         btnResend.disabled = false;
       }
     });
+  }
 
-    btnBack?.addEventListener('click', () => {
-      if (resetToken) {
-        // Reset-link mode: go back to login and remove token from URL
-        closeDialog();
-        clearParams(['mode', 'token']);
-        setActiveTab('login');
-        setParam('mode', 'login');
-        showStep1("");
-        return;
-      }
-      showStep1("");
-    });
+  // Step2: reset password using OTP
+  if (btnChange) {
+    btnChange.addEventListener('click', async () => {
+      const email = String(otpEmail || '').trim().toLowerCase();
+      const code = String(inOtp?.value || '').trim();
+      const pass1 = String(inPass1?.value || '').trim();
+      const pass2 = String(inPass2?.value || '').trim();
 
-    btnChange?.addEventListener('click', async () => {
-      const p1 = (inPass1?.value || "").trim();
-      const p2 = (inPass2?.value || "").trim();
-
-      if (!p1 || p1.length < 8) { setErr("Password must be at least 8 characters."); return; }
-      if (p1 !== p2) { setErr("Passwords do not match."); return; }
-
-      if (!resetToken) {
-        const code = String(inOtp?.value || '').trim();
-        if (!otpEmail) {
-          setErr('Please start again: enter your email to receive a code.');
-          showStep1('');
-          return;
-        }
-        if (!code || code.length !== 6) {
-          setErr('Enter the 6-digit code.');
-          return;
-        }
-      }
+      if (!email) return showError('Please go back and enter your email again.', step2);
+      if (!code || code.length !== 6) return showError('Enter the 6-digit code.', step2);
+      if (!pass1 || !pass2) return showError('Please enter your new password.', step2);
+      if (pass1 !== pass2) return showError('Passwords do not match.', step2);
 
       btnChange.disabled = true;
-      setErr("");
-      setInfo("Updating password...");
+      const originalText = btnChange.textContent;
+      btnChange.textContent = 'UPDATING…';
 
-      const out = resetToken
-        ? await callAPI("/api/auth/forgot/reset", { token: resetToken, newPassword: p1 }, { timeoutMs: 15000 })
-        : await callAPI("/api/auth/forgot/reset-otp", { email: otpEmail, code: String(inOtp?.value || '').trim(), newPassword: p1 }, { timeoutMs: 15000 });
-
-      btnChange.disabled = false;
-
-      if (!out?.ok) {
-        setInfo("");
-        if (out?.message === 'weak_password') {
-          setErr("Password is too weak.");
-        } else if (!resetToken && String(out?.message || '') === 'invalid_or_expired_code') {
-          setErr("Invalid or expired code. Please request a new one.");
-        } else if (!resetToken && String(out?.message || '').includes('email') && String(out?.message || '').includes('code')) {
-          setErr("Please enter the 6-digit code and try again.");
-        } else {
-          setErr(resetToken ? "Could not reset password. Request a new reset link." : "Could not reset password. Try again.");
-        }
-        return;
-      }
-
-      setErr("");
-      setInfo("Password updated. You can log in now.");
-      setTimeout(() => {
-        closeDialog();
-        clearParams(['mode', 'token']);
-        setActiveTab('login');
-        setParam('mode', 'login');
-      }, 1200);
-    });
-
-    // Auto-open reset dialog if user came from the email link
-    const mode = getParam('mode');
-    const token = getParam('token');
-    if (mode === 'reset' && token) {
-      showStep2Link(token);
       try {
-        if (dlgForgot && typeof dlgForgot.showModal === 'function') dlgForgot.showModal();
-        else dlgForgot?.setAttribute?.('open', '');
-      } catch {}
-    } else {
-      // default view
-      showStep1("");
-    }
+        const out = await postJson('/api/auth/forgot/reset-otp', { email, code, newPassword: pass1 }, 20000);
+        if (!out.ok) {
+          showError(friendlyMsg(out.message || out.error), step2);
+          return;
+        }
+
+        showInfo('Password updated. You can now sign in.', step2);
+
+        // Close after a short delay (gives user feedback)
+        setTimeout(() => {
+          try { dlgForgot.close(); } catch {}
+          try { setActiveTab('login'); setParam('mode', 'login'); } catch {}
+          try { if ($("#loginEmail")) $("#loginEmail").value = email; } catch {}
+        }, 600);
+      } finally {
+        btnChange.textContent = originalText;
+        btnChange.disabled = false;
+      }
+    });
+  }
+
+  // Nice-to-have: Enter key inside OTP/password triggers change
+  [inOtp, inPass1, inPass2].forEach((el) => {
+    if (!el) return;
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        try { btnChange && btnChange.click(); } catch {}
+      }
+    });
   });
+});
 
 })();
