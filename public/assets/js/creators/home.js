@@ -883,7 +883,7 @@ function generateCommentHTML(text, timestamp = Date.now()) {
 }
 
 // Helpers for Icons/Colors (Same as Profile.js)
- (Same as Profile.js)
+// (Same as Profile.js)
 function getEmojiIcon(type) {
     switch(type) {
         case 'like': return '<i class="fa-solid fa-thumbs-up"></i> 1';
