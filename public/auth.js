@@ -223,6 +223,74 @@
     } catch (e) {}
   }
 
+// --- Lightweight toast popup (used for success / info) ---
+let __tmToastEl = null;
+let __tmToastHideTimer = null;
+
+function tmToast(message, opts = {}) {
+  const msg = String(message || '').trim();
+  if (!msg) return 0;
+
+  const duration = Math.max(600, Number(opts.durationMs || opts.duration || 1200));
+  const z = Number(opts.zIndex || 999999);
+
+  try {
+    if (!__tmToastEl) {
+      __tmToastEl = document.createElement('div');
+      __tmToastEl.id = 'tm_toast';
+      __tmToastEl.setAttribute('role', 'status');
+      __tmToastEl.setAttribute('aria-live', 'polite');
+      __tmToastEl.style.cssText = [
+        'position:fixed',
+        'left:50%',
+        'bottom:22px',
+        'transform:translateX(-50%) translateY(16px)',
+        'max-width:min(92vw, 520px)',
+        'padding:12px 14px',
+        'border-radius:14px',
+        'background:rgba(15, 20, 34, 0.92)',
+        'border:1px solid rgba(255,255,255,0.12)',
+        'backdrop-filter: blur(10px)',
+        'color:#fff',
+        'font-weight:600',
+        'letter-spacing:0.2px',
+        'text-align:center',
+        'box-shadow: 0 14px 40px rgba(0,0,0,0.45)',
+        'z-index:' + z,
+        'opacity:0',
+        'pointer-events:none',
+        'transition:opacity 260ms ease, transform 260ms ease'
+      ].join(';');
+      document.body.appendChild(__tmToastEl);
+    }
+
+    // Reset animation
+    __tmToastEl.textContent = msg;
+    __tmToastEl.style.zIndex = String(z);
+    __tmToastEl.style.opacity = '0';
+    __tmToastEl.style.transform = 'translateX(-50%) translateY(16px)';
+    // force reflow
+    void __tmToastEl.offsetHeight;
+    __tmToastEl.style.opacity = '1';
+    __tmToastEl.style.transform = 'translateX(-50%) translateY(0)';
+
+    clearTimeout(__tmToastHideTimer);
+    __tmToastHideTimer = setTimeout(() => {
+      try {
+        __tmToastEl.style.opacity = '0';
+        __tmToastEl.style.transform = 'translateX(-50%) translateY(16px)';
+      } catch {}
+    }, duration);
+
+    // total time until fully faded out (duration + transition buffer)
+    return duration + 300;
+  } catch {
+    return 0;
+  }
+}
+
+
+
   function saveLocalUser(u) {
     const minimal = {
       id: u?.id || "local-demo",
@@ -799,11 +867,12 @@
         showInfo('Password updated. You can now sign in.', step2);
 
         // Close after a short delay (gives user feedback)
+        const toastDelay = tmToast('✅ Password changed successfully. Please sign in.', { durationMs: 1100 });
         setTimeout(() => {
           try { dlgForgot.close(); } catch {}
           try { setActiveTab('login'); setParam('mode', 'login'); } catch {}
           try { if ($("#loginEmail")) $("#loginEmail").value = email; } catch {}
-        }, 600);
+        }, toastDelay || 1200);
       } finally {
         btnChange.textContent = originalText;
         btnChange.disabled = false;
