@@ -235,8 +235,11 @@ function cacheDom() {
   DOM.frmPassword = document.getElementById('frmPassword');
   DOM.btnChangePassword = document.getElementById('btnChangePassword');
   DOM.btnCancelPassword = document.getElementById('btnCancelPassword');
-  
-  DOM.inpName = document.getElementById('inpName');
+  DOM.inpCurrentPassword = document.getElementById('inpCurrentPassword');
+  DOM.inpNewPassword = document.getElementById('inpNewPassword');
+  DOM.inpConfirmPassword = document.getElementById('inpConfirmPassword');
+  DOM.btnSubmitPassword = document.getElementById('btnSubmitPassword');
+DOM.inpName = document.getElementById('inpName');
   DOM.inpEmail = document.getElementById('inpEmail');
   DOM.inpCity = document.getElementById('inpCity');
   DOM.inpUserAge = document.getElementById('inpAge') || document.getElementById('inpUserAge');
@@ -297,12 +300,59 @@ function cacheDom() {
   DOM.toast = document.getElementById('tm-toast');
 }
 
+let __toastTimer = null;
+let __toastHomeParent = null;
+
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function showToast(msg, type = 'success') {
   if (!DOM.toast) return;
-  DOM.toast.innerHTML = type === 'error' ? `<i class="fa-solid fa-circle-exclamation"></i> ${msg}` : `<i class="fa-solid fa-circle-check"></i> ${msg}`;
-  DOM.toast.className = `toast toast--visible ${type === 'error' ? 'toast--error' : ''}`;
-  setTimeout(() => DOM.toast.classList.remove('toast--visible'), 3000);
+
+  // Native <dialog> uses a "top layer", so elements outside can appear behind it.
+  // If a dialog is open, render the toast inside the open dialog.
+  const openDlg = document.querySelector('dialog[open]');
+  const host = openDlg || document.body;
+
+  if (!__toastHomeParent) __toastHomeParent = DOM.toast.parentElement || document.body;
+  if (host && DOM.toast.parentElement !== host) host.appendChild(DOM.toast);
+
+  const safeMsg = escapeHtml(msg);
+
+  let icon = '<i class="fa-solid fa-circle-check"></i>';
+  if (type === 'error') icon = '<i class="fa-solid fa-circle-exclamation"></i>';
+  else if (type === 'warning') icon = '<i class="fa-solid fa-triangle-exclamation"></i>';
+  else if (type === 'info') icon = '<i class="fa-solid fa-circle-info"></i>';
+
+  let cls = '';
+  if (type === 'error') cls = 'toast--error';
+  else if (type === 'warning') cls = 'toast--warning';
+  else if (type === 'info') cls = 'toast--info';
+
+  DOM.toast.innerHTML = `${icon} ${safeMsg}`;
+  DOM.toast.className = `toast toast--visible ${cls}`.trim();
+
+  if (__toastTimer) clearTimeout(__toastTimer);
+  __toastTimer = setTimeout(() => {
+    if (!DOM.toast) return;
+    DOM.toast.classList.remove('toast--visible');
+
+    // If no dialogs are open, move the toast back to its original container.
+    setTimeout(() => {
+      const stillOpen = document.querySelector('dialog[open]');
+      if (!stillOpen && __toastHomeParent && DOM.toast.parentElement !== __toastHomeParent) {
+        __toastHomeParent.appendChild(DOM.toast);
+      }
+    }, 50);
+  }, 3000);
 }
+
+// Backwards-compat: some code calls toast(...) instead of showToast(...)
+function toast(msg, type = 'success') { showToast(msg, type); }
 
 function normalizePlanKey(rawPlan) {
   // Accepts: 'free' | 'plus' | 'elite' | 'concierge' | 'tier1' | 'tier2' | 'tier3'
@@ -848,11 +898,23 @@ function setupEventListeners() {
     });
   }
 
-  // 8. Change Password
-  if (DOM.btnChangePassword) DOM.btnChangePassword.addEventListener('click', () => DOM.dlgPassword.showModal());
-  if (DOM.btnCancelPassword) DOM.btnCancelPassword.addEventListener('click', () => DOM.dlgPassword.close());
+  
+// 8. Change Password
+if (DOM.btnChangePassword) DOM.btnChangePassword.addEventListener('click', () => {
+  if (!DOM.dlgPassword) return;
+  DOM.dlgPassword.showModal();
+  try { (DOM.inpCurrentPassword || DOM.inpNewPassword)?.focus(); } catch {}
+});
 
-  // 9. Creators & Premium
+if (DOM.btnCancelPassword) DOM.btnCancelPassword.addEventListener('click', () => {
+  resetPasswordForm();
+  if (DOM.dlgPassword) DOM.dlgPassword.close();
+});
+
+if (DOM.frmPassword) DOM.frmPassword.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  await handlePasswordChange();
+});// 9. Creators & Premium
   if (DOM.btnOpenCreatorApply) DOM.btnOpenCreatorApply.addEventListener('click', () => DOM.dlgCreatorApply.showModal());
   if (DOM.btnCloseCreatorApply) DOM.btnCloseCreatorApply.addEventListener('click', () => DOM.dlgCreatorApply.close());
   
@@ -2995,6 +3057,88 @@ async function handleProfileSave() {
   } catch (e) {
     console.error(e);
     showToast(e?.message || 'Failed to save. Please try again.', 'error');
+  }
+}
+
+
+
+// ---------------------------------------------------------------------
+// SETTINGS: PASSWORD CHANGE
+// ---------------------------------------------------------------------
+
+function resetPasswordForm() {
+  if (DOM.inpCurrentPassword) DOM.inpCurrentPassword.value = '';
+  if (DOM.inpNewPassword) DOM.inpNewPassword.value = '';
+  if (DOM.inpConfirmPassword) DOM.inpConfirmPassword.value = '';
+  if (DOM.btnSubmitPassword) {
+    DOM.btnSubmitPassword.disabled = false;
+    DOM.btnSubmitPassword.textContent = 'Update';
+  }
+}
+
+async function handlePasswordChange() {
+  try {
+    const cur = String(DOM.inpCurrentPassword ? DOM.inpCurrentPassword.value : '').trim();
+    const nxt = String(DOM.inpNewPassword ? DOM.inpNewPassword.value : '').trim();
+    const conf = String(DOM.inpConfirmPassword ? DOM.inpConfirmPassword.value : '').trim();
+
+    if (!nxt) {
+      showToast('Enter a new password.', 'error');
+      return;
+    }
+    if (nxt.length < 6) {
+      showToast('Password must be at least 6 characters.', 'error');
+      return;
+    }
+    if (nxt !== conf) {
+      showToast('Passwords do not match.', 'error');
+      return;
+    }
+
+    const submitBtn = DOM.btnSubmitPassword || (DOM.frmPassword ? DOM.frmPassword.querySelector('button[type="submit"]') : null);
+    const oldTxt = submitBtn ? submitBtn.textContent : null;
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Updating...';
+    }
+
+    const res = await apiPost('/api/me/password', { currentPassword: cur, newPassword: nxt });
+
+    if (res && res.ok) {
+      if (DOM.dlgPassword) DOM.dlgPassword.close();
+      resetPasswordForm();
+      showToast('Password updated successfully.', 'success');
+      return;
+    }
+
+    const code = String((res && (res.message || res.error || res.code)) || '');
+    if (code === 'wrong_password') {
+      showToast('Current password is incorrect.', 'error');
+    } else if (code === 'weak_password') {
+      showToast('Password must be at least 6 characters.', 'error');
+    } else if (code === 'too_many_requests') {
+      showToast('Too many attempts. Please try again later.', 'warning');
+    } else if (code === 'not_logged_in') {
+      showToast('Session expired. Please sign in again.', 'error');
+      try { clearSession(); } catch {}
+      try { window.location.href = 'index.html'; } catch {}
+    } else if (code === 'auth_backend_misconfigured') {
+      showToast('Password updates are temporarily unavailable. Please try again later.', 'error');
+    } else {
+      showToast('Unable to update password. Please try again.', 'error');
+    }
+
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = oldTxt || 'Update';
+    }
+  } catch (err) {
+    console.error('handlePasswordChange error:', err);
+    showToast('Unable to update password. Please try again.', 'error');
+    if (DOM.btnSubmitPassword) {
+      DOM.btnSubmitPassword.disabled = false;
+      DOM.btnSubmitPassword.textContent = 'Update';
+    }
   }
 }
 
