@@ -1495,12 +1495,13 @@ function publicUser(doc) {
     email,
     name: doc.name || doc.fullName || '',
     handle: doc.handle || doc.username || (doc.creatorApplication && doc.creatorApplication.handle) || '',
+    username: doc.username || doc.handle || '',
+    phone: doc.phone || doc.phoneNumber || doc.phone_number || '',
+    linkedAccounts: doc.linkedAccounts || doc.linked_accounts || null,
     city: doc.city || doc.location || '',
     avatarUrl: doc.avatarUrl || doc.avatar || '',
     creatorStatus: doc.creatorStatus ?? doc.creator_status ?? null,
     hasCreatorAccess: Boolean(doc.hasCreatorAccess ?? doc.creatorApproved ?? false),
-    username: (doc.username || doc.handle || (doc.creatorApplication && doc.creatorApplication.handle) || '') || '',
-    phone: doc.phone || doc.phoneNumber || doc.mobile || '',
     premiumStatus: doc.premiumStatus ?? doc.premium_status ?? null,
     premiumSince: doc.premiumSince ?? doc.premium_since ?? null,
     premiumApplication: doc.premiumApplication ?? doc.premium_application ?? null,
@@ -2693,104 +2694,123 @@ app.post('/api/me/preferences', async (req, res) => {
   }
 });
 // ---------------- Update Profile (name/email/password/avatar) ----------------
-// [UPDATED] Update Profile (Handles EVERYTHING: Info, Avatar, Password, Age, City)
+// [UPDATED] Update Profile (Handles EVERYTHING: Info, Avatar, Password, Age, City, Username, Phone)
+// Uses cookie session (tm_email) so email changes don't break the session.
 app.post('/api/me/profile', async (req, res) => {
   try {
-    if (!DB.user || !DB.user.email) {
-      return res.status(401).json({ ok: false, message: 'not logged in' });
+    const sessionEmail = getSessionEmail(req);
+    if (!sessionEmail) {
+      return res.status(401).json({ ok: false, message: 'not_logged_in' });
     }
 
-    // 1. Kunin LAHAT ng data galing sa request
-    let { name, email, password, avatarDataUrl, avatarUrl, age, city, requireProfileCompletion, username, handle, phone } = req.body || {};
+    // 1) Pull + sanitize
+    let {
+      name,
+      email,
+      password,
+      avatarDataUrl,
+      avatarUrl,
+      age,
+      city,
+      username,
+      phone,
+      requireProfileCompletion
+    } = req.body || {};
 
-    // Basic sanitization
     name = (name || '').toString().trim();
     email = (email || '').toString().trim().toLowerCase();
     city = (city || '').toString().trim();
-    age = age ? Number(age) : null;
+    username = (username || '').toString().trim();
+    phone = (phone || '').toString().trim();
+    age = (typeof age !== 'undefined' && age !== null && age !== '') ? Number(age) : null;
     avatarDataUrl = (avatarDataUrl || '').toString();
     avatarUrl = (avatarUrl || '').toString();
     requireProfileCompletion = !!requireProfileCompletion;
 
-
-    // Username / handle / phone (Account settings)
-    const _rawUser = (username || handle || '').toString().trim();
-    username = _rawUser ? _rawUser.replace(/^@/, '') : '';
-    phone = (phone || '').toString().trim();
-    // Validate Email
+    // 2) Validate
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return res.status(400).json({ ok: false, message: 'invalid email' });
+      return res.status(400).json({ ok: false, message: 'invalid_email' });
     }
 
-    const oldEmail = DB.user.email;
+    if (username) {
+      const u = username;
+      // Keep it simple + safe for URLs/handles
+      const ok =
+        u.length >= 3 &&
+        u.length <= 24 &&
+        /^[a-zA-Z0-9._]+$/.test(u) &&
+        !/^\./.test(u) &&
+        !/\.$/.test(u) &&
+        !/\.\./.test(u);
+      if (!ok) {
+        return res.status(400).json({ ok: false, message: 'invalid_username' });
+      }
+    }
 
-    // 2. Build Update Fields (Kung ano lang ang binigay, yun lang ang ia-update)
+    if (phone) {
+      // Very permissive (international); frontend can format better
+      const ok = phone.length <= 32 && /^[0-9+()\-\s.]+$/.test(phone);
+      if (!ok) {
+        return res.status(400).json({ ok: false, message: 'invalid_phone' });
+      }
+    }
+
+    const oldEmail = sessionEmail;
+
+    // 3) Build update fields (only update provided values)
     const fields = {};
     if (name) fields.name = name;
     if (email) fields.email = email;
-    if (age) fields.age = age;
-    if (city) fields.city = city;
-    if (username) { 
-      // keep both keys for backward compatibility
-      fields.username = username;
-      fields.handle = username;
-    }
+    if (username) fields.username = username;
     if (phone) fields.phone = phone;
-    // Avatar upload: prefer Firebase Storage
-    let newAvatarUrl = '';
-    let newAvatarPath = '';
+    if (Number.isFinite(age)) fields.age = age;
+    if (city) fields.city = city;
 
     // Fetch existing user doc (for existing avatar path/url) when Firebase is ON
     let existingDoc = null;
     if (hasFirebase && usersCollection) {
-      try {
-        existingDoc = await findUserByEmail(oldEmail);
-      } catch {}
+      try { existingDoc = await findUserByEmail(oldEmail); } catch {}
     }
 
     const existingAvatarUrl =
       (existingDoc && existingDoc.avatarUrl) ||
+      (DB.users && DB.users[oldEmail] && DB.users[oldEmail].avatarUrl) ||
       (DB.user && DB.user.avatarUrl) ||
       '';
 
     const existingAvatarPath =
       (existingDoc && existingDoc.avatarPath) ||
+      (DB.users && DB.users[oldEmail] && DB.users[oldEmail].avatarPath) ||
       (DB.user && DB.user.avatarPath) ||
       '';
 
     // Onboarding validation (required fields)
     if (requireProfileCompletion) {
-      if (!age || !Number.isFinite(age) || age < 18 || age > 80) {
-        return res.status(400).json({ ok: false, message: 'invalid age' });
+      if (!Number.isFinite(age) || age < 18 || age > 80) {
+        return res.status(400).json({ ok: false, message: 'invalid_age' });
       }
       if (!city || city.trim().length < 2) {
-        return res.status(400).json({ ok: false, message: 'invalid city' });
+        return res.status(400).json({ ok: false, message: 'invalid_city' });
       }
       const hasAvatarAlready = !!existingAvatarUrl;
       const hasNewAvatar = !!avatarDataUrl;
       if (!hasAvatarAlready && !hasNewAvatar) {
-        return res.status(400).json({ ok: false, message: 'profile picture required' });
+        return res.status(400).json({ ok: false, message: 'profile_picture_required' });
       }
     }
 
+    // 4) Avatar upload: prefer Firebase Storage, fallback to inline dataURL
     if (avatarDataUrl) {
-      // Validate avatar data URL format early (must be base64 image)
       const av = String(avatarDataUrl || '');
       const m = av.match(/^data:(image\/[^;]+);base64,(.+)$/);
       if (!m) {
-        return res.status(400).json({ ok: false, message: 'invalid avatar data' });
+        return res.status(400).json({ ok: false, message: 'invalid_avatar_data' });
       }
 
-      // Inline fallback (Firestore-safe) — keeps onboarding flow working even if Storage is not enabled.
       // Firestore doc max is ~1MB; keep avatar payload comfortably below that.
-      const inlineMaxBytes = 450 * 1024; // ~450KB decoded (Firestore-safe)
+      const inlineMaxBytes = 450 * 1024; // ~450KB decoded
       let inlineBufSize = 0;
-      try {
-        inlineBufSize = Buffer.from(m[2], 'base64').length;
-      } catch {
-        return res.status(400).json({ ok: false, message: 'invalid avatar data' });
-      }
-
+      try { inlineBufSize = Buffer.from(m[2], 'base64').length; } catch {}
       const canInline = inlineBufSize > 0 && inlineBufSize <= inlineMaxBytes;
       const canUseStorage = !!(hasFirebase && hasStorage && storageBucket);
 
@@ -2798,115 +2818,401 @@ app.post('/api/me/profile', async (req, res) => {
         if (!canInline) {
           return res.status(413).json({
             ok: false,
-            message: 'Profile picture too large. Please choose a smaller image.'
+            message: 'avatar_too_large'
           });
         }
         fields.avatarUrl = av;
-        // Clear any old storage path so we don't keep stale references
         fields.avatarPath = '';
         fields.avatarUpdatedAt = new Date().toISOString();
         return null;
       };
 
       if (canUseStorage) {
-        // Firebase mode: prefer Firebase Storage
         try {
           const up = await uploadAvatarDataUrlToStorage(
             (email || oldEmail),
             av,
             existingAvatarPath
           );
-          newAvatarUrl = up.url;
-          newAvatarPath = up.path;
-          fields.avatarUrl = newAvatarUrl;
-          fields.avatarPath = newAvatarPath;
+          fields.avatarUrl = up.url;
+          fields.avatarPath = up.path;
           fields.avatarUpdatedAt = new Date().toISOString();
         } catch (e) {
-          // Fallback to inline data URL so the user can complete onboarding.
-          console.warn('[Avatar] Storage upload failed; falling back to inline avatarUrl. Reason:', e && e.message ? e.message : e);
+          console.warn('[Avatar] Storage upload failed; using inline avatarUrl. Reason:', e?.message || e);
           const resp = setInlineAvatar();
           if (resp) return resp;
         }
       } else {
-        // No Storage configured (or running in demo) — store data URL directly
-        if (hasFirebase && !canUseStorage) {
-          console.warn('[Avatar] Firebase is ON but Storage is not configured. Using inline avatarUrl fallback.');
-        }
         const resp = setInlineAvatar();
         if (resp) return resp;
       }
-
     } else if (avatarUrl) {
-      // Accept direct avatarUrl updates (optional)
       fields.avatarUrl = avatarUrl;
     }
-    // (store download URL in Firestore)
-    // If avatarDataUrl is provided, we upload it; otherwise we keep existing avatarUrl.
-    // Note: For onboarding completion, avatar must exist (new upload or existing).
 
-
-    // Handle Password Update (Only if provided)
+    // 5) Password update (optional)
     if (password && password.trim().length > 0) {
-      const hash = await bcrypt.hash(password, 10);
+      const hash = await bcrypt.hash(String(password).trim(), 10);
       fields.passwordHash = hash;
     }
 
-    // 3. Update Database (Firestore & Memory)
-    if (hasFirebase && usersCollection) {
-      const existing = await findUserByEmail(oldEmail);
-      if (!existing) return res.status(404).json({ ok: false, message: 'user not found' });
+    // Nothing to update?
+    if (!Object.keys(fields).length) {
+      // still return fresh current user
+      const cur = (hasFirebase && usersCollection) ? await findUserByEmail(oldEmail) : (DB.users[oldEmail] || DB.user || null);
+      return res.json({ ok: true, user: publicUser(cur ? { id: cur.id, ...cur } : (DB.user || null)) });
+    }
 
-      // Update Firestore
+    // 6) Persist (Firestore + memory)
+    let updatedData = null;
+
+    if (hasFirebase && usersCollection) {
+      const existing = existingDoc || await findUserByEmail(oldEmail);
+      if (!existing) return res.status(404).json({ ok: false, message: 'user_not_found' });
+
       await usersCollection.doc(existing.id).update(fields);
 
-      // Refresh Memory Data
-      const updatedData = { ...existing, ...fields };
-      
-      // Kung nagbago ang email, ayusin ang mapping
+      updatedData = { ...existing, ...fields, id: existing.id };
+
+      // If email changed: move caches + update cookie session
       if (email && email !== oldEmail) {
-        // Ilipat ang data sa bagong email key
-        DB.users[email] = { ...updatedData, id: existing.id };
-        DB.prefsByEmail[email] = DB.prefsByEmail[oldEmail];
-        
-        // Burahin ang luma
-        delete DB.users[oldEmail];
-        delete DB.prefsByEmail[oldEmail];
-      } else {
-        // Update lang yung existing key
-        DB.users[oldEmail] = { ...updatedData, id: existing.id };
-      }
-      
-      // Update Current Session User
-      DB.user = publicUser({ id: existing.id, ...updatedData });
+        try { setSession(res, email); } catch {}
 
-    } else {
-      // LOCAL DEMO MODE UPDATE
-      Object.assign(DB.user, fields); // Update session user
-      
-      // Update Global Store
-      if (DB.users[oldEmail]) {
-        Object.assign(DB.users[oldEmail], fields);
-        
-        // Handle Email Change in Local Mode
-        if (email && email !== oldEmail) {
-          DB.users[email] = DB.users[oldEmail];
-          DB.users[email].email = email;
-          delete DB.users[oldEmail];
+        DB.users[email] = { ...updatedData };
+        if (DB.prefsByEmail && DB.prefsByEmail[oldEmail]) {
+          DB.prefsByEmail[email] = DB.prefsByEmail[oldEmail];
+          delete DB.prefsByEmail[oldEmail];
         }
+        delete DB.users[oldEmail];
+
+        // Also move messages/usage buckets if present (demo memory)
+        if (DB.messages && DB.messages[oldEmail]) {
+          DB.messages[email] = DB.messages[oldEmail];
+          delete DB.messages[oldEmail];
+        }
+        if (DB.messageUsage && DB.messageUsage[oldEmail]) {
+          DB.messageUsage[email] = DB.messageUsage[oldEmail];
+          delete DB.messageUsage[oldEmail];
+        }
+      } else {
+        DB.users[oldEmail] = { ...updatedData };
       }
-      saveUsersStore(); // Save to _users_store.json immediately
-    }
-    // If the user changed email, refresh session cookie so the app doesn't get stuck using the old tm_email.
-    if (email && email !== oldEmail) {
-      try { setSession(res, email); } catch (_) {}
+
+      DB.user = publicUser(updatedData);
+    } else {
+      // Local/demo mode
+      const current = (DB.users && DB.users[oldEmail]) ? DB.users[oldEmail] : (DB.user || { email: oldEmail });
+      updatedData = { ...current, ...fields };
+
+      if (!DB.users) DB.users = {};
+      if (email && email !== oldEmail) {
+        DB.users[email] = updatedData;
+        delete DB.users[oldEmail];
+        try { setSession(res, email); } catch {}
+      } else {
+        DB.users[oldEmail] = updatedData;
+      }
+
+      DB.user = publicUser(updatedData);
+      try { saveUsersStore(); } catch {}
     }
 
-    console.log(`[Profile] Updated details for ${email || oldEmail}`);
     return res.json({ ok: true, user: DB.user });
-
   } catch (err) {
     console.error('update profile error:', err);
-    return res.status(500).json({ ok: false, message: 'server error' });
+    return res.status(500).json({ ok: false, message: 'server_error' });
+  }
+});
+
+
+// ---------------- Linked Accounts (Settings) -------------------
+// NOTE: This is a lightweight "link/unlink" store (manual value). OAuth linking can be added later.
+app.get('/api/me/linked-accounts', authMiddleware, async (req, res) => {
+  try {
+    const email = String(req.user && req.user.email || '').trim().toLowerCase();
+    if (!email) return res.status(401).json({ ok: false, message: 'not_logged_in' });
+
+    let linkedAccounts = null;
+
+    if (hasFirebase && usersCollection) {
+      const u = await findUserByEmail(email);
+      linkedAccounts = (u && (u.linkedAccounts || u.linked_accounts)) ? (u.linkedAccounts || u.linked_accounts) : null;
+    } else {
+      const u = (DB.users && DB.users[email]) || DB.user || {};
+      linkedAccounts = u.linkedAccounts || u.linked_accounts || null;
+    }
+
+    return res.json({ ok: true, linkedAccounts: linkedAccounts || null });
+  } catch (e) {
+    console.error('GET /api/me/linked-accounts error:', e);
+    return res.status(500).json({ ok: false, message: 'server_error' });
+  }
+});
+
+app.post('/api/me/linked-accounts/connect', authMiddleware, async (req, res) => {
+  try {
+    const email = String(req.user && req.user.email || '').trim().toLowerCase();
+    if (!email) return res.status(401).json({ ok: false, message: 'not_logged_in' });
+
+    const provider = String((req.body && req.body.provider) || '').trim().toLowerCase();
+    let value = String((req.body && req.body.value) || '').trim();
+
+    if (!provider || !['google', 'twitter'].includes(provider)) {
+      return res.status(400).json({ ok: false, message: 'invalid_provider' });
+    }
+
+    if (provider === 'google' && value) {
+      value = value.toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+        return res.status(400).json({ ok: false, message: 'invalid_google_email' });
+      }
+    }
+
+    if (provider === 'twitter' && value) {
+      value = value.replace(/^@/, '');
+      if (!/^[a-zA-Z0-9_]{1,15}$/.test(value)) {
+        return res.status(400).json({ ok: false, message: 'invalid_twitter_handle' });
+      }
+      value = '@' + value;
+    }
+
+    const entry = {
+      value: value || '',
+      connectedAt: new Date().toISOString()
+    };
+
+    let nextUser = null;
+
+    if (hasFirebase && usersCollection) {
+      const existing = await findUserByEmail(email);
+      if (!existing) return res.status(404).json({ ok: false, message: 'user_not_found' });
+
+      const fieldPath = `linkedAccounts.${provider}`;
+      const patch = {
+        [fieldPath]: entry,
+        linkedAccountsUpdatedAt: new Date().toISOString()
+      };
+
+      await usersCollection.doc(existing.id).update(patch);
+
+      nextUser = { ...existing, linkedAccounts: { ...(existing.linkedAccounts || {}), [provider]: entry } };
+
+      // update in-memory cache
+      const cached = (DB.users && DB.users[email]) ? DB.users[email] : null;
+      if (cached) {
+        cached.linkedAccounts = { ...(cached.linkedAccounts || {}), [provider]: entry };
+        cached.linkedAccountsUpdatedAt = patch.linkedAccountsUpdatedAt;
+        DB.users[email] = cached;
+      }
+      if (DB.user && String(DB.user.email || '').toLowerCase() === email) {
+        DB.user = { ...(DB.user || {}), linkedAccounts: { ...((DB.user || {}).linkedAccounts || {}), [provider]: entry } };
+      }
+    } else {
+      const u = (DB.users && DB.users[email]) ? DB.users[email] : (DB.user || { email });
+      u.linkedAccounts = { ...(u.linkedAccounts || {}), [provider]: entry };
+      u.linkedAccountsUpdatedAt = new Date().toISOString();
+      if (!DB.users) DB.users = {};
+      DB.users[email] = u;
+      if (DB.user && String(DB.user.email || '').toLowerCase() === email) DB.user = u;
+      try { saveUsersStore(); } catch {}
+      nextUser = u;
+    }
+
+    return res.json({ ok: true, linkedAccounts: (nextUser && nextUser.linkedAccounts) ? nextUser.linkedAccounts : { [provider]: entry } });
+  } catch (e) {
+    console.error('POST /api/me/linked-accounts/connect error:', e);
+    return res.status(500).json({ ok: false, message: 'server_error' });
+  }
+});
+
+app.post('/api/me/linked-accounts/disconnect', authMiddleware, async (req, res) => {
+  try {
+    const email = String(req.user && req.user.email || '').trim().toLowerCase();
+    if (!email) return res.status(401).json({ ok: false, message: 'not_logged_in' });
+
+    const provider = String((req.body && req.body.provider) || '').trim().toLowerCase();
+    if (!provider || !['google', 'twitter'].includes(provider)) {
+      return res.status(400).json({ ok: false, message: 'invalid_provider' });
+    }
+
+    if (hasFirebase && usersCollection && admin) {
+      const existing = await findUserByEmail(email);
+      if (!existing) return res.status(404).json({ ok: false, message: 'user_not_found' });
+
+      const fieldPath = `linkedAccounts.${provider}`;
+      const patch = {
+        [fieldPath]: admin.firestore.FieldValue.delete(),
+        linkedAccountsUpdatedAt: new Date().toISOString()
+      };
+
+      await usersCollection.doc(existing.id).update(patch);
+
+      // update cache
+      if (DB.users && DB.users[email]) {
+        const la = { ...(DB.users[email].linkedAccounts || {}) };
+        delete la[provider];
+        DB.users[email].linkedAccounts = la;
+        DB.users[email].linkedAccountsUpdatedAt = patch.linkedAccountsUpdatedAt;
+      }
+      if (DB.user && String(DB.user.email || '').toLowerCase() === email) {
+        const la = { ...((DB.user || {}).linkedAccounts || {}) };
+        delete la[provider];
+        DB.user = { ...(DB.user || {}), linkedAccounts: la };
+      }
+
+      return res.json({ ok: true });
+    }
+
+    // demo/local
+    const u = (DB.users && DB.users[email]) ? DB.users[email] : (DB.user || null);
+    if (u) {
+      const la = { ...(u.linkedAccounts || {}) };
+      delete la[provider];
+      u.linkedAccounts = la;
+      u.linkedAccountsUpdatedAt = new Date().toISOString();
+      if (DB.users) DB.users[email] = u;
+      if (DB.user && String(DB.user.email || '').toLowerCase() === email) DB.user = u;
+      try { saveUsersStore(); } catch {}
+    }
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('POST /api/me/linked-accounts/disconnect error:', e);
+    return res.status(500).json({ ok: false, message: 'server_error' });
+  }
+});
+
+
+// ---------------- Delete Account (Settings) -------------------
+// Deletes the user document + related swipe/match/moment docs, then clears cookie session.
+app.post('/api/me/delete-account', authMiddleware, async (req, res) => {
+  try {
+    const email = String(req.user && req.user.email || '').trim().toLowerCase();
+    const confirm = String((req.body && req.body.confirm) || '').trim().toUpperCase();
+
+    if (!email) return res.status(401).json({ ok: false, message: 'not_logged_in' });
+    if (confirm !== 'DELETE') return res.status(400).json({ ok: false, message: 'confirm_required' });
+
+    // Helper: batch delete by query
+    const batchDelete = async (query, batchSize = 400) => {
+      if (!hasFirebase || !firestore) return;
+      while (true) {
+        const snap = await query.limit(batchSize).get();
+        if (snap.empty) break;
+        const batch = firestore.batch();
+        snap.docs.forEach(d => batch.delete(d.ref));
+        await batch.commit();
+        if (snap.size < batchSize) break;
+      }
+    };
+
+    if (hasFirebase && usersCollection) {
+      const existing = await findUserByEmail(email);
+
+      // Best-effort delete related docs first (so you don't keep orphaned data)
+      try {
+        await batchDelete(firestore.collection(SWIPES_COLLECTION).where('from', '==', email));
+        await batchDelete(firestore.collection(SWIPES_COLLECTION).where('to', '==', email));
+      } catch (e) {
+        console.warn('[DeleteAccount] Failed deleting swipes:', e?.message || e);
+      }
+
+      try {
+        await batchDelete(firestore.collection(MATCHES_COLLECTION).where('a', '==', email));
+        await batchDelete(firestore.collection(MATCHES_COLLECTION).where('b', '==', email));
+      } catch (e) {
+        console.warn('[DeleteAccount] Failed deleting matches:', e?.message || e);
+      }
+
+      try {
+        await batchDelete(firestore.collection(PS_SWIPES_COLLECTION).where('from', '==', email));
+        await batchDelete(firestore.collection(PS_SWIPES_COLLECTION).where('to', '==', email));
+      } catch (e) {
+        console.warn('[DeleteAccount] Failed deleting PS swipes:', e?.message || e);
+      }
+
+      try {
+        await batchDelete(firestore.collection(PS_MATCHES_COLLECTION).where('a', '==', email));
+        await batchDelete(firestore.collection(PS_MATCHES_COLLECTION).where('b', '==', email));
+      } catch (e) {
+        console.warn('[DeleteAccount] Failed deleting PS matches:', e?.message || e);
+      }
+
+      try {
+        await batchDelete(firestore.collection('moments').where('ownerEmail', '==', email));
+      } catch (e) {
+        console.warn('[DeleteAccount] Failed deleting moments:', e?.message || e);
+      }
+
+      // Delete avatar file (if any)
+      if (existing && existing.avatarPath && hasStorage && storageBucket) {
+        try {
+          await storageBucket.file(String(existing.avatarPath)).delete({ ignoreNotFound: true });
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      // Delete user document
+      if (existing && existing.id) {
+        await usersCollection.doc(existing.id).delete();
+      }
+    }
+
+    // Cleanup in-memory caches (safe even when Firebase is on)
+    try {
+      if (DB.users && DB.users[email]) delete DB.users[email];
+      if (DB.prefsByEmail && DB.prefsByEmail[email]) delete DB.prefsByEmail[email];
+      if (DB.messages && DB.messages[email]) delete DB.messages[email];
+      if (DB.messageUsage && DB.messageUsage[email]) delete DB.messageUsage[email];
+
+      // Remove swipes involving the user (demo-mode structures)
+      if (DB.swipes) {
+        delete DB.swipes[email];
+        Object.keys(DB.swipes).forEach(k => {
+          if (DB.swipes[k] && typeof DB.swipes[k] === 'object' && DB.swipes[k][email]) {
+            delete DB.swipes[k][email];
+          }
+        });
+      }
+      if (DB.psSwipes) {
+        delete DB.psSwipes[email];
+        Object.keys(DB.psSwipes).forEach(k => {
+          if (DB.psSwipes[k] && typeof DB.psSwipes[k] === 'object' && DB.psSwipes[k][email]) {
+            delete DB.psSwipes[k][email];
+          }
+        });
+      }
+
+      // Remove matches involving the user
+      if (DB.matches) {
+        delete DB.matches[email];
+        Object.keys(DB.matches).forEach(k => {
+          if (Array.isArray(DB.matches[k])) {
+            DB.matches[k] = DB.matches[k].filter(v => String(v || '').toLowerCase() !== email);
+          }
+        });
+      }
+
+      // Remove local moments
+      if (Array.isArray(DB.moments)) {
+        DB.moments = DB.moments.filter(m => String(m && m.ownerEmail || '').toLowerCase() !== email);
+      }
+      if (!hasFirebase) {
+        try { saveUsersStore(); } catch {}
+        try { savePrefsStore(); } catch {}
+        try { saveMomentsStore(); } catch {}
+      }
+    } catch {}
+
+    // Clear session (logout)
+    clearSession(res);
+    setAnonState();
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('POST /api/me/delete-account error:', e);
+    return res.status(500).json({ ok: false, message: 'server_error' });
   }
 });
 
@@ -4429,8 +4735,6 @@ app.post('/api/me/creator/subscribe', async (req, res) => {
 // ---------------- Creator-to-Creator Subscriptions (Following / Subscribers) ----------------
 const CREATOR_SUBS_COLLECTION = process.env.CREATOR_SUBS_COLLECTION || 'iTrueMatchCreatorSubscriptions';
 
-const PAYMENTS_COLLECTION = process.env.PAYMENTS_COLLECTION || 'iTrueMatchPayments';
-
 function _b64url(str) {
   return Buffer.from(String(str || '').toLowerCase(), 'utf8')
     .toString('base64')
@@ -4580,229 +4884,6 @@ app.get('/api/me/subscriptions', async (req, res) => {
     return res.status(500).json({ ok: false, message: 'Server error' });
   }
 });
-
-
-// ---------------- Payments History (Data #8) ----------------
-async function _listPaymentsFor(payerEmail, limit = 50) {
-  const me = _normalizeEmail(payerEmail);
-  if (!me) return [];
-
-  // Firestore (preferred)
-  if (hasFirebase && firestore) {
-    try {
-      const snap = await firestore
-        .collection(PAYMENTS_COLLECTION)
-        .where('payerEmail', '==', me)
-        .limit(limit)
-        .get();
-
-      const items = [];
-      snap.forEach((doc) => {
-        const d = doc.data() || {};
-        items.push({ id: doc.id, ...d });
-      });
-
-      // sort latest first
-      items.sort((a, b) => {
-        const am = _tsToMs(a.createdAt) || Date.parse(a.createdAt || '') || 0;
-        const bm = _tsToMs(b.createdAt) || Date.parse(b.createdAt || '') || 0;
-        return bm - am;
-      });
-
-      return items;
-    } catch (e) {
-      // ignore and fallback
-    }
-  }
-
-  // In-memory fallback
-  const list = Array.isArray(DB.payments) ? DB.payments : [];
-  const mine = list.filter((p) => _normalizeEmail(p.payerEmail) === me);
-  mine.sort((a, b) => {
-    const am = _tsToMs(a.createdAt) || Date.parse(a.createdAt || '') || 0;
-    const bm = _tsToMs(b.createdAt) || Date.parse(b.createdAt || '') || 0;
-    return bm - am;
-  });
-  return mine.slice(0, limit);
-}
-
-async function _derivePaymentsFromSubs(payerEmail, limit = 50) {
-  const me = _normalizeEmail(payerEmail);
-  if (!me) return [];
-  const pack = await _listSubsFor(me, 'subscribed');
-  const items = (pack && Array.isArray(pack.items)) ? pack.items : [];
-
-  const mapped = items.map((s) => {
-    const other = s.otherUser || {};
-    const handle = other.handle ? String(other.handle).replace(/^@/, '') : '';
-    const who = handle ? `@${handle}` : (other.name || s.creatorEmail || 'creator');
-    const createdAt = s.startAt || s.createdAt || s.updatedAt || new Date().toISOString();
-    return {
-      id: `sub_${s.id || _subDocId(me, s.creatorEmail || '')}`,
-      type: 'subscription',
-      title: 'Subscription',
-      description: `Subscribed to ${who}`,
-      status: s.isActive ? 'active' : 'expired',
-      currency: 'USD',
-      amount: null,
-      payerEmail: me,
-      createdAt
-    };
-  });
-
-  mapped.sort((a, b) => {
-    const am = _tsToMs(a.createdAt) || Date.parse(a.createdAt || '') || 0;
-    const bm = _tsToMs(b.createdAt) || Date.parse(b.createdAt || '') || 0;
-    return bm - am;
-  });
-
-  return mapped.slice(0, limit);
-}
-
-app.get('/api/me/payments', async (req, res) => {
-  try {
-    if (!DB.user || !DB.user.email) {
-      return res.status(401).json({ ok: false, message: 'Not logged in' });
-    }
-
-    const me = _normalizeEmail(DB.user.email);
-
-    let items = await _listPaymentsFor(me, 50);
-
-    // If no real payment records exist yet, show subscription history as a useful fallback.
-    if (!items || items.length === 0) {
-      items = await _derivePaymentsFromSubs(me, 50);
-    }
-
-    return res.json({ ok: true, items, counts: { all: items.length } });
-  } catch (e) {
-    console.error('payments list error', e);
-    return res.status(500).json({ ok: false, message: 'Server error' });
-  }
-});
-
-
-// ---------------- Support (Email-only) ----------------
-app.post('/api/support/email', async (req, res) => {
-  try {
-    const me = _normalizeEmail(getSessionEmail(req) || (DB.user && DB.user.email) || '');
-    if (!me) return res.status(401).json({ ok: false, message: 'Not logged in' });
-
-    const subjectRaw = String((req.body && req.body.subject) || '').trim();
-    const messageRaw = String((req.body && req.body.message) || '').trim();
-    const page = String((req.body && req.body.page) || '').trim();
-    const meta = (req.body && req.body.meta) ? req.body.meta : {};
-
-    if (!subjectRaw || !messageRaw) {
-      return res.status(400).json({ ok: false, message: 'Missing subject or message' });
-    }
-
-    const subject = subjectRaw.slice(0, 120);
-    const message = messageRaw.slice(0, 5000);
-
-    // Simple throttle (per user): 1 email per 60s
-    if (!DB.supportEmailThrottle) DB.supportEmailThrottle = {};
-    const last = Number(DB.supportEmailThrottle[me] || 0);
-    if (last && (Date.now() - last) < 60_000) {
-      return res.status(429).json({ ok: false, message: 'Please wait a bit before sending another support email.' });
-    }
-    DB.supportEmailThrottle[me] = Date.now();
-
-    const supportTo =
-      process.env.SUPPORT_EMAIL_TO ||
-      process.env.SMTP_USER ||
-      process.env.MAIL_FROM ||
-      '';
-
-    if (!supportTo) {
-      return res.status(500).json({ ok: false, message: 'Support inbox not configured (set SUPPORT_EMAIL_TO).' });
-    }
-
-    const from =
-      process.env.SUPPORT_EMAIL_FROM ||
-      process.env.MAIL_FROM ||
-      process.env.RESEND_FROM ||
-      `iTrueMatch <${process.env.SMTP_USER || 'noreply@itruematch.com'}>`;
-
-    const ip =
-      (req.headers['x-forwarded-for'] && String(req.headers['x-forwarded-for']).split(',')[0].trim()) ||
-      req.ip ||
-      '';
-
-    const subj = `[Support] ${subject}`;
-
-    const safeUa = String(meta && meta.ua ? meta.ua : '').slice(0, 240);
-    const safeTz = String(meta && meta.tz ? meta.tz : '').slice(0, 80);
-    const safeLang = String(meta && meta.lang ? meta.lang : '').slice(0, 20);
-
-    const html = `
-      <div style="font-family:Arial,Helvetica,sans-serif; line-height:1.45;">
-        <h2 style="margin:0 0 12px 0;">iTrueMatch Support Request</h2>
-        <p style="margin:0 0 10px 0;"><b>From (user):</b> ${me}</p>
-        ${page ? `<p style="margin:0 0 10px 0;"><b>Page:</b> ${page}</p>` : ``}
-        <p style="margin:0 0 10px 0;"><b>IP:</b> ${ip}</p>
-        ${safeTz ? `<p style="margin:0 0 10px 0;"><b>Timezone:</b> ${safeTz}</p>` : ``}
-        ${safeLang ? `<p style="margin:0 0 10px 0;"><b>Language:</b> ${safeLang}</p>` : ``}
-        ${safeUa ? `<p style="margin:0 0 10px 0;"><b>User-Agent:</b> ${safeUa}</p>` : ``}
-        <hr style="border:none; border-top:1px solid #e6e6e6; margin:14px 0;" />
-        <pre style="white-space:pre-wrap; font-family:inherit; background:#f7f7f7; padding:12px; border-radius:10px;">${String(message).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}</pre>
-      </div>
-    `;
-
-    const text =
-      `iTrueMatch Support Request
-` +
-      `From: ${me}
-` +
-      (page ? `Page: ${page}
-` : '') +
-      `IP: ${ip}
-` +
-      (safeTz ? `Timezone: ${safeTz}
-` : '') +
-      (safeLang ? `Language: ${safeLang}
-` : '') +
-      (safeUa ? `User-Agent: ${safeUa}
-` : '') +
-      `
----
-${message}
-`;
-
-    // Prefer Resend when configured, else SMTP
-    if (process.env.RESEND_API_KEY) {
-      await promiseTimeout(
-        sendWithResend({ to: supportTo, subject: subj, html, text }),
-        12000,
-        'Resend support email'
-      );
-    } else {
-      const mailer = await getMailer();
-      if (!mailer) {
-        return res.status(500).json({ ok: false, message: 'Mailer not configured (set SMTP_* or RESEND_API_KEY).' });
-      }
-
-      const msg = {
-        from,
-        to: supportTo,
-        subject: subj,
-        html,
-        text,
-      };
-
-      // Reply-to the user email so support can respond easily
-      if (me.includes('@')) msg.replyTo = me;
-
-      await promiseTimeout(mailer.sendMail(msg), 12000, 'SMTP support sendMail');
-    }
-
-    return res.json({ ok: true, to: supportTo, ts: Date.now() });
-  } catch (e) {
-    console.error('POST /api/support/email error:', e?.message || e);
-    return res.status(500).json({ ok: false, message: 'Unable to send support email' });
-  }
-});
-
 
 // For testing / future payment integration
 app.post('/api/creator/subscribe', async (req, res) => {

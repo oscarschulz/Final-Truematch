@@ -944,14 +944,201 @@ function bindAccountControls(container, me) {
     });
   }
 
-  // Delete account button (placeholder until you decide backend behavior)
+  
+  // Linked Accounts (Google / Twitter)
+  const linkRows = Array.from(container.querySelectorAll('.set-link-row'));
+  if (linkRows.length) {
+    const getProviderFromRow = (row) => {
+      const t = (row.textContent || '').toLowerCase();
+      if (t.includes('google')) return 'google';
+      if (t.includes('twitter')) return 'twitter';
+      return '';
+    };
+
+    const getActionSpan = (row) => {
+      const spans = row.querySelectorAll('span');
+      return spans && spans.length ? spans[spans.length - 1] : null;
+    };
+
+    const getLinked = () => (me && me.user && (me.user.linkedAccounts || me.user.linked_accounts)) || {};
+
+    const refreshRow = (row) => {
+      const provider = getProviderFromRow(row);
+      const action = getActionSpan(row);
+      if (!provider || !action) return;
+
+      const linked = getLinked() || {};
+      const entry = linked[provider] || null;
+      const connected = !!entry;
+
+      action.textContent = connected ? 'Disconnect' : 'Connect';
+
+      // Non-invasive UI hint
+      row.setAttribute('data-connected', connected ? '1' : '0');
+      if (connected && entry && entry.value) {
+        row.title = `Connected: ${entry.value}`;
+      } else {
+        row.title = '';
+      }
+    };
+
+    // Initialize UI
+    linkRows.forEach(refreshRow);
+
+    // Bind actions
+    linkRows.forEach((row) => {
+      const provider = getProviderFromRow(row);
+      const action = getActionSpan(row);
+      if (!provider || !action) return;
+
+      if (action.__tmBound) return;
+      action.__tmBound = true;
+
+      action.style.cursor = 'pointer';
+
+      action.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const linked = getLinked() || {};
+        const entry = linked[provider] || null;
+        const connected = !!entry;
+
+        if (!window.Swal || typeof window.Swal.fire !== 'function') {
+          // Fallback
+          if (connected) {
+            if (!confirm(`Disconnect ${provider}?`)) return;
+            const r = await apiPost('/api/me/linked-accounts/disconnect', { provider }).catch(() => null);
+            if (!r || !r.ok) return tmToast('Failed to disconnect.', 'error');
+          } else {
+            const v = prompt(provider === 'google' ? 'Enter your Google email' : 'Enter your Twitter handle (@handle)');
+            if (v === null) return;
+            const r = await apiPost('/api/me/linked-accounts/connect', { provider, value: String(v || '').trim() }).catch(() => null);
+            if (!r || !r.ok) return tmToast('Failed to connect.', 'error');
+            if (r.linkedAccounts) {
+              me.user.linkedAccounts = r.linkedAccounts;
+            }
+          }
+          refreshRow(row);
+          return;
+        }
+
+        if (connected) {
+          const out = await window.Swal.fire({
+            icon: 'warning',
+            title: `Disconnect ${provider}?`,
+            text: 'You can connect again later.',
+            showCancelButton: true,
+            confirmButtonText: 'Disconnect',
+            cancelButtonText: 'Cancel'
+          });
+
+          if (!out.isConfirmed) return;
+
+          const r = await apiPost('/api/me/linked-accounts/disconnect', { provider }).catch(() => null);
+          if (!r || !r.ok) return tmToast('Failed to disconnect.', 'error');
+
+          // Update local cache
+          const next = { ...(me.user.linkedAccounts || {}) };
+          delete next[provider];
+          me.user.linkedAccounts = next;
+
+          tmToast('Disconnected.', 'success');
+          refreshRow(row);
+          return;
+        }
+
+        // Connect flow (manual value for now)
+        const out = await window.Swal.fire({
+          icon: 'info',
+          title: provider === 'google' ? 'Connect Google' : 'Connect Twitter',
+          input: 'text',
+          inputLabel: provider === 'google' ? 'Google email' : 'Twitter handle',
+          inputPlaceholder: provider === 'google' ? 'you@gmail.com' : '@yourhandle',
+          showCancelButton: true,
+          confirmButtonText: 'Connect',
+          cancelButtonText: 'Cancel',
+          inputValidator: (v) => {
+            const val = String(v || '').trim();
+            if (!val) return 'This field is required.';
+            if (provider === 'google') {
+              if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) return 'Please enter a valid email.';
+            } else {
+              const h = val.replace(/^@/, '');
+              if (!/^[a-zA-Z0-9_]{1,15}$/.test(h)) return 'Invalid handle.';
+            }
+            return null;
+          }
+        });
+
+        if (!out.isConfirmed) return;
+
+        const value = String(out.value || '').trim();
+        const r = await apiPost('/api/me/linked-accounts/connect', { provider, value }).catch(() => null);
+        if (!r || !r.ok) return tmToast('Failed to connect.', 'error');
+
+        if (r.linkedAccounts) {
+          me.user.linkedAccounts = r.linkedAccounts;
+        } else {
+          me.user.linkedAccounts = { ...(me.user.linkedAccounts || {}), [provider]: { value, connectedAt: new Date().toISOString() } };
+        }
+
+        tmToast('Connected.', 'success');
+        refreshRow(row);
+      });
+    });
+  }
+
+  // Delete account button (REAL DB delete)
   const delBtn = container.querySelector('.btn-delete-account');
   if (delBtn && !delBtn.__tmBound) {
     delBtn.__tmBound = true;
-    delBtn.addEventListener('click', () => {
-      tmToast('Delete account is not enabled yet.', 'info');
+    delBtn.addEventListener('click', async () => {
+      if (!window.Swal || typeof window.Swal.fire !== 'function') {
+        alert('SweetAlert2 is required for Delete Account confirmation.');
+        return;
+      }
+
+      const out = await window.Swal.fire({
+        icon: 'warning',
+        title: 'Delete account?',
+        html: `
+          <div style="text-align:left">
+            <div style="margin-bottom:6px">This will permanently delete your account and sign you out.</div>
+            <div style="margin-bottom:6px"><b>Type DELETE</b> to confirm.</div>
+          </div>
+        `,
+        input: 'text',
+        inputPlaceholder: 'DELETE',
+        showCancelButton: true,
+        confirmButtonText: 'Delete',
+        cancelButtonText: 'Cancel',
+        inputValidator: (v) => {
+          const val = String(v || '').trim().toUpperCase();
+          if (val !== 'DELETE') return 'You must type DELETE to confirm.';
+          return null;
+        }
+      });
+
+      if (!out.isConfirmed) return;
+
+      delBtn.disabled = true;
+
+      const r = await apiPost('/api/me/delete-account', { confirm: 'DELETE' }).catch(() => null);
+      if (!r || !r.ok) {
+        delBtn.disabled = false;
+        return tmToast('Delete failed. Try again.', 'error');
+      }
+
+      tmToast('Account deleted.', 'success');
+
+      // Redirect to landing (cookie is cleared server-side)
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 500);
     });
   }
+
 }
 
 export function initSettings() {
