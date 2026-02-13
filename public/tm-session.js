@@ -1,7 +1,4 @@
 // tm-session.js — shared helpers for localStorage state
-// Safe gamitin from any front-end module (auth, preferences, tier, dashboard, pay).
-// NOTE: HUWAG mag-import ng tm-session.js sa sarili niya.
-// Nag-cause ito ng "Identifier has already been declared" at nababasag ang dashboard loader.
 export const PREFS_KEY = 'tm_prefs';
 export const PREFS_MAP_KEY = 'tm_prefs_by_user';
 
@@ -25,21 +22,24 @@ export function getCurrentUserEmail() {
   }
 }
 
-// Same spirit as saveLocalUser() sa auth.js
+// Safer: don't create fake user defaults.
+// Only store if we have an email.
 export function saveLocalUser(u) {
+  const email = u?.email ? String(u.email).toLowerCase().trim() : '';
+  if (!email) return null;
+
   const minimal = {
-    id:    u?.id    || 'local-demo',
-    email: u?.email || 'user@truematch.app',
-    name:  u?.name  || 'User',
+    id:    u?.id || 'user',
+    email,
+    name:  (u?.name || 'User').trim(),
   };
 
   if (u && u.plan) minimal.plan = u.plan;
 
   try {
     localStorage.setItem('tm_user', JSON.stringify(minimal));
-    if (u && u.plan) {
-      localStorage.setItem('tm_plan_override', u.plan);
-    }
+    // Keep override only if you really use it as UI hint (NOT entitlement).
+    if (u && u.plan) localStorage.setItem('tm_plan_override', u.plan);
   } catch {
     // ignore storage errors
   }
@@ -47,7 +47,7 @@ export function saveLocalUser(u) {
   return minimal;
 }
 
-// -------- Plan helpers (Tier 1/2/3) --------
+// -------- Plan helpers (UI hint only; server must enforce entitlements) --------
 
 export function getLocalPlan() {
   try {
@@ -62,10 +62,8 @@ export function getLocalPlan() {
 
 export function setLocalPlan(plan) {
   if (!plan) return;
-
   try {
     localStorage.setItem('tm_plan_override', plan);
-
     const raw = JSON.parse(localStorage.getItem('tm_user') || '{}');
     raw.plan = plan;
     localStorage.setItem('tm_user', JSON.stringify(raw));
@@ -91,16 +89,12 @@ export function getRawPrefsForCurrentUser() {
       const rawMap = localStorage.getItem(PREFS_MAP_KEY);
       if (rawMap) {
         const map = JSON.parse(rawMap) || {};
-        if (map && typeof map === 'object' && map[email]) {
-          return map[email];
-        }
+        if (map && typeof map === 'object' && map[email]) return map[email];
       }
     }
 
     const legacy = localStorage.getItem(PREFS_KEY);
-    if (legacy) {
-      return JSON.parse(legacy) || null;
-    }
+    if (legacy) return JSON.parse(legacy) || null;
 
     return null;
   } catch {
@@ -115,17 +109,11 @@ export function savePrefsForCurrentUser(prefs) {
       let map = {};
       const rawMap = localStorage.getItem(PREFS_MAP_KEY);
       if (rawMap) {
-        try {
-          map = JSON.parse(rawMap) || {};
-        } catch {
-          map = {};
-        }
+        try { map = JSON.parse(rawMap) || {}; } catch { map = {}; }
       }
       map[email] = prefs;
       localStorage.setItem(PREFS_MAP_KEY, JSON.stringify(map));
     }
-
-    // Legacy slot para sa ibang scripts (same as now)
     localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
   } catch {
     // ignore
@@ -136,7 +124,7 @@ export function hasLocalPrefs() {
   return !!getRawPrefsForCurrentUser();
 }
 
-// -------- Generic JSON helpers + auth clear (used by dashboard) --------
+// -------- Generic JSON helpers + auth clear --------
 
 export function readJSON(key, fallback = null) {
   try {
@@ -166,17 +154,11 @@ export function clearAuth() {
   }
 }
 
-// ==========================================
-// FIX PARA SA DASHBOARD ERROR
-// ==========================================
-
-// Ang dashboard.js ay naghahanap ng 'clearSession'
-// Kaya ituturo natin ito sa existing 'clearAuth' function mo.
 export const clearSession = clearAuth;
 
-// Dagdag na rin natin ito dahil madalas hinahanap ng dashboard
+// Rename for clarity: this is LOCAL only (not server session)
 export function isAuthenticated() {
-    return !!getCurrentUser();
+  return !!getCurrentUser();
 }
 
 // Compatibility exports for Premium Society page
@@ -184,10 +166,8 @@ export function loadPrefsForUser(email) {
   try {
     const e = String(email || '').trim().toLowerCase();
     if (!e) return null;
-
     const rawMap = localStorage.getItem(PREFS_MAP_KEY);
     if (!rawMap) return null;
-
     const map = JSON.parse(rawMap) || {};
     return (map && typeof map === 'object') ? (map[e] || null) : null;
   } catch {
@@ -213,9 +193,7 @@ export function savePrefsForUser(email, prefs) {
     try {
       const rawUser = JSON.parse(localStorage.getItem('tm_user') || 'null');
       const curEmail = rawUser?.email ? String(rawUser.email).toLowerCase() : null;
-      if (curEmail && curEmail === e) {
-        localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
-      }
+      if (curEmail && curEmail === e) localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
     } catch {
       // ignore
     }
