@@ -864,8 +864,6 @@ function tmToast(message, opts = {}) {
           return;
         }
 
-        showInfo('Password updated. You can now sign in.', step2);
-
         // Close after a short delay (gives user feedback)
         const toastDelay = tmToast('✅ Password changed successfully. Please sign in.', { durationMs: 1100 });
         setTimeout(() => {
