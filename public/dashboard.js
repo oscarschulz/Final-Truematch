@@ -59,7 +59,7 @@ function getMockUser() {
   };
 }
 
-const state = { me: null, prefs: null, plan: 'free', activeTab: 'home', isLoading: false, selectedAvatarDataUrl: null };
+const state = { me: null, prefs: null, plan: 'free', activeTab: 'home', isLoading: false, selectedAvatarDataUrl: null, homeCache: { admirersTs: 0, nearbyTs: 0 }, homeLoading: { admirers: false, nearby: false } };
 
 // Read the last known user from localStorage
 function safeGetLocalUser() {
@@ -517,6 +517,7 @@ async function initApp() {
   if (DEV_MODE) {
     populateMockContent();
   } else {
+    await loadHomePanels(true);
     renderHomeEmptyStates();
     await MomentsController.init();
   }
@@ -551,7 +552,7 @@ async function initApp() {
 // NOTIFICATIONS CONTROLLER
 // ---------------------------------------------------------------------
 const NotificationsController = (() => {
-  const CACHE_MS = 15_000;
+  const CACHE_MS = 15000;
   let cache = { ts: 0, items: [] };
 
   function setDot(unreadCount) {
@@ -1100,6 +1101,9 @@ function setActiveTab(tabName) {
 }
 
 function onPanelActivated(tabName) {
+  if (tabName === 'home') {
+    loadHomePanels(false);
+  }
   if (tabName === 'matches') {
     loadMatchesPanel();
   }
@@ -1109,6 +1113,176 @@ function onPanelActivated(tabName) {
   if (tabName === 'concierge') {
     loadConciergePanel();
   }
+}
+
+
+
+// ---------------------------------------------------------------------
+// HOME: REAL DATA (Who Liked You + Active Nearby)
+// ---------------------------------------------------------------------
+const HOME_CACHE_MS = 15000;
+
+async function loadHomePanels(force = false) {
+  // Home widgets are safe to load in parallel.
+  await Promise.allSettled([
+    loadAdmirersPanel(force),
+    loadActiveNearbyPanel(force),
+  ]);
+}
+
+async function loadAdmirersPanel(force = false) {
+  if (!DOM.admirerContainer) return;
+  if (state.homeLoading && state.homeLoading.admirers) return;
+
+  const now = Date.now();
+  if (!force && state.homeCache && (now - (state.homeCache.admirersTs || 0) < HOME_CACHE_MS)) return;
+
+  if (state.homeLoading) state.homeLoading.admirers = true;
+
+  try {
+    const resp = await apiGet('/api/me/admirers?limit=12');
+    if (resp && resp.ok) {
+      renderAdmirersPanel(resp);
+      if (state.homeCache) state.homeCache.admirersTs = now;
+    } else {
+      // Keep empty state copy; useful when server hasn't been deployed yet.
+      console.warn('Admirers load failed:', resp);
+    }
+  } catch (err) {
+    console.warn('Admirers load error:', err);
+  } finally {
+    if (state.homeLoading) state.homeLoading.admirers = false;
+  }
+}
+
+function renderAdmirersPanel(payload) {
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const count = Math.max(0, Number(payload && payload.count || 0) || 0);
+  const locked = !!(payload && payload.locked) || state.plan === 'free';
+
+  if (DOM.admirerCount) DOM.admirerCount.textContent = `${count} New`;
+
+  // Empty
+  if (!count) {
+    DOM.admirerContainer.innerHTML = "<div class='tiny muted' style='padding:12px 2px;'>No likes yet. When someone likes you, they’ll appear here.</div>";
+    return;
+  }
+
+  if (locked) {
+    const preview = Math.min(4, Math.max(1, count));
+    let html = '';
+    for (let i = 0; i < preview; i++) {
+      html += `
+        <div class="admirer-row" style="justify-content:flex-start; gap:15px;" data-locked="1">
+          <img class="admirer-img-blur" src="assets/images/truematch-mark.png" style="background:${getRandomColor()}">
+          <div class="admirer-info" style="flex:1; text-align:left;">
+            <div class="admirer-name">Someone</div>
+            <div class="admirer-meta">Upgrade to see</div>
+          </div>
+          <div class="admirer-action"><i class="fa-solid fa-lock"></i></div>
+        </div>`;
+    }
+    DOM.admirerContainer.innerHTML = html;
+
+    // Clicking any row -> Premium tab
+    DOM.admirerContainer.querySelectorAll('.admirer-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const btn = document.querySelector('button[data-panel="premium"]');
+        if (btn) btn.click();
+      });
+    });
+    return;
+  }
+
+  // Unlocked list
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  if (!items.length) {
+    DOM.admirerContainer.innerHTML = "<div class='tiny muted' style='padding:12px 2px;'>Likes are loading… try again in a moment.</div>";
+    return;
+  }
+
+  let html = '';
+  items.forEach(it => {
+    const name = esc(it.name || 'Member');
+    const age = it.age ? `, ${esc(it.age)}` : '';
+    const city = esc(it.city || '');
+    const photo = it.photoUrl ? esc(it.photoUrl) : 'assets/images/truematch-mark.png';
+    const hasPhoto = !!it.photoUrl;
+
+    html += `
+      <div class="admirer-row" data-email="${esc(it.email || '')}" style="justify-content:flex-start; gap:15px;">
+        <img class="${hasPhoto ? 'admirer-img' : 'admirer-img'}" src="${photo}" style="background:${hasPhoto ? 'transparent' : getRandomColor()}; object-fit:${hasPhoto ? 'cover' : 'contain'}">
+        <div class="admirer-info" style="flex:1; text-align:left;">
+          <div class="admirer-name">${name}${age}</div>
+          <div class="admirer-meta">${city || '—'}</div>
+        </div>
+        <div class="admirer-action"><i class="fa-solid fa-heart"></i></div>
+      </div>`;
+  });
+
+  DOM.admirerContainer.innerHTML = html;
+
+  DOM.admirerContainer.querySelectorAll('.admirer-row[data-email]').forEach(row => {
+    row.addEventListener('click', () => {
+      // In v1 we simply take you to Swipe to continue.
+      try { setActiveTab('swipe'); } catch {}
+      toast('Open Swipe to see new people.', 'info');
+    });
+  });
+}
+
+async function loadActiveNearbyPanel(force = false) {
+  if (!DOM.activeNearbyContainer) return;
+  if (state.homeLoading && state.homeLoading.nearby) return;
+
+  const now = Date.now();
+  if (!force && state.homeCache && (now - (state.homeCache.nearbyTs || 0) < HOME_CACHE_MS)) return;
+
+  if (state.homeLoading) state.homeLoading.nearby = true;
+
+  try {
+    const resp = await apiGet('/api/me/active-nearby?limit=9');
+    if (resp && resp.ok) {
+      renderActiveNearbyPanel(resp);
+      if (state.homeCache) state.homeCache.nearbyTs = now;
+    } else {
+      console.warn('Active nearby load failed:', resp);
+    }
+  } catch (err) {
+    console.warn('Active nearby load error:', err);
+  } finally {
+    if (state.homeLoading) state.homeLoading.nearby = false;
+  }
+}
+
+function renderActiveNearbyPanel(payload) {
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  if (!items.length) {
+    DOM.activeNearbyContainer.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
+    return;
+  }
+
+  let html = `<div class="active-grid">`;
+  items.forEach(u => {
+    const photo = u.photoUrl ? esc(u.photoUrl) : 'assets/images/truematch-mark.png';
+    const hasPhoto = !!u.photoUrl;
+    html += `
+      <div class="active-item" data-email="${esc(u.email || '')}" title="${esc(u.name || 'Member')}">
+        <img src="${photo}" style="background:${hasPhoto ? 'transparent' : getRandomColor()}; object-fit:${hasPhoto ? 'cover' : 'contain'};">
+        <span class="active-dot"></span>
+      </div>`;
+  });
+  html += `</div>`;
+
+  DOM.activeNearbyContainer.innerHTML = html;
+
+  DOM.activeNearbyContainer.querySelectorAll('.active-item').forEach(el => {
+    el.addEventListener('click', () => {
+      try { setActiveTab('swipe'); } catch {}
+      toast('Swipe to discover more people.', 'info');
+    });
+  });
 }
 
 

@@ -177,8 +177,7 @@ app.use('/api', (req, res, next) => {
   return next();
 });
 
-// AsyncLocalStorage scope for each request
-app.use((req, res, next) => als.run({ user: __globalUser, prefs: __globalPrefs }, () => next()));
+// AsyncLocalStorage scope is mounted later (after DB.user/DB.prefs proxy setup)
 // =========================
 // Public vs protected HTML gating (Variant B)
 // =========================
@@ -358,6 +357,10 @@ Object.defineProperty(DB, 'prefs', {
     else __globalPrefs = v;
   }
 });
+
+// AsyncLocalStorage scope for each request
+app.use((req, res, next) => als.run({ user: __globalUser, prefs: __globalPrefs }, () => next()));
+
 
 const SERVER_SWIPE_COUNTS = {}; 
 const STRICT_DAILY_LIMIT = 20;
