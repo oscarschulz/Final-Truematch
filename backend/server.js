@@ -30,6 +30,7 @@ try {
 }
 // ---------------- Basic server setup ----------------
 const app = express();
+app.set('trust proxy', 1);
 
 // --- Basic hardening headers (lightweight; avoids breaking existing UI) ---
 app.disable('x-powered-by');
@@ -130,6 +131,38 @@ app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 
 app.use(cookieParser());
+
+// --- API responses should never be cached (cookie-based auth) ---
+app.use('/api', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
+
+// --- Minimal CSRF protection for cookie-authenticated APIs ---
+// Blocks cross-site POST/PUT/DELETE even if cookies are present.
+function _isAllowedApiOrigin(req) {
+  const origin = String(req.headers.origin || '').replace(/\/+$/g, '');
+  if (!origin) return true; // allow non-browser clients or environments that omit Origin
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http');
+  const host = String(req.get('host') || '');
+  const expected = `${proto}://${host}`.replace(/\/+$/g, '');
+  if (origin === expected) return true;
+  if (Array.isArray(CORS_ALLOWLIST) && CORS_ALLOWLIST.includes(origin)) return true;
+  if (/^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) return true;
+  return false;
+}
+
+app.use('/api', (req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+  const sfs = String(req.headers['sec-fetch-site'] || '').toLowerCase();
+  if (sfs && !['same-origin', 'same-site'].includes(sfs)) {
+    return res.status(403).json({ ok: false, message: 'csrf_blocked' });
+  }
+  if (!_isAllowedApiOrigin(req)) {
+    return res.status(403).json({ ok: false, message: 'csrf_blocked' });
+  }
+  return next();
+});
 
 // AsyncLocalStorage scope for each request
 app.use((req, res, next) => als.run({ user: __globalUser, prefs: __globalPrefs }, () => next()));
@@ -472,8 +505,10 @@ function getOrInitMessageUsage(email, plan) {
 
 
 // 🔹 SPECIAL DEMO ACCOUNT (global constants)
-const DEMO_EMAIL = 'aries.aquino@gmail.com';
-const DEMO_PASSWORD = 'aries2311';
+// 🔹 OPTIONAL special demo account (disabled by default; NEVER enable in production)
+const ENABLE_SPECIAL_DEMO = (!IS_PROD) && (process.env.ENABLE_SPECIAL_DEMO === '1');
+const DEMO_EMAIL = ENABLE_SPECIAL_DEMO ? String(process.env.DEMO_EMAIL || '').trim().toLowerCase() : '';
+const DEMO_PASSWORD = ENABLE_SPECIAL_DEMO ? String(process.env.DEMO_PASSWORD || '') : '';
 
 
 // 🔹 DEV-only bypass demo accounts (for multi-user testing)
@@ -578,24 +613,30 @@ function setSession(res, email) {
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production'
+    secure: IS_PROD,
+    path: '/',
+    maxAge: SESSION_TTL_MS,
+    priority: 'high'
   });
 
   // Clear legacy cookie if present (avoid confusion / downgrade attacks)
   res.clearCookie(LEGACY_SESSION_COOKIE, {
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production'
+    secure: IS_PROD,
+    path: '/'
   });
 }
 
 function clearSession(res) {
   res.clearCookie(SESSION_COOKIE, {
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production'
+    secure: IS_PROD,
+    path: '/'
   });
   res.clearCookie(LEGACY_SESSION_COOKIE, {
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production'
+    secure: IS_PROD,
+    path: '/'
   });
 }
 
@@ -1981,6 +2022,23 @@ async function loadApprovedProfiles(email) {
   return DB.approvedState[email] || [];
 }
 
+// ---------------- Security helpers -------------------
+function isValidEmail(email) {
+  const e = String(email || '').trim().toLowerCase();
+  if (!e || e.length > 254) return false;
+  // Simple, safe email sanity check (not RFC-perfect on purpose)
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+}
+
+function isStrongPassword(pw) {
+  const p = String(pw || '');
+  if (p.length < 8 || p.length > 72) return false; // bcrypt max is 72
+  const hasLower = /[a-z]/.test(p);
+  const hasUpper = /[A-Z]/.test(p);
+  const hasNum = /\d/.test(p);
+  return hasLower && hasUpper && hasNum;
+}
+
 // ---------------- Auth: REGISTER -------------------
 app.post('/api/auth/register', async (req, res) => {
   try {
@@ -1994,8 +2052,28 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ ok: false, message: 'email & password required' });
     }
 
+    if (!isValidEmail(emailNorm)) {
+      return res.status(400).json({ ok: false, message: 'invalid_email' });
+    }
+
+    if (!isStrongPassword(pass)) {
+      return res.status(400).json({ ok: false, message: 'weak_password' });
+    }
+
+    // Rate limit registrations (anti-abuse)
+    if (!rateLimitOr429(req, res, _rlKey(req, 'register'), 10, 60 * 60 * 1000, 'too_many_requests')) return;
+    if (!rateLimitOr429(req, res, _rlKey(req, `register:${emailNorm}`), 3, 60 * 60 * 1000, 'too_many_requests')) return;
+
+    // If prod and Firebase is missing, do NOT fall back to insecure demo auth.
+    if (IS_PROD && !hasFirebase) {
+      return res.status(503).json({ ok: false, message: 'auth_backend_misconfigured' });
+    }
+
     // ❗ Demo mode kung walang Firebase
     if (!hasFirebase) {
+      const bcrypt = require('bcryptjs');
+      const pwHash = await bcrypt.hash(pass, 10);
+
       // fresh per-user state (do NOT inherit global DB.user/DB.prefs)
       DB.user = {
         id: 'demo-1',
@@ -2017,16 +2095,20 @@ app.post('/api/auth/register', async (req, res) => {
       DB.shortlistState[emailNorm] = { shortlist: [], shortlistLastDate: null };
       DB.datesState[emailNorm] = [];
 
-      // cache clean baseline user for middleware hydration
-      DB.users[emailNorm] = { ...DB.user };
+      // cache clean baseline user for middleware hydration (store password hash privately)
+      DB.users[emailNorm] = { ...DB.user, _pwHash: pwHash };
 
-      return res.json({ ok: true, user: DB.user });
+      // set cookie session (so protected pages work even in demo/local mode)
+      setSession(res, emailNorm);
+
+      return res.json({ ok: true, user: DB.user, demo: true });
     }
 
     // Check kung existing na sa Firestore
     const existing = await findUserByEmail(emailNorm);
     if (existing) {
-      return res.status(409).json({ ok: false, message: 'email already registered' });
+      // Avoid email enumeration in production
+      return res.status(409).json({ ok: false, message: 'unable_to_register' });
     }
 
     const passwordHash = await bcrypt.hash(pass, 10);
@@ -2078,7 +2160,20 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ ok: false, message: 'email & password required' });
     }
 
-    
+    if (!isValidEmail(emailNorm)) {
+      clearSession(res);
+      return res.status(401).json({ ok: false, message: 'invalid credentials' });
+    }
+
+    // Rate limit logins (anti-bruteforce)
+    if (!rateLimitOr429(req, res, _rlKey(req, 'login'), 30, 15 * 60 * 1000, 'too_many_requests')) return;
+    if (!rateLimitOr429(req, res, _rlKey(req, `login:${emailNorm}`), 10, 15 * 60 * 1000, 'too_many_requests')) return;
+
+    // If prod and Firebase is missing, do NOT fall back to insecure demo auth.
+    if (IS_PROD && !hasFirebase) {
+      clearSession(res);
+      return res.status(503).json({ ok: false, message: 'auth_backend_misconfigured' });
+    }
 
     // ✅ DEV bypass accounts (demo1/demo2/demo3): auto-create + auto-activate tier/prefs
     if (ALLOW_TEST_BYPASS && process.env.NODE_ENV !== 'production') {
@@ -2174,9 +2269,34 @@ app.post('/api/auth/login', async (req, res) => {
 
 // ❗ Demo mode fallback (no Firebase)
     if (!hasFirebase) {
+      // Safety: NEVER allow insecure demo-auth in production
+      if (IS_PROD) {
+        clearSession(res);
+        return res.status(503).json({ ok: false, message: 'auth_backend_misconfigured' });
+      }
+
+      // Special demo account (only if explicitly enabled)
+      const isSpecialDemo = ENABLE_SPECIAL_DEMO && DEMO_EMAIL && DEMO_PASSWORD && (emailNorm === DEMO_EMAIL) && (pass === DEMO_PASSWORD);
+
+      // Require an existing registered user in demo/local mode (prevents "any password works")
+      const stored = DB.users[emailNorm] || null;
+      const storedHash = stored && stored._pwHash ? String(stored._pwHash) : '';
+
+      if (!isSpecialDemo) {
+        if (!stored || !storedHash) {
+          clearSession(res);
+          return res.status(401).json({ ok: false, message: 'invalid credentials' });
+        }
+        const ok = await bcrypt.compare(pass, storedHash);
+        if (!ok) {
+          clearSession(res);
+          return res.status(401).json({ ok: false, message: 'invalid credentials' });
+        }
+      }
+
       // hydrate clean per-user state (do NOT inherit previous DB.user)
-      if (DB.users[emailNorm]) {
-        DB.user = { ...DB.users[emailNorm] };
+      if (stored) {
+        DB.user = { ...stored };
       } else {
         DB.user = {
           id: 'demo-1',
@@ -2192,16 +2312,20 @@ app.post('/api/auth/login', async (req, res) => {
         };
       }
 
+      // Never expose stored password hash to the client
+      if (DB.user && Object.prototype.hasOwnProperty.call(DB.user, '_pwHash')) delete DB.user._pwHash;
+
       // load per-email prefs (default null)
       DB.prefs = Object.prototype.hasOwnProperty.call(DB.prefsByEmail, emailNorm)
         ? DB.prefsByEmail[emailNorm]
         : null;
-      if (emailNorm === DEMO_EMAIL && pass === DEMO_PASSWORD) {
+
+      if (isSpecialDemo) {
         // SPECIAL DEMO ACCOUNT IN PURE IN-MEMORY MODE
         const now  = new Date();
         const rule = PLAN_RULES['tier3'];
 
-        DB.user.name       = 'Aries Aquino (Demo)';
+        DB.user.name       = 'Demo User';
         DB.user.city       = DB.user.city || 'Manila';
         DB.user.plan       = 'tier3';
         DB.user.planStart  = now.toISOString();
@@ -2235,11 +2359,14 @@ app.post('/api/auth/login', async (req, res) => {
         DB.datesState[emailNorm] = [];
       }
 
-      DB.users[emailNorm] = { ...DB.user };
+      // persist user state back to memory store (keep password hash private)
+      DB.users[emailNorm] = { ...DB.user, _pwHash: storedHash };
       DB.prefsByEmail[emailNorm] = DB.prefs;
-      setSession(res, emailNorm);
 
-      return res.json({ ok: true, user: DB.user, demo: emailNorm === DEMO_EMAIL });
+      setSession(res, emailNorm);
+      saveUsersStore();
+
+      return res.json({ ok: true, user: DB.user, demo: isSpecialDemo });
     }
 
     // ---------- Firebase mode ----------
@@ -2264,7 +2391,7 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     // SPECIAL DEMO ACCOUNT (auto-create if missing)
-    if (!userDoc && emailNorm === DEMO_EMAIL && pass === DEMO_PASSWORD) {
+    if (!userDoc && ENABLE_SPECIAL_DEMO && DEMO_EMAIL && DEMO_PASSWORD && emailNorm === DEMO_EMAIL && pass === DEMO_PASSWORD) {
       const passwordHash = await bcrypt.hash(pass, 10);
       const now          = new Date();
       const rule         = PLAN_RULES['tier3'];
@@ -2388,6 +2515,10 @@ app.post('/api/auth/forgot/request', async (req, res) => {
     const email = String(req.body?.email || '').trim().toLowerCase();
     if (!email) return res.status(400).json({ ok:false, message:'email required' });
 
+    if (IS_PROD && !hasFirebase) {
+      return res.status(503).json({ ok:false, message:'auth_backend_misconfigured' });
+    }
+
     // Basic anti-abuse (per-IP). We always respond OK to avoid email enumeration.
     if (!rateLimitOr429(req, res, _rlKey(req, 'forgot_request'), 5, 15 * 60 * 1000, 'too_many_requests')) return;
 
@@ -2420,8 +2551,9 @@ app.post('/api/auth/forgot/request', async (req, res) => {
         }
       }
 
-      const base = String(process.env.PUBLIC_BASE_URL || req.headers.origin || '').replace(/\/+$/g, '');
-      if (base) {
+      const base = String(process.env.PUBLIC_BASE_URL || '').replace(/\/+$/g, '');
+      const baseOk = Boolean(base) && (!IS_PROD || String(base).startsWith('https://'));
+      if (baseOk) {
         const resetUrl = `${base}/auth.html?mode=reset&token=${encodeURIComponent(token)}`;
         try{
           await sendPasswordResetEmail(email, resetUrl);
@@ -2429,7 +2561,7 @@ app.post('/api/auth/forgot/request', async (req, res) => {
           console.warn('[forgot] email send warn:', err?.message || err);
         }
       } else {
-        console.warn('[forgot] No PUBLIC_BASE_URL / Origin available; cannot build reset link email.');
+        console.warn('[forgot] PUBLIC_BASE_URL is missing/invalid; cannot build reset link email.');
       }
     }
 
@@ -2447,7 +2579,7 @@ app.post('/api/auth/forgot/reset', async (req, res) => {
     const newPassword = String(req.body?.newPassword || '').trim();
 
     if (!token || !newPassword) return res.status(400).json({ ok:false, message:'token and newPassword required' });
-    if (newPassword.length < 8 || newPassword.length > 72) return res.status(400).json({ ok:false, message:'weak_password' });
+    if (!isStrongPassword(newPassword)) return res.status(400).json({ ok:false, message:'weak_password' });
 
     // Basic anti-abuse (per-IP)
     if (!rateLimitOr429(req, res, _rlKey(req, 'forgot_reset'), 10, 15 * 60 * 1000, 'too_many_requests')) return;
@@ -2577,7 +2709,7 @@ app.get('/api/me', async (req, res) => {
       ok: true,
       user: responseUser,
       prefs,
-      demo: email === DEMO_EMAIL || Boolean(TEST_BYPASS_ACCOUNTS[email])
+      demo: Boolean(TEST_BYPASS_ACCOUNTS[email]) || (ENABLE_SPECIAL_DEMO && DEMO_EMAIL && email === DEMO_EMAIL)
     });
   } catch (err) {
     console.error('error in /api/me:', err);
@@ -3534,8 +3666,15 @@ app.post('/api/me/password', async (req, res) => {
     const cur = String(currentPassword || '');
     const nxt = String(newPassword || '');
 
-    if (!nxt || nxt.length < 8) {
-      return res.status(400).json({ ok: false, message: 'password_too_short' });
+    // Rate limit password changes
+    if (!rateLimitOr429(req, res, _rlKey(req, 'change_password'), 10, 30 * 60 * 1000, 'too_many_requests')) return;
+
+    if (!isStrongPassword(nxt)) {
+      return res.status(400).json({ ok: false, message: 'weak_password' });
+    }
+
+    if (IS_PROD && !hasFirebase) {
+      return res.status(503).json({ ok: false, message: 'auth_backend_misconfigured' });
     }
 
     const user = await findUserByEmail(emailNorm);

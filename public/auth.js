@@ -584,16 +584,23 @@ function tmShowLoader(title, sub, small) {
     const step1 = document.getElementById('forgotStep1');
     const step2 = document.getElementById('forgotStep2');
     const btnCancel = document.getElementById('btnForgotCancel');
-    const btnCloseForgot = document.getElementById('btnCloseForgot');
+    const btnCloseForgot = document.getElementById('btnCloseForgot') || document.getElementById('btnCloseForgotX');
+    const btnCloseForgotX = document.getElementById('btnCloseForgotX');
     const btnVerify = document.getElementById('btnForgotVerify');
     const btnBack = document.getElementById('btnForgotBack');
     const btnChange = document.getElementById('btnForgotChange');
     const err = document.getElementById('forgotError');
-    const inEmail = document.getElementById('forgotEmail');
+    const inEmail = document.getElementById('forgotEmail') || document.getElementById('forgotEmailInput');
     const inPass1 = document.getElementById('forgotNewPass');
-    const inPass2 = document.getElementById('forgotNewPass2');
+    const inPass2 = document.getElementById('forgotNewPass2') || document.getElementById('forgotConfirmPass');
 
     let resetToken = null;
+
+    function setErr(msg = "") {
+      if (!err) return;
+      err.textContent = msg || "";
+      err.style.display = msg ? "block" : "none";
+    }
 
     function clearParams(keys = []) {
       const url = new URL(window.location.href);
@@ -605,7 +612,7 @@ function tmShowLoader(title, sub, small) {
       resetToken = null;
       step1.style.display = "";
       step2.style.display = "none";
-      err.textContent = message || "";
+      setErr(message || "");
       if (inEmail) inEmail.value = "";
       if (inPass1) inPass1.value = "";
       if (inPass2) inPass2.value = "";
@@ -615,19 +622,25 @@ function tmShowLoader(title, sub, small) {
       resetToken = String(token || "").trim();
       step1.style.display = "none";
       step2.style.display = "";
-      err.textContent = "";
+      setErr("");
       if (inPass1) inPass1.value = "";
       if (inPass2) inPass2.value = "";
     }
 
     function closeDialog() {
-      try { dlgForgot.close(); } catch {}
+      try {
+        if (dlgForgot && typeof dlgForgot.close === 'function') dlgForgot.close();
+        else dlgForgot?.removeAttribute?.('open');
+      } catch {}
     }
 
     btnOpenForgot?.addEventListener('click', (e) => {
       e.preventDefault();
       showStep1("");
-      dlgForgot?.showModal?.();
+      try {
+        if (dlgForgot && typeof dlgForgot.showModal === 'function') dlgForgot.showModal();
+        else dlgForgot?.setAttribute?.('open', '');
+      } catch {}
     });
 
     btnCancel?.addEventListener('click', () => {
@@ -646,22 +659,22 @@ function tmShowLoader(title, sub, small) {
 
     btnVerify?.addEventListener('click', async () => {
       const email = (inEmail?.value || "").trim();
-      if (!email) { err.textContent = "Enter your email."; return; }
+      if (!email) { setErr("Enter your email."); return; }
 
       btnVerify.disabled = true;
-      err.textContent = "Sending reset link...";
+      setErr("Sending reset link...");
 
       const out = await callAPI("/api/auth/forgot/request", { email }, { timeoutMs: 15000 });
 
       btnVerify.disabled = false;
 
       if (!out?.ok) {
-        err.textContent = "Could not send reset link. Try again.";
+        setErr("Could not send reset link. Try again.");
         return;
       }
 
       // Always generic (no enumeration).
-      err.textContent = "If an account exists for that email, we sent a reset link.";
+      setErr("If an account exists for that email, we sent a reset link.");
       setTimeout(() => {
         closeDialog();
         // Keep user on login tab
@@ -688,27 +701,27 @@ function tmShowLoader(title, sub, small) {
       const p2 = (inPass2?.value || "").trim();
 
       if (!resetToken) {
-        err.textContent = "Reset link is missing or invalid.";
+        setErr("Reset link is missing or invalid.");
         return;
       }
-      if (!p1 || p1.length < 8) { err.textContent = "Password must be at least 8 characters."; return; }
-      if (p1 !== p2) { err.textContent = "Passwords do not match."; return; }
+      if (!p1 || p1.length < 8) { setErr("Password must be at least 8 characters."); return; }
+      if (p1 !== p2) { setErr("Passwords do not match."); return; }
 
       btnChange.disabled = true;
-      err.textContent = "Updating password...";
+      setErr("Updating password...");
 
       const out = await callAPI("/api/auth/forgot/reset", { token: resetToken, newPassword: p1 }, { timeoutMs: 15000 });
 
       btnChange.disabled = false;
 
       if (!out?.ok) {
-        err.textContent = (out?.message === 'weak_password')
+        setErr((out?.message === 'weak_password')
           ? "Password is too weak."
-          : "Could not reset password. Request a new reset link.";
+          : "Could not reset password. Request a new reset link.");
         return;
       }
 
-      err.textContent = "Password updated. You can log in now.";
+      setErr("Password updated. You can log in now.");
       setTimeout(() => {
         closeDialog();
         clearParams(['mode', 'token']);
@@ -722,7 +735,10 @@ function tmShowLoader(title, sub, small) {
     const token = getParam('token');
     if (mode === 'reset' && token) {
       showStep2(token);
-      dlgForgot?.showModal?.();
+      try {
+        if (dlgForgot && typeof dlgForgot.showModal === 'function') dlgForgot.showModal();
+        else dlgForgot?.setAttribute?.('open', '');
+      } catch {}
     } else {
       // default view
       showStep1("");
