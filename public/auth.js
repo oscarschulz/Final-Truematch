@@ -762,7 +762,7 @@
         }
 
         const msg = (out.message === 'resend_wait')
-          ? 'Please wait a bit before resending the code.'
+          ? 'A code was sent recently. Please check your inbox/spam. (Wait ~60s before resending.)'
           : 'If an account exists, we resent the code. Check your inbox/spam.';
         showInfo(msg, step2);
       } finally {
@@ -776,7 +776,7 @@
   if (btnChange) {
     btnChange.addEventListener('click', async () => {
       const email = String(otpEmail || '').trim().toLowerCase();
-      const code = String(inOtp?.value || '').trim();
+      const code = String(inOtp?.value || '').replace(/\D/g, '');
       const pass1 = String(inPass1?.value || '').trim();
       const pass2 = String(inPass2?.value || '').trim();
 

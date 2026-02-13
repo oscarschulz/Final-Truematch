@@ -2623,7 +2623,7 @@ app.post('/api/auth/forgot/send-otp', async (req, res) => {
         }
       }
 
-      const lastSentAt = rec && rec.lastSentAt ? Number(rec.lastSentAt) : 0;
+      const lastSentAt = rec && rec.lastSentAt ? normalizeEpochMs(rec.lastSentAt) : 0;
       if (lastSentAt && (now - lastSentAt) < RESEND_GAP_MS) {
         return res.json({ ok: true, message: 'resend_wait' });
       }
@@ -2670,11 +2670,11 @@ app.post('/api/auth/forgot/send-otp', async (req, res) => {
 app.post('/api/auth/forgot/reset-otp', async (req, res) => {
   try {
     const email = String(req.body?.email || '').trim().toLowerCase();
-    const code = String(req.body?.code || '').trim();
+    const code = String(req.body?.code || '').replace(/\D/g, '');
     const newPassword = String(req.body?.newPassword || '').trim();
 
-    if (!email || !code || !newPassword) {
-      return res.status(400).json({ ok: false, message: 'email, code, and newPassword required' });
+    if (!email || !code || code.length !== 6 || !newPassword) {
+      return res.status(400).json({ ok: false, message: 'email, 6-digit code, and newPassword required' });
     }
     if (!isStrongPassword(newPassword)) {
       return res.status(400).json({ ok: false, message: 'weak_password' });
@@ -2696,7 +2696,8 @@ app.post('/api/auth/forgot/reset-otp', async (req, res) => {
     }
 
     const now = Date.now();
-    if (!rec || !rec.exp || now > Number(rec.exp)) {
+    const expMs = rec ? normalizeEpochMs(rec.exp) : 0;
+    if (!rec || !expMs || now > expMs) {
       // cleanup
       delete DB.forgotOtps[key];
       if (hasFirebase && firestore) {
@@ -2715,7 +2716,7 @@ app.post('/api/auth/forgot/reset-otp', async (req, res) => {
     }
 
     const bcrypt = require('bcryptjs');
-    const ok = await bcrypt.compare(code, String(rec.codeHash || ''));
+    const ok = await bcrypt.compare(code, String(rec.codeHash || rec.hash || rec.code_hash || ''));
     if (!ok) {
       rec.attempts = attempts + 1;
       DB.forgotOtps[key] = rec;
@@ -6102,6 +6103,21 @@ function generateCode() {
 
 const CODE_TTL_MS = 10 * 60 * 1000;   // 10 minutes
 const RESEND_GAP_MS = 60 * 1000;      // 60 seconds
+function normalizeEpochMs(v) {
+  if (v == null) return 0;
+  if (typeof v === 'number' && Number.isFinite(v)) return (v < 1e12 ? v * 1000 : v);
+  if (typeof v === 'string') {
+    const n = Number(v);
+    if (Number.isFinite(n)) return (n < 1e12 ? n * 1000 : n);
+    return 0;
+  }
+  if (typeof v === 'object') {
+    if (typeof v.toMillis === 'function') return v.toMillis(); // Firestore Timestamp
+    if (typeof v.seconds === 'number') return v.seconds * 1000;
+    if (typeof v._seconds === 'number') return v._seconds * 1000;
+  }
+  return 0;
+}
 if (!DB.emailVerify) DB.emailVerify = {};
 
 function promiseTimeout(promise, ms, label = "operation") {
