@@ -520,8 +520,18 @@ async function initApp() {
   
   setupEventListeners();
   setupMobileMenu();
-  
-  
+
+  // Restore last opened tab if allowed for this plan
+  try {
+    const remembered = localStorage.getItem('tm_activeTab') || 'home';
+    const allowedBtn = Array.from(DOM.tabs || []).find(b => b && b.dataset && b.dataset.panel === remembered && b.style.display !== 'none');
+    const fallbackBtn = Array.from(DOM.tabs || []).find(b => b && b.dataset && b.style.display !== 'none');
+    const safeTab = allowedBtn ? remembered : (fallbackBtn ? fallbackBtn.dataset.panel : 'home');
+    setActiveTab(safeTab);
+  } catch {
+    setActiveTab('home');
+  }
+
   // Remove Loader
   setTimeout(() => {
       const loader = document.getElementById('app-loader');
@@ -908,7 +918,15 @@ function setActiveTab(tabName) {
       sidebar.classList.remove('is-open');
       if(menuBtn) menuBtn.innerHTML = '<i class="fa-solid fa-bars"></i>';
   }
+
+
+  // 4. Persist last active tab (used on reload)
+  try { localStorage.setItem('tm_activeTab', tabName); } catch {}
+
+  // 5. Lazy-load panel data when the tab becomes active
+  try { onPanelActivated(tabName); } catch {}
 }
+
 function onPanelActivated(tabName) {
   if (tabName === 'matches') {
     loadMatchesPanel();
