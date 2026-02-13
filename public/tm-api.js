@@ -1,11 +1,13 @@
 /**
  * TrueMatch Frontend API helper (ES module)
  *
- * Hardened:
- * - Timeout via AbortController
- * - Sends CSRF-ish marker header (server should validate)
- * - Sends Accept: application/json
- * - Normalizes password change payload for backward compatibility
+ * Hardened improvements:
+ * - Request timeout via AbortController (prevents "stuck" UI)
+ * - Always sends cookies (credentials: 'include')
+ * - Always sends Accept: application/json
+ * - Adds X-TM-Request marker header (optional server-side validation)
+ * - Normalizes errors into { ok:false, status?, error, message? }
+ * - Backward-compatible password change payload
  */
 
 const DEFAULT_TIMEOUT_MS = 15000;
@@ -16,13 +18,24 @@ async function safeJson(res) {
   try {
     return JSON.parse(text);
   } catch {
+    // Non-JSON response (misconfigured route / proxy). Surface as a structured error.
     return { ok: false, error: 'Non-JSON response', status: res.status, body: text.slice(0, 500) };
   }
 }
 
+function normalizeError(res, data) {
+  const msg = (data && (data.error || data.message)) || `HTTP ${res.status}`;
+  return {
+    ok: false,
+    status: res.status,
+    error: msg,
+    ...(data && typeof data === 'object' ? data : {}),
+  };
+}
+
 async function request(path, { method = 'GET', body, headers = {}, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const res = await fetch(path, {
@@ -40,19 +53,20 @@ async function request(path, { method = 'GET', body, headers = {}, timeoutMs = D
 
     const data = await safeJson(res);
 
-    if (!res.ok) {
-      const msg = (data && (data.error || data.message)) || `HTTP ${res.status}`;
-      return { ok: false, status: res.status, error: msg, ...(data && typeof data === 'object' ? data : {}) };
-    }
+    if (!res.ok) return normalizeError(res, data);
 
+    // Normalize empty bodies.
     if (!data || typeof data !== 'object') return { ok: true };
+
+    // Some endpoints might not include ok=true; normalize.
     if (typeof data.ok !== 'boolean') return { ok: true, ...data };
+
     return data;
   } catch (err) {
     const isAbort = err?.name === 'AbortError';
     return { ok: false, error: isAbort ? 'Request timeout' : (err?.message || 'Network error') };
   } finally {
-    clearTimeout(t);
+    clearTimeout(timer);
   }
 }
 
@@ -78,7 +92,7 @@ export async function apiSavePrefs(prefs) {
 }
 
 export async function apiChangePassword(currentPassword, newPassword) {
-  // Backward-compatible payload: some servers expect oldPassword instead of currentPassword
+  // Backward-compatible payload: some server builds used oldPassword.
   return apiPost('/api/me/password', { currentPassword, oldPassword: currentPassword, newPassword });
 }
 

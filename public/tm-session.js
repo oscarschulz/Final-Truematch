@@ -1,4 +1,14 @@
 // tm-session.js — shared helpers for localStorage state
+//
+// SECURITY NOTES (important):
+// - localStorage is NOT a security boundary. Users can edit it via DevTools.
+// - Treat anything stored here as "UI hints" only. Server must enforce entitlements.
+//
+// Goal of this v2 hardening:
+// - Avoid writing fake placeholder users (prevents confusing auth states)
+// - Make plan override explicitly non-authoritative
+// - Keep backwards compatibility with dashboard.js expectations (clearSession, isAuthenticated)
+
 export const PREFS_KEY = 'tm_prefs';
 export const PREFS_MAP_KEY = 'tm_prefs_by_user';
 
@@ -16,29 +26,29 @@ export function getCurrentUserEmail() {
   try {
     const u = getCurrentUser();
     const email = u && u.email;
-    return email ? String(email).toLowerCase() : null;
+    return email ? String(email).toLowerCase().trim() : null;
   } catch {
     return null;
   }
 }
 
-// Safer: don't create fake user defaults.
-// Only store if we have an email.
+// Safer version: only stores a user if we have an email.
+// If called with invalid data, it won't create a fake user.
 export function saveLocalUser(u) {
   const email = u?.email ? String(u.email).toLowerCase().trim() : '';
   if (!email) return null;
 
   const minimal = {
-    id:    u?.id || 'user',
+    id: u?.id || 'local',
     email,
-    name:  (u?.name || 'User').trim(),
+    name: (u?.name || 'User').trim(),
   };
 
+  // Keep plan as UI hint only.
   if (u && u.plan) minimal.plan = u.plan;
 
   try {
     localStorage.setItem('tm_user', JSON.stringify(minimal));
-    // Keep override only if you really use it as UI hint (NOT entitlement).
     if (u && u.plan) localStorage.setItem('tm_plan_override', u.plan);
   } catch {
     // ignore storage errors
@@ -47,7 +57,7 @@ export function saveLocalUser(u) {
   return minimal;
 }
 
-// -------- Plan helpers (UI hint only; server must enforce entitlements) --------
+// -------- Plan helpers (UI hint only; server must enforce) --------
 
 export function getLocalPlan() {
   try {
@@ -114,6 +124,8 @@ export function savePrefsForCurrentUser(prefs) {
       map[email] = prefs;
       localStorage.setItem(PREFS_MAP_KEY, JSON.stringify(map));
     }
+
+    // Legacy slot para sa ibang scripts
     localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
   } catch {
     // ignore
@@ -154,9 +166,11 @@ export function clearAuth() {
   }
 }
 
+// dashboard.js expects clearSession
 export const clearSession = clearAuth;
 
-// Rename for clarity: this is LOCAL only (not server session)
+// IMPORTANT: This is only a local check.
+// Real auth must be validated by calling /api/me.
 export function isAuthenticated() {
   return !!getCurrentUser();
 }
@@ -166,8 +180,10 @@ export function loadPrefsForUser(email) {
   try {
     const e = String(email || '').trim().toLowerCase();
     if (!e) return null;
+
     const rawMap = localStorage.getItem(PREFS_MAP_KEY);
     if (!rawMap) return null;
+
     const map = JSON.parse(rawMap) || {};
     return (map && typeof map === 'object') ? (map[e] || null) : null;
   } catch {
@@ -192,8 +208,10 @@ export function savePrefsForUser(email, prefs) {
     // keep legacy slot in sync if this is the current user
     try {
       const rawUser = JSON.parse(localStorage.getItem('tm_user') || 'null');
-      const curEmail = rawUser?.email ? String(rawUser.email).toLowerCase() : null;
-      if (curEmail && curEmail === e) localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+      const curEmail = rawUser?.email ? String(rawUser.email).toLowerCase().trim() : null;
+      if (curEmail && curEmail === e) {
+        localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+      }
     } catch {
       // ignore
     }
