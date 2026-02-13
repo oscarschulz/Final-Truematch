@@ -31,6 +31,19 @@ try {
 // ---------------- Basic server setup ----------------
 const app = express();
 
+// --- Basic hardening headers (lightweight; avoids breaking existing UI) ---
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+
 // =========================
 // Frontend public folder resolver
 // =========================
@@ -135,14 +148,7 @@ const PROTECTED_HTML = new Set([
 ]);
 
 function hasSessionCookie(req) {
-  try {
-    const v = req.cookies && req.cookies.tm_email;
-    if (!v) return false;
-    const email = String(v).trim().toLowerCase();
-    return email.includes('@') && email.length <= 320;
-  } catch (e) {
-    return false;
-  }
+  return !!getSessionEmail(req);
 }
 
 app.use((req, res, next) => {
@@ -261,6 +267,8 @@ const DB = {
   messages: {},
   messageUsage: {},
   emailVerify: {},
+  resetTokens: {},
+  rateLimits: {},
 
   // Recent Moments (Stories)
   // Stored as an array of moment objects. When Firebase is enabled, moments are stored in Firestore
@@ -270,7 +278,7 @@ const DB = {
 
 /* =========================
    Request-scoped DB.user / DB.prefs (fix concurrency bug)
-   - Many routes mutate DB.user / DB.prefs based on the current request (tm_email cookie).
+   - Many routes mutate DB.user / DB.prefs based on the current request (tm_session cookie).
    - Without isolation, concurrent requests can overwrite each other's session state.
    - AsyncLocalStorage keeps these values per-request without rewriting all routes.
    ========================= */
@@ -497,11 +505,84 @@ const TEST_BYPASS_ACCOUNTS = {
 };
 
 // 🔹 Cookie session (email-based) — simple & works for your current frontend
-const SESSION_COOKIE = 'tm_email';
+// ---------------- Session cookie (signed token; prevents cookie-forging) ----------------
+const SESSION_COOKIE = 'tm_session';
+const LEGACY_SESSION_COOKIE = 'tm_email'; // legacy (UNSIGNED) cookie from older builds (never trusted)
+
+// Prefer a stable secret from env. If missing, we generate one at boot (secure, but logs everyone out on restart).
+const SESSION_SECRET = String(process.env.SESSION_SECRET || process.env.COOKIE_SECRET || process.env.JWT_SECRET || '').trim()
+  || crypto.randomBytes(32).toString('hex');
+
+if (!process.env.SESSION_SECRET && !process.env.COOKIE_SECRET && !process.env.JWT_SECRET) {
+  console.warn('[security] SESSION_SECRET/COOKIE_SECRET/JWT_SECRET is not set. Sessions will reset on every deploy. Set a strong secret in your env for persistent sessions.');
+}
+
+const SESSION_TTL_DAYS = Math.max(1, Math.min(30, Number(process.env.SESSION_TTL_DAYS || 14)));
+const SESSION_TTL_MS = SESSION_TTL_DAYS * 24 * 60 * 60 * 1000;
+
+function b64urlEncode(buf) {
+  return Buffer.from(buf).toString('base64').replace(/=+$/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+function b64urlDecode(str) {
+  const s = String(str || '').replace(/-/g, '+').replace(/_/g, '/');
+  const pad = s.length % 4 ? '='.repeat(4 - (s.length % 4)) : '';
+  return Buffer.from(s + pad, 'base64');
+}
+
+function signSessionPayload(payloadObj) {
+  const payload = b64urlEncode(Buffer.from(JSON.stringify(payloadObj), 'utf8'));
+  const sig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest();
+  return payload + '.' + b64urlEncode(sig);
+}
+
+function verifySessionToken(token) {
+  try {
+    const t = String(token || '');
+    const parts = t.split('.');
+    if (parts.length !== 2) return null;
+    const [payloadB64, sigB64] = parts;
+
+    const expected = crypto.createHmac('sha256', SESSION_SECRET).update(payloadB64).digest();
+    const got = b64urlDecode(sigB64);
+
+    // constant-time compare
+    if (got.length !== expected.length || !crypto.timingSafeEqual(got, expected)) return null;
+
+    const payloadJson = b64urlDecode(payloadB64).toString('utf8');
+    const payload = JSON.parse(payloadJson);
+
+    if (!payload || typeof payload !== 'object') return null;
+
+    const email = String(payload.e || '').trim().toLowerCase();
+    const exp = Number(payload.exp || 0);
+
+    if (!email) return null;
+    if (!exp || Date.now() > exp) return null;
+
+    return email;
+  } catch {
+    return null;
+  }
+}
 
 function setSession(res, email) {
-  res.cookie(SESSION_COOKIE, email, {
+  const emailNorm = String(email || '').trim().toLowerCase();
+  const now = Date.now();
+  const token = signSessionPayload({
+    v: 1,
+    e: emailNorm,
+    iat: now,
+    exp: now + SESSION_TTL_MS
+  });
+
+  res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production'
+  });
+
+  // Clear legacy cookie if present (avoid confusion / downgrade attacks)
+  res.clearCookie(LEGACY_SESSION_COOKIE, {
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production'
   });
@@ -512,10 +593,52 @@ function clearSession(res) {
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production'
   });
+  res.clearCookie(LEGACY_SESSION_COOKIE, {
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production'
+  });
 }
 
 function getSessionEmail(req) {
-  return ((req.cookies || {})[SESSION_COOKIE] || '').toString().trim().toLowerCase();
+  const cookies = (req.cookies || {});
+  const token = (cookies[SESSION_COOKIE] || '').toString().trim();
+  const email = verifySessionToken(token);
+  if (email) return email;
+
+  // Never trust unsigned legacy cookie.
+  // If it exists, the middleware will clear it when it detects no valid user.
+  return '';
+}
+
+
+// ---------------- Simple in-memory rate limiter ----------------
+// NOTE: This is intentionally lightweight (no new deps). In multi-instance deployments,
+// a shared store (Redis) would be better, but this still blocks basic brute force attacks.
+function _rlKey(req, suffix = '') {
+  const ip = (req.headers['x-forwarded-for'] || req.ip || '').toString().split(',')[0].trim();
+  return `${ip}${suffix ? ':' + suffix : ''}`;
+}
+function takeRateLimit(key, limit, windowMs) {
+  const now = Date.now();
+  const rec = DB.rateLimits[key] || { count: 0, resetAt: now + windowMs };
+  if (now > rec.resetAt) {
+    rec.count = 0;
+    rec.resetAt = now + windowMs;
+  }
+  rec.count += 1;
+  DB.rateLimits[key] = rec;
+  const remaining = Math.max(0, limit - rec.count);
+  const retryAfterSec = Math.max(0, Math.ceil((rec.resetAt - now) / 1000));
+  return { allowed: rec.count <= limit, remaining, retryAfterSec };
+}
+function rateLimitOr429(req, res, key, limit, windowMs, message = 'too_many_requests') {
+  const out = takeRateLimit(key, limit, windowMs);
+  if (!out.allowed) {
+    res.setHeader('Retry-After', String(out.retryAfterSec));
+    res.status(429).json({ ok: false, message, retryAfterSec: out.retryAfterSec });
+    return false;
+  }
+  return true;
 }
 
 function setAnonState() {
@@ -585,7 +708,7 @@ app.use(async (req, res, next) => {
 // ============================================================
 // Auth middleware (cookie-based)
 // NOTE: Some API routes (e.g. /api/matches) use this to ensure user is logged in.
-// This does NOT change existing session logic; it only reads the same tm_email cookie
+// This does NOT change existing session logic; it only reads the same tm_session cookie
 // and exposes the resolved user on req.user.
 // ============================================================
 function authMiddleware(req, res, next) {
@@ -2258,6 +2381,134 @@ app.post('/api/auth/logout', (req, res) => {
   return res.json({ ok: true });
 });
 
+
+// ---------------- Auth: FORGOT PASSWORD (reset via emailed link) ----------------
+app.post('/api/auth/forgot/request', async (req, res) => {
+  try{
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ ok:false, message:'email required' });
+
+    // Basic anti-abuse (per-IP). We always respond OK to avoid email enumeration.
+    if (!rateLimitOr429(req, res, _rlKey(req, 'forgot_request'), 5, 15 * 60 * 1000, 'too_many_requests')) return;
+
+    let userExists = false;
+    if (hasFirebase) {
+      try { userExists = !!(await findUserByEmail(email)); } catch { userExists = false; }
+    } else {
+      userExists = !!DB.users[email];
+    }
+
+    if (userExists) {
+      const token = b64urlEncode(crypto.randomBytes(32));
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const now = Date.now();
+      const exp = now + (30 * 60 * 1000); // 30 minutes
+
+      // store (memory)
+      DB.resetTokens[tokenHash] = { email, exp, createdAt: now };
+
+      // store (Firestore) for production reliability
+      if (hasFirebase && firestore) {
+        try{
+          await firestore.collection('iTrueMatchPasswordResets').doc(tokenHash).set({
+            email,
+            exp,
+            createdAt: now
+          });
+        }catch(err){
+          console.warn('[forgot] Firestore store warn:', err?.message || err);
+        }
+      }
+
+      const base = String(process.env.PUBLIC_BASE_URL || req.headers.origin || '').replace(/\/+$/g, '');
+      if (base) {
+        const resetUrl = `${base}/auth.html?mode=reset&token=${encodeURIComponent(token)}`;
+        try{
+          await sendPasswordResetEmail(email, resetUrl);
+        }catch(err){
+          console.warn('[forgot] email send warn:', err?.message || err);
+        }
+      } else {
+        console.warn('[forgot] No PUBLIC_BASE_URL / Origin available; cannot build reset link email.');
+      }
+    }
+
+    // Always OK (no enumeration)
+    return res.json({ ok:true, message:'if_account_exists_reset_sent' });
+  }catch(err){
+    console.error(err);
+    return res.status(500).json({ ok:false, message:'server_error' });
+  }
+});
+
+app.post('/api/auth/forgot/reset', async (req, res) => {
+  try{
+    const token = String(req.body?.token || '').trim();
+    const newPassword = String(req.body?.newPassword || '').trim();
+
+    if (!token || !newPassword) return res.status(400).json({ ok:false, message:'token and newPassword required' });
+    if (newPassword.length < 8 || newPassword.length > 72) return res.status(400).json({ ok:false, message:'weak_password' });
+
+    // Basic anti-abuse (per-IP)
+    if (!rateLimitOr429(req, res, _rlKey(req, 'forgot_reset'), 10, 15 * 60 * 1000, 'too_many_requests')) return;
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    let rec = DB.resetTokens[tokenHash] || null;
+
+    // if not in memory, try Firestore
+    if (!rec && hasFirebase && firestore) {
+      try{
+        const snap = await firestore.collection('iTrueMatchPasswordResets').doc(tokenHash).get();
+        if (snap.exists) rec = snap.data();
+      }catch(err){
+        console.warn('[forgot] Firestore read warn:', err?.message || err);
+      }
+    }
+
+    if (!rec) return res.status(400).json({ ok:false, message:'invalid_or_expired_token' });
+
+    const now = Date.now();
+    if (rec.exp && now > Number(rec.exp)) {
+      // cleanup
+      delete DB.resetTokens[tokenHash];
+      if (hasFirebase && firestore) {
+        try{ await firestore.collection('iTrueMatchPasswordResets').doc(tokenHash).delete(); } catch {}
+      }
+      return res.status(400).json({ ok:false, message:'invalid_or_expired_token' });
+    }
+
+    if (!hasFirebase) {
+      // demo/in-memory environment does not enforce passwords consistently
+      delete DB.resetTokens[tokenHash];
+      return res.status(501).json({ ok:false, message:'password_reset_not_available_in_demo_mode' });
+    }
+
+    const email = String(rec.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ ok:false, message:'invalid_or_expired_token' });
+
+    const bcrypt = require('bcryptjs');
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    // update user doc (Firestore)
+    const userDoc = await findUserByEmail(email);
+    if (!userDoc || !userDoc._docRef) {
+      return res.status(400).json({ ok:false, message:'invalid_or_expired_token' });
+    }
+    await userDoc._docRef.update({ passwordHash, passwordUpdatedAt: now });
+
+    // invalidate token
+    delete DB.resetTokens[tokenHash];
+    if (firestore) {
+      try{ await firestore.collection('iTrueMatchPasswordResets').doc(tokenHash).delete(); }catch{}
+    }
+
+    return res.json({ ok:true, message:'password_reset_ok' });
+  }catch(err){
+    console.error(err);
+    return res.status(500).json({ ok:false, message:'server_error' });
+  }
+});
+
 // ---------------- Mock OAuth -------------------
 app.post('/api/auth/oauth/mock', (_req, res) => {
   if (!DB.user) DB.user = {};
@@ -2695,7 +2946,7 @@ app.post('/api/me/preferences', async (req, res) => {
 });
 // ---------------- Update Profile (name/email/password/avatar) ----------------
 // [UPDATED] Update Profile (Handles EVERYTHING: Info, Avatar, Password, Age, City, Username, Phone)
-// Uses cookie session (tm_email) so email changes don't break the session.
+// Uses cookie session (tm_session) so email changes don't break the session.
 app.post('/api/me/profile', async (req, res) => {
   try {
     const sessionEmail = getSessionEmail(req);
@@ -5637,6 +5888,35 @@ async function sendVerificationEmail(toEmail, code) {
     return false;
   }
 }
+
+async function sendPasswordResetEmail(toEmail, resetUrl) {
+  try {
+    const safeTo = String(toEmail || '').trim();
+    if (!safeTo) return false;
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; line-height:1.5; color:#111;">
+        <h2 style="margin:0 0 12px 0;">Reset your TrueMatch password</h2>
+        <p style="margin:0 0 10px 0;">Someone requested a password reset for this email.</p>
+        <p style="margin:0 0 14px 0;">If this was you, click the button below. This link expires in <b>30 minutes</b>.</p>
+        <p style="margin:0 0 16px 0;">
+          <a href="${resetUrl}" style="display:inline-block; padding:10px 14px; background:#111; color:#fff; text-decoration:none; border-radius:8px;">
+            Reset Password
+          </a>
+        </p>
+        <p style="margin:0; font-size:12px; color:#555;">If you didn’t request this, you can ignore this email.</p>
+      </div>
+    `;
+
+    const ok = await sendMail(safeTo, "TrueMatch • Password Reset", html);
+    if (ok) console.log("[mail] Password reset email sent to:", safeTo);
+    return ok;
+  } catch (err) {
+    console.error("[mail] Password reset email send failed:", err?.message || err);
+    return false;
+  }
+}
+
 // ---------------- SWIPE & MATCHING ENGINE ----------------
 
 // 1. Get Candidates (Real Users)
@@ -6234,8 +6514,21 @@ app.post('/api/auth/oauth/google', async (req, res) => {
 
 app.post('/api/auth/send-verification-code', async (req, res) => {
   try{
-    const email = (req.body?.email || getSessionEmail(req) || DB.user?.email || '').toLowerCase().trim();
+    const email = String(req.body?.email || getSessionEmail(req) || '').toLowerCase().trim();
     if (!email) return res.status(400).json({ ok:false, message:'email required' });
+    // Avoid account enumeration + avoid spamming unknown addresses:
+    // Only send if the email belongs to an existing user (or an in-memory/demo user).
+    let emailHasAccount = false;
+    if (hasFirebase) {
+      try { emailHasAccount = !!(await findUserByEmail(email)); } catch { emailHasAccount = false; }
+    } else {
+      emailHasAccount = !!DB.users[email];
+    }
+    if (!emailHasAccount) {
+      // Always respond OK (do not leak whether the account exists).
+      return res.json({ ok: true, message: 'if_account_exists_code_sent' });
+    }
+
 
     // rate limit
     const info = DB.emailVerify[email] || {};
@@ -6267,8 +6560,8 @@ app.post('/api/auth/send-verification-code', async (req, res) => {
         const doc = await findUserByEmail(email);
         if (doc){
           await updateUserByEmail(email, { emailVerified: false });
-        }else{
-          await createUserDoc({ email, emailVerified:false });
+        } else {
+          // Do NOT create placeholder user docs here (prevents ghost accounts + avoids abusing verification emails).
         }
       }catch(err){ console.warn('verify email: firestorm persist warn', err?.message||err); }
     }
@@ -6282,7 +6575,7 @@ app.post('/api/auth/send-verification-code', async (req, res) => {
 
 app.post('/api/auth/verify-email-code', async (req, res) => {
   try{
-    const email = (req.body?.email || getSessionEmail(req) || DB.user?.email || '').toLowerCase().trim();
+    const email = String(req.body?.email || getSessionEmail(req) || '').toLowerCase().trim();
     const code  = String(req.body?.code || '').trim();
     if (!email || !code) return res.status(400).json({ ok:false, message:'email and code required' });
 
@@ -6293,13 +6586,27 @@ app.post('/api/auth/verify-email-code', async (req, res) => {
     if (info.expiresAt && now > info.expiresAt){
       return res.status(400).json({ ok:false, message:'code_expired' });
     }
+    // brute-force protection
+    const MAX_OTP_ATTEMPTS = 5;
+    const LOCK_MS = 10 * 60 * 1000; // 10 minutes
+    if (info.lockedUntil && now < info.lockedUntil) {
+      return res.status(429).json({ ok: false, message: 'too_many_attempts' });
+    }
+    if ((info.attempts || 0) >= MAX_OTP_ATTEMPTS) {
+      info.lockedUntil = now + LOCK_MS;
+      return res.status(429).json({ ok: false, message: 'too_many_attempts' });
+    }
+
 
     const bcrypt = require('bcryptjs');
     const match = await bcrypt.compare(code, info.codeHash || '');
-    info.attempts = (info.attempts||0)+1;
     if (!match){
+      info.attempts = (info.attempts||0)+1;
+      if (info.attempts >= MAX_OTP_ATTEMPTS) info.lockedUntil = now + LOCK_MS;
       return res.status(400).json({ ok:false, message:'invalid_code', attempts: info.attempts });
     }
+
+    delete DB.emailVerify[email];
 
     // mark verified
     DB.user = DB.user || {};

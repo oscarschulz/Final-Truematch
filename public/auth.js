@@ -14,6 +14,8 @@
     return `${location.origin}`;
   })();
 
+  const IS_LOCAL_DEV = (location.protocol === "file:") || (location.hostname === "localhost") || (location.hostname === "127.0.0.1");
+
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
@@ -159,46 +161,64 @@
     return (any || "").toLowerCase();
   }
 
-  async function callAPI(path, payload = {}) {
+  async function callAPI(path, payload = {}, opts = {}) {
+    const timeoutMs = Number(opts.timeoutMs || 12000);
+    const allowOfflineDemo = !!opts.allowOfflineDemo && IS_LOCAL_DEV;
+
     try {
       const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), 1500);
+      const id = setTimeout(() => controller.abort(), timeoutMs);
+
       const res = await fetch(API_BASE + path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(payload),
+        body: JSON.stringify(payload || {}),
         signal: controller.signal
       });
+
       clearTimeout(id);
+
       const ok = res.ok;
       const status = res.status;
       let data = null;
+
       try { data = await res.json(); } catch {}
+
       return { ok, status, ...(data || {}) };
-    } catch {
-      return { ok: true, demo: true, status: 0 };
+    } catch (err) {
+      // Never auto-success in production. Offline demo is only allowed on localhost/file.
+      if (allowOfflineDemo) return { ok: true, demo: true, status: 0 };
+      return { ok: false, status: 0, message: "network_error" };
     }
   }
 
-  async function apiGet(path) {
+  async function apiGet(path, opts = {}) {
+    const timeoutMs = Number(opts.timeoutMs || 12000);
+    const allowOfflineDemo = !!opts.allowOfflineDemo && IS_LOCAL_DEV;
+
     try {
       const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), 1000);
-      const res = await fetch(API_BASE + path, { 
+      const id = setTimeout(() => controller.abort(), timeoutMs);
+
+      const res = await fetch(API_BASE + path, {
         credentials: "include",
-        signal: controller.signal 
+        signal: controller.signal
       });
+
       clearTimeout(id);
+
       let data = null;
       try { data = await res.json(); } catch {}
+
       return data;
-    } catch {
+    } catch (err) {
+      if (allowOfflineDemo) return { ok: true, demo: true, status: 0 };
       return null;
     }
   }
 
-  function tmShowLoader(title, sub, small) {
+function tmShowLoader(title, sub, small) {
     try {
       if (window.TMLoader && typeof window.TMLoader.show === "function") {
         window.TMLoader.show(title, sub, small);
@@ -305,7 +325,7 @@
       return true;
     }
     saveLocalUser({ email, name: d.name, plan: d.plan });
-    try { await callAPI("/api/auth/login", { email, password: pass }); } catch {}
+    try { await callAPI("/api/auth/login", { email, password: pass }, { allowOfflineDemo: true }); } catch {}
     const extra = new URLSearchParams({ demo: "1", prePlan: d.plan });
     finishLogin(extra.toString());
     return true;
@@ -501,7 +521,7 @@
         const payload = Object.fromEntries(fd.entries());
         payload.name = payload.name || payload.fullName || '';
         try { delete payload.fullName; } catch (e) {}
-        const out = await callAPI("/api/auth/register", payload);
+        const out = await callAPI("/api/auth/register", payload, { allowOfflineDemo: true });
         const ok = !!(out?.ok || out?.created || out?.status === 200 || out?.status === 201 || out?.demo);
         if (!ok) {
           alert(out?.message || "Signup failed.");
@@ -526,7 +546,7 @@
         const email = String($("#loginEmail")?.value || "").trim();
         const password = String($("#loginPass")?.value || "").trim();
         if (await tryDemoLogin(email, password)) return;
-        const res = await callAPI("/api/auth/login", { email, password });
+        const res = await callAPI("/api/auth/login", { email, password }, { allowOfflineDemo: true });
         const offline = !!(res && (res.demo || res.status === 0));
         const ok = !!(res && (res.ok || offline));
         if (!ok) {
@@ -549,7 +569,7 @@
       e.preventDefault();
       try { tmShowLoader('Signing in…','Opening Google'); } catch {}
       try {
-        const r = await callAPI("/api/auth/oauth/mock", { provider: "google" });
+        const r = await callAPI("/api/auth/oauth/mock", { provider: "google" }, { allowOfflineDemo: true });
         saveLocalUser(r?.user || { email: "google@demo.local", name: "Google User" });
         const extra = new URLSearchParams();
         if (r?.demo || r?.status === 0) extra.set("demo", "1");
@@ -564,90 +584,148 @@
     const step1 = document.getElementById('forgotStep1');
     const step2 = document.getElementById('forgotStep2');
     const btnCancel = document.getElementById('btnForgotCancel');
-    const btnCloseForgotX = document.getElementById('btnCloseForgotX');
+    const btnCloseForgot = document.getElementById('btnCloseForgot');
     const btnVerify = document.getElementById('btnForgotVerify');
     const btnBack = document.getElementById('btnForgotBack');
     const btnChange = document.getElementById('btnForgotChange');
-    
-    if (btnOpenForgot && dlgForgot) {
-        btnOpenForgot.addEventListener('click', (e) => {
-            e.preventDefault();
-            step1.style.display = 'block';
-            step2.style.display = 'none';
-            document.getElementById('forgotEmailInput').value = '';
-            document.getElementById('forgotNewPass').value = '';
-            document.getElementById('forgotConfirmPass').value = '';
-            document.getElementById('forgotError').style.display = 'none';
-            dlgForgot.showModal();
-        });
-        dlgForgot.addEventListener('click', (e) => {
-            const rect = dlgForgot.getBoundingClientRect();
-            const isInDialog = (rect.top <= e.clientY && e.clientY <= rect.top + rect.height && rect.left <= e.clientX && e.clientX <= rect.left + rect.width);
-            if (!isInDialog) {
-              dlgForgot.close();
-            }
-        });
+    const err = document.getElementById('forgotError');
+    const inEmail = document.getElementById('forgotEmail');
+    const inPass1 = document.getElementById('forgotNewPass');
+    const inPass2 = document.getElementById('forgotNewPass2');
+
+    let resetToken = null;
+
+    function clearParams(keys = []) {
+      const url = new URL(window.location.href);
+      keys.forEach(k => url.searchParams.delete(k));
+      history.replaceState(null, "", url.toString());
     }
 
-    if (btnCancel && dlgForgot) {
-        btnCancel.addEventListener('click', () => { dlgForgot.close(); });
-    }
-    if (btnCloseForgotX && dlgForgot) {
-        btnCloseForgotX.addEventListener('click', () => { dlgForgot.close(); });
-    }
-
-    if (btnVerify) {
-        btnVerify.addEventListener('click', () => {
-            const email = document.getElementById('forgotEmailInput').value;
-            const errorMsg = document.getElementById('forgotError');
-            if(!email) return;
-            btnVerify.disabled = true;
-            const originalText = btnVerify.textContent;
-            btnVerify.textContent = "Checking...";
-            setTimeout(() => {
-                if (email === "error@test.com") {
-                    errorMsg.style.display = 'block';
-                    btnVerify.textContent = originalText;
-                    btnVerify.disabled = false;
-                } else {
-                    step1.style.display = 'none';
-                    step2.style.display = 'block';
-                    btnVerify.textContent = originalText;
-                    btnVerify.disabled = false;
-                }
-            }, 1000);
-        });
+    function showStep1(message = "") {
+      resetToken = null;
+      step1.style.display = "";
+      step2.style.display = "none";
+      err.textContent = message || "";
+      if (inEmail) inEmail.value = "";
+      if (inPass1) inPass1.value = "";
+      if (inPass2) inPass2.value = "";
     }
 
-    if (btnBack) {
-        btnBack.addEventListener('click', () => {
-             step2.style.display = 'none';
-             step1.style.display = 'block';
-        });
+    function showStep2(token) {
+      resetToken = String(token || "").trim();
+      step1.style.display = "none";
+      step2.style.display = "";
+      err.textContent = "";
+      if (inPass1) inPass1.value = "";
+      if (inPass2) inPass2.value = "";
     }
 
-    if (btnChange) {
-        btnChange.addEventListener('click', () => {
-            const pass1 = document.getElementById('forgotNewPass').value;
-            const pass2 = document.getElementById('forgotConfirmPass').value;
-            if (!pass1 || !pass2) {
-                alert("Please enter a new password.");
-                return;
-            }
-            if (pass1 !== pass2) {
-                alert("Passwords do not match.");
-                return;
-            }
-            btnChange.disabled = true;
-            const originalText = btnChange.textContent;
-            btnChange.textContent = "Updating...";
-            setTimeout(() => {
-                alert("Password Changed Successfully! We sent a confirmation link to your email.");
-                btnChange.textContent = originalText;
-                btnChange.disabled = false;
-                dlgForgot.close();
-            }, 1500);
-        });
+    function closeDialog() {
+      try { dlgForgot.close(); } catch {}
+    }
+
+    btnOpenForgot?.addEventListener('click', (e) => {
+      e.preventDefault();
+      showStep1("");
+      dlgForgot?.showModal?.();
+    });
+
+    btnCancel?.addEventListener('click', () => {
+      closeDialog();
+      clearParams(['mode', 'token']);
+      setActiveTab('login');
+      setParam('mode', 'login');
+    });
+
+    btnCloseForgot?.addEventListener('click', () => {
+      closeDialog();
+      clearParams(['mode', 'token']);
+      setActiveTab('login');
+      setParam('mode', 'login');
+    });
+
+    btnVerify?.addEventListener('click', async () => {
+      const email = (inEmail?.value || "").trim();
+      if (!email) { err.textContent = "Enter your email."; return; }
+
+      btnVerify.disabled = true;
+      err.textContent = "Sending reset link...";
+
+      const out = await callAPI("/api/auth/forgot/request", { email }, { timeoutMs: 15000 });
+
+      btnVerify.disabled = false;
+
+      if (!out?.ok) {
+        err.textContent = "Could not send reset link. Try again.";
+        return;
+      }
+
+      // Always generic (no enumeration).
+      err.textContent = "If an account exists for that email, we sent a reset link.";
+      setTimeout(() => {
+        closeDialog();
+        // Keep user on login tab
+        setActiveTab('login');
+        setParam('mode', 'login');
+      }, 1200);
+    });
+
+    btnBack?.addEventListener('click', () => {
+      if (resetToken) {
+        // Reset-link mode: go back to login and remove token from URL
+        closeDialog();
+        clearParams(['mode', 'token']);
+        setActiveTab('login');
+        setParam('mode', 'login');
+        showStep1("");
+        return;
+      }
+      showStep1("");
+    });
+
+    btnChange?.addEventListener('click', async () => {
+      const p1 = (inPass1?.value || "").trim();
+      const p2 = (inPass2?.value || "").trim();
+
+      if (!resetToken) {
+        err.textContent = "Reset link is missing or invalid.";
+        return;
+      }
+      if (!p1 || p1.length < 8) { err.textContent = "Password must be at least 8 characters."; return; }
+      if (p1 !== p2) { err.textContent = "Passwords do not match."; return; }
+
+      btnChange.disabled = true;
+      err.textContent = "Updating password...";
+
+      const out = await callAPI("/api/auth/forgot/reset", { token: resetToken, newPassword: p1 }, { timeoutMs: 15000 });
+
+      btnChange.disabled = false;
+
+      if (!out?.ok) {
+        err.textContent = (out?.message === 'weak_password')
+          ? "Password is too weak."
+          : "Could not reset password. Request a new reset link.";
+        return;
+      }
+
+      err.textContent = "Password updated. You can log in now.";
+      setTimeout(() => {
+        closeDialog();
+        clearParams(['mode', 'token']);
+        setActiveTab('login');
+        setParam('mode', 'login');
+      }, 1200);
+    });
+
+    // Auto-open reset dialog if user came from the email link
+    const mode = getParam('mode');
+    const token = getParam('token');
+    if (mode === 'reset' && token) {
+      showStep2(token);
+      dlgForgot?.showModal?.();
+    } else {
+      // default view
+      showStep1("");
     }
   });
 
