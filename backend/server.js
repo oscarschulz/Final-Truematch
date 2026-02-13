@@ -2730,7 +2730,7 @@ app.post('/api/auth/forgot/reset-otp', async (req, res) => {
 
     if (hasFirebase) {
       const userDoc = await findUserByEmail(email);
-      if (!userDoc || !userDoc.id) {
+      if (!userDoc || !userDoc._docRef) {
         // No enumeration: treat as invalid
         delete DB.forgotOtps[key];
         if (firestore) {
@@ -2738,8 +2738,7 @@ app.post('/api/auth/forgot/reset-otp', async (req, res) => {
         }
         return res.status(400).json({ ok: false, message: 'invalid_or_expired_code' });
       }
-      // Update password in Firestore
-      await usersCollection.doc(userDoc.id).update({ passwordHash, passwordUpdatedAt: now });
+      await userDoc._docRef.update({ passwordHash, passwordUpdatedAt: now });
     } else {
       if (!DB.users[email]) {
         delete DB.forgotOtps[key];
@@ -2813,11 +2812,12 @@ app.post('/api/auth/forgot/reset', async (req, res) => {
 
     // update user doc (Firestore)
     const userDoc = await findUserByEmail(email);
-    if (!userDoc || !userDoc.id) {
+    if (!userDoc || !userDoc._docRef) {
       return res.status(400).json({ ok:false, message:'invalid_or_expired_token' });
     }
-    await usersCollection.doc(userDoc.id).update({ passwordHash, passwordUpdatedAt: now });
-// invalidate token
+    await userDoc._docRef.update({ passwordHash, passwordUpdatedAt: now });
+
+    // invalidate token
     delete DB.resetTokens[tokenHash];
     if (firestore) {
       try{ await firestore.collection('iTrueMatchPasswordResets').doc(tokenHash).delete(); }catch{}
@@ -2905,6 +2905,164 @@ app.get('/api/me', async (req, res) => {
     return res.status(500).json({ ok: false, user: null, message: 'internal error' });
   }
 });
+// ---------------- Notifications (Dashboard bell) -------------------
+// Simple per-user notifications stored under users/{id}/notifications.
+// Frontend: dashboard.js loads these when the bell is opened.
+const NOTIFS_SUBCOL = process.env.NOTIFS_SUBCOL || 'notifications';
+const NOTIFS_DEFAULT_LIMIT = 30;
+
+function _tsToMs(v) {
+  if (!v) return 0;
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+  // Firestore Timestamp
+  if (typeof v.toMillis === 'function') return v.toMillis();
+  if (v && typeof v === 'object' && typeof v._seconds === 'number') {
+    const ms = (Number(v._seconds) * 1000) + Math.floor(Number(v._nanoseconds || 0) / 1e6);
+    return Number.isFinite(ms) ? ms : 0;
+  }
+  return 0;
+}
+
+function _normalizeNotif(id, data) {
+  const createdAtMs = _tsToMs(data.createdAt) || _tsToMs(data.createdAtMs) || Date.now();
+  const readAtMs = _tsToMs(data.readAt) || _tsToMs(data.readAtMs) || 0;
+  return {
+    id: String(id || data.id || ''),
+    type: String(data.type || 'system'),
+    title: String(data.title || ''),
+    message: String(data.message || data.text || ''),
+    href: data.href ? String(data.href) : '',
+    createdAtMs,
+    readAtMs: readAtMs || 0
+  };
+}
+
+async function _seedWelcomeNotifIfMissing(userId, emailNorm) {
+  try {
+    const payload = {
+      type: 'system',
+      title: 'Welcome to iTrueMatch',
+      message: 'Your account is secured with OTP and signed sessions. If you forget your password, use the Reset Password flow anytime.',
+      href: '',
+      createdAt: admin && admin.firestore ? admin.firestore.FieldValue.serverTimestamp() : Date.now(),
+      readAt: null
+    };
+
+    // Local JSON / demo fallback
+    if (!hasFirebase || !usersCollection || !userId) {
+      DB.notificationsByEmail = DB.notificationsByEmail && typeof DB.notificationsByEmail === 'object' ? DB.notificationsByEmail : {};
+      const arr = Array.isArray(DB.notificationsByEmail[emailNorm]) ? DB.notificationsByEmail[emailNorm] : [];
+      const exists = arr.some(n => n && String(n.id) === 'welcome_v1');
+      if (!exists) {
+        arr.unshift(_normalizeNotif('welcome_v1', { ...payload, createdAtMs: Date.now(), readAtMs: 0 }));
+        DB.notificationsByEmail[emailNorm] = arr;
+      }
+      return;
+    }
+
+    const ref = usersCollection.doc(userId).collection(NOTIFS_SUBCOL).doc('welcome_v1');
+    const snap = await ref.get();
+    if (snap.exists) return;
+    await ref.set(payload, { merge: true });
+  } catch (e) {
+    console.warn('seed welcome notification failed:', e?.message || e);
+  }
+}
+
+app.get('/api/me/notifications', authMiddleware, async (req, res) => {
+  try {
+    const email = String(req.user && req.user.email ? req.user.email : '').trim().toLowerCase();
+    if (!email) return res.status(401).json({ ok: false, error: 'Not authenticated' });
+
+    const limitRaw = Number(req.query && req.query.limit ? req.query.limit : NOTIFS_DEFAULT_LIMIT);
+    const limit = Math.max(1, Math.min(100, Number.isFinite(limitRaw) ? limitRaw : NOTIFS_DEFAULT_LIMIT));
+
+    const user = await findUserByEmail(email);
+    const userId = user && user.id ? String(user.id) : '';
+
+    await _seedWelcomeNotifIfMissing(userId, email);
+
+    // Local JSON fallback
+    if (!hasFirebase || !usersCollection || !userId) {
+      DB.notificationsByEmail = DB.notificationsByEmail && typeof DB.notificationsByEmail === 'object' ? DB.notificationsByEmail : {};
+      const arr = Array.isArray(DB.notificationsByEmail[email]) ? DB.notificationsByEmail[email] : [];
+      const items = arr.slice(0, limit).map(n => _normalizeNotif(n.id, n));
+      const unreadCount = items.filter(n => !n.readAtMs).length;
+      return res.json({ ok: true, items, unreadCount });
+    }
+
+    const snap = await usersCollection
+      .doc(userId)
+      .collection(NOTIFS_SUBCOL)
+      .orderBy('createdAt', 'desc')
+      .limit(limit)
+      .get();
+
+    const items = snap.docs.map(d => _normalizeNotif(d.id, d.data() || {}));
+    const unreadCount = items.filter(n => !n.readAtMs).length;
+
+    return res.json({ ok: true, items, unreadCount });
+  } catch (e) {
+    console.error('GET /api/me/notifications error:', e);
+    return res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+app.post('/api/me/notifications/mark-all-read', authMiddleware, async (req, res) => {
+  try {
+    const email = String(req.user && req.user.email ? req.user.email : '').trim().toLowerCase();
+    if (!email) return res.status(401).json({ ok: false, error: 'Not authenticated' });
+
+    const user = await findUserByEmail(email);
+    const userId = user && user.id ? String(user.id) : '';
+
+    // Local JSON fallback
+    if (!hasFirebase || !usersCollection || !userId) {
+      DB.notificationsByEmail = DB.notificationsByEmail && typeof DB.notificationsByEmail === 'object' ? DB.notificationsByEmail : {};
+      const arr = Array.isArray(DB.notificationsByEmail[email]) ? DB.notificationsByEmail[email] : [];
+      const now = Date.now();
+      for (const n of arr) {
+        if (n && !n.readAtMs && !n.readAt) {
+          n.readAtMs = now;
+          n.readAt = now;
+        }
+      }
+      DB.notificationsByEmail[email] = arr;
+      return res.json({ ok: true });
+    }
+
+    const ref = usersCollection.doc(userId).collection(NOTIFS_SUBCOL);
+    const snap = await ref.orderBy('createdAt', 'desc').limit(200).get();
+
+    const batch = firestore.batch();
+    let touched = 0;
+    const nowField = admin && admin.firestore ? admin.firestore.FieldValue.serverTimestamp() : new Date();
+
+    snap.docs.forEach(d => {
+      const data = d.data() || {};
+      const readAtMs = _tsToMs(data.readAt) || _tsToMs(data.readAtMs) || 0;
+      if (!readAtMs) {
+        batch.set(d.ref, { readAt: nowField }, { merge: true });
+        touched += 1;
+      }
+    });
+
+    if (touched > 0) {
+      await batch.commit();
+    }
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('POST /api/me/notifications/mark-all-read error:', e);
+    return res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+// ============================================================
 
 // ---------------- Recent Moments (Stories) -------------------
 // A "moment" is a short-lived media post (photo/video) that expires after 24 hours.
