@@ -99,18 +99,31 @@ const CORS_ALLOWLIST = String(process.env.CORS_ALLOWLIST || '')
 
 const corsOptions = {
   origin: (origin, cb) => {
-    if (!origin || origin === 'null') return cb(null, true);
+    // No Origin header = not a browser CORS request; don't add CORS headers.
+    // This keeps server-to-server requests working while preventing unnecessary CORS exposure.
+    if (!origin) return cb(null, false);
 
     const o = String(origin || '').trim().replace(/\/+$/, '');
+
+    // "null" origin (file://, sandboxed iframes) is dangerous with credentialed CORS.
+    // Keep it OFF in production. You can enable it in local dev via ALLOW_NULL_ORIGIN=1.
+    if (o === 'null') {
+      if (!IS_PROD && process.env.ALLOW_NULL_ORIGIN === '1') return cb(null, true);
+      return cb(null, false);
+    }
+
+    // Local dev
     if (/^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(o)) return cb(null, true);
 
+    // Explicit allowlist
     if (CORS_ALLOWLIST.includes(o)) return cb(null, true);
 
     return cb(null, false);
   },
   credentials: true,
-  allowedHeaders: ['Content-Type', 'x-admin-key'],
-  methods: ['GET', 'POST', 'OPTIONS']
+  // IMPORTANT: tm-api_UPDATED_v2 sends Accept + X-TM-Request by default (preflight must allow these).
+  allowedHeaders: ['Content-Type', 'Accept', 'X-TM-Request', 'X-Requested-With', 'Authorization', 'x-admin-key'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
 };
 
 app.use(cors(corsOptions));
