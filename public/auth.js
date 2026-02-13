@@ -724,7 +724,7 @@
         gotoStep(2);
 
         // Show a generic message (even if account doesn't exist).
-        showInfo('If an account exists for this email, we sent a 6-digit code.', step2);
+        showInfo('If an account exists for this email, we sent a 6-digit code. It expires in about 10 minutes (only the latest code works).', step2);
       } finally {
         btnVerify.textContent = originalText;
         btnVerify.disabled = false;
@@ -763,7 +763,7 @@
 
         const msg = (out.message === 'resend_wait')
           ? 'A code was sent recently. Please check your inbox/spam. (Wait ~60s before resending.)'
-          : 'If an account exists, we resent the code. Check your inbox/spam.';
+          : 'If an account exists, we resent the code. Check your inbox/spam. (Only the latest code works.)';
         showInfo(msg, step2);
       } finally {
         btnResend.textContent = originalText;

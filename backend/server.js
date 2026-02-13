@@ -2730,7 +2730,7 @@ app.post('/api/auth/forgot/reset-otp', async (req, res) => {
 
     if (hasFirebase) {
       const userDoc = await findUserByEmail(email);
-      if (!userDoc || !userDoc._docRef) {
+      if (!userDoc || !userDoc.id) {
         // No enumeration: treat as invalid
         delete DB.forgotOtps[key];
         if (firestore) {
@@ -2738,7 +2738,8 @@ app.post('/api/auth/forgot/reset-otp', async (req, res) => {
         }
         return res.status(400).json({ ok: false, message: 'invalid_or_expired_code' });
       }
-      await userDoc._docRef.update({ passwordHash, passwordUpdatedAt: now });
+      // Update password in Firestore
+      await usersCollection.doc(userDoc.id).update({ passwordHash, passwordUpdatedAt: now });
     } else {
       if (!DB.users[email]) {
         delete DB.forgotOtps[key];
@@ -2812,12 +2813,11 @@ app.post('/api/auth/forgot/reset', async (req, res) => {
 
     // update user doc (Firestore)
     const userDoc = await findUserByEmail(email);
-    if (!userDoc || !userDoc._docRef) {
+    if (!userDoc || !userDoc.id) {
       return res.status(400).json({ ok:false, message:'invalid_or_expired_token' });
     }
-    await userDoc._docRef.update({ passwordHash, passwordUpdatedAt: now });
-
-    // invalidate token
+    await usersCollection.doc(userDoc.id).update({ passwordHash, passwordUpdatedAt: now });
+// invalidate token
     delete DB.resetTokens[tokenHash];
     if (firestore) {
       try{ await firestore.collection('iTrueMatchPasswordResets').doc(tokenHash).delete(); }catch{}
