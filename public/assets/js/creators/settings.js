@@ -184,6 +184,78 @@ function bindDisplayControls(container) {
   }
 }
 
+function bindSecurityControls(container) {
+  if (!container) return;
+
+  // Password inputs are inside the SECURITY section and appear in this order:
+  // 1) current, 2) new, 3) confirm
+  const pwdInputs = Array.from(container.querySelectorAll('input[type="password"]'));
+  if (pwdInputs.length >= 1) {
+    pwdInputs.forEach((input) => {
+      const wrap = input.closest('.input-with-icon');
+      const icon = wrap ? wrap.querySelector('i.fa-eye, i.fa-eye-slash, i.fa-regular') : null;
+      if (!icon || icon.__tmBound) return;
+      icon.__tmBound = true;
+      icon.style.cursor = 'pointer';
+      icon.addEventListener('click', () => {
+        const isPwd = input.type === 'password';
+        input.type = isPwd ? 'text' : 'password';
+        icon.classList.toggle('fa-eye', isPwd);
+        icon.classList.toggle('fa-eye-slash', !isPwd);
+      });
+    });
+  }
+
+  const btn = container.querySelector('.btn-submit-card');
+  if (btn && !btn.__tmBound) {
+    btn.__tmBound = true;
+    btn.addEventListener('click', async () => {
+      const cur = (pwdInputs[0] ? pwdInputs[0].value : '').toString();
+      const nxt = (pwdInputs[1] ? pwdInputs[1].value : '').toString();
+      const cnf = (pwdInputs[2] ? pwdInputs[2].value : '').toString();
+
+      if (!nxt || nxt.trim().length < 8) {
+        tmToast('New password must be at least 8 characters.', 'error');
+        return;
+      }
+      if (nxt !== cnf) {
+        tmToast('New password and confirm password do not match.', 'error');
+        return;
+      }
+
+      const orig = btn.textContent;
+      btn.disabled = true;
+      btn.classList.add('loading');
+      btn.textContent = 'UPDATING...';
+
+      try {
+        const out = await apiPost('/api/me/password', { currentPassword: cur, newPassword: nxt }).catch(() => null);
+        if (!out || !out.ok) {
+          const msg = (out && (out.message || out.error)) ? (out.message || out.error) : 'Failed to update password.';
+          // Map common server codes to readable text
+          const pretty = (msg === 'wrong_password') ? 'Current password is wrong.' :
+                         (msg === 'password_too_short') ? 'New password must be at least 8 characters.' :
+                         msg;
+          tmToast(pretty, 'error');
+          return;
+        }
+
+        // Clear fields
+        pwdInputs.forEach((i) => { try { i.value = ''; } catch (_) {} });
+        tmToast('Password updated.', 'success');
+      } catch (e) {
+        console.error(e);
+        tmToast('Failed to update password. Please try again.', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove('loading');
+        btn.textContent = orig;
+      }
+    });
+  }
+}
+
+
 
 function setActiveMenuItem(el) {
   document.querySelectorAll('.set-item.active').forEach((x) => x.classList.remove('active'));
@@ -255,6 +327,7 @@ function openMobileDetail(target, me) {
   // Hydrate
   if (target === 'profile') hydrateCreatorProfileForm(clone, me);
   if (target === 'display') bindDisplayControls(clone, me);
+  if (target === 'security') bindSecurityControls(clone, me);
 
   // Slide in
   requestAnimationFrame(() => host.classList.add('is-open'));
@@ -275,6 +348,7 @@ function renderSettingsTargetDesktop(target, me) {
 
   if (target === 'profile') hydrateCreatorProfileForm(clone, me);
   if (target === 'display') bindDisplayControls(clone, me);
+  if (target === 'security') bindSecurityControls(clone, me);
 }
 
 function bindMetaCounter(fieldEl) {
