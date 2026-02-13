@@ -6803,12 +6803,17 @@ app.get('/api/premium-society/matches', authMiddleware, async (req, res) => {
 });
 
 // =======================================================================
+// =======================================================================
 app.get('/api/swipe/candidates', async (req, res) => {
   try {
     const myEmail = String(((req.user && req.user.email) || (DB.user && DB.user.email) || '')).toLowerCase();
     if (!myEmail) return res.status(401).json({ ok: false, error: 'Not authenticated' });
 
-    const mySwipes = await _ps_getSwipeMapFor(myEmail);
+    // ✅ IMPORTANT: Use MAIN swipe map (not Premium Society swipe map)
+    const mySwipes = await _getSwipeMapFor(myEmail);
+
+    // NOTE: Only PASSED profiles are allowed to re-appear in the Swipe deck.
+    // Likes / Super-likes are removed from the deck permanently (they should only show up if matched).
 
     // ✅ Use real user doc (not only DB.user)
     const userDoc = (DB.users && DB.users[myEmail]) || DB.user || {};
@@ -6859,7 +6864,13 @@ app.get('/api/swipe/candidates', async (req, res) => {
         const u = doc.data() || {};
         const candEmail = String(u.email || '').toLowerCase();
         if (!candEmail || candEmail === myEmail) return;
-        if (mySwipes[candEmail]) return;
+
+        // ✅ PASS-only re-serve rule:
+        const prev = mySwipes[candEmail];
+        if (prev) {
+          const t = String(prev.type || '').toLowerCase();
+          if (t && t !== 'pass') return; // like/super removed from deck
+        }
 
         // ✅ Premium-to-premium only
         if (isPremium && !isPremiumCandidate(u)) return;
@@ -6878,7 +6889,13 @@ app.get('/api/swipe/candidates', async (req, res) => {
         .filter(u => {
           const e = String(u.email || '').toLowerCase();
           if (!e || e === myEmail) return false;
-          if (mySwipes[e]) return false;
+
+          // ✅ PASS-only re-serve rule:
+          const prev = mySwipes[e];
+          if (prev) {
+            const t = String(prev.type || '').toLowerCase();
+            if (t && t !== 'pass') return false;
+          }
 
           // ✅ Premium-to-premium only
           if (isPremium && !isPremiumCandidate(u)) return false;
@@ -6905,13 +6922,14 @@ app.get('/api/swipe/candidates', async (req, res) => {
       return res.json({ ok: true, candidates, limitReached, remaining, limit });
     }
 
-    // ✅ Premium unlimited: remaining stays null, limit stays null
+    // ✅ Premium unlimited
     return res.json({ ok: true, candidates, limitReached: false, remaining: null, limit: null });
   } catch (err) {
     console.error('Swipe candidate error:', err);
     return res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
+
 
 // 2. Swipe Action (Like/Pass)
 // [UPDATED] Swipe Action (Saves Timestamp)
