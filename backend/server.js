@@ -1499,6 +1499,8 @@ function publicUser(doc) {
     avatarUrl: doc.avatarUrl || doc.avatar || '',
     creatorStatus: doc.creatorStatus ?? doc.creator_status ?? null,
     hasCreatorAccess: Boolean(doc.hasCreatorAccess ?? doc.creatorApproved ?? false),
+    username: (doc.username || doc.handle || (doc.creatorApplication && doc.creatorApplication.handle) || '') || '',
+    phone: doc.phone || doc.phoneNumber || doc.mobile || '',
     premiumStatus: doc.premiumStatus ?? doc.premium_status ?? null,
     premiumSince: doc.premiumSince ?? doc.premium_since ?? null,
     premiumApplication: doc.premiumApplication ?? doc.premium_application ?? null,
@@ -2699,7 +2701,7 @@ app.post('/api/me/profile', async (req, res) => {
     }
 
     // 1. Kunin LAHAT ng data galing sa request
-    let { name, email, password, avatarDataUrl, avatarUrl, age, city, requireProfileCompletion } = req.body || {};
+    let { name, email, password, avatarDataUrl, avatarUrl, age, city, requireProfileCompletion, username, handle, phone } = req.body || {};
 
     // Basic sanitization
     name = (name || '').toString().trim();
@@ -2710,6 +2712,11 @@ app.post('/api/me/profile', async (req, res) => {
     avatarUrl = (avatarUrl || '').toString();
     requireProfileCompletion = !!requireProfileCompletion;
 
+
+    // Username / handle / phone (Account settings)
+    const _rawUser = (username || handle || '').toString().trim();
+    username = _rawUser ? _rawUser.replace(/^@/, '') : '';
+    phone = (phone || '').toString().trim();
     // Validate Email
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.status(400).json({ ok: false, message: 'invalid email' });
@@ -2723,6 +2730,12 @@ app.post('/api/me/profile', async (req, res) => {
     if (email) fields.email = email;
     if (age) fields.age = age;
     if (city) fields.city = city;
+    if (username) { 
+      // keep both keys for backward compatibility
+      fields.username = username;
+      fields.handle = username;
+    }
+    if (phone) fields.phone = phone;
     // Avatar upload: prefer Firebase Storage
     let newAvatarUrl = '';
     let newAvatarPath = '';
@@ -2882,6 +2895,10 @@ app.post('/api/me/profile', async (req, res) => {
         }
       }
       saveUsersStore(); // Save to _users_store.json immediately
+    }
+    // If the user changed email, refresh session cookie so the app doesn't get stuck using the old tm_email.
+    if (email && email !== oldEmail) {
+      try { setSession(res, email); } catch (_) {}
     }
 
     console.log(`[Profile] Updated details for ${email || oldEmail}`);

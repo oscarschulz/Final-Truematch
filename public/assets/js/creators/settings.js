@@ -677,6 +677,7 @@ function openMobileDetail(target, me) {
   if (target === 'security') bindSecurityControls(clone, me);
   if (target === 'privacy') bindPrivacyControls(clone, me);
   if (target === 'notifications') bindNotificationsControls(clone, me);
+  if (target === 'account') bindAccountControls(clone, me);
 
   // Slide in
   requestAnimationFrame(() => host.classList.add('is-open'));
@@ -700,6 +701,7 @@ function renderSettingsTargetDesktop(target, me) {
   if (target === 'security') bindSecurityControls(clone, me);
   if (target === 'privacy') bindPrivacyControls(clone, me);
   if (target === 'notifications') bindNotificationsControls(clone, me);
+  if (target === 'account') bindAccountControls(clone, me);
 }
 
 function bindMetaCounter(fieldEl) {
@@ -781,6 +783,175 @@ async function saveCreatorProfile(container) {
 
   __meCache = null;
   await ensureMe(true);
+}
+
+
+function bindAccountControls(container, me) {
+  if (!container) return;
+
+  const groups = Array.from(container.querySelectorAll('.ac-group'));
+
+  const getInput = (labelText) => {
+    const want = String(labelText || '').trim().toLowerCase();
+    const g = groups.find((x) => {
+      const lab = x.querySelector('label');
+      const t = String(lab ? lab.textContent : '').trim().toLowerCase();
+      return t === want;
+    });
+    return g ? g.querySelector('input') : null;
+  };
+
+  const inUsername = getInput('Username');
+  const inEmail = getInput('Email');
+  const inPhone = getInput('Phone Number');
+
+  const curUsername = String(me?.user?.username || me?.user?.handle || '').replace(/^@/, '');
+  const curEmail = String(me?.user?.email || '');
+  const curPhone = String(me?.user?.phone || me?.user?.phoneNumber || me?.user?.phone_number || '');
+
+  if (inUsername && !inUsername.__tmHydrated) {
+    inUsername.__tmHydrated = true;
+    inUsername.value = curUsername || '';
+    inUsername.setAttribute('autocomplete', 'username');
+    inUsername.addEventListener('input', () => {
+      // hard trim spaces only
+      inUsername.value = String(inUsername.value || '').replace(/\s+/g, '');
+    });
+  } else if (inUsername) {
+    inUsername.value = curUsername || '';
+  }
+
+  if (inEmail && !inEmail.__tmHydrated) {
+    inEmail.__tmHydrated = true;
+    inEmail.value = curEmail || '';
+    inEmail.setAttribute('autocomplete', 'email');
+  } else if (inEmail) {
+    inEmail.value = curEmail || '';
+  }
+
+  if (inPhone && !inPhone.__tmHydrated) {
+    inPhone.__tmHydrated = true;
+    inPhone.value = curPhone || '';
+    inPhone.setAttribute('autocomplete', 'tel');
+  } else if (inPhone) {
+    inPhone.value = curPhone || '';
+  }
+
+  // Insert a SAVE button (settings.html does not include one for Account section)
+  const hasSave = !!container.querySelector('[data-action="save-account"]');
+  if (!hasSave) {
+    const headers = Array.from(container.querySelectorAll('.set-section-header'));
+    const deleteHdr = headers.find((h) => String(h.textContent || '').toLowerCase().includes('delete account'));
+
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.justifyContent = 'flex-end';
+    row.style.marginTop = '16px';
+    row.style.marginBottom = '6px';
+
+    const btn = document.createElement('button');
+    btn.className = 'btn-submit-card';
+    btn.textContent = 'SAVE CHANGES';
+    btn.setAttribute('data-action', 'save-account');
+    btn.style.width = 'auto';
+    btn.style.minWidth = 'auto';
+    btn.style.padding = '10px 26px';
+    btn.style.fontSize = '0.9rem';
+
+    row.appendChild(btn);
+
+    if (deleteHdr && deleteHdr.parentNode) {
+      deleteHdr.parentNode.insertBefore(row, deleteHdr);
+    } else {
+      container.appendChild(row);
+    }
+  }
+
+  const saveBtn = container.querySelector('[data-action="save-account"]');
+  if (saveBtn && !saveBtn.__tmBound) {
+    saveBtn.__tmBound = true;
+
+    saveBtn.addEventListener('click', async () => {
+      const nextUsernameRaw = String(inUsername ? inUsername.value : '').trim().replace(/^@/, '');
+      const nextEmailRaw = String(inEmail ? inEmail.value : '').trim().toLowerCase();
+      const nextPhoneRaw = String(inPhone ? inPhone.value : '').trim();
+
+      // Basic client validation (server validates again)
+      if (nextUsernameRaw) {
+        const okLen = (nextUsernameRaw.length >= 3 && nextUsernameRaw.length <= 30);
+        const okChars = /^[a-zA-Z0-9._]+$/.test(nextUsernameRaw);
+        if (!okLen || !okChars) {
+          tmToast('Username must be 3–30 chars (letters, numbers, dot, underscore).', 'error');
+          return;
+        }
+      }
+
+      if (nextEmailRaw && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmailRaw)) {
+        tmToast('Please enter a valid email.', 'error');
+        return;
+      }
+
+      const payload = {};
+      // Update only what user actually typed (avoid overwriting with blanks)
+      if (nextUsernameRaw && nextUsernameRaw !== String(curUsername || '')) payload.username = nextUsernameRaw;
+      if (nextEmailRaw && nextEmailRaw !== String(curEmail || '').toLowerCase()) payload.email = nextEmailRaw;
+      if (nextPhoneRaw && nextPhoneRaw !== String(curPhone || '')) payload.phone = nextPhoneRaw;
+
+      if (!Object.keys(payload).length) {
+        tmToast('No changes to save.', 'info');
+        return;
+      }
+
+      const orig = saveBtn.textContent;
+      saveBtn.disabled = true;
+      saveBtn.classList.add('loading');
+      saveBtn.textContent = 'SAVING...';
+
+      try {
+        const out = await apiPost('/api/me/profile', payload).catch(() => null);
+        if (!out || !out.ok) {
+          const msg = (out && (out.message || out.error)) ? (out.message || out.error) : 'Failed to update account.';
+          const pretty =
+            (msg === 'invalid email') ? 'Invalid email.' :
+            (msg === 'invalid username') ? 'Invalid username.' :
+            (msg === 'invalid phone') ? 'Invalid phone number.' :
+            msg;
+          tmToast(pretty, 'error');
+          return;
+        }
+
+        __meCache = null;
+        const meFresh = await ensureMe(true);
+
+        // Update menu username immediately
+        const handle =
+          meFresh?.user?.creatorApplication?.handle ||
+          meFresh?.user?.username ||
+          meFresh?.user?.handle ||
+          '';
+        const u = getMenuUsernameEl();
+        if (u) u.textContent = `@${(handle || 'username').replace(/^@/, '')}`;
+
+        tmToast('Account updated.', 'success');
+      } catch (e) {
+        console.error(e);
+        tmToast('Failed to update account. Please try again.', 'error');
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.classList.remove('loading');
+        saveBtn.textContent = orig;
+      }
+    });
+  }
+
+  // Delete account button (placeholder until you decide backend behavior)
+  const delBtn = container.querySelector('.btn-delete-account');
+  if (delBtn && !delBtn.__tmBound) {
+    delBtn.__tmBound = true;
+    delBtn.addEventListener('click', () => {
+      tmToast('Delete account is not enabled yet.', 'info');
+    });
+  }
 }
 
 export function initSettings() {
