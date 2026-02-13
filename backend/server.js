@@ -301,6 +301,7 @@ const DB = {
   messageUsage: {},
   emailVerify: {},
   resetTokens: {},
+  forgotOtps: {},
   rateLimits: {},
 
   // Recent Moments (Stories)
@@ -2570,6 +2571,180 @@ app.post('/api/auth/forgot/request', async (req, res) => {
   }catch(err){
     console.error(err);
     return res.status(500).json({ ok:false, message:'server_error' });
+  }
+});
+
+// ---------------- Auth: FORGOT PASSWORD (OTP reset) ----------------
+// Step 1: send a 6-digit code to the email (always responds OK to prevent enumeration)
+app.post('/api/auth/forgot/send-otp', async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ ok: false, message: 'email required' });
+
+    if (IS_PROD && !hasFirebase) {
+      return res.status(503).json({ ok: false, message: 'auth_backend_misconfigured' });
+    }
+
+    // Anti-abuse (per-IP). Always OK response (no enumeration).
+    if (!rateLimitOr429(req, res, _rlKey(req, 'forgot_otp_send'), 6, 15 * 60 * 1000, 'too_many_requests')) return;
+
+    let userExists = false;
+    if (hasFirebase) {
+      try { userExists = !!(await findUserByEmail(email)); } catch { userExists = false; }
+    } else {
+      userExists = !!DB.users[email];
+    }
+
+    if (userExists) {
+      const now = Date.now();
+      const key = crypto.createHash('sha256').update(`forgot:${email}`).digest('hex');
+
+      // Pull existing record (memory/Firestore) for resend throttling
+      let rec = DB.forgotOtps[key] || null;
+      if (!rec && hasFirebase && firestore) {
+        try {
+          const snap = await firestore.collection('iTrueMatchPasswordResetOtps').doc(key).get();
+          if (snap.exists) rec = snap.data();
+        } catch (e) {
+          console.warn('[forgot-otp] Firestore read warn:', e?.message || e);
+        }
+      }
+
+      const lastSentAt = rec && rec.lastSentAt ? Number(rec.lastSentAt) : 0;
+      if (lastSentAt && (now - lastSentAt) < RESEND_GAP_MS) {
+        return res.json({ ok: true, message: 'resend_wait' });
+      }
+
+      const code = generateCode();
+      const bcrypt = require('bcryptjs');
+      const codeHash = await bcrypt.hash(code, 10);
+      const exp = now + CODE_TTL_MS;
+
+      const next = {
+        email,
+        codeHash,
+        exp,
+        createdAt: rec?.createdAt || now,
+        lastSentAt: now,
+        attempts: 0
+      };
+
+      DB.forgotOtps[key] = next;
+
+      if (hasFirebase && firestore) {
+        try {
+          await firestore.collection('iTrueMatchPasswordResetOtps').doc(key).set(next, { merge: true });
+        } catch (e) {
+          console.warn('[forgot-otp] Firestore store warn:', e?.message || e);
+        }
+      }
+
+      try {
+        await sendPasswordResetOtpEmail(email, code);
+      } catch (e) {
+        console.warn('[forgot-otp] email send warn:', e?.message || e);
+      }
+    }
+
+    return res.json({ ok: true, message: 'if_account_exists_code_sent' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ ok: false, message: 'server_error' });
+  }
+});
+
+// Step 2: verify code + set new password
+app.post('/api/auth/forgot/reset-otp', async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const code = String(req.body?.code || '').trim();
+    const newPassword = String(req.body?.newPassword || '').trim();
+
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({ ok: false, message: 'email, code, and newPassword required' });
+    }
+    if (!isStrongPassword(newPassword)) {
+      return res.status(400).json({ ok: false, message: 'weak_password' });
+    }
+
+    // Anti-abuse (per-IP)
+    if (!rateLimitOr429(req, res, _rlKey(req, 'forgot_otp_reset'), 12, 15 * 60 * 1000, 'too_many_requests')) return;
+
+    const key = crypto.createHash('sha256').update(`forgot:${email}`).digest('hex');
+    let rec = DB.forgotOtps[key] || null;
+
+    if (!rec && hasFirebase && firestore) {
+      try {
+        const snap = await firestore.collection('iTrueMatchPasswordResetOtps').doc(key).get();
+        if (snap.exists) rec = snap.data();
+      } catch (e) {
+        console.warn('[forgot-otp] Firestore read warn:', e?.message || e);
+      }
+    }
+
+    const now = Date.now();
+    if (!rec || !rec.exp || now > Number(rec.exp)) {
+      // cleanup
+      delete DB.forgotOtps[key];
+      if (hasFirebase && firestore) {
+        try { await firestore.collection('iTrueMatchPasswordResetOtps').doc(key).delete(); } catch {}
+      }
+      return res.status(400).json({ ok: false, message: 'invalid_or_expired_code' });
+    }
+
+    const attempts = Number(rec.attempts || 0);
+    if (attempts >= 8) {
+      delete DB.forgotOtps[key];
+      if (hasFirebase && firestore) {
+        try { await firestore.collection('iTrueMatchPasswordResetOtps').doc(key).delete(); } catch {}
+      }
+      return res.status(400).json({ ok: false, message: 'invalid_or_expired_code' });
+    }
+
+    const bcrypt = require('bcryptjs');
+    const ok = await bcrypt.compare(code, String(rec.codeHash || ''));
+    if (!ok) {
+      rec.attempts = attempts + 1;
+      DB.forgotOtps[key] = rec;
+      if (hasFirebase && firestore) {
+        try { await firestore.collection('iTrueMatchPasswordResetOtps').doc(key).set({ attempts: rec.attempts }, { merge: true }); } catch {}
+      }
+      return res.status(400).json({ ok: false, message: 'invalid_or_expired_code' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    if (hasFirebase) {
+      const userDoc = await findUserByEmail(email);
+      if (!userDoc || !userDoc._docRef) {
+        // No enumeration: treat as invalid
+        delete DB.forgotOtps[key];
+        if (firestore) {
+          try { await firestore.collection('iTrueMatchPasswordResetOtps').doc(key).delete(); } catch {}
+        }
+        return res.status(400).json({ ok: false, message: 'invalid_or_expired_code' });
+      }
+      await userDoc._docRef.update({ passwordHash, passwordUpdatedAt: now });
+    } else {
+      if (!DB.users[email]) {
+        delete DB.forgotOtps[key];
+        return res.status(400).json({ ok: false, message: 'invalid_or_expired_code' });
+      }
+      DB.users[email].passwordHash = passwordHash;
+      DB.users[email].passwordUpdatedAt = now;
+      try { saveUsersStore(); } catch {}
+    }
+
+    // invalidate OTP
+    delete DB.forgotOtps[key];
+    if (hasFirebase && firestore) {
+      try { await firestore.collection('iTrueMatchPasswordResetOtps').doc(key).delete(); } catch {}
+    }
+
+    return res.json({ ok: true, message: 'password_reset_ok' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ ok: false, message: 'server_error' });
   }
 });
 
@@ -5960,6 +6135,67 @@ async function sendWithResend({ to, subject, html, text }) {
   }
 
   return data;
+}
+
+// Generic mail helper used by reset/OTP flows.
+// Uses Resend when available, falls back to SMTP.
+async function sendMail(toEmail, subject, html, text) {
+  try {
+    const to = String(toEmail || '').trim();
+    if (!to) return false;
+    const subj = String(subject || '').trim() || 'iTrueMatch';
+    const txt = String(text || '').trim() || ' '; // Resend expects non-empty text
+
+    if (process.env.RESEND_API_KEY) {
+      try {
+        const data = await promiseTimeout(
+          sendWithResend({ to, subject: subj, html, text: txt }),
+          12000,
+          'Resend'
+        );
+        console.log(`[mail] Resend sent to ${to}`, data?.id ? `id=${data.id}` : '');
+        return true;
+      } catch (err) {
+        console.error('[mail] Resend send failed:', err?.message || err);
+        // fall through
+      }
+    }
+
+    const mailer = await getMailer();
+    if (!mailer) {
+      console.error('[mail] No mailer configured (set RESEND_API_KEY or SMTP_* env vars).');
+      return false;
+    }
+
+    const from = process.env.MAIL_FROM || process.env.SMTP_USER || 'noreply@itruematch.com';
+    await promiseTimeout(
+      mailer.sendMail({ from, to, subject: subj, html, text: txt }),
+      12000,
+      'SMTP sendMail'
+    );
+    console.log('[mail] Email sent via SMTP to:', to);
+    return true;
+  } catch (err) {
+    console.error('[mail] sendMail failed:', err?.message || err);
+    return false;
+  }
+}
+
+async function sendPasswordResetOtpEmail(toEmail, code) {
+  const subj = 'Your iTrueMatch password reset code';
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;">
+      <h2 style="margin:0 0 12px 0;">Reset your password</h2>
+      <p style="margin:0 0 16px 0;">Enter this 6-digit code to reset your password. It expires in <b>10 minutes</b>.</p>
+      <div style="font-size:28px;letter-spacing:6px;font-weight:700;padding:14px 16px;border:1px solid #ddd;border-radius:12px;display:inline-block;">
+        ${code}
+      </div>
+      <p style="margin:16px 0 0 0;color:#666;font-size:12px;">
+        If you didn’t request this, you can ignore this email.
+      </p>
+    </div>
+  `;
+  return sendMail(String(toEmail || '').trim(), subj, html, `Your iTrueMatch password reset code is ${code}`);
 }
 
 async function sendVerificationEmail(toEmail, code) {

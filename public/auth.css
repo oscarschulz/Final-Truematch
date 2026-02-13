@@ -215,10 +215,29 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(8px); -
 .verify-msg.is-error{ color: #ff4757; }
 
 /* Split Modal (Forgot Password) */
-dialog.split-modal { max-width: 900px; padding: 0; }
-.split-modal-layout { display: flex; width: 100%; min-height: 500px; }
-.modal-left-visual { width: 45%; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); display: flex; align-items: center; justify-content: center; position: relative; }
-.modal-right-form { width: 55%; padding: 40px; display: flex; flex-direction: column; justify-content: center; }
+dialog.split-modal { max-width: 760px; padding: 0; }
+.split-modal-layout { display: flex; width: 100%; min-height: 440px; }
+.modal-left-visual { width: 38%; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); display: flex; align-items: center; justify-content: center; position: relative; }
+.modal-right-form { width: 62%; padding: 30px 32px; display: flex; flex-direction: column; justify-content: center; }
+
+/* Forgot modal: make "code-input" behave like normal inputs when used with .full-text */
+.code-input.full-text{ font-size: 1rem; letter-spacing: 0.2px; text-align: left; margin: 10px 0; padding: 14px 14px 14px 46px; }
+.code-input.full-text::placeholder{ letter-spacing: 0.4px; color: rgba(255,255,255,0.55); }
+.code-input.otp-field{ text-align: center; letter-spacing: 6px; padding-left: 14px; }
+
+.modal__body.align-left{ text-align: left; }
+
+.modal-input-wrapper{ position: relative; }
+.modal-input-wrapper.with-icon .input-icon{ position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; opacity: 0.85; color: rgba(255,255,255,0.75); pointer-events: none; }
+
+.column-actions{ display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+.btn-text-only{ background: transparent; border: none; color: rgba(255,255,255,0.75); font-weight: 700; cursor: pointer; padding: 10px 6px; border-radius: 10px; }
+.btn-text-only:hover{ color: #fff; }
+.btn-text-only:disabled{ opacity: 0.5; cursor: not-allowed; }
+
+.forgot-hint{ margin-top: 10px; font-size: 0.85rem; color: rgba(255,255,255,0.7); }
+
+.illustration-float svg{ width: 92px; height: 92px; }
 
 @keyframes neonPulse {
   0%, 100% { box-shadow: 0 20px 50px rgba(0,0,0,0.7), 0 0 0px rgba(100, 233, 238, 0); border-color: rgba(100, 233, 238, 0.4); }

@@ -589,17 +589,28 @@ function tmShowLoader(title, sub, small) {
     const btnVerify = document.getElementById('btnForgotVerify');
     const btnBack = document.getElementById('btnForgotBack');
     const btnChange = document.getElementById('btnForgotChange');
+    const btnResend = document.getElementById('btnForgotResend');
     const err = document.getElementById('forgotError');
+    const info = document.getElementById('forgotInfo');
     const inEmail = document.getElementById('forgotEmail') || document.getElementById('forgotEmailInput');
+    const inOtp = document.getElementById('forgotOtpInput');
+    const otpWrap = document.getElementById('forgotOtpWrap');
     const inPass1 = document.getElementById('forgotNewPass');
     const inPass2 = document.getElementById('forgotNewPass2') || document.getElementById('forgotConfirmPass');
 
     let resetToken = null;
+    let otpEmail = null;
 
     function setErr(msg = "") {
       if (!err) return;
       err.textContent = msg || "";
       err.style.display = msg ? "block" : "none";
+    }
+
+    function setInfo(msg = "") {
+      if (!info) return;
+      info.textContent = msg || "";
+      info.style.display = msg ? "block" : "none";
     }
 
     function clearParams(keys = []) {
@@ -610,19 +621,49 @@ function tmShowLoader(title, sub, small) {
 
     function showStep1(message = "") {
       resetToken = null;
+      otpEmail = null;
       step1.style.display = "";
       step2.style.display = "none";
-      setErr(message || "");
+      setErr("");
+      setInfo(message || "");
       if (inEmail) inEmail.value = "";
+      if (inOtp) inOtp.value = "";
       if (inPass1) inPass1.value = "";
       if (inPass2) inPass2.value = "";
     }
 
-    function showStep2(token) {
+    function showStep2Link(token) {
       resetToken = String(token || "").trim();
+      otpEmail = null;
       step1.style.display = "none";
       step2.style.display = "";
       setErr("");
+      setInfo("");
+
+      // Link reset does not need OTP input
+      if (otpWrap) otpWrap.style.display = "none";
+      if (btnResend) btnResend.style.display = "none";
+
+      if (inOtp) inOtp.value = "";
+      if (inPass1) inPass1.value = "";
+      if (inPass2) inPass2.value = "";
+    }
+
+    function showStep2Otp(email) {
+      resetToken = null;
+      otpEmail = String(email || "").trim().toLowerCase();
+      step1.style.display = "none";
+      step2.style.display = "";
+      setErr("");
+      setInfo("We sent a 6-digit code to your email (if an account exists).\nEnter it below to reset your password.");
+
+      if (otpWrap) otpWrap.style.display = "";
+      if (btnResend) btnResend.style.display = "";
+
+      if (inOtp) {
+        inOtp.value = "";
+        setTimeout(() => { try { inOtp.focus(); } catch {} }, 50);
+      }
       if (inPass1) inPass1.value = "";
       if (inPass2) inPass2.value = "";
     }
@@ -662,25 +703,41 @@ function tmShowLoader(title, sub, small) {
       if (!email) { setErr("Enter your email."); return; }
 
       btnVerify.disabled = true;
-      setErr("Sending reset link...");
+      setErr("");
+      setInfo("Sending code...");
 
-      const out = await callAPI("/api/auth/forgot/request", { email }, { timeoutMs: 15000 });
+      const out = await callAPI("/api/auth/forgot/send-otp", { email }, { timeoutMs: 15000 });
 
       btnVerify.disabled = false;
 
       if (!out?.ok) {
-        setErr("Could not send reset link. Try again.");
+        setInfo("");
+        setErr("Could not send code. Try again.");
         return;
       }
 
-      // Always generic (no enumeration).
-      setErr("If an account exists for that email, we sent a reset link.");
-      setTimeout(() => {
-        closeDialog();
-        // Keep user on login tab
-        setActiveTab('login');
-        setParam('mode', 'login');
-      }, 1200);
+      // Move to OTP + new password step.
+      showStep2Otp(email);
+    });
+
+    btnResend?.addEventListener('click', async () => {
+      const email = (otpEmail || (inEmail?.value || "")).trim();
+      if (!email) { setErr("Enter your email."); return; }
+      btnResend.disabled = true;
+      setErr("");
+      setInfo("Resending code...");
+      try {
+        const out = await callAPI("/api/auth/forgot/send-otp", { email }, { timeoutMs: 15000 });
+        if (!out?.ok) {
+          setInfo("");
+          setErr("Could not resend code. Try again.");
+        } else {
+          setErr("");
+          setInfo("If an account exists, we sent a new code.\nPlease check your inbox/spam.");
+        }
+      } finally {
+        btnResend.disabled = false;
+      }
     });
 
     btnBack?.addEventListener('click', () => {
@@ -700,28 +757,33 @@ function tmShowLoader(title, sub, small) {
       const p1 = (inPass1?.value || "").trim();
       const p2 = (inPass2?.value || "").trim();
 
-      if (!resetToken) {
-        setErr("Reset link is missing or invalid.");
-        return;
-      }
       if (!p1 || p1.length < 8) { setErr("Password must be at least 8 characters."); return; }
       if (p1 !== p2) { setErr("Passwords do not match."); return; }
 
       btnChange.disabled = true;
-      setErr("Updating password...");
+      setErr("");
+      setInfo("Updating password...");
 
-      const out = await callAPI("/api/auth/forgot/reset", { token: resetToken, newPassword: p1 }, { timeoutMs: 15000 });
+      const out = resetToken
+        ? await callAPI("/api/auth/forgot/reset", { token: resetToken, newPassword: p1 }, { timeoutMs: 15000 })
+        : await callAPI("/api/auth/forgot/reset-otp", { email: otpEmail, code: String(inOtp?.value || '').trim(), newPassword: p1 }, { timeoutMs: 15000 });
 
       btnChange.disabled = false;
 
       if (!out?.ok) {
-        setErr((out?.message === 'weak_password')
-          ? "Password is too weak."
-          : "Could not reset password. Request a new reset link.");
+        setInfo("");
+        if (out?.message === 'weak_password') {
+          setErr("Password is too weak.");
+        } else if (!resetToken && out?.message === 'invalid_or_expired_code') {
+          setErr("Invalid or expired code. Please request a new one.");
+        } else {
+          setErr(resetToken ? "Could not reset password. Request a new reset link." : "Could not reset password. Try again.");
+        }
         return;
       }
 
-      setErr("Password updated. You can log in now.");
+      setErr("");
+      setInfo("Password updated. You can log in now.");
       setTimeout(() => {
         closeDialog();
         clearParams(['mode', 'token']);
@@ -734,7 +796,7 @@ function tmShowLoader(title, sub, small) {
     const mode = getParam('mode');
     const token = getParam('token');
     if (mode === 'reset' && token) {
-      showStep2(token);
+      showStep2Link(token);
       try {
         if (dlgForgot && typeof dlgForgot.showModal === 'function') dlgForgot.showModal();
         else dlgForgot?.setAttribute?.('open', '');

@@ -198,13 +198,14 @@
           
           <div id="forgotStep1">
             <h3>Forgot Password?</h3>
-            <p class="muted">Enter your email to reset it.</p>
+            <p class="muted">Enter your email to receive a reset code.</p>
             
             <div class="modal-input-wrapper with-icon">
                 <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
                 <input type="email" id="forgotEmailInput" class="code-input full-text" placeholder="name@email.com">
             </div>
-            <p id="forgotError" class="error-text" style="display:none; color:#ff4757; font-size:0.8rem; margin-top:5px;">Account not found.</p>
+            <p id="forgotInfo" class="forgot-hint" style="display:none;"></p>
+            <p id="forgotError" class="error-text" style="display:none; color:#ff4757; font-size:0.85rem; margin-top:6px;">Something went wrong.</p>
 
             <div class="modal-actions column-actions">
                 <button type="button" id="btnForgotVerify" class="btn-primary">RESET PASSWORD</button>
@@ -213,8 +214,13 @@
           </div>
 
           <div id="forgotStep2" style="display: none;">
-            <h3>New Password</h3>
-            <p class="muted">Create a strong password.</p>
+            <h3>Reset Password</h3>
+            <p class="muted">Enter the 6-digit code we sent and set a new password.</p>
+
+            <div class="modal-input-wrapper with-icon" style="margin-bottom: 15px;" id="forgotOtpWrap">
+                <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2z"></path><polyline points="3,8 12,13 21,8"></polyline></svg>
+                <input type="text" id="forgotOtpInput" inputmode="numeric" pattern="[0-9]*" maxlength="6" class="code-input full-text otp-field" placeholder="6-digit code" autocomplete="one-time-code">
+            </div>
             
             <div class="modal-input-wrapper with-icon" style="margin-bottom: 15px;">
                 <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
@@ -228,6 +234,7 @@
             
             <div class="modal-actions column-actions" style="margin-top:20px;">
                 <button type="button" id="btnForgotChange" class="btn-primary">CHANGE PASSWORD</button>
+                <button type="button" id="btnForgotResend" class="btn-text-only">Resend code</button>
                 <button type="button" id="btnForgotBack" class="btn-text-only">Back</button>
             </div>
           </div>
