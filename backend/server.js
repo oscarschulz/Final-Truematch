@@ -4664,6 +4664,129 @@ app.get('/api/me/payments', async (req, res) => {
   }
 });
 
+
+// ---------------- Support (Email-only) ----------------
+app.post('/api/support/email', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req) || (DB.user && DB.user.email) || '');
+    if (!me) return res.status(401).json({ ok: false, message: 'Not logged in' });
+
+    const subjectRaw = String((req.body && req.body.subject) || '').trim();
+    const messageRaw = String((req.body && req.body.message) || '').trim();
+    const page = String((req.body && req.body.page) || '').trim();
+    const meta = (req.body && req.body.meta) ? req.body.meta : {};
+
+    if (!subjectRaw || !messageRaw) {
+      return res.status(400).json({ ok: false, message: 'Missing subject or message' });
+    }
+
+    const subject = subjectRaw.slice(0, 120);
+    const message = messageRaw.slice(0, 5000);
+
+    // Simple throttle (per user): 1 email per 60s
+    if (!DB.supportEmailThrottle) DB.supportEmailThrottle = {};
+    const last = Number(DB.supportEmailThrottle[me] || 0);
+    if (last && (Date.now() - last) < 60_000) {
+      return res.status(429).json({ ok: false, message: 'Please wait a bit before sending another support email.' });
+    }
+    DB.supportEmailThrottle[me] = Date.now();
+
+    const supportTo =
+      process.env.SUPPORT_EMAIL_TO ||
+      process.env.SMTP_USER ||
+      process.env.MAIL_FROM ||
+      '';
+
+    if (!supportTo) {
+      return res.status(500).json({ ok: false, message: 'Support inbox not configured (set SUPPORT_EMAIL_TO).' });
+    }
+
+    const from =
+      process.env.SUPPORT_EMAIL_FROM ||
+      process.env.MAIL_FROM ||
+      process.env.RESEND_FROM ||
+      `iTrueMatch <${process.env.SMTP_USER || 'noreply@itruematch.com'}>`;
+
+    const ip =
+      (req.headers['x-forwarded-for'] && String(req.headers['x-forwarded-for']).split(',')[0].trim()) ||
+      req.ip ||
+      '';
+
+    const subj = `[Support] ${subject}`;
+
+    const safeUa = String(meta && meta.ua ? meta.ua : '').slice(0, 240);
+    const safeTz = String(meta && meta.tz ? meta.tz : '').slice(0, 80);
+    const safeLang = String(meta && meta.lang ? meta.lang : '').slice(0, 20);
+
+    const html = `
+      <div style="font-family:Arial,Helvetica,sans-serif; line-height:1.45;">
+        <h2 style="margin:0 0 12px 0;">iTrueMatch Support Request</h2>
+        <p style="margin:0 0 10px 0;"><b>From (user):</b> ${me}</p>
+        ${page ? `<p style="margin:0 0 10px 0;"><b>Page:</b> ${page}</p>` : ``}
+        <p style="margin:0 0 10px 0;"><b>IP:</b> ${ip}</p>
+        ${safeTz ? `<p style="margin:0 0 10px 0;"><b>Timezone:</b> ${safeTz}</p>` : ``}
+        ${safeLang ? `<p style="margin:0 0 10px 0;"><b>Language:</b> ${safeLang}</p>` : ``}
+        ${safeUa ? `<p style="margin:0 0 10px 0;"><b>User-Agent:</b> ${safeUa}</p>` : ``}
+        <hr style="border:none; border-top:1px solid #e6e6e6; margin:14px 0;" />
+        <pre style="white-space:pre-wrap; font-family:inherit; background:#f7f7f7; padding:12px; border-radius:10px;">${String(message).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}</pre>
+      </div>
+    `;
+
+    const text =
+      `iTrueMatch Support Request
+` +
+      `From: ${me}
+` +
+      (page ? `Page: ${page}
+` : '') +
+      `IP: ${ip}
+` +
+      (safeTz ? `Timezone: ${safeTz}
+` : '') +
+      (safeLang ? `Language: ${safeLang}
+` : '') +
+      (safeUa ? `User-Agent: ${safeUa}
+` : '') +
+      `
+---
+${message}
+`;
+
+    // Prefer Resend when configured, else SMTP
+    if (process.env.RESEND_API_KEY) {
+      await promiseTimeout(
+        sendWithResend({ to: supportTo, subject: subj, html, text }),
+        12000,
+        'Resend support email'
+      );
+    } else {
+      const mailer = await getMailer();
+      if (!mailer) {
+        return res.status(500).json({ ok: false, message: 'Mailer not configured (set SMTP_* or RESEND_API_KEY).' });
+      }
+
+      const msg = {
+        from,
+        to: supportTo,
+        subject: subj,
+        html,
+        text,
+      };
+
+      // Reply-to the user email so support can respond easily
+      if (me.includes('@')) msg.replyTo = me;
+
+      await promiseTimeout(mailer.sendMail(msg), 12000, 'SMTP support sendMail');
+    }
+
+    return res.json({ ok: true, to: supportTo, ts: Date.now() });
+  } catch (e) {
+    console.error('POST /api/support/email error:', e?.message || e);
+    return res.status(500).json({ ok: false, message: 'Unable to send support email' });
+  }
+});
+
+
 // For testing / future payment integration
 app.post('/api/creator/subscribe', async (req, res) => {
   try {

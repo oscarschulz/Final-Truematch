@@ -383,6 +383,167 @@ async function tmPostJson(path, body) {
   return data;
 }
 
+// ---------------- Support (Email-only) ----------------
+// Opens a lightweight support email modal and sends to backend /api/support/email
+function tmSupportEnsureEmailModal() {
+  const existing = document.getElementById('tm-support-email-modal');
+  if (existing) return existing;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'tm-support-email-modal';
+  overlay.setAttribute('aria-hidden', 'true');
+  overlay.style.position = 'fixed';
+  overlay.style.inset = '0';
+  overlay.style.zIndex = '99999';
+  overlay.style.display = 'none';
+  overlay.style.alignItems = 'center';
+  overlay.style.justifyContent = 'center';
+  overlay.style.padding = '18px';
+  overlay.style.background = 'rgba(0,0,0,0.62)';
+
+  overlay.innerHTML = `
+    <div style="width: min(560px, 100%); border-radius: 18px; border: 1px solid rgba(255,255,255,0.10); background: rgba(7,11,18,0.98); box-shadow: 0 22px 80px rgba(0,0,0,0.55);">
+      <div style="display:flex; align-items:center; justify-content:space-between; padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.08);">
+        <div style="font-weight: 900; letter-spacing: 0.2px;">Support (Email)</div>
+        <button type="button" id="tm-support-email-close" style="border: 1px solid rgba(255,255,255,0.14); background: transparent; color: #fff; width: 34px; height: 34px; border-radius: 12px; cursor:pointer;">✕</button>
+      </div>
+      <div style="padding: 14px 16px; display:flex; flex-direction:column; gap: 10px;">
+        <div style="font-size:12px; color: rgba(255,255,255,0.68); line-height: 1.45;">
+          Send us a support email. We’ll reply to your account email.
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <label style="font-size:12px; color: rgba(255,255,255,0.75); font-weight:800;">Subject</label>
+          <input id="tm-support-email-subject" type="text" placeholder="e.g. Billing issue / App bug / Account" 
+            style="width:100%; padding: 12px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.04); color:#fff; outline:none;" />
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <label style="font-size:12px; color: rgba(255,255,255,0.75); font-weight:800;">Message</label>
+          <textarea id="tm-support-email-message" rows="6" placeholder="Describe the issue clearly. Include what you expected vs what happened."
+            style="width:100%; padding: 12px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.04); color:#fff; outline:none; resize: vertical;"></textarea>
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+            <div id="tm-support-email-count" style="font-size:11px; color: rgba(255,255,255,0.55);">0/5000</div>
+            <div style="font-size:11px; color: rgba(255,255,255,0.55);">Tip: include screenshots link if any.</div>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:10px; justify-content:flex-end; padding-top: 4px;">
+          <button type="button" id="tm-support-email-cancel"
+            style="padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.14); background: transparent; color:#fff; font-weight:900; cursor:pointer;">Cancel</button>
+          <button type="button" id="tm-support-email-send"
+            style="padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(100,233,238,0.28); background: rgba(100,233,238,0.10); color: var(--primary-cyan, #64E9EE); font-weight: 950; cursor:pointer;">Send</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  const close = () => tmSupportCloseEmailModal();
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+  const btnX = overlay.querySelector('#tm-support-email-close');
+  const btnCancel = overlay.querySelector('#tm-support-email-cancel');
+  if (btnX) btnX.addEventListener('click', close);
+  if (btnCancel) btnCancel.addEventListener('click', close);
+
+  const msg = overlay.querySelector('#tm-support-email-message');
+  const count = overlay.querySelector('#tm-support-email-count');
+  if (msg && count) {
+    const updateCount = () => {
+      const v = String(msg.value || '');
+      count.textContent = `${Math.min(v.length, 5000)}/5000`;
+    };
+    msg.addEventListener('input', updateCount);
+    updateCount();
+  }
+
+  const btnSend = overlay.querySelector('#tm-support-email-send');
+  if (btnSend) {
+    btnSend.addEventListener('click', async () => {
+      const subjEl = overlay.querySelector('#tm-support-email-subject');
+      const msgEl = overlay.querySelector('#tm-support-email-message');
+      const subject = String(subjEl?.value || '').trim();
+      const message = String(msgEl?.value || '').trim();
+
+      if (!subject || !message) {
+        try { TopToast.fire({ icon: 'error', title: 'Please fill subject and message' }); } catch (_) {}
+        return;
+      }
+      if (subject.length > 120) {
+        try { TopToast.fire({ icon: 'error', title: 'Subject too long (max 120 chars)' }); } catch (_) {}
+        return;
+      }
+      if (message.length > 5000) {
+        try { TopToast.fire({ icon: 'error', title: 'Message too long (max 5000 chars)' }); } catch (_) {}
+        return;
+      }
+
+      // Disable while sending
+      btnSend.disabled = true;
+      btnSend.style.opacity = '0.6';
+      btnSend.style.cursor = 'not-allowed';
+
+      try {
+        await tmPostJson('/api/support/email', {
+          subject,
+          message,
+          page: String(location?.href || ''),
+          meta: {
+            ua: navigator.userAgent || '',
+            tz: (Intl.DateTimeFormat().resolvedOptions().timeZone || ''),
+            lang: navigator.language || ''
+          }
+        });
+
+        try { TopToast.fire({ icon: 'success', title: 'Support email sent' }); } catch (_) {}
+        try { subjEl.value = ''; msgEl.value = ''; } catch (_) {}
+        tmSupportCloseEmailModal();
+      } catch (err) {
+        console.error(err);
+        const msg = String(err?.message || 'Unable to send email');
+        try { TopToast.fire({ icon: 'error', title: msg }); } catch (_) {}
+      } finally {
+        btnSend.disabled = false;
+        btnSend.style.opacity = '';
+        btnSend.style.cursor = 'pointer';
+      }
+    });
+  }
+
+  return overlay;
+}
+
+function tmSupportOpenEmailModal(prefill = {}) {
+  const overlay = tmSupportEnsureEmailModal();
+  const subjEl = overlay.querySelector('#tm-support-email-subject');
+  const msgEl = overlay.querySelector('#tm-support-email-message');
+  try {
+    overlay.style.display = 'flex';
+    overlay.setAttribute('aria-hidden', 'false');
+
+    if (subjEl && !subjEl.value) {
+      subjEl.value = String(prefill.subject || 'Support request');
+    }
+    if (msgEl && !msgEl.value) {
+      const hint = prefill.message ? String(prefill.message) : '';
+      msgEl.value = hint;
+      msgEl.dispatchEvent(new Event('input'));
+    }
+    window.setTimeout(() => {
+      try { (subjEl || msgEl)?.focus(); } catch (_) {}
+    }, 20);
+  } catch (_) {}
+}
+
+function tmSupportCloseEmailModal() {
+  const overlay = document.getElementById('tm-support-email-modal');
+  if (!overlay) return;
+  overlay.style.display = 'none';
+  overlay.setAttribute('aria-hidden', 'true');
+}
+
 function tmLoadBankingFromCache() {
   if (!tmEnsureBankingUI()) return;
 
@@ -1436,21 +1597,14 @@ function setupNavigation() {
                 switchView('become-creator'); 
             }
             else if (text.includes('help')) {
-                // Help=B → open Messages and start a support chat context
+                // Email-only support
                 e.preventDefault();
-                switchView('messages');
-                try { TopToast.fire({ icon: 'info', title: 'Support chat opened' }); } catch(_) {}
-                window.setTimeout(() => {
-                    try { loadChat(1); } catch(_) {}
-                    // Try to focus the chat input if it exists
-                    const input =
-                        document.querySelector('#chat-input') ||
-                        document.querySelector('#message-input') ||
-                        document.querySelector('textarea[name="message"]') ||
-                        document.querySelector('.chat-input textarea') ||
-                        document.querySelector('#view-messages textarea');
-                    if (input) input.focus();
-                }, 180);
+                try {
+                    tmSupportOpenEmailModal({ subject: 'Support request' });
+                } catch (err) {
+                    console.error(err);
+                    try { TopToast.fire({ icon: 'error', title: 'Support unavailable' }); } catch(_) {}
+                }
             }
             else if (text.includes('language')) {
                 // Language picker
