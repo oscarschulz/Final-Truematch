@@ -361,14 +361,13 @@ Object.defineProperty(DB, 'prefs', {
 
 const SERVER_SWIPE_COUNTS = {}; 
 const STRICT_DAILY_LIMIT = 20;
-// PASS behavior: passed profiles may re-appear after this cooldown (hours)
+// PASS cooldown: profiles you PASS can reappear only after some time.
+// Set PASS_RESHOW_AFTER_HOURS=0 to allow immediate re-show (useful for local testing).
 const PASS_RESHOW_AFTER_HOURS = (() => {
-  const raw = process.env.PASS_RESHOW_AFTER_HOURS;
-  const n = raw === undefined ? NaN : parseFloat(String(raw));
-  return (Number.isFinite(n) && n >= 0) ? n : 12;
+  const n = Number(process.env.PASS_RESHOW_AFTER_HOURS);
+  if (!Number.isFinite(n)) return 12;
+  return Math.max(0, n);
 })();
-const PASS_RESHOW_AFTER_MS = Math.round(PASS_RESHOW_AFTER_HOURS * 60 * 60 * 1000);
-
 // ---------------- Disk persistence (fallback when Firebase is OFF) ----------------
 // NOTE: In real production, you should rely on Firestore. This file fallback is mainly for local/demo.
 // It makes DB.prefsByEmail survive server restarts (so prefs persist after logout / new device tests).
@@ -1196,7 +1195,6 @@ function _matchDocId(emailA, emailB) {
 }
 
 function _isPositiveSwipe(t) {
-  // treat legacy 'super' as positive for backward compatibility
   return t === 'like' || t === 'superlike' || t === 'super';
 }
 
@@ -6874,15 +6872,18 @@ app.get('/api/swipe/candidates', async (req, res) => {
         const candEmail = String(u.email || '').toLowerCase();
         if (!candEmail || candEmail === myEmail) return;
 
-        // ✅ PASS-only re-serve rule (with cooldown):
+        // ✅ PASS-only re-serve rule (+ cooldown):
+        // - like/superlike: never re-serve
+        // - pass: may re-serve only after PASS_RESHOW_AFTER_HOURS
         const prev = mySwipes[candEmail];
         if (prev) {
           const t = String(prev.type || '').toLowerCase();
-          // like / superlike removed permanently from deck
-          if (t && t !== 'pass') return;
-          // pass can re-appear after cooldown
-          const ts = Number(prev.ts || 0);
-          if (t === 'pass' && PASS_RESHOW_AFTER_MS > 0 && ts && (Date.now() - ts) < PASS_RESHOW_AFTER_MS) return;
+          if (t && t !== 'pass') return; // like/superlike removed from deck
+          if (t === 'pass') {
+            const minMs = PASS_RESHOW_AFTER_HOURS * 60 * 60 * 1000;
+            const lastTs = Number(prev.ts) || 0;
+            if (minMs > 0 && lastTs && (Date.now() - lastTs) < minMs) return;
+          }
         }
 
         // ✅ Premium-to-premium only
@@ -6903,11 +6904,18 @@ app.get('/api/swipe/candidates', async (req, res) => {
           const e = String(u.email || '').toLowerCase();
           if (!e || e === myEmail) return false;
 
-          // ✅ PASS-only re-serve rule:
+          // ✅ PASS-only re-serve rule (+ cooldown):
+          // - like/superlike: never re-serve
+          // - pass: may re-serve only after PASS_RESHOW_AFTER_HOURS
           const prev = mySwipes[e];
           if (prev) {
             const t = String(prev.type || '').toLowerCase();
             if (t && t !== 'pass') return false;
+            if (t === 'pass') {
+              const minMs = PASS_RESHOW_AFTER_HOURS * 60 * 60 * 1000;
+              const lastTs = Number(prev.ts) || 0;
+              if (minMs > 0 && lastTs && (Date.now() - lastTs) < minMs) return false;
+            }
           }
 
           // ✅ Premium-to-premium only
@@ -6995,7 +7003,7 @@ app.post('/api/swipe/action', async (req, res) => {
         SERVER_SWIPE_COUNTS[myEmail] = rec;
       }
       if (rec.count >= cap) {
-        return res.json({ ok: true, remaining: 0, limit: cap, limitReached: true, isMatch: false, match: false });
+        return res.json({ ok: true, remaining: 0, limit: cap, limitReached: true, isMatch: false });
       }
     }
 const actionType = (action === 'super' || action === 'superlike') ? 'superlike' : (action === 'like' ? 'like' : 'pass');
@@ -7009,7 +7017,7 @@ const actionType = (action === 'super' || action === 'superlike') ? 'superlike' 
     }
 // If pass: no match check needed
     if (!_isPositiveSwipe(actionType)) {
-      return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: false, match: false });
+      return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: false });
     }
 
     // Check reciprocal swipe and create match if mutual positive
@@ -7018,10 +7026,10 @@ const actionType = (action === 'super' || action === 'superlike') ? 'superlike' 
 
     if (isMutual) {
       await _saveMatch(myEmail, tId, actionType, otherType);
-      return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: true, match: true, matchWithEmail: tId });
+      return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: true, matchWithEmail: tId });
     }
 
-    return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: false, match: false });
+    return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: false });
   } catch (err) {
     console.error('Swipe action error:', err);
     res.status(500).json({ ok: false, error: 'Server error' });

@@ -161,6 +161,7 @@ function cacheDom() {
   DOM.newMatchesRail = document.getElementById('newMatchesRail');
   DOM.matchesContainer = document.getElementById('matchesContainer');
   DOM.newMatchCount = document.getElementById('newMatchCount');
+  DOM.matchesSearch = document.getElementById('matchesSearch');
   
   // Modals & Dialogs
   DOM.dlgChat = document.getElementById('dlgChat');
@@ -562,8 +563,8 @@ async function initApp() {
   cacheDom();
   await loadMe();
   
-  SwipeController.init();
-  
+  // Swipe deck loads lazily when Swipe tab is opened.
+
   if (DEV_MODE) {
     populateMockContent();
   } else {
@@ -1012,7 +1013,7 @@ if (DOM.frmPassword) DOM.frmPassword.addEventListener('submit', async (e) => {
   if (DOM.btnSwipePass) DOM.btnSwipePass.addEventListener('click', handlePass);
   if (DOM.btnSwipeLike) DOM.btnSwipeLike.addEventListener('click', handleLike);
   if (DOM.btnSwipeSuper) DOM.btnSwipeSuper.addEventListener('click', handleSuper);
-  if (DOM.btnRefreshSwipe) DOM.btnRefreshSwipe.addEventListener('click', () => SwipeController.init());
+  if (DOM.btnRefreshSwipe) DOM.btnRefreshSwipe.addEventListener('click', () => SwipeController.init(true));
   
   document.addEventListener('keydown', (e) => {
       if(state.activeTab !== 'swipe') return;
@@ -1174,6 +1175,9 @@ function onPanelActivated(tabName) {
   }
   if (tabName === 'concierge') {
     loadConciergePanel();
+  }
+  if (tabName === 'swipe') {
+    SwipeController.init(false);
   }
 }
 
@@ -2106,17 +2110,22 @@ async function loadMatchesPanel() {
       return;
     }
 
-    renderMatchesFromApi(Array.isArray(res.matches) ? res.matches : []);
-  } catch (err) {
+    state.matchesAll = Array.isArray(res.matches) ? res.matches : [];
+    renderMatchesFromApi(state.matchesAll);
+    setupMatchesSearch();
+} catch (err) {
     console.warn('loadMatchesPanel failed:', err);
   }
 }
 
-function renderMatchesFromApi(matches) {
+function renderMatchesFromApi(matches, opts = {}) {
+  const updateCounts = opts.updateCounts !== false;
   // Update counters
   const count = matches.length;
-  if (DOM.matchCount) DOM.matchCount.textContent = String(count);
-  if (DOM.newMatchCount) DOM.newMatchCount.textContent = String(Math.min(count, 6));
+  if (updateCounts) {
+    if (DOM.matchCount) DOM.matchCount.textContent = String(count);
+    if (DOM.newMatchCount) DOM.newMatchCount.textContent = String(Math.min(count, 6));
+  }
 
   // --- Stories (new matches rail) ---
   if (DOM.newMatchesRail) {
@@ -2164,6 +2173,34 @@ function renderMatchesFromApi(matches) {
     }).join('');
   }
 }
+let _matchesSearchBound = false;
+
+function setupMatchesSearch() {
+  if (_matchesSearchBound) return;
+  if (!DOM.matchesSearch) return;
+
+  _matchesSearchBound = true;
+
+  DOM.matchesSearch.addEventListener('input', () => {
+    const q = String(DOM.matchesSearch.value || '').trim().toLowerCase();
+    const all = Array.isArray(state.matchesAll) ? state.matchesAll : [];
+
+    if (!q) {
+      renderMatchesFromApi(all, { updateCounts: false });
+      return;
+    }
+
+    const filtered = all.filter(m => {
+      const name = String(m.name || '').toLowerCase();
+      const email = String(m.email || m.id || '').toLowerCase();
+      const city = String(m.city || '').toLowerCase();
+      return name.includes(q) || email.includes(q) || city.includes(q);
+    });
+
+    renderMatchesFromApi(filtered, { updateCounts: false });
+  });
+}
+
 
 // --- Messages / Chat ---
 async function loadAndRenderThread(peerEmail) {
@@ -3150,8 +3187,16 @@ const SwipeController = (() => {
   let profiles = [];
   let currentIndex = 0;
   let isLoading = false;
+  let isActing = false;
+  let everLoaded = false;
+
   let lastLimit = DAILY_SWIPE_LIMIT; // default (Free), may become null for paid
   let lastRemaining = DAILY_SWIPE_LIMIT;
+
+  function setButtonsDisabled(disabled) {
+    const btns = [DOM.btnSwipePass, DOM.btnSwipeLike, DOM.btnSwipeSuper];
+    btns.forEach(b => { if (b) b.disabled = !!disabled; });
+  }
 
   function setSwipeStats(remaining, limit) {
     // limit === null => unlimited
@@ -3170,48 +3215,38 @@ const SwipeController = (() => {
     updateSwipeStats(safeRemaining, safeLimit);
   }
 
-  async function init() {
+  async function init(force = false) {
+    if (!force && everLoaded) return;
     await loadCandidates();
   }
 
   async function loadCandidates() {
     if (isLoading) return;
     isLoading = true;
+    isActing = false;
+    setButtonsDisabled(true);
 
     if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
     if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = true;
 
     try {
-      let data;
-      if (DEV_MODE) {
-        data = {
-          ok: true,
-          candidates: [
-            { id: 'alice@test.com', name: 'Alice', age: 24, city: 'New York', photoUrl: 'assets/images/truematch-mark.png', tags: ['Travel', 'Music', 'Pizza'] },
-            { id: 'bea@test.com', name: 'Bea', age: 22, city: 'Los Angeles', photoUrl: 'assets/images/truematch-mark.png', tags: ['Gym', 'Movies'] },
-            { id: 'cathy@test.com', name: 'Cathy', age: 25, city: 'Chicago', photoUrl: 'assets/images/truematch-mark.png', tags: ['Art', 'Coffee', 'Dogs'] }
-          ],
-          remaining: DAILY_SWIPE_LIMIT,
-          limit: DAILY_SWIPE_LIMIT,
-          limitReached: false
-        };
-      } else {
-        data = await apiGet('/api/swipe/candidates');
-      }
+      const data = await apiGet('/api/swipe/candidates');
+      everLoaded = true;
 
       if (data && data.ok && (data.limit === null || typeof data.limit === 'number' || typeof data.limit === 'undefined')) {
         setSwipeStats(data.remaining, data.limit);
       }
 
-      const list = (data && data.candidates) ? data.candidates : [];
+      const list = (data && Array.isArray(data.candidates)) ? data.candidates : [];
 
       if (data && data.limitReached) {
         // Free cap reached: keep empty state visible and disable controls
-        if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
-        if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
-        showToast('Daily swipe limit reached. Come back tomorrow.', 'error');
         profiles = [];
         currentIndex = 0;
+        if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
+        if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
+        setButtonsDisabled(true);
+        showToast('Daily swipe limit reached. Come back tomorrow.', 'error');
         return;
       }
 
@@ -3221,15 +3256,22 @@ const SwipeController = (() => {
         if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = true;
         renderCards();
         if (DOM.swipeControls) DOM.swipeControls.style.display = 'flex';
+        setButtonsDisabled(false);
       } else {
         profiles = [];
         currentIndex = 0;
         if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
         if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
+        setButtonsDisabled(true);
       }
     } catch (e) {
       console.error('Swipe Error', e);
       showToast('Failed to load swipe deck.', 'error');
+      profiles = [];
+      currentIndex = 0;
+      if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
+      if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
+      setButtonsDisabled(true);
     } finally {
       isLoading = false;
     }
@@ -3279,54 +3321,65 @@ const SwipeController = (() => {
   }
 
   function mapAction(type) {
-    if (type === 'superlike') return 'super';
+    if (type === 'superlike') return 'superlike';
     if (type === 'pass') return 'pass';
     return 'like';
   }
 
   async function handleAction(type) {
+    if (isLoading || isActing) return;
     if (currentIndex >= profiles.length) return;
 
+    isActing = true;
+    setButtonsDisabled(true);
+
     const active = document.getElementById('activeSwipeCard');
-    if (active) {
-      let animClass = 'swipe-out-right';
-      if (type === 'pass') animClass = 'swipe-out-left';
-      else if (type === 'superlike') animClass = 'swipe-out-right';
-      active.classList.add(animClass);
-    }
+    let animClass = 'swipe-out-right';
+    if (type === 'pass') animClass = 'swipe-out-left';
+    if (active) active.classList.add(animClass);
 
     const targetEmail = profiles[currentIndex].id;
 
-    if (!DEV_MODE) {
-      try {
-        const res = await apiPost('/api/swipe/action', { targetEmail, action: mapAction(type) });
+    let okToAdvance = true;
+    let limitReachedAfter = false;
 
-        if (!res || !res.ok) {
-          const err = (res && (res.error || res.message)) || 'Swipe failed';
-          if (String(err) === 'daily_swipe_limit_reached') {
-            setSwipeStats(0, res.limit || DAILY_SWIPE_LIMIT);
-            showToast('Daily swipe limit reached. Come back tomorrow.', 'error');
-            // clear deck
-            profiles = [];
-            currentIndex = 0;
-            if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
-            if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
-            if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
-            return;
-          }
-          if (String(err) === 'target_is_premium_society') {
-            showToast('This member is only available inside Premium Society.', 'error');
-          } else {
-            showToast(err, 'error');
-          }
+    try {
+      const res = await apiPost('/api/swipe/action', { targetEmail, action: mapAction(type) });
+
+      if (!res || !res.ok) {
+        okToAdvance = false;
+        const code = String((res && (res.code || res.error || res.message)) || '').toLowerCase();
+
+        if (code === 'target_not_premium') {
+          showToast('You can only swipe on paid members.', 'error');
+        } else if (code === 'not_logged_in' || res?.status === 401) {
+          showToast('Session expired. Please sign in again.', 'error');
+          try { clearSession(); } catch {}
+          try { window.location.href = 'index.html'; } catch {}
+          return;
         } else {
-          setSwipeStats(res.remaining, res.limit);
-          if (res.match) showToast('It’s a match! 🎉');
+          showToast((res && (res.error || res.message)) || 'Swipe failed. Please try again.', 'error');
         }
-      } catch (e) {
-        console.error(e);
-        showToast('Swipe failed. Please try again.', 'error');
+      } else {
+        setSwipeStats(res.remaining, res.limit);
+        limitReachedAfter = !!res.limitReached;
+
+        const isMatch = !!(res.isMatch || res.match);
+        if (isMatch) showToast("It’s a match! 🎉 Check Matches tab.", 'success');
       }
+    } catch (e) {
+      console.error(e);
+      okToAdvance = false;
+      showToast('Swipe failed. Please try again.', 'error');
+    }
+
+    if (!okToAdvance) {
+      // Reset card UI (remove animation and re-render current top card)
+      if (active) active.classList.remove('swipe-out-left', 'swipe-out-right');
+      renderCards();
+      isActing = false;
+      setButtonsDisabled(false);
+      return;
     }
 
     let msg = 'Liked!';
@@ -3335,15 +3388,30 @@ const SwipeController = (() => {
     showToast(msg);
 
     setTimeout(() => {
+      // If user just hit the daily cap, end the deck immediately.
+      if (limitReachedAfter) {
+        profiles = [];
+        currentIndex = 0;
+        if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
+        if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
+        if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
+        setButtonsDisabled(true);
+        isActing = false;
+        return;
+      }
+
       currentIndex++;
       if (currentIndex >= profiles.length) {
         if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
         if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
         if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
+        setButtonsDisabled(true);
       } else {
         renderCards();
+        setButtonsDisabled(false);
       }
-    }, 300);
+      isActing = false;
+    }, 420);
   }
 
   return {

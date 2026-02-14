@@ -318,6 +318,11 @@ body::after {
   justify-content: center;
   z-index: 10;
 }
+
+.swipe-controls .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .btn-round { width: 70px; height: 70px; border-radius: 50%; border: 2px solid; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; font-size: 28px; cursor: pointer; transition: 0.1s; backdrop-filter: blur(5px); }
 .btn-round:hover { transform: scale(1.1); }
 .btn-round--pass { color: #ff4757; border-color: #ff4757; }
