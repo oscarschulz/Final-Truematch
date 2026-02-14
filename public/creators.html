@@ -12,6 +12,145 @@
   <script src="https://cdn.jsdelivr.net/npm/picmo@latest/dist/umd/index.js"></script>
   
   <link rel="stylesheet" href="assets/css/creators/global.css" />
+  <style>
+    /* ===== Creators: Subscriptions view (production wiring) ===== */
+    #view-subscriptions .subs-search-row {
+      padding: 12px 15px;
+      border-bottom: 1px solid var(--border-color);
+      background: transparent;
+    }
+    #view-subscriptions .subs-search-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.03);
+    }
+    #view-subscriptions .subs-search-wrap i { color: var(--muted); font-size: 14px; }
+    #view-subscriptions .subs-search-wrap input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-size: 14px;
+      font-family: 'Montserrat', sans-serif;
+      min-width: 0;
+    }
+    #view-subscriptions .subs-search-clear {
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 6px 8px;
+      border-radius: 10px;
+    }
+    #view-subscriptions .subs-search-clear:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+
+    #view-subscriptions .subs-loading,
+    #view-subscriptions .subs-empty {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 70px 15px;
+      color: var(--muted);
+      text-align: center;
+    }
+    #view-subscriptions .subs-loading.show,
+    #view-subscriptions .subs-empty.show { display: flex; }
+
+    #view-subscriptions .subs-spinner {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: 3px solid rgba(255,255,255,0.12);
+      border-top-color: rgba(100,233,238,0.95);
+      animation: subsSpin 0.9s linear infinite;
+    }
+    @keyframes subsSpin { to { transform: rotate(360deg); } }
+
+    #view-subscriptions .subs-list {
+      padding: 10px 15px 25px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    #view-subscriptions .subs-user {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 12px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.02);
+      cursor: pointer;
+      transition: 0.18s ease;
+    }
+    #view-subscriptions .subs-user:hover { transform: translateY(-1px); background: rgba(255,255,255,0.04); }
+    #view-subscriptions .subs-user .left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    #view-subscriptions .subs-user img {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: #000;
+      flex-shrink: 0;
+    }
+    #view-subscriptions .subs-user .meta { min-width: 0; }
+    #view-subscriptions .subs-user .name {
+      color: var(--text);
+      font-weight: 800;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 190px;
+    }
+    #view-subscriptions .subs-user .handle {
+      color: var(--muted);
+      font-weight: 700;
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 190px;
+      margin-top: 2px;
+    }
+    #view-subscriptions .subs-user .right {
+      display: flex;
+      align-items: flex-end;
+      flex-direction: column;
+      gap: 8px;
+      flex-shrink: 0;
+      text-align: right;
+    }
+    #view-subscriptions .subs-mini { color: var(--muted); font-size: 11px; font-weight: 700; }
+    #view-subscriptions .subs-badge {
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.6px;
+      border: 1px solid var(--border-color);
+    }
+    #view-subscriptions .subs-badge.active { color: #64E9EE; }
+    #view-subscriptions .subs-badge.expired { color: #ff6384; }
+    #view-subscriptions .pill-count {
+      margin-left: 6px;
+      font-weight: 900;
+      opacity: 0.9;
+    }
+
+    @media (max-width: 480px) {
+      #view-subscriptions .subs-user { padding: 10px 10px; }
+      #view-subscriptions .subs-user .name,
+      #view-subscriptions .subs-user .handle { max-width: 150px; }
+    }
+  </style>
 </head>
 
 <body class="tm-dark">
@@ -354,7 +493,7 @@
       
       <div id="container-collections"></div> 
 
-      <div id="view-subscriptions" style="display: none;">
+            <div id="view-subscriptions" style="display: none;">
         <div class="feed-top-header">
           <div class="header-content" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
               <div style="display:flex; align-items:center; gap:15px;">
@@ -367,19 +506,57 @@
           </div>
         </div>
 
-        <div style="padding: 10px 15px; border-bottom: 1px solid var(--border-color); display:flex; gap:10px; flex-wrap:wrap;">
-          <button class="n-pill active" type="button">Active 0</button>
-          <button class="n-pill" type="button">Expired 0</button>
+        <!-- Direction tabs -->
+        <div class="subs-top-tabs" style="padding: 10px 15px; border-bottom: 1px solid var(--border-color); display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="n-pill active" type="button" data-subs-tab="subscribed">
+            Subscribed to <span class="pill-count" id="subs-count-to">0</span>
+          </button>
+          <button class="n-pill" type="button" data-subs-tab="subscribers">
+            Subscribers <span class="pill-count" id="subs-count-from">0</span>
+          </button>
         </div>
 
-        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding: 80px 15px; color: var(--muted); text-align:center;">
+        <!-- Search row (toggle via search icon) -->
+        <div id="subs-search-row" class="subs-search-row hidden">
+          <div class="subs-search-wrap">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input id="subs-search-input" type="text" placeholder="Search by name, handle, or email" autocomplete="off" />
+            <button id="subs-search-clear" type="button" class="subs-search-clear" aria-label="Clear">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Status filters -->
+        <div class="subs-filter-bar" style="padding: 10px 15px; border-bottom: 1px solid var(--border-color); display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="n-pill active" type="button" data-subs-filter="active">
+            Active <span class="pill-count" id="subs-count-active">0</span>
+          </button>
+          <button class="n-pill" type="button" data-subs-filter="expired">
+            Expired <span class="pill-count" id="subs-count-expired">0</span>
+          </button>
+          <button class="n-pill" type="button" data-subs-filter="all">
+            All <span class="pill-count" id="subs-count-all">0</span>
+          </button>
+        </div>
+
+        <div id="subs-loading" class="subs-loading">
+          <div class="subs-loading-inner">
+            <div class="subs-spinner" aria-hidden="true"></div>
+            <div style="font-weight:700; font-size: 13px; margin-top: 10px;">Loading subscriptions…</div>
+          </div>
+        </div>
+
+        <div id="subs-empty" class="subs-empty">
           <div class="empty-icon-wrap" style="margin-bottom:12px;"><i class="fa-regular fa-folder-open"></i></div>
-          <div style="font-size: 14px; margin-bottom: 14px;">No subscriptions yet</div>
+          <div style="font-size: 14px; margin-bottom: 14px;">No subscriptions found</div>
           <button type="button" onclick="document.getElementById('nav-link-home').click()"
             style="background: transparent; border: 1px solid var(--border-color); color: var(--text); padding: 10px 14px; border-radius: 10px; cursor: pointer;">
             Explore creators
           </button>
         </div>
+
+        <div id="subs-list" class="subs-list"></div>
       </div>
 
       <div id="container-settings"></div>    

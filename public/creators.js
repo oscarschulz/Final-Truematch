@@ -514,11 +514,39 @@ async function init() {
       };
     }
 
-    const name = item.name || item.displayName || item.fullName || item.username || item.handle || 'Unknown';
-    const handleRaw = item.handle || item.username || item.userHandle || item.slug || '';
+    const other = (item.otherUser && typeof item.otherUser === 'object') ? item.otherUser : null;
+
+    const name =
+      item.name ||
+      item.displayName ||
+      item.fullName ||
+      (other && (other.name || other.displayName || other.fullName)) ||
+      item.username ||
+      item.handle ||
+      (other && (other.username || other.handle)) ||
+      'Unknown';
+
+    const handleRaw =
+      item.handle ||
+      item.username ||
+      item.userHandle ||
+      item.slug ||
+      (other && (other.handle || other.username || other.userHandle || other.slug)) ||
+      '';
+
     const handle = handleRaw ? (handleRaw.startsWith('@') ? handleRaw : ('@' + handleRaw)) : '';
-    const avatar = item.avatar || item.photoURL || item.photo || item.profilePhoto || item.profilePicture || item.image || '';
-    const plan = item.plan || item.tier || item.package || item.subscriptionPlan || '';
+
+    const avatar =
+      item.avatar ||
+      item.photoURL ||
+      item.photo ||
+      item.profilePhoto ||
+      item.profilePicture ||
+      item.image ||
+      (other && (other.avatar || other.photoURL || other.photo || other.profilePhoto || other.profilePicture || other.image)) ||
+      '';
+
+    const plan = item.plan || item.tier || item.package || item.subscriptionPlan || (other && (other.plan || other.tier || other.package)) || '';
 
     const startedAt = parseDateMaybe(item.startedAt || item.startAt || item.subscribedAt || item.createdAt || item.startDate);
     const endsAt = parseDateMaybe(item.endsAt || item.endAt || item.expiresAt || item.expiry || item.endDate);
@@ -568,11 +596,23 @@ async function init() {
     const r1 = await apiGetJson('/api/me/subscriptions');
     if (r1.ok && r1.json) {
       const j = r1.json;
-      const subscribed = j.subscribed || j.subscribedTo || j.to || j.following || [];
-      const subscribers = j.subscribers || j.from || j.fans || [];
+
+      // server.js returns objects like:
+      // { subscribed: { items: [...], counts: {...} }, subscribers: { items: [...], counts: {...} } }
+      const subscribedRaw = j.subscribed || j.subscribedTo || j.to || j.following || [];
+      const subscribersRaw = j.subscribers || j.from || j.fans || [];
+
+      const subscribedArr = Array.isArray(subscribedRaw)
+        ? subscribedRaw
+        : (subscribedRaw && Array.isArray(subscribedRaw.items) ? subscribedRaw.items : []);
+
+      const subscribersArr = Array.isArray(subscribersRaw)
+        ? subscribersRaw
+        : (subscribersRaw && Array.isArray(subscribersRaw.items) ? subscribersRaw.items : []);
+
       return {
-        subscribed: (Array.isArray(subscribed) ? subscribed : []).map(normalizeSubItem).filter(Boolean),
-        subscribers: (Array.isArray(subscribers) ? subscribers : []).map(normalizeSubItem).filter(Boolean)
+        subscribed: subscribedArr.map(normalizeSubItem).filter(Boolean),
+        subscribers: subscribersArr.map(normalizeSubItem).filter(Boolean)
       };
     }
 
@@ -580,11 +620,21 @@ async function init() {
     if (r2.ok && r2.json) {
       const u = r2.json.user || r2.json.me || r2.json;
       const s = u.subscriptions || u.subs || {};
-      const subscribed = s.subscribed || s.subscribedTo || u.subscribed || u.subscribedTo || [];
-      const subscribers = s.subscribers || u.subscribers || [];
+
+      const subscribedRaw = s.subscribed || s.subscribedTo || u.subscribed || u.subscribedTo || [];
+      const subscribersRaw = s.subscribers || u.subscribers || [];
+
+      const subscribedArr = Array.isArray(subscribedRaw)
+        ? subscribedRaw
+        : (subscribedRaw && Array.isArray(subscribedRaw.items) ? subscribedRaw.items : []);
+
+      const subscribersArr = Array.isArray(subscribersRaw)
+        ? subscribersRaw
+        : (subscribersRaw && Array.isArray(subscribersRaw.items) ? subscribersRaw.items : []);
+
       return {
-        subscribed: (Array.isArray(subscribed) ? subscribed : []).map(normalizeSubItem).filter(Boolean),
-        subscribers: (Array.isArray(subscribers) ? subscribers : []).map(normalizeSubItem).filter(Boolean)
+        subscribed: subscribedArr.map(normalizeSubItem).filter(Boolean),
+        subscribers: subscribersArr.map(normalizeSubItem).filter(Boolean)
       };
     }
 
@@ -641,8 +691,8 @@ async function init() {
 
       const img = document.createElement('img');
       img.alt = sub.name || 'User';
-      img.src = sub.avatar || 'https://i.pravatar.cc/120?img=12';
-      img.onerror = () => { img.src = 'https://i.pravatar.cc/120?img=12'; };
+      img.src = sub.avatar || DEFAULT_AVATAR;
+      img.onerror = () => { img.src = DEFAULT_AVATAR; };
 
       const meta = document.createElement('div');
       meta.className = 'meta';
@@ -720,6 +770,17 @@ async function init() {
       const data = await fetchSubscriptions();
       SUBS_STATE.data = data;
       SUBS_STATE.loaded = true;
+
+      // UX: if default filter is "active" but there are only expired items, show "All"
+      try {
+        const baseList = (SUBS_STATE.tab === 'subscribers') ? (data.subscribers || []) : (data.subscribed || []);
+        const active = baseList.filter(x => x && x.status === 'active').length;
+        const expired = baseList.filter(x => x && x.status === 'expired').length;
+        if (SUBS_STATE.filter === 'active' && active === 0 && (active + expired) > 0) {
+          setSubsFilter('all');
+          return; // setSubsFilter() already renders
+        }
+      } catch {}
       renderSubscriptions();
     } catch (e) {
       console.error('Subscriptions load failed:', e);
