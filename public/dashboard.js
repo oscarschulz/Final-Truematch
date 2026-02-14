@@ -2130,7 +2130,7 @@ function renderMatchesFromApi(matches, opts = {}) {
   // --- Stories (new matches rail) ---
   if (DOM.newMatchesRail) {
     if (!count) {
-      DOM.newMatchesRail.innerHTML = '<div style="color:rgba(255,255,255,0.65); font-size:0.9rem;">No matches yet.</div>';
+      DOM.newMatchesRail.innerHTML = '<div style="color:rgba(255,255,255,0.65); font-size:0.9rem;"></div>';
     } else {
       DOM.newMatchesRail.innerHTML = matches.slice(0, 6).map(m => {
         const safeName = (m.name || 'Match').replace(/</g, '&lt;').replace(/>/g, '&gt;');
