@@ -160,7 +160,6 @@ function cacheDom() {
   
   DOM.newMatchesRail = document.getElementById('newMatchesRail');
   DOM.matchesContainer = document.getElementById('matchesContainer');
-  DOM.matchesSearch = document.getElementById('matchesSearch');
   DOM.newMatchCount = document.getElementById('newMatchCount');
   
   // Modals & Dialogs
@@ -177,7 +176,6 @@ function cacheDom() {
   DOM.chatReceiptLine = DOM.dlgChat ? DOM.dlgChat.querySelector('.chat-header p') : null;
 
   DOM.activeNearbyContainer = document.getElementById('activeNearbyContainer');
-  DOM.activeNearbyContainerSidebar = document.getElementById('activeNearbyContainerSidebar');
   DOM.btnNotifToggle = document.getElementById('btnNotifToggle');
   DOM.notifDropdown = document.getElementById('notifDropdown');
   DOM.notifDot = DOM.btnNotifToggle ? DOM.btnNotifToggle.querySelector('.notif-dot') : null;
@@ -447,6 +445,7 @@ function renderCreatorEntryCard() {
     btnApply.disabled = false;
     btnApply.textContent = 'Apply';
     btnApply.style.opacity = '1';
+    btnApply.style.display = 'inline-flex';
   }
 
   if (status === 'pending') {
@@ -825,14 +824,6 @@ function setupEventListeners() {
   if (DOM.matchesContainer) DOM.matchesContainer.addEventListener('click', handleMatchClick);
   if (DOM.newMatchesRail) DOM.newMatchesRail.addEventListener('click', handleMatchClick);
 
-  // Matches search
-  if (DOM.matchesSearch && !DOM.matchesSearch._bound) {
-    DOM.matchesSearch._bound = true;
-    DOM.matchesSearch.addEventListener('input', () => {
-      try { applyMatchesSearchFilter(); } catch {}
-    });
-  }
-
   // 5. Modals Close
   if (DOM.btnCloseStory && DOM.dlgStory) DOM.btnCloseStory.addEventListener('click', () => MomentsController.closeStory());
   if (DOM.btnCloseChat && DOM.dlgChat) DOM.btnCloseChat.addEventListener('click', () => DOM.dlgChat.close());
@@ -924,10 +915,45 @@ if (DOM.btnCancelPassword) DOM.btnCancelPassword.addEventListener('click', () =>
 if (DOM.frmPassword) DOM.frmPassword.addEventListener('submit', async (e) => {
   e.preventDefault();
   await handlePasswordChange();
-});// 9. Creators & Premium
-  if (DOM.btnOpenCreatorApply) DOM.btnOpenCreatorApply.addEventListener('click', () => DOM.dlgCreatorApply.showModal());
-  if (DOM.btnCloseCreatorApply) DOM.btnCloseCreatorApply.addEventListener('click', () => DOM.dlgCreatorApply.close());
-  
+});
+
+  // 9. Creators & Premium
+  const openCreator = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    const cs = normalizeStatus(state.me && state.me.creatorStatus);
+
+    // If already approved, go straight to Creators
+    if (cs === 'approved') {
+      window.location.href = 'creators.html';
+      return;
+    }
+
+    // If pending, allow view-only and start watcher
+    if (cs === 'pending') {
+      showToast('Creator application is pending. You will be redirected once approved.', 'info');
+      hydrateCreatorApplyFormFromState();
+      setCreatorApplyFormReadOnly(true);
+      if (DOM.dlgCreatorApply) DOM.dlgCreatorApply.showModal();
+      startCreatorApprovalWatcher();
+      return;
+    }
+
+    // rejected/none: allow apply (prefill if we have previous data)
+    hydrateCreatorApplyFormFromState();
+    setCreatorApplyFormReadOnly(false);
+    if (DOM.dlgCreatorApply) DOM.dlgCreatorApply.showModal();
+  };
+
+  if (DOM.btnOpenCreatorApply) DOM.btnOpenCreatorApply.addEventListener('click', openCreator);
+  if (DOM.btnCloseCreatorApply) DOM.btnCloseCreatorApply.addEventListener('click', () => {
+    setCreatorApplyFormReadOnly(false);
+    if (DOM.dlgCreatorApply) DOM.dlgCreatorApply.close();
+  });
+
   const openPremium = (e) => {
       // Sidebar "Subscribe" should always go to plans
       if (e && e.currentTarget && e.currentTarget.id === 'btnSidebarSubscribe') {
@@ -1011,6 +1037,12 @@ if (DOM.frmPassword) DOM.frmPassword.addEventListener('submit', async (e) => {
   enableBackdropClose(DOM.dlgPassword);
   enableBackdropClose(DOM.dlgPremiumApply);
   enableBackdropClose(DOM.dlgCreatorApply);
+  if (DOM.dlgCreatorApply) {
+    DOM.dlgCreatorApply.addEventListener('close', () => {
+      // Ensure we never leave the form stuck in read-only mode
+      setCreatorApplyFormReadOnly(false);
+    });
+  }
   enableBackdropClose(DOM.dlgStory);
   enableBackdropClose(DOM.dlgChat); 
 
@@ -1115,6 +1147,12 @@ function setActiveTab(tabName) {
     }
   }
   state.activeTab = tabName;
+
+  // Creators watcher should only run while user is on Creators tab.
+  if (!DEV_MODE) {
+    if (tabName === 'creators') startCreatorApprovalWatcher();
+    else stopCreatorApprovalWatcher();
+  }
   
   // 1. Update Navigation State
   DOM.tabs.forEach(t => {
@@ -1304,7 +1342,7 @@ function renderAdmirersPanel(payload) {
 }
 
 async function loadActiveNearbyPanel(force = false) {
-  if (!DOM.activeNearbyContainer && !DOM.activeNearbyContainerSidebar) return;
+  if (!DOM.activeNearbyContainer) return;
   if (state.homeLoading && state.homeLoading.nearby) return;
 
   const now = Date.now();
@@ -1330,54 +1368,29 @@ async function loadActiveNearbyPanel(force = false) {
 function renderActiveNearbyPanel(payload) {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const items = Array.isArray(payload.items) ? payload.items : [];
-
-  const targets = [DOM.activeNearbyContainer, DOM.activeNearbyContainerSidebar].filter(Boolean);
-
-  // Helper: render empty state to all targets
-  const setEmpty = () => {
-    targets.forEach(el => {
-      // If the element is already the grid container, keep structure consistent
-      if (el.classList && el.classList.contains('active-grid')) {
-        el.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
-      } else {
-        el.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
-      }
-    });
-  };
-
   if (!items.length) {
-    setEmpty();
+    DOM.activeNearbyContainer.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
     return;
   }
 
-  // Build item markup (no outer wrapper)
-  let itemsHtml = '';
+  let html = `<div class="active-grid">`;
   items.forEach(u => {
     const photo = u.photoUrl ? esc(u.photoUrl) : 'assets/images/truematch-mark.png';
     const hasPhoto = !!u.photoUrl;
-    itemsHtml += `
+    html += `
       <div class="active-item" data-email="${esc(u.email || '')}" title="${esc(u.name || 'Member')}">
         <img src="${photo}" style="background:${hasPhoto ? 'transparent' : getRandomColor()}; object-fit:${hasPhoto ? 'cover' : 'contain'};">
         <span class="active-dot"></span>
       </div>`;
   });
+  html += `</div>`;
 
-  // Render to both: home container wraps grid, sidebar already is grid
-  targets.forEach(el => {
-    if (el.classList && el.classList.contains('active-grid')) {
-      el.innerHTML = itemsHtml;
-    } else {
-      el.innerHTML = `<div class="active-grid">${itemsHtml}</div>`;
-    }
-  });
+  DOM.activeNearbyContainer.innerHTML = html;
 
-  // Bind click handlers (on both targets)
-  targets.forEach(el => {
-    el.querySelectorAll('.active-item').forEach(node => {
-      node.addEventListener('click', () => {
-        try { setActiveTab('swipe'); } catch {}
-        toast('Swipe to discover more people.', 'info');
-      });
+  DOM.activeNearbyContainer.querySelectorAll('.active-item').forEach(el => {
+    el.addEventListener('click', () => {
+      try { setActiveTab('swipe'); } catch {}
+      toast('Swipe to discover more people.', 'info');
     });
   });
 }
@@ -2141,32 +2154,22 @@ async function loadMatchesPanel() {
       return;
     }
 
-    const allMatches = Array.isArray(res.matches) ? res.matches : [];
-    state.matchesAll = allMatches;
-    renderMatchesFromApi(allMatches, allMatches.length);
-    // Apply search filter (if user typed something)
-    try { applyMatchesSearchFilter(); } catch {}
+    renderMatchesFromApi(Array.isArray(res.matches) ? res.matches : []);
   } catch (err) {
     console.warn('loadMatchesPanel failed:', err);
   }
 }
 
-function renderMatchesFromApi(matches, totalOverride = null) {
-  const total = (typeof totalOverride === 'number') ? totalOverride : (Array.isArray(matches) ? matches.length : 0);
-  matches = Array.isArray(matches) ? matches : [];
-
-  // Update counters (show TOTAL, not filtered count)
-  if (DOM.matchCount) DOM.matchCount.textContent = String(total);
-  if (DOM.newMatchCount) DOM.newMatchCount.textContent = String(Math.min(total, 6));
-
-  const isFilteredView = total > 0 && matches.length === 0;
+function renderMatchesFromApi(matches) {
+  // Update counters
+  const count = matches.length;
+  if (DOM.matchCount) DOM.matchCount.textContent = String(count);
+  if (DOM.newMatchCount) DOM.newMatchCount.textContent = String(Math.min(count, 6));
 
   // --- Stories (new matches rail) ---
   if (DOM.newMatchesRail) {
-    if (total === 0) {
+    if (!count) {
       DOM.newMatchesRail.innerHTML = '<div style="color:rgba(255,255,255,0.65); font-size:0.9rem;">No matches yet.</div>';
-    } else if (isFilteredView) {
-      DOM.newMatchesRail.innerHTML = '<div style="color:rgba(255,255,255,0.65); font-size:0.9rem;">No results. Try another search.</div>';
     } else {
       DOM.newMatchesRail.innerHTML = matches.slice(0, 6).map(m => {
         const safeName = (m.name || 'Match').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -2185,12 +2188,8 @@ function renderMatchesFromApi(matches, totalOverride = null) {
 
   // --- Match cards ---
   if (DOM.matchesContainer) {
-    if (total === 0) {
+    if (!count) {
       DOM.matchesContainer.innerHTML = '<div style="color:rgba(255,255,255,0.65);">No matches yet. Keep swiping.</div>';
-      return;
-    }
-    if (isFilteredView) {
-      DOM.matchesContainer.innerHTML = '<div style="color:rgba(255,255,255,0.65);">No results. Try another search.</div>';
       return;
     }
 
@@ -2213,27 +2212,6 @@ function renderMatchesFromApi(matches, totalOverride = null) {
     }).join('');
   }
 }
-
-function applyMatchesSearchFilter() {
-  if (!DOM.matchesSearch) return;
-  const qRaw = String(DOM.matchesSearch.value || '').trim().toLowerCase();
-  const all = Array.isArray(state.matchesAll) ? state.matchesAll : [];
-
-  if (!qRaw) {
-    renderMatchesFromApi(all, all.length);
-    return;
-  }
-
-  const filtered = all.filter(m => {
-    const name = String(m.name || '').toLowerCase();
-    const email = String(m.email || '').toLowerCase();
-    const city = String(m.city || '').toLowerCase();
-    return name.includes(qRaw) || email.includes(qRaw) || city.includes(qRaw);
-  });
-
-  renderMatchesFromApi(filtered, all.length);
-}
-
 
 // --- Messages / Chat ---
 async function loadAndRenderThread(peerEmail) {
@@ -2531,14 +2509,11 @@ function renderHomeEmptyStates() {
       DOM.admirerContainer.innerHTML = "<div class='tiny muted' style='padding:12px 2px;'>No likes yet. When someone likes you, they’ll appear here.</div>";
     }
   }
-  const activeTargets = [DOM.activeNearbyContainer, DOM.activeNearbyContainerSidebar].filter(Boolean);
-  if (activeTargets.length) {
-    activeTargets.forEach(el => {
-      const hasActive = el.querySelector('.active-item');
-      if (!hasActive) {
-        el.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
-      }
-    });
+  if (DOM.activeNearbyContainer) {
+    const hasActive = DOM.activeNearbyContainer.querySelector('.active-item');
+    if (!hasActive) {
+      DOM.activeNearbyContainer.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
+    }
   }
   if (DOM.storiesContainer) {
     const hasStories = DOM.storiesContainer.querySelector('.story-item');
@@ -2781,8 +2756,111 @@ function syncFormToState() {
   setSharedValuesInUI(p.sharedValues || []);
 }
 
+// ------------------------------------------------------------------
+// Creators – form helpers (prefill + read-only mode)
+// ------------------------------------------------------------------
+
+function _parsePackedParts(str) {
+  if (!str || typeof str !== 'string') return [];
+  return str.split('|').map(s => String(s).trim()).filter(Boolean);
+}
+
+function _getPackedValue(parts, prefix) {
+  const pfx = String(prefix).toLowerCase();
+  const hit = parts.find(x => x.toLowerCase().startsWith(pfx));
+  if (!hit) return '';
+  const idx = hit.indexOf(':');
+  return idx >= 0 ? hit.slice(idx + 1).trim() : hit.replace(new RegExp(`^${prefix}`, 'i'), '').trim();
+}
+
+function hydrateCreatorApplyFormFromState() {
+  const form = DOM.frmCreatorApply;
+  if (!form) return;
+
+  const app = (state.me && state.me.creatorApplication && typeof state.me.creatorApplication === 'object')
+    ? state.me.creatorApplication
+    : null;
+
+  if (!app) return;
+
+  try {
+    const h = String(app.handle || '').trim();
+    if (h && form.elements.handle) {
+      form.elements.handle.value = h.startsWith('@') ? h : `@${h}`;
+    }
+    if (app.gender && form.elements.gender) form.elements.gender.value = String(app.gender || '');
+    if (app.price && form.elements.price) form.elements.price.value = String(app.price);
+
+    // Packed fields live inside contentStyle (backward compatible)
+    const parts = _parsePackedParts(app.contentStyle);
+    const displayName = _getPackedValue(parts, 'Display name');
+    const location = _getPackedValue(parts, 'Location');
+    const languages = _getPackedValue(parts, 'Languages');
+    const category = _getPackedValue(parts, 'Category');
+    const niche = _getPackedValue(parts, 'Niche');
+    const schedule = _getPackedValue(parts, 'Posting schedule');
+    const bio = _getPackedValue(parts, 'Bio');
+    const boundaries = _getPackedValue(parts, 'Boundaries');
+    const currency = _getPackedValue(parts, 'Currency');
+    const styleNotes = _getPackedValue(parts, 'Style notes');
+
+    if (displayName && form.elements.creatorDisplayName) form.elements.creatorDisplayName.value = displayName;
+    if (location && form.elements.creatorCountry) form.elements.creatorCountry.value = location;
+    if (languages && form.elements.creatorLanguages) form.elements.creatorLanguages.value = languages;
+    if (bio && form.elements.creatorBio) form.elements.creatorBio.value = bio;
+    if (category && form.elements.creatorCategory) form.elements.creatorCategory.value = category;
+    if (niche && form.elements.creatorNiche) form.elements.creatorNiche.value = niche;
+    if (schedule && form.elements.creatorPostingSchedule) form.elements.creatorPostingSchedule.value = schedule;
+    if (boundaries && form.elements.creatorContentBoundaries) form.elements.creatorContentBoundaries.value = boundaries;
+    if (currency && form.elements.creatorCurrency) form.elements.creatorCurrency.value = currency;
+    if (styleNotes && form.elements.contentStyle) form.elements.contentStyle.value = styleNotes;
+
+    // Links are packed as: "Instagram: ... | TikTok: ... | X: ... | Website: ..."
+    const linkParts = _parsePackedParts(app.links);
+    const ig = _getPackedValue(linkParts, 'Instagram');
+    const tt = _getPackedValue(linkParts, 'TikTok');
+    const x = _getPackedValue(linkParts, 'X');
+    const web = _getPackedValue(linkParts, 'Website');
+
+    if (ig && form.elements.creatorInstagram) form.elements.creatorInstagram.value = ig;
+    if (tt && form.elements.creatorTikTok) form.elements.creatorTikTok.value = tt;
+    if (x && form.elements.creatorX) form.elements.creatorX.value = x;
+    if (web && form.elements.creatorWebsite) form.elements.creatorWebsite.value = web;
+  } catch (_) {
+    // non-fatal
+  }
+}
+
+function setCreatorApplyFormReadOnly(readOnly) {
+  const form = DOM.frmCreatorApply;
+  if (!form) return;
+
+  form.dataset.readOnly = readOnly ? '1' : '';
+  const fields = form.querySelectorAll('input, textarea, select');
+  fields.forEach((el) => {
+    // Allow hidden fields to remain writable
+    if (el.type === 'hidden') return;
+    el.disabled = !!readOnly;
+  });
+
+  // Always keep Cancel clickable
+  if (DOM.btnCloseCreatorApply) DOM.btnCloseCreatorApply.disabled = false;
+
+  const submitBtn = form.querySelector('button[type="submit"]');
+  if (submitBtn) {
+    submitBtn.disabled = !!readOnly;
+    submitBtn.textContent = readOnly ? 'Pending Review' : 'Submit';
+    submitBtn.style.opacity = readOnly ? '0.7' : '1';
+  }
+}
+
 
 async function handleCreatorApplicationSubmit() {
+  if (DOM.frmCreatorApply && DOM.frmCreatorApply.dataset.readOnly === '1') {
+    showToast('Your Creator application is pending review.', 'info');
+    return;
+  }
+
   if (!state.me || !state.me.email) {
     showToast('Please log in first.', 'error');
     window.location.href = 'auth.html?mode=login';
@@ -2886,6 +2964,9 @@ async function handleCreatorApplicationSubmit() {
     state.me.creatorApplication = { ...payload, submittedAt: Date.now() };
 
     renderCreatorPremiumEntryCards();
+
+    // Start watcher only while user is on the Creators tab (no surprise redirects)
+    startCreatorApprovalWatcher();
   } catch (err) {
     console.error(err);
     showToast(err.message || 'Failed to submit creator application.', 'error');
@@ -2895,6 +2976,78 @@ async function handleCreatorApplicationSubmit() {
       submitBtn.textContent = oldTxt || 'Submit Application';
     }
   }
+}
+
+
+// ------------------------------------------------------------------
+// Creators approval watcher (client-side polling)
+// - When a user's application is pending AND the user is on the Creators tab,
+//   poll /api/me periodically.
+// - If approved -> redirect to creators.html immediately.
+// ------------------------------------------------------------------
+let __creatorWatchTimer = null;
+let __creatorWatchStartedAt = 0;
+
+function stopCreatorApprovalWatcher() {
+  if (__creatorWatchTimer) {
+    clearInterval(__creatorWatchTimer);
+    __creatorWatchTimer = null;
+  }
+  __creatorWatchStartedAt = 0;
+}
+
+function startCreatorApprovalWatcher() {
+  // Only watch while user is on Creators tab (matches the UX copy)
+  if (!state || state.activeTab !== 'creators') {
+    stopCreatorApprovalWatcher();
+    return;
+  }
+
+  const st = normalizeStatus(state.me && state.me.creatorStatus);
+  if (st !== 'pending') {
+    stopCreatorApprovalWatcher();
+    return;
+  }
+
+  if (__creatorWatchTimer) return; // already running
+
+  __creatorWatchStartedAt = Date.now();
+
+  __creatorWatchTimer = setInterval(async () => {
+    try {
+      // auto-stop after 10 minutes to avoid endless polling
+      if (Date.now() - __creatorWatchStartedAt > 10 * 60 * 1000) {
+        stopCreatorApprovalWatcher();
+        return;
+      }
+
+      const meRes = await apiGet('/api/me');
+      if (meRes && meRes.ok && meRes.user) {
+        state.me = { ...(state.me || {}), ...(meRes.user || {}) };
+      } else if (meRes && meRes.ok && !meRes.user) {
+        state.me = { ...(state.me || {}), ...(meRes || {}) };
+      }
+
+      const nowSt = normalizeStatus(state.me && state.me.creatorStatus);
+
+      // Keep entry card in sync while pending
+      renderCreatorPremiumEntryCards();
+
+      if (nowSt === 'approved') {
+        stopCreatorApprovalWatcher();
+        window.location.href = 'creators.html';
+        return;
+      }
+
+      if (nowSt === 'rejected' || nowSt === 'none' || nowSt === 'inactive') {
+        stopCreatorApprovalWatcher();
+        // re-enable apply (status resolved)
+        renderCreatorPremiumEntryCards();
+      }
+    } catch (_) {
+      // silent: keep trying
+    }
+  }, 4000);
 }
 
 
@@ -3255,17 +3408,23 @@ const SwipeController = (() => {
     if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = true;
 
     try {
-      const data = await apiGet('/api/swipe/candidates');
-      if (!data || !data.ok) {
-        const errMsg = (data && (data.message || data.error)) || 'Failed to load swipe deck.';
-        showToast(errMsg, 'error');
-        profiles = [];
-        currentIndex = 0;
-        if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
-        if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
-        if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
-        return;
+      let data;
+      if (DEV_MODE) {
+        data = {
+          ok: true,
+          candidates: [
+            { id: 'alice@test.com', name: 'Alice', age: 24, city: 'New York', photoUrl: 'assets/images/truematch-mark.png', tags: ['Travel', 'Music', 'Pizza'] },
+            { id: 'bea@test.com', name: 'Bea', age: 22, city: 'Los Angeles', photoUrl: 'assets/images/truematch-mark.png', tags: ['Gym', 'Movies'] },
+            { id: 'cathy@test.com', name: 'Cathy', age: 25, city: 'Chicago', photoUrl: 'assets/images/truematch-mark.png', tags: ['Art', 'Coffee', 'Dogs'] }
+          ],
+          remaining: DAILY_SWIPE_LIMIT,
+          limit: DAILY_SWIPE_LIMIT,
+          limitReached: false
+        };
+      } else {
+        data = await apiGet('/api/swipe/candidates');
       }
+
       if (data && data.ok && (data.limit === null || typeof data.limit === 'number' || typeof data.limit === 'undefined')) {
         setSwipeStats(data.remaining, data.limit);
       }
@@ -3346,7 +3505,7 @@ const SwipeController = (() => {
   }
 
   function mapAction(type) {
-    if (type === 'superlike') return 'superlike';
+    if (type === 'superlike') return 'super';
     if (type === 'pass') return 'pass';
     return 'like';
   }
@@ -3354,72 +3513,47 @@ const SwipeController = (() => {
   async function handleAction(type) {
     if (currentIndex >= profiles.length) return;
 
-    const targetEmail = profiles[currentIndex].id;
-    const action = mapAction(type);
-
-    // Optimistic animation
     const active = document.getElementById('activeSwipeCard');
     if (active) {
       let animClass = 'swipe-out-right';
       if (type === 'pass') animClass = 'swipe-out-left';
+      else if (type === 'superlike') animClass = 'swipe-out-right';
       active.classList.add(animClass);
     }
 
-    let res = null;
-    try {
-      res = await apiPost('/api/swipe/action', { targetEmail, action });
-    } catch (e) {
-      res = { ok: false, error: 'Network error' };
-    }
+    const targetEmail = profiles[currentIndex].id;
 
-    // Handle error responses (do NOT advance deck)
-    if (!res || !res.ok) {
-      const code = String((res && (res.code || res.error)) || '').toLowerCase();
+    if (!DEV_MODE) {
+      try {
+        const res = await apiPost('/api/swipe/action', { targetEmail, action: mapAction(type) });
 
-      if (code === 'daily_swipe_limit_reached' || (res && Number(res.status) === 429)) {
-        setSwipeStats(0, (res && res.limit) || DAILY_SWIPE_LIMIT);
-        showToast('Daily swipe limit reached. Come back tomorrow.', 'error');
-
-        profiles = [];
-        currentIndex = 0;
-        if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
-        if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
-        if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
-        return;
+        if (!res || !res.ok) {
+          const err = (res && (res.error || res.message)) || 'Swipe failed';
+          if (String(err) === 'daily_swipe_limit_reached') {
+            setSwipeStats(0, res.limit || DAILY_SWIPE_LIMIT);
+            showToast('Daily swipe limit reached. Come back tomorrow.', 'error');
+            // clear deck
+            profiles = [];
+            currentIndex = 0;
+            if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
+            if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
+            if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
+            return;
+          }
+          if (String(err) === 'target_is_premium_society') {
+            showToast('This member is only available inside Premium Society.', 'error');
+          } else {
+            showToast(err, 'error');
+          }
+        } else {
+          setSwipeStats(res.remaining, res.limit);
+          if (res.match) showToast('It’s a match! 🎉');
+        }
+      } catch (e) {
+        console.error(e);
+        showToast('Swipe failed. Please try again.', 'error');
       }
-
-      if (code === 'target_not_premium') {
-        showToast('This member requires a paid plan.', 'error');
-      } else {
-        const msg = (res && (res.message || res.error)) || 'Swipe failed. Please try again.';
-        showToast(msg, 'error');
-      }
-
-      // Re-render current cards (undo optimistic animation)
-      setTimeout(() => {
-        const a = document.getElementById('activeSwipeCard');
-        if (a) a.classList.remove('swipe-out-left', 'swipe-out-right');
-        renderCards();
-      }, 120);
-
-      return;
     }
-
-    // Success
-    setSwipeStats(res.remaining, res.limit);
-
-    if (res.limitReached) {
-      showToast('Daily swipe limit reached. Come back tomorrow.', 'error');
-      profiles = [];
-      currentIndex = 0;
-      if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
-      if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
-      if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
-      return;
-    }
-
-    const isMatch = !!(res.isMatch || res.match);
-    if (isMatch) showToast('It’s a match! 🎉 Check Matches tab.', 'success');
 
     let msg = 'Liked!';
     if (type === 'pass') msg = 'Passed';

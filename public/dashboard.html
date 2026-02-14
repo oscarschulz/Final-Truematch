@@ -101,7 +101,7 @@
       <section class="panel" data-panel="matches">
         <div class="feed-header">Matches & Messages</div>
         <div style="padding: 10px 0;">
-            <input type="text" class="tm-input" placeholder="Search matches..." style="background:rgba(255,255,255,0.05); border-radius:99px; padding-left:20px;" id="matchesSearch">
+            <input type="text" class="tm-input" placeholder="Search matches..." style="background:rgba(255,255,255,0.05); border-radius:99px; padding-left:20px;">
         </div>
         <h3 class="section-title" style="margin-top:10px;">New Matches <span class="badge-pill bg-gold" id="newMatchCount">0</span></h3>
         <div class="stories-rail-container" style="margin-bottom: 20px;">
@@ -255,7 +255,7 @@
         <div class="home-card-header" style="margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
             <h3 style="margin:0; font-size:0.9rem;">Active Nearby</h3><span class="live-pulse">● LIVE</span>
         </div>
-        <div class="active-grid" id="activeNearbyContainerSidebar"></div>
+        <div class="active-grid" id="activeNearbyContainer"></div>
       </div>
       <div class="premium-card">
         <div class="premium-content"><i class="fa-solid fa-crown" style="font-size:2rem; margin-bottom:10px;"></i><h3>Unlock More Features</h3><p>See who likes you & unlimited swipes.</p><button class="btn btn--white" id="btnSidebarSubscribe">Upgrade Now</button></div>
@@ -631,6 +631,6 @@
   </script>
   
   <script src="dashboard.js" type="module"></script>
-<div id="tm-toast" class="tm-toast" hidden></div>
+<div id="toastContainer" class="toast-container"></div>
 </body>
 </html>
