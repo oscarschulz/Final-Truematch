@@ -1,7 +1,7 @@
 import { DOM } from './dom.js';
 import { initHome } from './home.js';
 import { initNotifications } from './notifications.js';
-import { initMessages, loadChat } from './message.js';
+import { initMessages } from './message.js';
 import { initCollections, renderCollections, updateRightSidebarContent } from './collections.js'; 
 import { initWallet } from './wallet.js';
 import { loadView } from './loader.js';
@@ -1710,7 +1710,6 @@ localStorage.setItem('tm_last_view', viewName);
         if (DOM.viewMessages) DOM.viewMessages.style.display = 'flex'; 
         if (DOM.mainFeedColumn) DOM.mainFeedColumn.style.display = 'flex';
         updateActiveNav('nav-link-messages', null);
-        if(DOM.chatHistoryContainer && DOM.chatHistoryContainer.innerHTML.trim() === "") loadChat(1); 
     } 
     else if (viewName === 'profile') {
         targetView = DOM.viewMyProfile;
