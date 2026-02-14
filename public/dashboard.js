@@ -271,7 +271,16 @@ DOM.inpName = document.getElementById('inpName');
   DOM.btnGoPremiumPage = document.getElementById('btnGoPremiumPage');
 
   
+  // Toast element (supports both legacy #tm-toast and new #toastContainer)
   DOM.toast = document.getElementById('tm-toast');
+  if (!DOM.toast) {
+    const host = document.getElementById('toastContainer') || document.body;
+    const el = document.createElement('div');
+    el.id = 'tm-toast';
+    el.className = 'toast';
+    host.appendChild(el);
+    DOM.toast = el;
+  }
 }
 
 let __toastTimer = null;
