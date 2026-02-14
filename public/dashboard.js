@@ -5,8 +5,6 @@
 import { getLocalPlan, saveLocalUser, savePrefsForCurrentUser, clearSession } from './tm-session.js';
 import { apiGet, apiPost, apiUpdateProfile, apiSavePrefs } from './tm-api.js';
 
-// Production mode: disable all mock/demo UI population.
-const DEV_MODE = false;
 
 const DAILY_SWIPE_LIMIT = 20; 
 
@@ -49,14 +47,6 @@ async function fileToOptimizedSquareDataUrl(file, maxSize = 768, quality = 0.85)
   const ctx = canvas.getContext('2d');
   ctx.drawImage(img, sx, sy, s, s, 0, 0, out, out);
   return canvas.toDataURL('image/jpeg', quality);
-}
-
-function getMockUser() {
-  return {
-    id: 99, name: 'Baudss User', email: 'user@itruematch.com', age: 24, city: 'Manila',
-    avatarUrl: 'assets/images/truematch-mark.png', plan: 'free',
-    creatorStatus: 'none', premiumStatus: 'none', hasCreatorAccess: false
-  };
 }
 
 const state = { me: null, prefs: null, plan: 'free', activeTab: 'home', isLoading: false, selectedAvatarDataUrl: null, homeCache: { admirersTs: 0, nearbyTs: 0 }, homeLoading: { admirers: false, nearby: false } };
@@ -548,14 +538,8 @@ async function initApp() {
   await loadMe();
   
   SwipeController.init();
-  
-  if (DEV_MODE) {
-    populateMockContent();
-  } else {
-    await loadHomePanels(true);
+await loadHomePanels(true);
     renderHomeEmptyStates();
-  }
-  
   setupEventListeners();
   setupMobileMenu();
 
@@ -1116,7 +1100,7 @@ function setupMobileMenu() {
 function setActiveTab(tabName) {
 
   // Access redirect (when approved by admin)
-  if (!DEV_MODE && state && state.me) {
+  if (state && state.me) {
     const cst = normalizeStatus(state.me.creatorStatus);
     const pst = normalizeStatus(state.me.premiumStatus);
     if (tabName === 'creators' && cst === 'approved') {
@@ -1129,13 +1113,9 @@ function setActiveTab(tabName) {
     }
   }
   state.activeTab = tabName;
-
   // Creators watcher should only run while user is on Creators tab.
-  if (!DEV_MODE) {
-    if (tabName === 'creators') startCreatorApprovalWatcher();
-    else stopCreatorApprovalWatcher();
-  }
-  
+  if (tabName === 'creators') startCreatorApprovalWatcher();
+  else stopCreatorApprovalWatcher();
   // 1. Update Navigation State
   DOM.tabs.forEach(t => {
     if (t.dataset.panel === tabName) t.classList.add('is-active');
@@ -1431,314 +1411,6 @@ async function openChatModal(name, imgColor, lastMsg, peerEmail, peerPhotoUrl) {
 // UI POPULATION LOGIC (FIXED: Card Widths & Backgrounds)
 // ---------------------------------------------------------------------
 
-function populateMockContent() {
-  console.log("Populating mock data...");
-
-  // NEW MATCHES RAIL
-  if (DOM.newMatchesRail) {
-      const newMatches = ['Alexa', 'Sam', 'Mika', 'Joy'];
-      if(DOM.newMatchCount) DOM.newMatchCount.textContent = newMatches.length;
-
-      let html = '';
-      newMatches.forEach(name => {
-          html += `
-            <div class="story-item" data-name="${name}">
-              <div class="story-ring" style="border: 2px solid #ffd700; padding:2px;">
-                <img class="story-img" src="assets/images/truematch-mark.png" style="background:${getRandomColor()}">
-              </div>
-              <span class="story-name">${name}</span>
-            </div>
-          `;
-      });
-      DOM.newMatchesRail.innerHTML = html;
-  }
-
-  // MESSAGES GRID (UI FIX: Buttons aligned to bottom)
-  const matches = [
-    { name: 'Sofia', age: 24, msg: 'Hey! How are you?', time: '2m', img: 'assets/images/truematch-mark.png', unread: true },
-    { name: 'Chloe', age: 22, msg: 'See you later! 👋', time: '1h', img: 'assets/images/truematch-mark.png', unread: false },
-    { name: 'Liam', age: 26, msg: 'Haha that was funny', time: '3h', img: 'assets/images/truematch-mark.png', unread: false },
-    { name: 'Noah', age: 25, msg: 'Sent a photo', time: '1d', img: 'assets/images/truematch-mark.png', unread: false }
-  ];
-
-  if (DOM.matchesContainer) {
-    let html = '';
-    matches.forEach(m => {
-      const unreadDot = m.unread ? '<div class="match-unread-dot"></div>' : '';
-      const msgStyle = m.unread ? 'color: #fff; font-weight:bold;' : '';
-      // INLINE STYLES APPLIED HERE:
-      html += `
-        <div class="match-card" data-msg="${m.msg}" style="display: flex; flex-direction: column; height: 100%;">
-          <img src="${m.img}" class="match-img" alt="${m.name}" style="background:${getRandomColor()}">
-          <div class="match-info" style="flex: 1; display: flex; flex-direction: column; padding: 12px;">
-            <div style="flex: 1; display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
-                <div>
-                    <span class="match-name">${m.name}, ${m.age}</span>
-                    <div class="match-msg" style="${msgStyle}">
-                    ${unreadDot} ${m.msg} • ${m.time}
-                    </div>
-                </div>
-            </div>
-            <button class="btn btn--sm btn--primary btn-chat-action" style="width:100%; margin-top: auto;">Chat</button>
-          </div>
-        </div>
-      `;
-    });
-    DOM.matchesContainer.innerHTML = html;
-  }
-
-  // SHORTLIST (FIXED: Uniform Colors & Clean UI)
-  if (DOM.panelShortlistBody) {
-    if(!DOM.panelShortlistBody.querySelector('.matches-grid')) {
-        const shortlisted = [
-            { name: 'Isabella', age: 24, job: 'Fashion Model' },
-            { name: 'Marcus', age: 29, job: 'Tech CEO & Founder' },
-            { name: 'Sarah', age: 26, job: 'Artist' }
-        ];
-        
-        let html = '<div class="matches-grid" style="margin-top:20px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); justify-content: center; gap: 15px;">';
-        
-        shortlisted.forEach((s) => {
-          html += `
-            <div class="glass-card" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); text-align:center; padding: 25px 20px !important; display:flex; flex-direction:column; justify-content:space-between; height:100%; transition: transform 0.2s;">
-                
-                <div style="display:flex; flex-direction:column; align-items:center;">
-                    <div style="width:80px; height:80px; border-radius:50%; border: 2px solid #00aff0; padding: 3px; margin-bottom: 15px;">
-                        <img src="assets/images/truematch-mark.png" style="width:100%; height:100%; border-radius:50%; object-fit:cover; background: #1a1a1a;">
-                    </div>
-                    
-                    <h3 style="margin:0; color:#fff; font-size:1.1rem; font-weight:700;">${s.name}, ${s.age}</h3>
-                    <p class="tiny muted" style="margin:5px 0 0; font-size:0.85rem; color:#8899a6;">${s.job}</p>
-                </div>
-
-                <button class="btn btn--sm btn--primary btn-shortlist-connect" data-name="${s.name}" style="width:100%; margin-top:20px; border-radius:99px; background: rgba(0, 175, 240, 0.15); color: #00aff0; border: 1px solid rgba(0, 175, 240, 0.3);">
-                    Connect
-                </button>
-            </div>
-          `;
-        });
-        html += '</div>';
-        
-        // Add Header if missing
-        if(!DOM.panelShortlistBody.innerHTML.trim()) {
-             DOM.panelShortlistBody.insertAdjacentHTML('beforeend', '<div class="feed-header">Daily Shortlist</div>');
-        }
-        DOM.panelShortlistBody.insertAdjacentHTML('beforeend', html);
-
-        // SWEETALERT EVENT LISTENER
-        const btns = DOM.panelShortlistBody.querySelectorAll('.btn-shortlist-connect');
-        btns.forEach(btn => {
-            btn.addEventListener('click', function() {
-                const name = this.getAttribute('data-name');
-                if (typeof Swal !== 'undefined') {
-                    const Toast = Swal.mixin({
-                      toast: true,
-                      position: 'top-end',
-                      showConfirmButton: false,
-                      timer: 3000,
-                      timerProgressBar: false,
-                      background: '#1a1a20',
-                      color: '#fff',
-                      iconColor: '#00aff0',
-                      didOpen: (toast) => {
-                        toast.addEventListener('mouseenter', Swal.stopTimer)
-                        toast.addEventListener('mouseleave', Swal.resumeTimer)
-                      }
-                    });
-                    Toast.fire({
-                      icon: 'success',
-                      title: `Request sent to ${name}`
-                    });
-                } else {
-                    alert(`Request sent to ${name}!`);
-                }
-                this.textContent = 'Pending';
-                this.style.background = 'transparent';
-                this.style.color = '#888';
-                this.style.borderColor = '#444';
-                this.disabled = true;
-            });
-        });
-    }
-  }
-
-  // CREATORS (FIXED: Reduced Banner Width)
-  if (DOM.panelCreatorsBody) {
-    if(!DOM.panelCreatorsBody.querySelector('.creators-grid')) {
-        const creators = [
-            { name: 'Sasha Grey', followers: '1.2M', price: 'FREE', locked: false, handle: 'Follow' },
-            { name: 'Kim Lee', followers: '850k', price: 'Unlock 💎 50', locked: true, handle: 'Unlock' },
-            { name: 'Tyler', followers: '500k', price: 'Unlock 💎 100', locked: true, handle: 'Unlock' },
-            { name: 'Eva Art', followers: '200k', price: 'Unlock 💎 20', locked: true, handle: 'Unlock' }
-        ];
-
-        // ADDED: max-width: 500px and margin: 0 auto
-        let html = `
-            <div style="background: linear-gradient(90deg, #00c6ff, #0072ff); border-radius: 20px; padding: 30px; text-align: center; margin: 0 auto 25px; max-width: 500px; position: relative; overflow: hidden;">
-                <h2 style="margin:0; font-size:1.5rem; color:#fff;">Become a Creator</h2>
-                <p style="color: rgba(255,255,255,0.9); margin: 5px 0 15px;">Monetize your fanbase today.</p>
-                <button class="btn btn--white" id="btnOpenCreatorApplyInjected" style="border-radius:99px; padding: 8px 30px; color:#0072ff; font-weight:800;">Apply</button>
-                <i class="fa-solid fa-fire" style="position: absolute; right: -10px; bottom: -20px; font-size: 8rem; color: rgba(255,255,255,0.1); transform: rotate(-15deg);"></i>
-            </div>
-
-            <div class="category-scroll" id="creatorFilters">
-                <div class="cat-pill active">All</div>
-                <div class="cat-pill">Popular</div>
-                <div class="cat-pill">New</div>
-                <div class="cat-pill">Nearby</div>
-                <div class="cat-pill">VIP</div>
-            </div>
-
-            <div class="creators-grid">
-        `;
-
-        creators.forEach(c => {
-            const lockedClass = c.locked ? 'locked' : '';
-            const bgGradient = c.locked ? 'linear-gradient(135deg, #1a1a1a, #000)' : 'linear-gradient(135deg, #4b0082, #800080)';
-            const btnStyle = c.locked ? 'background:#ffd700; color:#000;' : 'background:rgba(255,255,255,0.2); color:#fff;';
-            const badge = c.locked ? 'PREMIUM' : 'FREE';
-            const badgeColor = c.locked ? '#ffd700' : '#fff';
-            
-            html += `
-                <div class="creator-card" style="background: ${bgGradient}; border: 1px solid rgba(255,255,255,0.1); height: 240px; position: relative; border-radius: 16px; padding: 15px; display:flex; flex-direction:column; justify-content:flex-end;">
-                    <span style="position:absolute; top:15px; right:15px; background:${badgeColor}; color:#000; font-size:0.7rem; font-weight:800; padding:2px 6px; border-radius:4px;">${badge}</span>
-                    
-                    ${c.locked ? '<div style="position:absolute; top:40%; left:50%; transform:translate(-50%, -50%); width:50px; height:50px; background:rgba(255,255,255,0.2); border-radius:50%; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(5px);"><i class="fa-solid fa-lock" style="color:#fff;"></i></div>' : ''}
-                    
-                    <h3 style="margin:0; font-size:1.1rem;">${c.name} <i class="fa-solid fa-circle-check" style="color:#00aff0; font-size:0.8rem;"></i></h3>
-                    <p style="margin:2px 0 10px; font-size:0.8rem; color:rgba(255,255,255,0.7);"><i class="fa-solid fa-users"></i> ${c.followers}</p>
-                    <button class="btn-unlock-action" style="width:100%; border:none; padding:10px; border-radius:8px; font-weight:700; cursor:pointer; ${btnStyle}">${c.price}</button>
-                </div>
-            `;
-        });
-        html += `</div>`;
-        
-        DOM.panelCreatorsBody.innerHTML = ''; 
-        DOM.panelCreatorsBody.insertAdjacentHTML('beforeend', '<div class="feed-header">Creators</div>' + html);
-        
-        // Listeners for Creators
-        const newApplyBtn = DOM.panelCreatorsBody.querySelector('#btnOpenCreatorApplyInjected');
-        if(newApplyBtn && DOM.dlgCreatorApply) {
-            newApplyBtn.addEventListener('click', () => DOM.dlgCreatorApply.showModal());
-        }
-
-        // Filter Interactivity (Clickable)
-        const pills = DOM.panelCreatorsBody.querySelectorAll('.cat-pill');
-        pills.forEach(pill => {
-            pill.addEventListener('click', () => {
-                pills.forEach(p => { 
-                    p.classList.remove('active'); 
-                    p.style.background = 'rgba(255,255,255,0.1)'; 
-                    p.style.borderColor = 'rgba(255,255,255,0.1)';
-                });
-                pill.classList.add('active');
-                pill.style.background = '#00aff0';
-                pill.style.borderColor = '#00aff0';
-            });
-        });
-
-        // Unlock Buttons Interactivity
-        DOM.panelCreatorsBody.querySelectorAll('.btn-unlock-action').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if(btn.textContent.includes('FREE')) showToast('Followed successfully!');
-                else showToast('Insufficient gems!', 'error');
-            });
-        });
-    }
-  }
-
-  // PREMIUM (FIXED: Increased Width 600px, Restored Glass BG)
-  if (DOM.panelPremiumBody) {
-     if(!DOM.panelPremiumBody.querySelector('.premium-plans')) {
-         const html = `
-            <div class="premium-plans" style="padding-top: 20px; display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%;">
-                
-                <div class="glass-card" style="width:100%; max-width:600px; padding: 40px 30px; text-align:center; border: 1px solid #ffd700; position:relative; overflow:hidden; background: rgba(20, 20, 20, 0.2); backdrop-filter: blur(20px);">
-                    
-                    <div style="position:absolute; top:0; left:0; right:0; height:4px; background: linear-gradient(90deg, #FFD700, #FDB931);"></div>
-                    
-                    <i class="fa-solid fa-crown" style="color:#ffd700; font-size:3.5rem; margin-bottom:20px; filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.5));"></i>
-                    
-                    <h2 style="font-size: 2rem; margin:0; font-weight:800;">iTrueMatch <span style="color:#ffd700;">GOLD</span></h2>
-                    <p style="color:#aaa; margin: 10px 0 30px;">Upgrade to the ultimate experience.</p>
-                    
-                    <ul style="list-style:none; padding:0; text-align:left; margin-bottom:40px; display:flex; flex-direction:column; gap:20px; width:100%; max-width:400px; margin-left:auto; margin-right:auto;">
-                        <li style="display:flex; align-items:center; gap:15px; font-size:1rem; color:#fff;">
-                            <div style="width:30px; height:30px; background:rgba(255,215,0,0.1); border-radius:50%; display:flex; align-items:center; justify-content:center; color:#ffd700;"><i class="fa-solid fa-eye"></i></div>
-                            See who liked you
-                        </li>
-                        <li style="display:flex; align-items:center; gap:15px; font-size:1rem; color:#fff;">
-                            <div style="width:30px; height:30px; background:rgba(255,215,0,0.1); border-radius:50%; display:flex; align-items:center; justify-content:center; color:#ffd700;"><i class="fa-solid fa-infinity"></i></div>
-                            Unlimited Swipes
-                        </li>
-                        <li style="display:flex; align-items:center; gap:15px; font-size:1rem; color:#fff;">
-                            <div style="width:30px; height:30px; background:rgba(255,215,0,0.1); border-radius:50%; display:flex; align-items:center; justify-content:center; color:#ffd700;"><i class="fa-solid fa-bolt"></i></div>
-                            1 Free Boost / month
-                        </li>
-                         <li style="display:flex; align-items:center; gap:15px; font-size:1rem; color:#fff;">
-                            <div style="width:30px; height:30px; background:rgba(255,215,0,0.1); border-radius:50%; display:flex; align-items:center; justify-content:center; color:#ffd700;"><i class="fa-solid fa-earth-americas"></i></div>
-                            Passport to any location
-                        </li>
-                    </ul>
-
-                    <button id="btnPremiumUpgradeInternal" style="width:100%; max-width:400px; padding:15px; font-size:1.1rem; font-weight:800; border-radius:99px; border:none; background: linear-gradient(90deg, #FFD700, #FDB931); color:#000; box-shadow: 0 0 20px rgba(255, 215, 0, 0.4); cursor:pointer; transition: transform 0.2s;">Get Premium Access</button>
-                    <p style="margin-top:15px; font-size:0.8rem; color:#666;">Recurring billing. Cancel anytime.</p>
-                </div>
-            </div>`;
-         DOM.panelPremiumBody.innerHTML = html;
-         
-         const btnUpgrade = DOM.panelPremiumBody.querySelector('#btnPremiumUpgradeInternal');
-         if(btnUpgrade && DOM.dlgPremiumApply) {
-             btnUpgrade.addEventListener('click', () => DOM.dlgPremiumApply.showModal());
-         }
-     }
-  }
-  // ADMIRERS (UI FIX: Forced Left Align)
-  if (DOM.admirerContainer) {
-    let html = '';
-    const admirers = [
-        { name: 'Celine', age: 23, city: 'Boston' },
-        { name: 'Patricia', age: 25, city: 'Seattle' },
-        { name: 'Gab', age: 22, city: 'Austin' },
-        { name: 'Yassi', age: 24, city: 'Denver' }
-    ];
-    
-    if (DOM.admirerCount) {
-        DOM.admirerCount.textContent = `${admirers.length} New`;
-    }
-    
-    admirers.forEach(adm => {
-        // INLINE STYLES APPLIED: justify-content: flex-start; gap: 15px; text-align: left;
-        html += `
-          <div class="admirer-row" onclick="document.querySelector('button[data-panel=premium]').click()" style="justify-content: flex-start; gap: 15px;">
-             <img class="admirer-img-blur" src="assets/images/truematch-mark.png" style="background:${getRandomColor()}">
-             <div class="admirer-info" style="flex: 1; text-align: left;">
-                <h4 style="margin:0;">${adm.name}, ${adm.age}</h4>
-                <p style="margin:0;">📍 ${adm.city}</p>
-             </div>
-             <div class="admirer-action"><i class="fa-solid fa-lock"></i></div>
-          </div>
-        `;
-    });
-    DOM.admirerContainer.innerHTML = html;
-  }
-
-  // ACTIVE NEARBY
-  if (DOM.activeNearbyContainer) {
-      let html = '';
-      for(let i=0; i<6; i++) {
-          html += `
-            <div class="active-item" onclick="document.querySelector('button[data-panel=swipe]').click()">
-                <img class="active-img" src="assets/images/truematch-mark.png" style="background:${getRandomColor()}">
-                <div class="online-dot"></div>
-            </div>
-          `;
-      }
-      DOM.activeNearbyContainer.innerHTML = html;
-  }
-}
-
 async function loadMatchesPanel() {
   try {
     // Only load when panel exists and user is logged in
@@ -2002,37 +1674,99 @@ async function loadConciergePanel() {
     const plan = normalizePlanKey(state.plan || 'free');
     if (plan !== 'tier3') return;
 
-    const [approved, scheduled] = await Promise.all([
+    const [picks, approved, scheduled] = await Promise.all([
+      apiGet('/api/shortlist'),
       apiGet('/api/shortlist/approved'),
       apiGet('/api/concierge/scheduled')
     ]);
 
-    renderConciergePanel(approved, scheduled);
+    renderConciergePanel(picks, approved, scheduled);
   } catch (err) {
     console.warn('loadConciergePanel failed:', err);
   }
 }
 
-function renderConciergePanel(approvedRes, scheduledRes) {
+function renderConciergePanel(picksRes, approvedRes, scheduledRes) {
   if (!DOM.panelConciergeBody) return;
 
+  const picks = (picksRes && picksRes.ok && Array.isArray(picksRes.items)) ? picksRes.items : [];
   const approved = (approvedRes && approvedRes.ok && Array.isArray(approvedRes.items)) ? approvedRes.items : [];
   const scheduled = (scheduledRes && scheduledRes.ok && Array.isArray(scheduledRes.scheduled)) ? scheduledRes.scheduled : [];
 
   DOM.panelConciergeBody.innerHTML = `
-    <div style="margin-bottom:14px;">
+    <div style="margin-bottom:18px;">
+      <h3 style="margin:0 0 8px 0;">Today's concierge picks</h3>
+      <div class="shortlist-wrap" id="conc-picks"></div>
+    </div>
+
+    <div style="margin-bottom:18px;">
       <h3 style="margin:0 0 8px 0;">Approved profiles</h3>
       <div class="conc-list" id="conc-approved"></div>
     </div>
+
     <div>
       <h3 style="margin:0 0 8px 0;">Scheduled dates</h3>
       <div class="conc-list" id="conc-scheduled"></div>
     </div>
   `;
 
+  const picksEl = DOM.panelConciergeBody.querySelector('#conc-picks');
   const approvedEl = DOM.panelConciergeBody.querySelector('#conc-approved');
   const scheduledEl = DOM.panelConciergeBody.querySelector('#conc-scheduled');
 
+  // --- Picks (served by admin through /api/admin/shortlist) ---
+  if (!picks.length) {
+    picksEl.innerHTML = '<div style="color:rgba(255,255,255,0.7);">No concierge picks served yet.</div>';
+  } else {
+    picksEl.innerHTML = picks.map(p => {
+      const safeName = String(p.name || 'Profile').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const safeCity = String(p.city || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const photoUrl = p.photoUrl || '';
+      return `
+        <div class="short-card" data-id="${p.id}">
+          <div class="short-img" style="${photoUrl ? `background-image:url('${photoUrl}')` : ''}"></div>
+          <div class="short-meta">
+            <div class="short-name">${safeName}</div>
+            <div class="short-sub">${safeCity}</div>
+            <div class="short-actions">
+              <button class="btn btn--ghost" data-act="pass">Pass</button>
+              <button class="btn btn--ghost" data-act="approve">Approve</button>
+              <button class="btn btn--primary" data-act="date">Request date</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    picksEl.querySelectorAll('button[data-act]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const act = btn.dataset.act;
+        const card = btn.closest('.short-card');
+        const id = card ? card.dataset.id : '';
+        if (!id) return;
+
+        btn.disabled = true;
+        try {
+          const out = await apiPost('/api/shortlist/decision', { profileId: id, action: act });
+          if (out && out.ok) {
+            if (act === 'date') showToast('Date requested. Your concierge is scheduling.', 'success');
+            else if (act === 'approve') showToast('Approved.', 'success');
+            else showToast('Passed.', 'success');
+
+            await loadConciergePanel();
+          } else {
+            showToast('Action failed.', 'error');
+            btn.disabled = false;
+          }
+        } catch (_err) {
+          showToast('Action failed.', 'error');
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+
+  // --- Approved (persisted) ---
   if (!approved.length) {
     approvedEl.innerHTML = '<div style="color:rgba(255,255,255,0.7);">No approved profiles yet.</div>';
   } else {
@@ -2078,6 +1812,7 @@ function renderConciergePanel(approvedRes, scheduledRes) {
     });
   }
 
+  // --- Scheduled dates ---
   if (!scheduled.length) {
     scheduledEl.innerHTML = '<div style="color:rgba(255,255,255,0.7);">No scheduled dates yet.</div>';
   } else {
@@ -2085,18 +1820,19 @@ function renderConciergePanel(approvedRes, scheduledRes) {
       const p = it.profile || it;
       const safeName = String(p.name || 'Profile').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const safeCity = String(p.city || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      const when = it.when || it.date || it.time || '';
+      const when = it.when || it.date || it.time || it.scheduledAt || '';
       return `
         <div class="conc-card">
           <div class="conc-meta">
             <div class="conc-name">${safeName}</div>
-            <div class="conc-sub">${safeCity}${when ? ' • ' + when : ''}</div>
+            <div class="conc-sub">${safeCity}${when ? ' • ' + String(when) : ''}</div>
           </div>
         </div>
       `;
     }).join('');
   }
 }
+
 
 function renderHomeEmptyStates() {
   if (DOM.admirerCount) DOM.admirerCount.textContent = '0 New';
@@ -2120,35 +1856,34 @@ function renderHomeEmptyStates() {
 
 async function loadMe() {
   try {
-    let user, prefs;
+    const data = await apiGet('/api/me');
+    const local = safeGetLocalUser();
 
-    if (DEV_MODE) {
-      user = getMockUser();
-      prefs = { city: 'New York', ageMin: 21, ageMax: 35, ethnicity: 'caucasian', lookingFor: ['women'], intent: 'long-term', dealbreakers: '', sharedValues: ['fitness'] };
-    } else {
-      const data = await apiGet('/api/me');
-      const local = safeGetLocalUser();
+    let user = null;
+    let prefs = {};
 
-      if (!data || !data.ok || !data.user) {
-        if (local && (local.email || local.name)) {
-          user = local;
-          prefs = {};
-        } else {
-          window.location.href = 'auth.html?mode=login';
-          return;
-        }
+    if (!data || !data.ok || !data.user) {
+      // If session cookie is missing/expired but local cache exists, allow a soft render
+      // (user will still be redirected on any authenticated API calls).
+      if (local && (local.email || local.name)) {
+        user = local;
+        prefs = {};
       } else {
-        user = data.user;
-        prefs = data.prefs || user.preferences || {};
-        if (local) {
-          if (!user.name && local.name) user.name = local.name;
-          if (!user.email && local.email) user.email = local.email;
-        }
+        window.location.href = 'auth.html?mode=login';
+        return;
+      }
+    } else {
+      user = data.user;
+      prefs = data.prefs || user.preferences || {};
+      if (local) {
+        if (!user.name && local.name) user.name = local.name;
+        if (!user.email && local.email) user.email = local.email;
       }
     }
 
     state.me = user;
     state.prefs = prefs;
+
     const rawPlan = (user && (user.plan ?? user.planKey ?? user.tier ?? user.level ?? user.subscriptionTier ?? user.subscription ?? user.currentPlan)) || 'free';
     state.plan = normalizePlanKey(rawPlan);
 
@@ -2158,8 +1893,7 @@ async function loadMe() {
     applyAdvancedPrefsLock();
 
     // Creators & Premium Society entry cards
-    if (!DEV_MODE) renderCreatorPremiumEntryCards();
-
+    renderCreatorPremiumEntryCards();
   } catch (err) {
     console.error("Error loading user:", err);
   }
@@ -2227,7 +1961,7 @@ function applyPlanNavGating() {
 function applyAdvancedPrefsLock() {
   if (!DOM.advancedPrefsSection) return;
   // Keep behavior consistent with Preferences page: advanced section is not editable on Free.
-  const locked = !DEV_MODE && state.plan === 'free';
+  const locked = state.plan === 'free';
   DOM.advancedPrefsSection.classList.toggle('is-locked', locked);
   if (DOM.advLockNote) DOM.advLockNote.hidden = !locked;
 
@@ -2842,17 +2576,13 @@ async function handleProfileSave() {
   prefsPayload.sharedValues = Array.isArray(sharedValues) ? sharedValues : [];
 
   try {
-    let profileRes;
-    if (DEV_MODE) profileRes = { ok: true, user: { ...state.me, ...profilePayload } };
-    else profileRes = await apiUpdateProfile(profilePayload);
+    let profileRes = await apiUpdateProfile(profilePayload);
 
     if (!profileRes || !profileRes.ok) {
       throw new Error('Failed to update profile.');
     }
 
-    let prefsRes;
-    if (DEV_MODE) prefsRes = { ok: true, prefs: { ...state.prefs, ...prefsPayload } };
-    else prefsRes = await apiSavePrefs(prefsPayload);
+    let prefsRes = await apiSavePrefs(prefsPayload);
 
     if (!prefsRes || !prefsRes.ok) {
       throw new Error('Failed to update preferences.');
@@ -2999,22 +2729,7 @@ const SwipeController = (() => {
     if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = true;
 
     try {
-      let data;
-      if (DEV_MODE) {
-        data = {
-          ok: true,
-          candidates: [
-            { id: 'alice@test.com', name: 'Alice', age: 24, city: 'New York', photoUrl: 'assets/images/truematch-mark.png', tags: ['Travel', 'Music', 'Pizza'] },
-            { id: 'bea@test.com', name: 'Bea', age: 22, city: 'Los Angeles', photoUrl: 'assets/images/truematch-mark.png', tags: ['Gym', 'Movies'] },
-            { id: 'cathy@test.com', name: 'Cathy', age: 25, city: 'Chicago', photoUrl: 'assets/images/truematch-mark.png', tags: ['Art', 'Coffee', 'Dogs'] }
-          ],
-          remaining: DAILY_SWIPE_LIMIT,
-          limit: DAILY_SWIPE_LIMIT,
-          limitReached: false
-        };
-      } else {
-        data = await apiGet('/api/swipe/candidates');
-      }
+      const data = await apiGet('/api/swipe/candidates');
 
       if (data && data.ok && (data.limit === null || typeof data.limit === 'number' || typeof data.limit === 'undefined')) {
         setSwipeStats(data.remaining, data.limit);
@@ -3113,9 +2828,7 @@ const SwipeController = (() => {
     }
 
     const targetEmail = profiles[currentIndex].id;
-
-    if (!DEV_MODE) {
-      try {
+    try {
         const res = await apiPost('/api/swipe/action', { targetEmail, action: mapAction(type) });
 
         if (!res || !res.ok) {
@@ -3140,10 +2853,9 @@ const SwipeController = (() => {
           setSwipeStats(res.remaining, res.limit);
           if (res.match) showToast('It’s a match! 🎉');
         }
-      } catch (e) {
+    } catch (e) {
         console.error(e);
         showToast('Swipe failed. Please try again.', 'error');
-      }
     }
 
     let msg = 'Liked!';
