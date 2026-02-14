@@ -2444,37 +2444,99 @@ async function loadConciergePanel() {
     const plan = normalizePlanKey(state.plan || 'free');
     if (plan !== 'tier3') return;
 
-    const [approved, scheduled] = await Promise.all([
+    const [picks, approved, scheduled] = await Promise.all([
+      apiGet('/api/shortlist'),
       apiGet('/api/shortlist/approved'),
       apiGet('/api/concierge/scheduled')
     ]);
 
-    renderConciergePanel(approved, scheduled);
+    renderConciergePanel(picks, approved, scheduled);
   } catch (err) {
     console.warn('loadConciergePanel failed:', err);
   }
 }
 
-function renderConciergePanel(approvedRes, scheduledRes) {
+function renderConciergePanel(picksRes, approvedRes, scheduledRes) {
   if (!DOM.panelConciergeBody) return;
 
+  const picks = (picksRes && picksRes.ok && Array.isArray(picksRes.items)) ? picksRes.items : [];
   const approved = (approvedRes && approvedRes.ok && Array.isArray(approvedRes.items)) ? approvedRes.items : [];
   const scheduled = (scheduledRes && scheduledRes.ok && Array.isArray(scheduledRes.scheduled)) ? scheduledRes.scheduled : [];
 
   DOM.panelConciergeBody.innerHTML = `
-    <div style="margin-bottom:14px;">
+    <div style="margin-bottom:18px;">
+      <h3 style="margin:0 0 8px 0;">Today's concierge picks</h3>
+      <div class="shortlist-wrap" id="conc-picks"></div>
+    </div>
+
+    <div style="margin-bottom:18px;">
       <h3 style="margin:0 0 8px 0;">Approved profiles</h3>
       <div class="conc-list" id="conc-approved"></div>
     </div>
+
     <div>
       <h3 style="margin:0 0 8px 0;">Scheduled dates</h3>
       <div class="conc-list" id="conc-scheduled"></div>
     </div>
   `;
 
+  const picksEl = DOM.panelConciergeBody.querySelector('#conc-picks');
   const approvedEl = DOM.panelConciergeBody.querySelector('#conc-approved');
   const scheduledEl = DOM.panelConciergeBody.querySelector('#conc-scheduled');
 
+  // --- Picks (served by admin through /api/admin/shortlist) ---
+  if (!picks.length) {
+    picksEl.innerHTML = '<div style="color:rgba(255,255,255,0.7);">No concierge picks served yet.</div>';
+  } else {
+    picksEl.innerHTML = picks.map(p => {
+      const safeName = String(p.name || 'Profile').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const safeCity = String(p.city || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const photoUrl = p.photoUrl || '';
+      return `
+        <div class="short-card" data-id="${p.id}">
+          <div class="short-img" style="${photoUrl ? `background-image:url('${photoUrl}')` : ''}"></div>
+          <div class="short-meta">
+            <div class="short-name">${safeName}</div>
+            <div class="short-sub">${safeCity}</div>
+            <div class="short-actions">
+              <button class="btn btn--ghost" data-act="pass">Pass</button>
+              <button class="btn btn--ghost" data-act="approve">Approve</button>
+              <button class="btn btn--primary" data-act="date">Request date</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    picksEl.querySelectorAll('button[data-act]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const act = btn.dataset.act;
+        const card = btn.closest('.short-card');
+        const id = card ? card.dataset.id : '';
+        if (!id) return;
+
+        btn.disabled = true;
+        try {
+          const out = await apiPost('/api/shortlist/decision', { profileId: id, action: act });
+          if (out && out.ok) {
+            if (act === 'date') showToast('Date requested. Your concierge is scheduling.', 'success');
+            else if (act === 'approve') showToast('Approved.', 'success');
+            else showToast('Passed.', 'success');
+
+            await loadConciergePanel();
+          } else {
+            showToast('Action failed.', 'error');
+            btn.disabled = false;
+          }
+        } catch (_err) {
+          showToast('Action failed.', 'error');
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+
+  // --- Approved (persisted) ---
   if (!approved.length) {
     approvedEl.innerHTML = '<div style="color:rgba(255,255,255,0.7);">No approved profiles yet.</div>';
   } else {
@@ -2520,6 +2582,7 @@ function renderConciergePanel(approvedRes, scheduledRes) {
     });
   }
 
+  // --- Scheduled dates ---
   if (!scheduled.length) {
     scheduledEl.innerHTML = '<div style="color:rgba(255,255,255,0.7);">No scheduled dates yet.</div>';
   } else {
@@ -2527,18 +2590,19 @@ function renderConciergePanel(approvedRes, scheduledRes) {
       const p = it.profile || it;
       const safeName = String(p.name || 'Profile').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const safeCity = String(p.city || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      const when = it.when || it.date || it.time || '';
+      const when = it.when || it.date || it.time || it.scheduledAt || '';
       return `
         <div class="conc-card">
           <div class="conc-meta">
             <div class="conc-name">${safeName}</div>
-            <div class="conc-sub">${safeCity}${when ? ' • ' + when : ''}</div>
+            <div class="conc-sub">${safeCity}${when ? ' • ' + String(when) : ''}</div>
           </div>
         </div>
       `;
     }).join('');
   }
 }
+
 
 function renderHomeEmptyStates() {
   if (DOM.admirerCount) DOM.admirerCount.textContent = '0 New';
