@@ -154,7 +154,6 @@ function cacheDom() {
   DOM.homeWelcomeName = document.getElementById('welcomeName') || document.getElementById('homeWelcomeName');
   DOM.homePlanPill = document.getElementById('planPill') || document.getElementById('homePlanPill');
   DOM.homePlanSummary = document.getElementById('planName') || document.getElementById('homePlanSummary');
-  DOM.storiesContainer = document.getElementById('storiesContainer');
   DOM.admirerContainer = document.getElementById('admirerContainer');
   DOM.admirerCount = document.getElementById('admirerCount');
   
@@ -182,22 +181,6 @@ function cacheDom() {
   DOM.notifDot = DOM.btnNotifToggle ? DOM.btnNotifToggle.querySelector('.notif-dot') : null;
   DOM.notifList = DOM.notifDropdown ? (DOM.notifDropdown.querySelector('#notifList') || DOM.notifDropdown.querySelector('.notif-list')) : null;
   DOM.btnNotifMarkAllRead = DOM.notifDropdown ? (DOM.notifDropdown.querySelector('.notif-footer') || null) : null;
-  
-  DOM.dlgStory = document.getElementById('dlgStory');
-  DOM.storyMainImg = document.getElementById('storyMainImg');
-  DOM.storyMainVideo = document.getElementById('storyMainVideo');
-  DOM.storyUserImg = document.getElementById('storyUserImg');
-  DOM.storyUserName = document.getElementById('storyUserName');
-  DOM.btnCloseStory = document.getElementById('btnCloseStory');
-  DOM.storyProgressFill = document.getElementById('storyProgressFill');
-
-  // Recent Moments (mobile)
-  DOM.mobileMomentsToggle = document.getElementById('mobileMomentsToggle');
-  DOM.momentsPopup = document.getElementById('momentsPopup');
-  DOM.mobileStoriesContainer = document.getElementById('mobileStoriesContainer');
-
-  // Hidden input for Moment uploads
-  DOM.momentFileInput = document.getElementById('momentFileInput');
   
   DOM.sAvatar = document.getElementById('sAvatar');
   DOM.sNameDisplay = document.getElementById('sNameDisplay');
@@ -571,7 +554,6 @@ async function initApp() {
   } else {
     await loadHomePanels(true);
     renderHomeEmptyStates();
-    await MomentsController.init();
   }
   
   setupEventListeners();
@@ -795,11 +777,6 @@ function setupEventListeners() {
       });
   }
 
-  // 3. Recent Moments (Stories) Click
-  const handleStoryClick = (e) => MomentsController.handleStoryClick(e);
-  if (DOM.storiesContainer) DOM.storiesContainer.addEventListener('click', handleStoryClick);
-  if (DOM.mobileStoriesContainer) DOM.mobileStoriesContainer.addEventListener('click', handleStoryClick);
-
   // 4. Matches & Chat Click
   const handleMatchClick = (e) => {
       const btn = e.target.closest('.btn-chat-action');
@@ -819,7 +796,7 @@ function setupEventListeners() {
       } else if (item) {
           name = item.dataset.name;
           imgColor = item.querySelector('.story-img').style.backgroundColor;
-          openChatModal(name, imgColor, "Matched via Stories 🔥", item.dataset.email || '', item.dataset.photoUrl || '');
+          openChatModal(name, imgColor, "New match 🔥", item.dataset.email || '', item.dataset.photoUrl || '');
       }
   };
   if (DOM.matchesContainer) DOM.matchesContainer.addEventListener('click', handleMatchClick);
@@ -833,7 +810,6 @@ function setupEventListeners() {
   }
 
   // 5. Modals Close
-  if (DOM.btnCloseStory && DOM.dlgStory) DOM.btnCloseStory.addEventListener('click', () => MomentsController.closeStory());
   if (DOM.btnCloseChat && DOM.dlgChat) DOM.btnCloseChat.addEventListener('click', () => DOM.dlgChat.close());
 
   // Chat Send
@@ -1051,7 +1027,6 @@ if (DOM.frmPassword) DOM.frmPassword.addEventListener('submit', async (e) => {
       setCreatorApplyFormReadOnly(false);
     });
   }
-  enableBackdropClose(DOM.dlgStory);
   enableBackdropClose(DOM.dlgChat); 
 
   // 12. Swipe Controls
@@ -1110,21 +1085,15 @@ function applyMatchesSearch(rawQuery) {
 function setupMobileMenu() {
     const sidebar = document.getElementById('mainSidebar');
     const menuBtn = document.getElementById('mobileNavToggle');
-    const momentsBtn = document.getElementById('mobileMomentsToggle');
-    const momentsPopup = document.getElementById('momentsPopup');
-    
+
     // Hamburger Menu Logic
-    if(menuBtn && sidebar) {
+    if (menuBtn && sidebar) {
         menuBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            
-            // Close Moments if open
-            if(momentsPopup) momentsPopup.classList.remove('is-open'); 
-            if(momentsBtn) momentsBtn.querySelector('i').className = 'fa-solid fa-bolt';
-            
+
             // Toggle Sidebar
             sidebar.classList.toggle('is-open');
-            
+
             // Toggle Icon
             const isOpen = sidebar.classList.contains('is-open');
             menuBtn.innerHTML = isOpen ? '<i class="fa-solid fa-xmark"></i>' : '<i class="fa-solid fa-bars"></i>';
@@ -1132,36 +1101,10 @@ function setupMobileMenu() {
 
         // Close when clicking outside
         document.addEventListener('click', (e) => {
-            if(sidebar.classList.contains('is-open') && !sidebar.contains(e.target) && !menuBtn.contains(e.target)) {
+            if (sidebar.classList.contains('is-open') && !sidebar.contains(e.target) && !menuBtn.contains(e.target)) {
                 sidebar.classList.remove('is-open');
                 menuBtn.innerHTML = '<i class="fa-solid fa-bars"></i>';
             }
-        });
-    }
-
-    // Moments Button Logic
-    if(momentsBtn && momentsPopup) {
-        momentsBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            
-            // Close Sidebar if open
-            if(sidebar) sidebar.classList.remove('is-open'); 
-            if(menuBtn) menuBtn.innerHTML = '<i class="fa-solid fa-bars"></i>';
-
-            // Toggle Moments Popup
-            momentsPopup.classList.toggle('is-open');
-            
-            // Toggle Icon
-            const icon = momentsBtn.querySelector('i');
-            icon.className = momentsPopup.classList.contains('is-open') ? 'fa-solid fa-xmark' : 'fa-solid fa-bolt';
-        });
-
-        // Close when clicking outside
-        document.addEventListener('click', (e) => {
-             if(momentsPopup.classList.contains('is-open') && !momentsPopup.contains(e.target) && !momentsBtn.contains(e.target)) {
-                momentsPopup.classList.remove('is-open');
-                momentsBtn.querySelector('i').className = 'fa-solid fa-bolt';
-             }
         });
     }
 }
@@ -1482,366 +1425,6 @@ async function openChatModal(name, imgColor, lastMsg, peerEmail, peerPhotoUrl) {
   await loadAndRenderThread(state.currentChatPeerEmail);
 }
 
-function openStoryModal(name, color) {
-    if (DOM.dlgStory) {
-        if(DOM.storyUserName) DOM.storyUserName.textContent = name;
-        if(DOM.storyUserImg) {
-            DOM.storyUserImg.src = 'assets/images/truematch-mark.png'; 
-            DOM.storyUserImg.style.backgroundColor = color || '#333';
-        }
-        if(DOM.storyMainImg) {
-            DOM.storyMainImg.src = 'assets/images/truematch-mark.png';
-            DOM.storyMainImg.style.backgroundColor = color || '#333';
-        }
-        DOM.dlgStory.showModal();
-    }
-}
-
-// ---------------------------------------------------------------------
-// RECENT MOMENTS (STORIES) – LIVE MODE
-// - One bubble per user (Option A)
-// - Sequential playback per user
-// - Upload supports photo/video only (no music)
-// ---------------------------------------------------------------------
-
-const MomentsController = (() => {
-  let momentsByOwner = new Map();
-  let activeOwnerId = null;
-  let activeList = [];
-  let activeIndex = 0;
-  let timer = null;
-
-  const IMG_DURATION_MS = 5500;
-  const MAX_UPLOAD_BYTES = 7 * 1024 * 1024; // 7MB base file (before base64 overhead)
-
-  function stopPlayback() {
-    if (timer) {
-      clearTimeout(timer);
-      timer = null;
-    }
-    if (DOM.storyMainVideo) {
-      try {
-        DOM.storyMainVideo.pause();
-        DOM.storyMainVideo.currentTime = 0;
-      } catch {}
-      DOM.storyMainVideo.onended = null;
-    }
-    if (DOM.storyProgressFill) {
-      DOM.storyProgressFill.style.transition = 'none';
-      DOM.storyProgressFill.style.width = '0%';
-    }
-  }
-
-  function timeAgo(ms) {
-    const now = Date.now();
-    const d = Math.max(0, now - ms);
-    const sec = Math.floor(d / 1000);
-    if (sec < 60) return `${sec}s ago`;
-    const min = Math.floor(sec / 60);
-    if (min < 60) return `${min}m ago`;
-    const hr = Math.floor(min / 60);
-    if (hr < 24) return `${hr}h ago`;
-    const day = Math.floor(hr / 24);
-    return `${day}d ago`;
-  }
-
-  function groupMoments(moments = []) {
-    const map = new Map();
-    moments
-      .filter(m => m && m.ownerId)
-      .sort((a, b) => (a.createdAtMs || 0) - (b.createdAtMs || 0))
-      .forEach(m => {
-        const key = m.ownerId;
-        if (!map.has(key)) {
-          map.set(key, {
-            ownerId: key,
-            ownerName: m.ownerName || 'User',
-            ownerAvatarUrl: m.ownerAvatarUrl || 'assets/images/truematch-mark.png',
-            moments: []
-          });
-        }
-        map.get(key).moments.push(m);
-      });
-    momentsByOwner = map;
-  }
-
-  function buildStoryItemHTML({ ownerId, ownerName, ownerAvatarUrl, thumbUrl, hasVideo }) {
-    const safeName = ownerName || 'User';
-    const avatar = ownerAvatarUrl || 'assets/images/truematch-mark.png';
-    const thumb = thumbUrl || avatar;
-    const playBadge = hasVideo
-      ? `<div style="position:absolute; bottom:6px; right:6px; width:18px; height:18px; border-radius:9px; background:rgba(0,0,0,.55); color:#fff; display:flex; align-items:center; justify-content:center; font-size:10px;">▶</div>`
-      : '';
-
-    return `
-      <div class="story-item" data-owner-id="${ownerId}">
-        <div class="story-ring" style="border: 2px solid #ffd700; padding:2px; position:relative;">
-          <img class="story-img" src="${thumb}" alt="${safeName}" style="background:transparent">
-          ${playBadge}
-        </div>
-        <span class="story-name">${safeName}</span>
-      </div>
-    `;
-  }
-
-  function render(container) {
-    if (!container) return;
-
-    let html = `
-      <div class="story-item action" data-action="add-moment">
-        <div class="story-ring ring-add" style="border:2px solid rgba(255,255,255,.25); padding:2px;">
-          <div class="story-img" style="display:flex; align-items:center; justify-content:center; font-size:22px;">+</div>
-        </div>
-        <span class="story-name">Add</span>
-      </div>
-    `;
-
-    const owners = Array.from(momentsByOwner.values())
-      // latest activity first
-      .sort((a, b) => {
-        const al = a.moments[a.moments.length - 1];
-        const bl = b.moments[b.moments.length - 1];
-        return (bl?.createdAtMs || 0) - (al?.createdAtMs || 0);
-      });
-
-    owners.forEach(o => {
-      const last = o.moments[o.moments.length - 1];
-      const hasVideo = !!last?.mediaType && String(last.mediaType).startsWith('video/');
-      // For video moments, use the user's avatar as thumbnail to avoid broken <img src="video">.
-      const thumbUrl = hasVideo ? (o.ownerAvatarUrl || 'assets/images/truematch-mark.png') : (last?.mediaUrl || o.ownerAvatarUrl);
-      html += buildStoryItemHTML({
-        ownerId: o.ownerId,
-        ownerName: o.ownerName,
-        ownerAvatarUrl: o.ownerAvatarUrl,
-        thumbUrl,
-        hasVideo
-      });
-    });
-
-    container.innerHTML = html;
-  }
-
-  async function refresh() {
-    try {
-      // Scope moments to matches + self (no global feed)
-      const resp = await apiGet('/api/moments/list?scope=matches');
-      if (resp && resp.ok && Array.isArray(resp.moments)) {
-        groupMoments(resp.moments);
-      } else {
-        groupMoments([]);
-      }
-    } catch {
-      groupMoments([]);
-    }
-    render(DOM.storiesContainer);
-    render(DOM.mobileStoriesContainer);
-  }
-
-  function startProgress(durationMs) {
-    if (!DOM.storyProgressFill) return;
-    DOM.storyProgressFill.style.transition = 'none';
-    DOM.storyProgressFill.style.width = '0%';
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        DOM.storyProgressFill.style.transition = `width ${durationMs}ms linear`;
-        DOM.storyProgressFill.style.width = '100%';
-      });
-    });
-  }
-
-  function setHeader(owner, moment) {
-    if (DOM.storyUserName) DOM.storyUserName.textContent = owner?.ownerName || 'User';
-    if (DOM.storyUserImg) {
-      DOM.storyUserImg.src = owner?.ownerAvatarUrl || 'assets/images/truematch-mark.png';
-      DOM.storyUserImg.style.backgroundColor = '#111';
-    }
-    // Update the small time label if present
-    const t = DOM.dlgStory ? DOM.dlgStory.querySelector('.story-header-overlay .time') : null;
-    if (t && moment?.createdAtMs) t.textContent = timeAgo(moment.createdAtMs);
-  }
-
-  function showMoment(owner, moment) {
-    if (!moment) return;
-    stopPlayback();
-    setHeader(owner, moment);
-
-    const isVideo = !!moment.mediaType && String(moment.mediaType).startsWith('video/');
-    const url = moment.mediaUrl;
-
-    if (isVideo && DOM.storyMainVideo) {
-      if (DOM.storyMainImg) DOM.storyMainImg.style.display = 'none';
-      DOM.storyMainVideo.style.display = 'block';
-      DOM.storyMainVideo.src = url;
-      DOM.storyMainVideo.muted = true;
-      DOM.storyMainVideo.playsInline = true;
-
-      // When metadata loads, start progress for the actual duration (capped).
-      const onLoaded = () => {
-        const dur = Number.isFinite(DOM.storyMainVideo.duration) ? DOM.storyMainVideo.duration * 1000 : 8000;
-        const capped = Math.max(4000, Math.min(dur, 20000));
-        startProgress(capped);
-        // Attempt autoplay; if blocked, user can tap to continue.
-        DOM.storyMainVideo.play().catch(() => {});
-      };
-      DOM.storyMainVideo.onloadedmetadata = onLoaded;
-      DOM.storyMainVideo.onended = () => next();
-    } else {
-      if (DOM.storyMainVideo) {
-        DOM.storyMainVideo.style.display = 'none';
-        DOM.storyMainVideo.src = '';
-      }
-      if (DOM.storyMainImg) {
-        DOM.storyMainImg.style.display = 'block';
-        DOM.storyMainImg.src = url || 'assets/images/truematch-mark.png';
-        DOM.storyMainImg.style.backgroundColor = '#111';
-      }
-      startProgress(IMG_DURATION_MS);
-      timer = setTimeout(() => next(), IMG_DURATION_MS);
-    }
-  }
-
-  function openOwnerStories(ownerId) {
-    const owner = momentsByOwner.get(ownerId);
-    if (!owner || !owner.moments || owner.moments.length === 0) return;
-
-    activeOwnerId = ownerId;
-    activeList = owner.moments.slice();
-    activeIndex = 0;
-
-    if (DOM.dlgStory) {
-      DOM.dlgStory.showModal();
-    }
-
-    showMoment(owner, activeList[activeIndex]);
-
-    // Tap zones: left = prev, right = next
-    const storyView = DOM.dlgStory ? DOM.dlgStory.querySelector('.story-view') : null;
-    if (storyView && !storyView._momentsBound) {
-      storyView._momentsBound = true;
-      storyView.addEventListener('click', (e) => {
-        // Ignore clicks on the close button area handled elsewhere
-        const rect = storyView.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        if (x < rect.width * 0.33) prev();
-        else next();
-      });
-    }
-  }
-
-  function next() {
-    if (!activeOwnerId) return;
-    const owner = momentsByOwner.get(activeOwnerId);
-    if (!owner) return;
-    activeIndex += 1;
-    if (activeIndex >= activeList.length) {
-      closeStory();
-      return;
-    }
-    showMoment(owner, activeList[activeIndex]);
-  }
-
-  function prev() {
-    if (!activeOwnerId) return;
-    const owner = momentsByOwner.get(activeOwnerId);
-    if (!owner) return;
-    activeIndex -= 1;
-    if (activeIndex < 0) activeIndex = 0;
-    showMoment(owner, activeList[activeIndex]);
-  }
-
-  async function uploadFile(file) {
-    if (!file) return;
-    const type = String(file.type || '');
-    if (!(type.startsWith('image/') || type.startsWith('video/'))) {
-      showToast('Photo or video only for Moments.', 'error');
-      return;
-    }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      showToast('File too large. Use a smaller photo/video (max ~7MB).', 'error');
-      return;
-    }
-
-    const dataUrl = await new Promise((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve(String(r.result || ''));
-      r.onerror = () => reject(new Error('read failed'));
-      r.readAsDataURL(file);
-    });
-
-    try {
-      showToast('Uploading moment...');
-      const resp = await apiPost('/api/moments/create', {
-        mediaDataUrl: dataUrl,
-        mediaType: type
-      });
-      if (resp && resp.ok) {
-        showToast('Moment posted.');
-        await refresh();
-      } else {
-        showToast(resp?.error || 'Upload failed.', 'error');
-      }
-    } catch {
-      showToast('Upload failed.', 'error');
-    }
-  }
-
-  function pickAndUpload() {
-    if (!DOM.momentFileInput) {
-      showToast('Upload input missing.', 'error');
-      return;
-    }
-    DOM.momentFileInput.click();
-  }
-
-  function handleStoryClick(e) {
-    const item = e.target.closest('.story-item');
-    if (!item) return;
-
-    if (item.classList.contains('action') || item.dataset.action === 'add-moment') {
-      pickAndUpload();
-      return;
-    }
-
-    const ownerId = item.dataset.ownerId;
-    if (!ownerId) return;
-    openOwnerStories(ownerId);
-  }
-
-  function closeStory() {
-    stopPlayback();
-    activeOwnerId = null;
-    activeList = [];
-    activeIndex = 0;
-    if (DOM.dlgStory && DOM.dlgStory.open) DOM.dlgStory.close();
-  }
-
-  async function init() {
-    // Bind file input once
-    if (DOM.momentFileInput && !DOM.momentFileInput._momentsBound) {
-      DOM.momentFileInput._momentsBound = true;
-      DOM.momentFileInput.addEventListener('change', async (e) => {
-        const file = e.target.files && e.target.files[0];
-        // Reset value so selecting same file again triggers change
-        e.target.value = '';
-        await uploadFile(file);
-      });
-    }
-
-    // Ensure closing the dialog stops timers
-    if (DOM.dlgStory && !DOM.dlgStory._momentsBound) {
-      DOM.dlgStory._momentsBound = true;
-      DOM.dlgStory.addEventListener('close', () => stopPlayback());
-    }
-
-    await refresh();
-  }
-
-  return {
-    init,
-    handleStoryClick,
-    closeStory
-  };
-})();
 
 
 // ---------------------------------------------------------------------
@@ -2111,31 +1694,6 @@ function populateMockContent() {
          }
      }
   }
-
-  // STORIES (Centered + Icon)
-  if (DOM.storiesContainer) {
-    const stories = ['Bea', 'Kat', 'Pia', 'Coleen', 'Sam'];
-    // INLINE STYLES APPLIED: display: flex; align-items: center; justify-content: center;
-    let html = `
-        <div class="story-item action" onclick="document.querySelector('button[data-panel=swipe]').click()">
-          <div class="story-ring ring-add" style="display: flex; align-items: center; justify-content: center;">
-             <i class="fa-solid fa-plus"></i>
-          </div>
-          <span class="story-name">Add</span>
-        </div>`;
-    stories.forEach(name => {
-      html += `
-        <div class="story-item" data-name="${name}">
-          <div class="story-ring">
-            <img class="story-img" src="assets/images/truematch-mark.png" style="background:${getRandomColor()}">
-          </div>
-          <span class="story-name">${name}</span>
-        </div>
-      `;
-    });
-    DOM.storiesContainer.innerHTML = html;
-  }
-  
   // ADMIRERS (UI FIX: Forced Left Align)
   if (DOM.admirerContainer) {
     let html = '';
@@ -2444,99 +2002,37 @@ async function loadConciergePanel() {
     const plan = normalizePlanKey(state.plan || 'free');
     if (plan !== 'tier3') return;
 
-    const [picks, approved, scheduled] = await Promise.all([
-      apiGet('/api/shortlist'),
+    const [approved, scheduled] = await Promise.all([
       apiGet('/api/shortlist/approved'),
       apiGet('/api/concierge/scheduled')
     ]);
 
-    renderConciergePanel(picks, approved, scheduled);
+    renderConciergePanel(approved, scheduled);
   } catch (err) {
     console.warn('loadConciergePanel failed:', err);
   }
 }
 
-function renderConciergePanel(picksRes, approvedRes, scheduledRes) {
+function renderConciergePanel(approvedRes, scheduledRes) {
   if (!DOM.panelConciergeBody) return;
 
-  const picks = (picksRes && picksRes.ok && Array.isArray(picksRes.items)) ? picksRes.items : [];
   const approved = (approvedRes && approvedRes.ok && Array.isArray(approvedRes.items)) ? approvedRes.items : [];
   const scheduled = (scheduledRes && scheduledRes.ok && Array.isArray(scheduledRes.scheduled)) ? scheduledRes.scheduled : [];
 
   DOM.panelConciergeBody.innerHTML = `
-    <div style="margin-bottom:18px;">
-      <h3 style="margin:0 0 8px 0;">Today's concierge picks</h3>
-      <div class="shortlist-wrap" id="conc-picks"></div>
-    </div>
-
-    <div style="margin-bottom:18px;">
+    <div style="margin-bottom:14px;">
       <h3 style="margin:0 0 8px 0;">Approved profiles</h3>
       <div class="conc-list" id="conc-approved"></div>
     </div>
-
     <div>
       <h3 style="margin:0 0 8px 0;">Scheduled dates</h3>
       <div class="conc-list" id="conc-scheduled"></div>
     </div>
   `;
 
-  const picksEl = DOM.panelConciergeBody.querySelector('#conc-picks');
   const approvedEl = DOM.panelConciergeBody.querySelector('#conc-approved');
   const scheduledEl = DOM.panelConciergeBody.querySelector('#conc-scheduled');
 
-  // --- Picks (served by admin through /api/admin/shortlist) ---
-  if (!picks.length) {
-    picksEl.innerHTML = '<div style="color:rgba(255,255,255,0.7);">No concierge picks served yet.</div>';
-  } else {
-    picksEl.innerHTML = picks.map(p => {
-      const safeName = String(p.name || 'Profile').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      const safeCity = String(p.city || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      const photoUrl = p.photoUrl || '';
-      return `
-        <div class="short-card" data-id="${p.id}">
-          <div class="short-img" style="${photoUrl ? `background-image:url('${photoUrl}')` : ''}"></div>
-          <div class="short-meta">
-            <div class="short-name">${safeName}</div>
-            <div class="short-sub">${safeCity}</div>
-            <div class="short-actions">
-              <button class="btn btn--ghost" data-act="pass">Pass</button>
-              <button class="btn btn--ghost" data-act="approve">Approve</button>
-              <button class="btn btn--primary" data-act="date">Request date</button>
-            </div>
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    picksEl.querySelectorAll('button[data-act]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const act = btn.dataset.act;
-        const card = btn.closest('.short-card');
-        const id = card ? card.dataset.id : '';
-        if (!id) return;
-
-        btn.disabled = true;
-        try {
-          const out = await apiPost('/api/shortlist/decision', { profileId: id, action: act });
-          if (out && out.ok) {
-            if (act === 'date') showToast('Date requested. Your concierge is scheduling.', 'success');
-            else if (act === 'approve') showToast('Approved.', 'success');
-            else showToast('Passed.', 'success');
-
-            await loadConciergePanel();
-          } else {
-            showToast('Action failed.', 'error');
-            btn.disabled = false;
-          }
-        } catch (_err) {
-          showToast('Action failed.', 'error');
-          btn.disabled = false;
-        }
-      });
-    });
-  }
-
-  // --- Approved (persisted) ---
   if (!approved.length) {
     approvedEl.innerHTML = '<div style="color:rgba(255,255,255,0.7);">No approved profiles yet.</div>';
   } else {
@@ -2582,7 +2078,6 @@ function renderConciergePanel(picksRes, approvedRes, scheduledRes) {
     });
   }
 
-  // --- Scheduled dates ---
   if (!scheduled.length) {
     scheduledEl.innerHTML = '<div style="color:rgba(255,255,255,0.7);">No scheduled dates yet.</div>';
   } else {
@@ -2590,19 +2085,18 @@ function renderConciergePanel(picksRes, approvedRes, scheduledRes) {
       const p = it.profile || it;
       const safeName = String(p.name || 'Profile').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const safeCity = String(p.city || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      const when = it.when || it.date || it.time || it.scheduledAt || '';
+      const when = it.when || it.date || it.time || '';
       return `
         <div class="conc-card">
           <div class="conc-meta">
             <div class="conc-name">${safeName}</div>
-            <div class="conc-sub">${safeCity}${when ? ' • ' + String(when) : ''}</div>
+            <div class="conc-sub">${safeCity}${when ? ' • ' + when : ''}</div>
           </div>
         </div>
       `;
     }).join('');
   }
 }
-
 
 function renderHomeEmptyStates() {
   if (DOM.admirerCount) DOM.admirerCount.textContent = '0 New';
@@ -2616,12 +2110,6 @@ function renderHomeEmptyStates() {
     const hasActive = DOM.activeNearbyContainer.querySelector('.active-item');
     if (!hasActive) {
       DOM.activeNearbyContainer.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
-    }
-  }
-  if (DOM.storiesContainer) {
-    const hasStories = DOM.storiesContainer.querySelector('.story-item');
-    if (!hasStories) {
-      DOM.storiesContainer.innerHTML = "<div class='story-item action'><div class='story-ring ring-add'><i class='fa-solid fa-plus'></i></div><span class='story-name'>Add</span></div>";
     }
   }
 }
