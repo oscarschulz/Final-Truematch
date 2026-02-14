@@ -161,7 +161,7 @@ function cacheDom() {
   DOM.newMatchesRail = document.getElementById('newMatchesRail');
   DOM.matchesContainer = document.getElementById('matchesContainer');
   DOM.newMatchCount = document.getElementById('newMatchCount');
-  DOM.matchSearch = document.getElementById('matchSearch');
+  DOM.matchSearch = document.getElementById('matchSearch') || document.querySelector('section.panel[data-panel="matches"] input.tm-input');
   
   // Modals & Dialogs
   DOM.dlgChat = document.getElementById('dlgChat');
@@ -299,16 +299,6 @@ DOM.inpName = document.getElementById('inpName');
 
   
   DOM.toast = document.getElementById('tm-toast');
-
-  // Ensure toast mount exists (some builds only shipped #toastContainer)
-  if (!DOM.toast) {
-    const el = document.createElement('div');
-    el.id = 'tm-toast';
-    el.className = 'toast';
-    const host = document.getElementById('toastContainer') || document.body;
-    host.appendChild(el);
-    DOM.toast = el;
-  }
 }
 
 let __toastTimer = null;
@@ -835,10 +825,10 @@ function setupEventListeners() {
   if (DOM.matchesContainer) DOM.matchesContainer.addEventListener('click', handleMatchClick);
   if (DOM.newMatchesRail) DOM.newMatchesRail.addEventListener('click', handleMatchClick);
 
-  // Matches search
+  // Matches search (filters both rail + messages)
   if (DOM.matchSearch) {
     DOM.matchSearch.addEventListener('input', (e) => {
-      applyMatchesFilter(e.target && e.target.value ? e.target.value : '');
+      applyMatchesSearch(String((e && e.target && e.target.value) || ''));
     });
   }
 
@@ -1081,6 +1071,37 @@ if (DOM.frmPassword) DOM.frmPassword.addEventListener('submit', async (e) => {
       if(e.key === 'ArrowUp') handleSuper();
   });
 }
+
+function applyMatchesSearch(rawQuery) {
+  const q = String(rawQuery || '').trim().toLowerCase();
+
+  // Filter match cards
+  if (DOM.matchesContainer) {
+    const cards = Array.from(DOM.matchesContainer.querySelectorAll('.match-card'));
+    cards.forEach(card => {
+      const name = String(card.dataset.name || '').toLowerCase();
+      const email = String(card.dataset.email || '').toLowerCase();
+      const msg = String(card.dataset.msg || '').toLowerCase();
+      const last = String(card.querySelector('.match-last')?.textContent || '').toLowerCase();
+      const hay = (name + ' ' + email + ' ' + msg + ' ' + last).trim();
+      const show = !q || hay.includes(q);
+      card.style.display = show ? '' : 'none';
+    });
+  }
+
+  // Filter new matches rail
+  if (DOM.newMatchesRail) {
+    const items = Array.from(DOM.newMatchesRail.querySelectorAll('.story-item'));
+    items.forEach(item => {
+      const name = String(item.dataset.name || '').toLowerCase();
+      const email = String(item.dataset.email || '').toLowerCase();
+      const show = !q || name.includes(q) || email.includes(q);
+      item.style.display = show ? '' : 'none';
+    });
+  }
+}
+
+
 
 // ---------------------------------------------------------------------
 // MOBILE MENU CONTROLLER
@@ -1352,16 +1373,9 @@ function renderAdmirersPanel(payload) {
 
   DOM.admirerContainer.querySelectorAll('.admirer-row[data-email]').forEach(row => {
     row.addEventListener('click', () => {
-      // Take user to Swipe and try to prioritize this admirer in the deck.
-      const email = String(row.dataset.email || '').trim().toLowerCase();
-      if (email && typeof SwipeController !== 'undefined' && SwipeController && SwipeController.prioritizeEmail) {
-        try { SwipeController.prioritizeEmail(email); } catch {}
-      }
+      // In v1 we simply take you to Swipe to continue.
       try { setActiveTab('swipe'); } catch {}
-      if (typeof SwipeController !== 'undefined' && SwipeController && SwipeController.init) {
-        try { SwipeController.init(); } catch {}
-      }
-      toast('Opening Swipe…', 'info');
+      toast('Open Swipe to see new people.', 'info');
     });
   });
 }
@@ -1404,8 +1418,8 @@ function renderActiveNearbyPanel(payload) {
     const hasPhoto = !!u.photoUrl;
     html += `
       <div class="active-item" data-email="${esc(u.email || '')}" title="${esc(u.name || 'Member')}">
-        <img class="active-img" src="${photo}" style="background:${hasPhoto ? 'transparent' : getRandomColor()}; object-fit:${hasPhoto ? 'cover' : 'contain'};">
-        <span class="online-dot"></span>
+        <img src="${photo}" style="background:${hasPhoto ? 'transparent' : getRandomColor()}; object-fit:${hasPhoto ? 'cover' : 'contain'};">
+        <span class="active-dot"></span>
       </div>`;
   });
   html += `</div>`;
@@ -1414,15 +1428,8 @@ function renderActiveNearbyPanel(payload) {
 
   DOM.activeNearbyContainer.querySelectorAll('.active-item').forEach(el => {
     el.addEventListener('click', () => {
-      const email = String(el.dataset.email || '').trim().toLowerCase();
-      if (email && typeof SwipeController !== 'undefined' && SwipeController && SwipeController.prioritizeEmail) {
-        try { SwipeController.prioritizeEmail(email); } catch {}
-      }
       try { setActiveTab('swipe'); } catch {}
-      if (typeof SwipeController !== 'undefined' && SwipeController && SwipeController.init) {
-        try { SwipeController.init(); } catch {}
-      }
-      toast('Opening Swipe…', 'info');
+      toast('Swipe to discover more people.', 'info');
     });
   });
 }
@@ -2243,40 +2250,6 @@ function renderMatchesFromApi(matches) {
       `;
     }).join('');
   }
-
-  // Re-apply active search filter after re-render
-  if (DOM.matchSearch && DOM.matchSearch.value) {
-    applyMatchesFilter(DOM.matchSearch.value);
-  }
-}
-
-function applyMatchesFilter(rawQuery) {
-  const q = String(rawQuery || '').trim().toLowerCase();
-
-  const cards = DOM.matchesContainer ? Array.from(DOM.matchesContainer.querySelectorAll('.match-card')) : [];
-  const stories = DOM.newMatchesRail ? Array.from(DOM.newMatchesRail.querySelectorAll('.story-item')) : [];
-
-  if (!q) {
-    cards.forEach(el => { el.style.display = ''; });
-    stories.forEach(el => { el.style.display = ''; });
-    return;
-  }
-
-  cards.forEach(card => {
-    const name = String(card.dataset.name || '');
-    const email = String(card.dataset.email || '');
-    const msg = String(card.dataset.msg || '');
-    const city = (card.querySelector('.match-sub') && card.querySelector('.match-sub').textContent) ? card.querySelector('.match-sub').textContent : '';
-    const hay = `${name} ${email} ${city} ${msg}`.toLowerCase();
-    card.style.display = hay.includes(q) ? '' : 'none';
-  });
-
-  stories.forEach(item => {
-    const name = String(item.dataset.name || '');
-    const email = String(item.dataset.email || '');
-    const hay = `${name} ${email}`.toLowerCase();
-    item.style.display = hay.includes(q) ? '' : 'none';
-  });
 }
 
 // --- Messages / Chat ---
@@ -3444,41 +3417,6 @@ const SwipeController = (() => {
   let isLoading = false;
   let lastLimit = DAILY_SWIPE_LIMIT; // default (Free), may become null for paid
   let lastRemaining = DAILY_SWIPE_LIMIT;
-  let preferredEmail = null;
-
-  function normEmail(v) {
-    return String(v || '').trim().toLowerCase();
-  }
-
-  function candEmail(p) {
-    // Candidates may use {id} or {email}
-    return normEmail((p && (p.id || p.email)) || '');
-  }
-
-  function applyPreferred(list) {
-    const pe = normEmail(preferredEmail);
-    if (!pe) return list;
-    const idx = list.findIndex(p => candEmail(p) === pe);
-    if (idx <= 0) return list;
-    const copy = list.slice();
-    const [hit] = copy.splice(idx, 1);
-    copy.unshift(hit);
-    return copy;
-  }
-
-  function prioritizeEmail(email) {
-    preferredEmail = normEmail(email);
-    if (!preferredEmail) return;
-
-    // If deck is already loaded, reorder immediately.
-    if (profiles && profiles.length) {
-      profiles = applyPreferred(profiles);
-      currentIndex = 0;
-      renderCards();
-      if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = profiles.length > 0;
-      if (DOM.swipeControls) DOM.swipeControls.style.display = profiles.length > 0 ? 'flex' : 'none';
-    }
-  }
 
   function setSwipeStats(remaining, limit) {
     // limit === null => unlimited
@@ -3543,7 +3481,7 @@ const SwipeController = (() => {
       }
 
       if (list.length > 0) {
-        profiles = applyPreferred(list);
+        profiles = list;
         currentIndex = 0;
         if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = true;
         renderCards();
@@ -3675,7 +3613,6 @@ const SwipeController = (() => {
 
   return {
     init,
-    prioritizeEmail,
     like: () => handleAction('like'),
     pass: () => handleAction('pass'),
     superLike: () => handleAction('superlike')
