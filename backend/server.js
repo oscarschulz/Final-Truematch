@@ -2844,6 +2844,37 @@ app.post('/api/auth/oauth/mock', (_req, res) => {
 // GET /api/me - Current User Session (cookie-based)
 // This uses the same email cookie + in-memory DB that login / logout already maintain.
 // Firestore is still the source of truth on login; here we only read the cached user.
+
+
+// ---- Presence (best-effort): keep lastSeen timestamps updated (throttled)
+const _lastSeenTouch = {};
+async function touchLastSeen(user) {
+  try {
+    if (!user || !user.email) return;
+    const email = String(user.email).toLowerCase();
+    const now = Date.now();
+    if (_lastSeenTouch[email] && (now - _lastSeenTouch[email] < 60 * 1000)) return;
+    _lastSeenTouch[email] = now;
+
+    const patch = { lastSeenAt: new Date(now).toISOString(), lastSeenAtMs: now };
+
+    // Update request-local object
+    user.lastSeenAt = patch.lastSeenAt;
+    user.lastSeenAtMs = patch.lastSeenAtMs;
+
+    if (hasFirebase && usersCollection && user.id) {
+      await usersCollection.doc(user.id).set(patch, { merge: true });
+      return;
+    }
+
+    // Non-Firebase fallback store
+    if (DB.users[email]) {
+      DB.users[email] = { ...DB.users[email], ...patch };
+      try { saveUsersStore(); } catch (_) {}
+    }
+  } catch (_) {}
+}
+
 app.get('/api/me', async (req, res) => {
   try {
     const email = getSessionEmail(req);
@@ -2885,6 +2916,8 @@ app.get('/api/me', async (req, res) => {
     if (prefs) {
       DB.prefsByEmail[email] = prefs;
     }
+    await touchLastSeen(DB.user);
+
 
     const responseUser = {
       ...DB.user,
@@ -2903,6 +2936,209 @@ app.get('/api/me', async (req, res) => {
     return res.status(500).json({ ok: false, user: null, message: 'internal error' });
   }
 });
+
+
+// ------------------------------------------------------------
+// Home: Admirers (Who liked me) + Active Nearby
+// ------------------------------------------------------------
+
+app.get('/api/me/admirers', authMiddleware, async (req, res) => {
+  try {
+    const me = req.user;
+    const myEmail = String(me.email || '').toLowerCase();
+    const planKey = normalizePlanKey(me.plan || 'free');
+    const locked = planKey === 'free';
+
+    await touchLastSeen(me);
+
+    const limit = Math.max(1, Math.min(24, parseInt(req.query.limit || '6', 10) || 6));
+
+    // Outgoing swipes (exclude people you've already swiped)
+    const outgoing = new Set();
+    if (hasFirebase && firestore) {
+      const outSnap = await firestore.collection(SWIPES_COLLECTION).where('from', '==', myEmail).limit(1500).get();
+      outSnap.forEach((d) => {
+        const s = d.data() || {};
+        const to = String(s.to || '').toLowerCase();
+        if (to) outgoing.add(to);
+      });
+    } else {
+      const mine = DB.swipes[myEmail] || {};
+      Object.keys(mine).forEach((to) => outgoing.add(String(to).toLowerCase()));
+    }
+
+    // Matches (exclude matches)
+    const matches = new Set(await _getMatchEmails(myEmail));
+
+    // Incoming likes/superlikes
+    const incoming = [];
+    if (hasFirebase && firestore) {
+      const inSnap = await firestore.collection(SWIPES_COLLECTION).where('to', '==', myEmail).limit(2000).get();
+      inSnap.forEach((d) => {
+        const s = d.data() || {};
+        const type = String(s.type || '').toLowerCase();
+        if (type !== 'like' && type !== 'superlike') return;
+        const from = String(s.from || '').toLowerCase();
+        if (!from) return;
+        incoming.push({ from, ts: Number(s.ts || 0) });
+      });
+    } else {
+      for (const fromEmailRaw of Object.keys(DB.swipes || {})) {
+        const fromEmail = String(fromEmailRaw).toLowerCase();
+        if (fromEmail === myEmail) continue;
+        const row = DB.swipes[fromEmail] || {};
+        const s = row[myEmail];
+        if (!s) continue;
+        const type = String(s.type || '').toLowerCase();
+        if (type !== 'like' && type !== 'superlike') continue;
+        incoming.push({ from: fromEmail, ts: Number(s.ts || 0) });
+      }
+    }
+
+    incoming.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+
+    const admirers = [];
+    const seen = new Set();
+    for (const s of incoming) {
+      const from = s.from;
+      if (!from || from === myEmail) continue;
+      if (seen.has(from)) continue;
+      seen.add(from);
+
+      if (matches.has(from)) continue;
+      if (outgoing.has(from)) continue;
+
+      admirers.push(from);
+    }
+
+    const count = admirers.length;
+
+    if (locked) {
+      return res.json({ ok: true, locked: true, count });
+    }
+
+    const slice = admirers.slice(0, limit);
+
+    const items = [];
+    if (hasFirebase) {
+      for (const email of slice) {
+        const u = await findUserByEmail(email);
+        if (!u) continue;
+        items.push({
+          email: u.email,
+          name: u.name || 'Member',
+          city: u.city || '',
+          age: u.age || null,
+          photoUrl: u.avatarUrl || u.avatarDataUrl || ''
+        });
+      }
+    } else {
+      for (const email of slice) {
+        const u = DB.users[email];
+        if (!u) continue;
+        items.push({
+          email: u.email,
+          name: u.name || 'Member',
+          city: u.city || '',
+          age: u.age || null,
+          photoUrl: u.avatarUrl || u.avatarDataUrl || ''
+        });
+      }
+    }
+
+    return res.json({ ok: true, locked: false, count, items });
+  } catch (e) {
+    console.error('[api/me/admirers] error:', e);
+    return res.status(500).json({ ok: false, error: 'failed_to_load_admirers' });
+  }
+});
+
+app.get('/api/me/active-nearby', authMiddleware, async (req, res) => {
+  try {
+    const me = req.user;
+    const myEmail = String(me.email || '').toLowerCase();
+
+    await touchLastSeen(me);
+
+    const limit = Math.max(1, Math.min(24, parseInt(req.query.limit || '9', 10) || 9));
+    const myCity = String(me.city || '').trim();
+
+    // Exclude people already swiped/matched
+    const outgoing = new Set();
+    if (hasFirebase && firestore) {
+      const outSnap = await firestore.collection(SWIPES_COLLECTION).where('from', '==', myEmail).limit(1500).get();
+      outSnap.forEach((d) => {
+        const s = d.data() || {};
+        const to = String(s.to || '').toLowerCase();
+        if (to) outgoing.add(to);
+      });
+    } else {
+      const mine = DB.swipes[myEmail] || {};
+      Object.keys(mine).forEach((to) => outgoing.add(String(to).toLowerCase()));
+    }
+
+    const matches = new Set(await _getMatchEmails(myEmail));
+
+    let pool = [];
+
+    if (hasFirebase && usersCollection) {
+      let q = usersCollection;
+      if (myCity) q = q.where('city', '==', myCity);
+      const snap = await q.limit(80).get();
+
+      snap.forEach((doc) => {
+        const u = { id: doc.id, ...(doc.data() || {}) };
+        const email = String(u.email || '').toLowerCase();
+        if (!email || email === myEmail) return;
+        pool.push({
+          email,
+          name: u.name || 'Member',
+          city: u.city || '',
+          age: u.age || null,
+          photoUrl: u.avatarUrl || u.avatarDataUrl || '',
+          lastSeenAtMs: Number(u.lastSeenAtMs || 0)
+        });
+      });
+    } else {
+      for (const [emailRaw, u] of Object.entries(DB.users || {})) {
+        const email = String(emailRaw).toLowerCase();
+        if (!email || email === myEmail) continue;
+        if (myCity && String(u.city || '').trim() !== myCity) continue;
+        pool.push({
+          email,
+          name: u.name || 'Member',
+          city: u.city || '',
+          age: u.age || null,
+          photoUrl: u.avatarUrl || u.avatarDataUrl || '',
+          lastSeenAtMs: Number(u.lastSeenAtMs || 0)
+        });
+      }
+    }
+
+    pool = pool.filter((u) => !outgoing.has(u.email) && !matches.has(u.email));
+
+    const now = Date.now();
+    const dayAgo = now - 24 * 60 * 60 * 1000;
+    const recent = pool.filter((u) => (u.lastSeenAtMs || 0) >= dayAgo);
+    const chosenPool = recent.length ? recent : pool;
+
+    chosenPool.sort((a, b) => (b.lastSeenAtMs || 0) - (a.lastSeenAtMs || 0));
+
+    const items = chosenPool.slice(0, limit).map((u) => ({
+      email: u.email,
+      name: u.name,
+      city: u.city,
+      age: u.age,
+      photoUrl: u.photoUrl
+    }));
+
+    return res.json({ ok: true, items });
+  } catch (e) {
+    console.error('[api/me/active-nearby] error:', e);
+    return res.status(500).json({ ok: false, error: 'failed_to_load_active_nearby' });
+  }
+});
+
 // ---------------- Notifications (Dashboard bell) -------------------
 // Simple per-user notifications stored under users/{id}/notifications.
 // Frontend: dashboard.js loads these when the bell is opened.
