@@ -238,18 +238,6 @@ body::after {
 .admirer-img-blur { width: 45px; height: 45px; border-radius: 50%; filter: blur(3px); margin-right: 12px; object-fit: cover; }
 .admirer-info h4 { margin: 0; font-size: 0.95rem; color: #fff; }
 .admirer-info p { margin: 0; font-size: 0.8rem; color: var(--text-muted); }
-
-/* Admirers list (Home) */
-.admirer-img {
-  width: 45px;
-  height: 45px;
-  border-radius: 50%;
-  margin-right: 12px;
-  object-fit: cover;
-}
-.admirer-name { margin: 0; font-size: 0.95rem; color: #fff; font-weight: 600; }
-.admirer-meta { margin: 2px 0 0; font-size: 0.8rem; color: var(--text-muted); }
-
 .admirer-action { color: #ffd700; }
 
 .active-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; padding: 10px 0; }

@@ -3182,23 +3182,17 @@ const SwipeController = (() => {
     if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = true;
 
     try {
-      let data;
-      if (DEV_MODE) {
-        data = {
-          ok: true,
-          candidates: [
-            { id: 'alice@test.com', name: 'Alice', age: 24, city: 'New York', photoUrl: 'assets/images/truematch-mark.png', tags: ['Travel', 'Music', 'Pizza'] },
-            { id: 'bea@test.com', name: 'Bea', age: 22, city: 'Los Angeles', photoUrl: 'assets/images/truematch-mark.png', tags: ['Gym', 'Movies'] },
-            { id: 'cathy@test.com', name: 'Cathy', age: 25, city: 'Chicago', photoUrl: 'assets/images/truematch-mark.png', tags: ['Art', 'Coffee', 'Dogs'] }
-          ],
-          remaining: DAILY_SWIPE_LIMIT,
-          limit: DAILY_SWIPE_LIMIT,
-          limitReached: false
-        };
-      } else {
-        data = await apiGet('/api/swipe/candidates');
+      const data = await apiGet('/api/swipe/candidates');
+      if (!data || !data.ok) {
+        const errMsg = (data && (data.message || data.error)) || 'Failed to load swipe deck.';
+        showToast(errMsg, 'error');
+        profiles = [];
+        currentIndex = 0;
+        if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
+        if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
+        if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
+        return;
       }
-
       if (data && data.ok && (data.limit === null || typeof data.limit === 'number' || typeof data.limit === 'undefined')) {
         setSwipeStats(data.remaining, data.limit);
       }
@@ -3279,7 +3273,7 @@ const SwipeController = (() => {
   }
 
   function mapAction(type) {
-    if (type === 'superlike') return 'super';
+    if (type === 'superlike') return 'superlike';
     if (type === 'pass') return 'pass';
     return 'like';
   }
@@ -3287,47 +3281,72 @@ const SwipeController = (() => {
   async function handleAction(type) {
     if (currentIndex >= profiles.length) return;
 
+    const targetEmail = profiles[currentIndex].id;
+    const action = mapAction(type);
+
+    // Optimistic animation
     const active = document.getElementById('activeSwipeCard');
     if (active) {
       let animClass = 'swipe-out-right';
       if (type === 'pass') animClass = 'swipe-out-left';
-      else if (type === 'superlike') animClass = 'swipe-out-right';
       active.classList.add(animClass);
     }
 
-    const targetEmail = profiles[currentIndex].id;
-
-    if (!DEV_MODE) {
-      try {
-        const res = await apiPost('/api/swipe/action', { targetEmail, action: mapAction(type) });
-
-        if (!res || !res.ok) {
-          const err = (res && (res.error || res.message)) || 'Swipe failed';
-          if (String(err) === 'daily_swipe_limit_reached') {
-            setSwipeStats(0, res.limit || DAILY_SWIPE_LIMIT);
-            showToast('Daily swipe limit reached. Come back tomorrow.', 'error');
-            // clear deck
-            profiles = [];
-            currentIndex = 0;
-            if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
-            if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
-            if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
-            return;
-          }
-          if (String(err) === 'target_is_premium_society') {
-            showToast('This member is only available inside Premium Society.', 'error');
-          } else {
-            showToast(err, 'error');
-          }
-        } else {
-          setSwipeStats(res.remaining, res.limit);
-          if (res.match) showToast('It’s a match! 🎉');
-        }
-      } catch (e) {
-        console.error(e);
-        showToast('Swipe failed. Please try again.', 'error');
-      }
+    let res = null;
+    try {
+      res = await apiPost('/api/swipe/action', { targetEmail, action });
+    } catch (e) {
+      res = { ok: false, error: 'Network error' };
     }
+
+    // Handle error responses (do NOT advance deck)
+    if (!res || !res.ok) {
+      const code = String((res && (res.code || res.error)) || '').toLowerCase();
+
+      if (code === 'daily_swipe_limit_reached' || (res && Number(res.status) === 429)) {
+        setSwipeStats(0, (res && res.limit) || DAILY_SWIPE_LIMIT);
+        showToast('Daily swipe limit reached. Come back tomorrow.', 'error');
+
+        profiles = [];
+        currentIndex = 0;
+        if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
+        if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
+        if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
+        return;
+      }
+
+      if (code === 'target_not_premium') {
+        showToast('This member requires a paid plan.', 'error');
+      } else {
+        const msg = (res && (res.message || res.error)) || 'Swipe failed. Please try again.';
+        showToast(msg, 'error');
+      }
+
+      // Re-render current cards (undo optimistic animation)
+      setTimeout(() => {
+        const a = document.getElementById('activeSwipeCard');
+        if (a) a.classList.remove('swipe-out-left', 'swipe-out-right');
+        renderCards();
+      }, 120);
+
+      return;
+    }
+
+    // Success
+    setSwipeStats(res.remaining, res.limit);
+
+    if (res.limitReached) {
+      showToast('Daily swipe limit reached. Come back tomorrow.', 'error');
+      profiles = [];
+      currentIndex = 0;
+      if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
+      if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
+      if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
+      return;
+    }
+
+    const isMatch = !!(res.isMatch || res.match);
+    if (isMatch) showToast('It’s a match! 🎉 Check Matches tab.', 'success');
 
     let msg = 'Liked!';
     if (type === 'pass') msg = 'Passed';

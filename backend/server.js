@@ -361,6 +361,8 @@ Object.defineProperty(DB, 'prefs', {
 
 const SERVER_SWIPE_COUNTS = {}; 
 const STRICT_DAILY_LIMIT = 20;
+// Passed profiles can re-appear after a cooldown (ms). Like/Super-like are excluded permanently.
+const PASS_REAPPEAR_COOLDOWN_MS = Number(process.env.PASS_REAPPEAR_COOLDOWN_MS || (12 * 60 * 60 * 1000)); // default: 12 hours
 // ---------------- Disk persistence (fallback when Firebase is OFF) ----------------
 // NOTE: In real production, you should rely on Firestore. This file fallback is mainly for local/demo.
 // It makes DB.prefsByEmail survive server restarts (so prefs persist after logout / new device tests).
@@ -1188,7 +1190,9 @@ function _matchDocId(emailA, emailB) {
 }
 
 function _isPositiveSwipe(t) {
-  return t === 'like' || t === 'superlike';
+  const x = String(t || '').toLowerCase();
+  // Backward-compat: older clients saved "super" instead of "superlike"
+  return x === 'like' || x === 'superlike' || x === 'super';
 }
 
 // Lightweight in-memory caches (avoid hammering Firestore)
@@ -1238,7 +1242,8 @@ async function _ps_getSwipeMapFor(email) {
   for (const d of snap.docs) {
     const v = d.data() || {};
     const to = String(v.to || '').toLowerCase();
-    const type = String(v.type || '').toLowerCase();
+    const typeRaw = String(v.type || '').toLowerCase();
+    const type = (typeRaw === 'super') ? 'superlike' : typeRaw;
     if (!to || !type) continue;
     map[to] = { type, ts: Number(v.ts) || Date.now() };
   }
@@ -1250,7 +1255,8 @@ async function _ps_getSwipeMapFor(email) {
 async function _ps_saveSwipe(fromEmail, toEmail, type) {
   const from = String(fromEmail || '').toLowerCase();
   const to = String(toEmail || '').toLowerCase();
-  const t = String(type || '').toLowerCase();
+  const tRaw = String(type || '').toLowerCase();
+  const t = (tRaw === 'super') ? 'superlike' : tRaw;
   if (!from || !to || !t) return;
 
   if (!DB.psSwipes) DB.psSwipes = {};
@@ -1405,7 +1411,8 @@ async function _getSwipeMapFor(email) {
   for (const d of snap.docs) {
     const v = d.data() || {};
     const to = String(v.to || '').toLowerCase();
-    const type = String(v.type || '').toLowerCase();
+    const typeRaw = String(v.type || '').toLowerCase();
+    const type = (typeRaw === 'super') ? 'superlike' : typeRaw;
     if (!to || !type) continue;
     map[to] = { type, ts: Number(v.ts) || Date.now() };
   }
@@ -1433,13 +1440,14 @@ async function _getSwipeType(fromEmail, toEmail) {
 
   if (!hasFirebase || !firestore) {
     const sw = DB.swipes && DB.swipes[from] ? DB.swipes[from][to] : null;
-    return sw && sw.type ? String(sw.type) : null;
+    return (sw && sw.type) ? ((String(sw.type).toLowerCase() === 'super') ? 'superlike' : String(sw.type).toLowerCase()) : null;
   }
 
   const doc = await firestore.collection(SWIPES_COLLECTION).doc(_swipeDocId(from, to)).get();
   if (!doc.exists) return null;
   const v = doc.data() || {};
-  const t = String(v.type || '').toLowerCase();
+  const tRaw = String(v.type || '').toLowerCase();
+  const t = (tRaw === 'super') ? 'superlike' : tRaw;
   return t || null;
 }
 
@@ -7040,7 +7048,7 @@ app.get('/api/premium-society/matches', authMiddleware, async (req, res) => {
 
 // =======================================================================
 // =======================================================================
-app.get('/api/swipe/candidates', async (req, res) => {
+app.get('/api/swipe/candidates', authMiddleware, async (req, res) => {
   try {
     const myEmail = String(((req.user && req.user.email) || (DB.user && DB.user.email) || '')).toLowerCase();
     if (!myEmail) return res.status(401).json({ ok: false, error: 'Not authenticated' });
@@ -7101,11 +7109,17 @@ app.get('/api/swipe/candidates', async (req, res) => {
         const candEmail = String(u.email || '').toLowerCase();
         if (!candEmail || candEmail === myEmail) return;
 
-        // ✅ PASS-only re-serve rule:
+        // ✅ Deck rule:
+        // - like/super-like => never re-serve in Swipe deck
+        // - pass => can re-serve, but only after a cooldown (prevents immediate repeats)
         const prev = mySwipes[candEmail];
         if (prev) {
           const t = String(prev.type || '').toLowerCase();
-          if (t && t !== 'pass') return; // like/super removed from deck
+          if (t && t !== 'pass') return;
+          if (t === 'pass') {
+            const ts = Number(prev.ts || 0);
+            if (ts && (Date.now() - ts) < PASS_REAPPEAR_COOLDOWN_MS) return;
+          }
         }
 
         // ✅ Premium-to-premium only
@@ -7126,11 +7140,17 @@ app.get('/api/swipe/candidates', async (req, res) => {
           const e = String(u.email || '').toLowerCase();
           if (!e || e === myEmail) return false;
 
-          // ✅ PASS-only re-serve rule:
+          // ✅ Deck rule:
+          // - like/super-like => never re-serve in Swipe deck
+          // - pass => can re-serve, but only after a cooldown (prevents immediate repeats)
           const prev = mySwipes[e];
           if (prev) {
             const t = String(prev.type || '').toLowerCase();
             if (t && t !== 'pass') return false;
+            if (t === 'pass') {
+              const ts = Number(prev.ts || 0);
+              if (ts && (Date.now() - ts) < PASS_REAPPEAR_COOLDOWN_MS) return false;
+            }
           }
 
           // ✅ Premium-to-premium only
@@ -7173,14 +7193,14 @@ app.get('/api/swipe/candidates', async (req, res) => {
 // [PALITAN ANG BUONG "app.post('/api/swipe/action'...)"]
 // =======================================================================
 
-app.post('/api/swipe/action', async (req, res) => {
+app.post('/api/swipe/action', authMiddleware, async (req, res) => {
   try {
     const myEmail = String(((req.user && req.user.email) || (DB.user && DB.user.email) || '')).toLowerCase();
     if (!myEmail) return res.status(401).json({ ok: false, error: 'Not logged in' });
 
     const tId = String((req.body && req.body.targetEmail) || '').toLowerCase();
     const action = String((req.body && req.body.action) || '').toLowerCase();
-    if (!tId || !['like', 'pass', 'super'].includes(action)) {
+    if (!tId || !['like', 'pass', 'super', 'superlike'].includes(action)) {
       return res.status(400).json({ ok: false, error: 'Invalid swipe payload' });
     }
 
@@ -7218,10 +7238,10 @@ app.post('/api/swipe/action', async (req, res) => {
         SERVER_SWIPE_COUNTS[myEmail] = rec;
       }
       if (rec.count >= cap) {
-        return res.json({ ok: true, remaining: 0, limit: cap, limitReached: true, isMatch: false });
+        return res.status(429).json({ ok: false, error: 'daily_swipe_limit_reached', remaining: 0, limit: cap, limitReached: true, isMatch: false, match: false });
       }
     }
-const actionType = action === 'super' ? 'super' : (action === 'like' ? 'like' : 'pass');
+const actionType = (action === 'super' || action === 'superlike') ? 'superlike' : (action === 'like' ? 'like' : 'pass');
     await _saveSwipe(myEmail, tId, actionType);
 
     if (cap !== null) {
@@ -7232,7 +7252,7 @@ const actionType = action === 'super' ? 'super' : (action === 'like' ? 'like' : 
     }
 // If pass: no match check needed
     if (!_isPositiveSwipe(actionType)) {
-      return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: false });
+      return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: false, match: false });
     }
 
     // Check reciprocal swipe and create match if mutual positive
@@ -7241,10 +7261,10 @@ const actionType = action === 'super' ? 'super' : (action === 'like' ? 'like' : 
 
     if (isMutual) {
       await _saveMatch(myEmail, tId, actionType, otherType);
-      return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: true, matchWithEmail: tId });
+      return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: true, match: true, matchWithEmail: tId });
     }
 
-    return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: false });
+    return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: false, match: false });
   } catch (err) {
     console.error('Swipe action error:', err);
     res.status(500).json({ ok: false, error: 'Server error' });
