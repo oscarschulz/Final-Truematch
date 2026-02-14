@@ -4811,7 +4811,26 @@ app.post('/api/messages/send', (req, res) => {
   });
 });
 // ---------------- Plan selection -------------------
-app.post('/api/plan/choose', async (req, res) => {
+// Free upgrade (beta) mode: allows manual plan activation without payment.
+// Secure by requiring either:
+// - Admin auth (tm_admin cookie / x-admin-key)
+// - OR a shared upgrade key (x-upgrade-key header or { upgradeKey } body)
+// Enable via env FREE_UPGRADE_MODE=1 and set FREE_UPGRADE_KEY to a long random string.
+const FREE_UPGRADE_MODE = String(process.env.FREE_UPGRADE_MODE || '0') === '1';
+const FREE_UPGRADE_KEY = String(process.env.FREE_UPGRADE_KEY || '').trim();
+
+function safeEqualStr(a, b) {
+  try {
+    const aa = Buffer.from(String(a || ''), 'utf8');
+    const bb = Buffer.from(String(b || ''), 'utf8');
+    if (!aa.length || aa.length !== bb.length) return false;
+    return crypto.timingSafeEqual(aa, bb);
+  } catch {
+    return false;
+  }
+}
+
+app.post('/api/plan/choose', authMiddleware, async (req, res) => {
   try {
     const { plan } = req.body || {};
 
@@ -4819,31 +4838,49 @@ app.post('/api/plan/choose', async (req, res) => {
       return res.status(400).json({ ok: false, message: 'invalid plan' });
     }
 
-    const rule = PLAN_RULES[plan];
-    const now = new Date();
-    const planStart = now.toISOString();
-    const planEnd = new Date(now.getTime() + rule.durationDays * DAY_MS).toISOString();
+    const isAdmin = (typeof isAdminAuthed === 'function') ? isAdminAuthed(req) : false;
 
-    if (!DB.user) DB.user = {};
-    DB.user.plan = String(plan);
-    DB.user.planStart = planStart;
-    DB.user.planEnd = planEnd;
-    DB.user.planActive = true;
+    // In production, block manual upgrades unless:
+    // - you're admin, OR
+    // - FREE_UPGRADE_MODE is enabled AND the correct FREE_UPGRADE_KEY is provided.
+    if (IS_PROD && !isAdmin && !FREE_UPGRADE_MODE) {
+      return res.status(403).json({ ok: false, message: 'manual_plan_choose_disabled' });
+    }
 
-    if (hasFirebase && DB.user.email) {
-      try {
-        await updateUserByEmail(DB.user.email, {
-          plan: DB.user.plan,
-          planStart,
-          planEnd,
-          planActive: true
-        });
-      } catch (err) {
-        console.error('error saving plan to Firestore:', err);
+    if (!isAdmin) {
+      if (!FREE_UPGRADE_MODE) {
+        return res.status(403).json({ ok: false, message: 'free_upgrade_disabled' });
+      }
+      if (!FREE_UPGRADE_KEY) {
+        return res.status(500).json({ ok: false, message: 'FREE_UPGRADE_KEY_not_configured' });
+      }
+
+      const provided =
+        (req.headers['x-upgrade-key'] || '') ||
+        (req.body && (req.body.upgradeKey || req.body.key || '')) ||
+        '';
+
+      if (!safeEqualStr(String(provided).trim(), FREE_UPGRADE_KEY)) {
+        return res.status(403).json({ ok: false, message: 'invalid_upgrade_key' });
       }
     }
 
-    return res.json({ ok: true, user: DB.user });
+    const email = String((req.user && req.user.email) || getSessionEmail(req) || '').trim().toLowerCase();
+    if (!email) {
+      return res.status(401).json({ ok: false, message: 'not_authenticated' });
+    }
+
+    const activated = await activatePlanForEmail(email, String(plan), {
+      paymentProvider: isAdmin ? 'admin_override' : 'free_beta',
+      freeUpgrade: !isAdmin,
+      upgradedByAdmin: isAdmin
+    });
+
+    if (!activated) {
+      return res.status(500).json({ ok: false, message: 'plan_activation_failed' });
+    }
+
+    return res.json({ ok: true, activated, user: DB.user });
   } catch (err) {
     return res.status(500).json({ ok: false, message: 'server error' });
   }

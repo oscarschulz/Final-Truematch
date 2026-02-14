@@ -1341,8 +1341,8 @@ function renderActiveNearbyPanel(payload) {
     const hasPhoto = !!u.photoUrl;
     html += `
       <div class="active-item" data-email="${esc(u.email || '')}" title="${esc(u.name || 'Member')}">
-        <img src="${photo}" style="background:${hasPhoto ? 'transparent' : getRandomColor()}; object-fit:${hasPhoto ? 'cover' : 'contain'};">
-        <span class="active-dot"></span>
+        <img class="active-img" src="${photo}" style="background:${hasPhoto ? 'transparent' : getRandomColor()}; object-fit:${hasPhoto ? 'cover' : 'contain'};">
+        <span class="online-dot"></span>
       </div>`;
   });
   html += `</div>`;

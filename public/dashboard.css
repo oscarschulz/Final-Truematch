@@ -236,6 +236,8 @@ body::after {
 .admirer-row { display: flex; align-items: center; justify-content: space-between; padding: 12px; background: rgba(255, 255, 255, 0.05); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1); cursor: pointer; transition: 0.2s; }
 .admirer-row:hover { background: rgba(255, 255, 255, 0.1); }
 .admirer-img-blur { width: 45px; height: 45px; border-radius: 50%; filter: blur(3px); margin-right: 12px; object-fit: cover; }
+.admirer-img { width: 45px; height: 45px; border-radius: 50%; margin-right: 12px; object-fit: cover; }
+
 .admirer-info h4 { margin: 0; font-size: 0.95rem; color: #fff; }
 .admirer-info p { margin: 0; font-size: 0.8rem; color: var(--text-muted); }
 .admirer-action { color: #ffd700; }
