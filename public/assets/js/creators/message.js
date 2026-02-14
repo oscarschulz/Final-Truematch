@@ -1,651 +1,1013 @@
 import { DOM } from './dom.js';
-import { CHAT_DATA, MSG_USERS, DEFAULT_AVATAR } from './data.js';
+import {
+    DEFAULT_AVATAR,
+    getMessageThreads,
+    getMessageThread,
+    sendMessageTo,
+    getMySubscriptions
+} from './data.js';
 
-// TODO: Backend Integration - Replace LocalStorage with API Endpoints
-let currentFilter = 'All'; 
-let currentSearch = '';    
-let activeChatUser = null; 
-let toastInstance = null; // Store toast instance
+// =============================================================
+// Messages module (Creators)
+// - Removed mock CHAT_DATA / MSG_USERS usage
+// - Uses backend endpoints:
+//   GET  /api/messages
+//   GET  /api/messages/thread/:peer
+//   POST /api/messages/send
+// - Enriches peer display using /api/me/subscriptions (otherUser)
+// =============================================================
 
-// --- 🆕 HELPER: TAGGING SYSTEM & DELETION ---
+let toastInstance = null;
+let currentFilter = 'All';
+let currentSearch = '';
+
+let activePeerEmail = null;      // string
+let activeChatUser = null;       // { id/email/name/handle/avatar/verified/... }
+
+let __msgUsers = [];             // sidebar list
+let __suggestUsers = [];         // new message overlay suggestions
+let __peerProfileByEmail = new Map();
+
+let __threadsPoll = null;
+let __activeChatPoll = null;
+
+const TM_TAGS_KEY = 'tm_chat_tags';
+const TM_HIDDEN_KEY = 'tm_hidden_chats';
+const TM_NOTES_KEY = 'tm_user_notes';
+const TM_LAST_SEEN_KEY = 'tm_msg_last_seen_v1';
+
+// -------------------------------
+// Local-only UX helpers (tags, delete, notes)
+// -------------------------------
 function getUserTags() {
-    return JSON.parse(localStorage.getItem('tm_chat_tags') || '{}');
+    return JSON.parse(localStorage.getItem(TM_TAGS_KEY) || '{}');
 }
 
 function setUserTag(userId, tag) {
     const tags = getUserTags();
-    
-    // Toggle logic: Kung parehas ng current tag, remove it. Kung bago, update it.
+
+    // Toggle: if same tag, remove; else set
     if (tags[userId] === tag) {
-        delete tags[userId]; // Remove tag
-        if(toastInstance) toastInstance.fire({ icon: 'success', title: 'Tag removed' });
+        delete tags[userId];
+        toastInstance?.fire?.({ icon: 'success', title: 'Tag removed' });
     } else {
-        tags[userId] = tag; // Set new tag
-        if(toastInstance) toastInstance.fire({ icon: 'success', title: `Tagged as ${tag.toUpperCase()}` });
+        tags[userId] = tag;
+        toastInstance?.fire?.({ icon: 'success', title: `Tagged as ${String(tag).toUpperCase()}` });
     }
-    
-    localStorage.setItem('tm_chat_tags', JSON.stringify(tags));
-    renderMessageList(); // Refresh UI
+
+    localStorage.setItem(TM_TAGS_KEY, JSON.stringify(tags));
+    renderMessageList();
 }
 
 function deleteConversation(userId) {
-    // Hide user from list locally (Visual delete only for demo)
-    let hiddenUsers = JSON.parse(localStorage.getItem('tm_hidden_chats') || '[]');
-    hiddenUsers.push(userId);
-    localStorage.setItem('tm_hidden_chats', JSON.stringify(hiddenUsers));
+    // UI-only hide. (Backend delete not implemented yet.)
+    const hidden = JSON.parse(localStorage.getItem(TM_HIDDEN_KEY) || '[]');
+    if (!hidden.includes(userId)) hidden.push(userId);
+    localStorage.setItem(TM_HIDDEN_KEY, JSON.stringify(hidden));
+
+    // If deleting active chat, reset chat UI.
+    if (activePeerEmail && userId === activePeerEmail) {
+        activePeerEmail = null;
+        activeChatUser = null;
+        lockChatInputs();
+        if (DOM.chatHistoryContainer) DOM.chatHistoryContainer.innerHTML = '';
+        if (DOM.activeChatName) DOM.activeChatName.textContent = 'Messages';
+        if (DOM.activeChatAvatar) DOM.activeChatAvatar.src = DEFAULT_AVATAR;
+    }
+
     renderMessageList();
-    if(toastInstance) toastInstance.fire({ icon: 'success', title: 'Conversation deleted' });
+    toastInstance?.fire?.({ icon: 'success', title: 'Conversation deleted' });
 }
 
-export function initMessages(TopToast) {
-    
-    toastInstance = TopToast;
+function getLastSeenMap() {
+    try {
+        const raw = localStorage.getItem(TM_LAST_SEEN_KEY);
+        const v = raw ? JSON.parse(raw) : {};
+        return (v && typeof v === 'object') ? v : {};
+    } catch {
+        return {};
+    }
+}
+
+function setLastSeen(peerEmail, iso) {
+    const map = getLastSeenMap();
+    map[String(peerEmail || '').toLowerCase()] = String(iso || new Date().toISOString());
+    localStorage.setItem(TM_LAST_SEEN_KEY, JSON.stringify(map));
+}
+
+// -------------------------------
+// Formatting helpers
+// -------------------------------
+function safeStr(v) {
+    return (v === null || v === undefined) ? '' : String(v);
+}
+
+function normalizeEmail(v) {
+    return safeStr(v).trim().toLowerCase();
+}
+
+function deriveHandle(email) {
+    const e = normalizeEmail(email);
+    if (!e) return '@user';
+    const beforeAt = e.split('@')[0] || 'user';
+    return '@' + beforeAt.replace(/[^a-z0-9_\.]/gi, '').slice(0, 24);
+}
+
+function deriveName(email) {
+    const e = normalizeEmail(email);
+    if (!e) return 'User';
+    const beforeAt = e.split('@')[0] || 'user';
+    // human-ish name: split by dot/underscore
+    const parts = beforeAt
+        .replace(/[^a-z0-9_\.]/gi, '')
+        .split(/[\._]/)
+        .filter(Boolean)
+        .slice(0, 3)
+        .map(p => p.charAt(0).toUpperCase() + p.slice(1));
+    return parts.length ? parts.join(' ') : 'User';
+}
+
+function formatTimeShort(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    try {
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+        return '';
+    }
+}
+
+function formatListTime(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const now = new Date();
+
+    const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+    if (sameDay) return formatTimeShort(iso);
+
+    try {
+        return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    } catch {
+        return '';
+    }
+}
+
+// -------------------------------
+// Data loading (API)
+// -------------------------------
+async function buildPeerProfileMap() {
+    // Reuse subscriptions endpoint because it already returns otherUser (name, handle, avatar, verified)
+    // We will use it to enrich chat list + suggestions.
+    const map = new Map();
+    try {
+        const res = await getMySubscriptions();
+        const sub = res?.subscribed?.items || [];
+        const fans = res?.subscribers?.items || [];
+        const items = [...sub, ...fans];
+
+        for (const it of items) {
+            const otherEmail = normalizeEmail(it?.otherEmail);
+            if (!otherEmail) continue;
+            const u = it?.otherUser || {};
+            map.set(otherEmail, {
+                email: otherEmail,
+                name: safeStr(u.name) || deriveName(otherEmail),
+                handle: safeStr(u.handle) || deriveHandle(otherEmail),
+                avatarUrl: safeStr(u.avatarUrl) || DEFAULT_AVATAR,
+                verified: !!u.verified
+            });
+        }
+    } catch (e) {
+        // Non-fatal: message list will fallback to derived names.
+    }
+    return map;
+}
+
+function computeUnread(peerEmail, lastMessage) {
+    const peer = normalizeEmail(peerEmail);
+    const last = lastMessage || null;
+    if (!peer || !last || !last.sentAt) return 0;
+
+    // Only consider unread if last message is from peer.
+    const from = normalizeEmail(last.from);
+    if (from !== peer) return 0;
+
+    const seenMap = getLastSeenMap();
+    const seenIso = seenMap[peer];
+    if (!seenIso) return 1;
+
+    const lastMs = new Date(last.sentAt).getTime();
+    const seenMs = new Date(seenIso).getTime();
+    if (!Number.isFinite(lastMs) || !Number.isFinite(seenMs)) return 1;
+    return lastMs > seenMs ? 1 : 0;
+}
+
+function peerToUser(peerEmail, threadInfo) {
+    const peer = normalizeEmail(peerEmail);
+    const prof = __peerProfileByEmail.get(peer) || null;
+
+    const name = safeStr(prof?.name) || deriveName(peer);
+    const handle = safeStr(prof?.handle) || deriveHandle(peer);
+    const avatar = safeStr(prof?.avatarUrl) || DEFAULT_AVATAR;
+    const verified = !!prof?.verified;
+
+    const last = threadInfo?.lastMessage || null;
+    const preview = safeStr(last?.text) || 'Say hi…';
+    const time = last?.sentAt ? formatListTime(last.sentAt) : '';
+    const unread = computeUnread(peer, last);
+
+    return {
+        id: peer,
+        email: peer,
+        name,
+        handle,
+        avatar,
+        verified,
+        preview,
+        time,
+        unread
+    };
+}
+
+async function refreshThreads({ silent = false } = {}) {
+    try {
+        // Profiles first (best-effort)
+        __peerProfileByEmail = await buildPeerProfileMap();
+
+        const res = await getMessageThreads();
+        const threads = Array.isArray(res?.threads) ? res.threads : [];
+
+        __msgUsers = threads.map(t => peerToUser(t.peerEmail, t));
+
+        // Build suggestions: union of peers from threads + peers from subscriptions
+        const sugMap = new Map();
+        for (const u of __msgUsers) sugMap.set(u.email, u);
+        for (const [email, prof] of __peerProfileByEmail.entries()) {
+            if (!sugMap.has(email)) {
+                sugMap.set(email, {
+                    id: email,
+                    email,
+                    name: prof.name,
+                    handle: prof.handle,
+                    avatar: prof.avatarUrl || DEFAULT_AVATAR,
+                    verified: !!prof.verified,
+                    preview: '',
+                    time: '',
+                    unread: 0
+                });
+            }
+        }
+        __suggestUsers = Array.from(sugMap.values());
+
+        renderMessageList();
+
+        // Auto-select first thread if none selected.
+        if (!activePeerEmail && __msgUsers.length) {
+            activePeerEmail = __msgUsers[0].email;
+            activeChatUser = __msgUsers[0];
+            await openChatWithUser(activePeerEmail);
+        } else if (activePeerEmail) {
+            // Keep header in sync (if profile data updated)
+            const latest = __msgUsers.find(x => x.email === activePeerEmail) || __suggestUsers.find(x => x.email === activePeerEmail) || null;
+            if (latest) {
+                activeChatUser = latest;
+                updateHeaderInfo(activePeerEmail);
+            }
+        }
+
+        if (!silent) {
+            // Optional place to show plan/usage in UI later
+        }
+
+        return true;
+    } catch (e) {
+        if (!silent) {
+            toastInstance?.fire?.({ icon: 'error', title: e?.message || 'Unable to load messages' });
+        }
+        // Still render list (maybe empty)
+        renderMessageList();
+        return false;
+    }
+}
+
+// -------------------------------
+// UI rendering
+// -------------------------------
+function renderMessageList() {
+    if (!DOM.msgUserList) return;
+
+    const hidden = JSON.parse(localStorage.getItem(TM_HIDDEN_KEY) || '[]');
+    const tags = getUserTags();
+
+    let list = Array.isArray(__msgUsers) ? __msgUsers.slice() : [];
+
+    // Remove hidden
+    list = list.filter(u => !hidden.includes(u.id));
+
+    // Apply tab filter
+    if (currentFilter === 'Unread') list = list.filter(u => (u.unread || 0) > 0);
+    else if (currentFilter === 'Priority') list = list.filter(u => tags[u.id] === 'priority');
+    else if (currentFilter === '$$$') list = list.filter(u => tags[u.id] === 'paid');
+
+    // Apply search
+    if (currentSearch) {
+        const s = currentSearch.toLowerCase();
+        list = list.filter(u => (u.name || '').toLowerCase().includes(s) || (u.handle || '').toLowerCase().includes(s) || (u.email || '').toLowerCase().includes(s));
+    }
+
+    // Render
+    DOM.msgUserList.innerHTML = '';
+
+    if (!list.length) {
+        const empty = document.createElement('div');
+        empty.className = 'rs-col-empty';
+        empty.style.marginTop = '50px';
+        empty.innerHTML = `
+            <div class="empty-icon-wrap"><i class="fa-regular fa-comments"></i></div>
+            <span>No conversations yet</span>
+        `;
+        DOM.msgUserList.appendChild(empty);
+        return;
+    }
+
+    list.forEach(user => {
+        const tag = tags[user.id];
+        const div = document.createElement('div');
+        div.className = 'msg-user-item';
+        div.dataset.id = user.id;
+
+        if (activePeerEmail && user.id === activePeerEmail) div.classList.add('active');
+
+        div.innerHTML = `
+            <img src="${user.avatar || DEFAULT_AVATAR}" class="msg-avatar" alt="Avatar">
+            <div class="msg-user-details">
+                <div class="msg-user-top">
+                    <span class="msg-name">${user.name || 'User'} ${user.verified ? '<i class="fa-solid fa-circle-check verified"></i>' : ''}</span>
+                    <span class="msg-time">${user.time || ''}</span>
+                </div>
+                <div class="msg-preview">${user.preview || ''}</div>
+            </div>
+            <div class="msg-indicators">
+                ${tag === 'priority' ? '<span class="tag priority">Priority</span>' : ''}
+                ${tag === 'paid' ? '<span class="tag paid">$$$</span>' : ''}
+                ${(user.unread || 0) > 0 ? '<span class="unread-dot"></span>' : ''}
+            </div>
+        `;
+
+        // Click to open
+        div.addEventListener('click', () => {
+            openChatWithUser(user.id);
+        });
+
+        // Right-click / context menu actions (desktop)
+        div.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            showChatActionsMenu(user);
+        });
+
+        DOM.msgUserList.appendChild(div);
+    });
+}
+
+function showChatActionsMenu(user) {
+    // Use SweetAlert2 as action sheet
+    if (typeof Swal === 'undefined') return;
+
+    Swal.fire({
+        title: user?.name || 'Conversation',
+        showCancelButton: true,
+        showDenyButton: true,
+        confirmButtonText: 'Priority',
+        denyButtonText: '$$$',
+        cancelButtonText: 'More',
+        background: '#0b1220',
+        color: '#fff'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            setUserTag(user.id, 'priority');
+        } else if (result.isDenied) {
+            setUserTag(user.id, 'paid');
+        } else {
+            // More actions
+            Swal.fire({
+                title: 'Actions',
+                showCancelButton: true,
+                showDenyButton: true,
+                confirmButtonText: 'Delete chat',
+                denyButtonText: 'View profile',
+                cancelButtonText: 'Close',
+                background: '#0b1220',
+                color: '#fff'
+            }).then((r2) => {
+                if (r2.isConfirmed) deleteConversation(user.id);
+                else if (r2.isDenied) {
+                    // IMPORTANT: Do not overwrite Creator's own Profile view.
+                    toastInstance?.fire?.({ icon: 'info', title: 'Profile view coming soon' });
+                }
+            });
+        }
+    });
+}
+
+// -------------------------------
+// Chat loading + rendering
+// -------------------------------
+async function openChatWithUser(peerEmail) {
+    const peer = normalizeEmail(peerEmail);
+    if (!peer) return;
+
+    activePeerEmail = peer;
+    activeChatUser = __msgUsers.find(u => u.email === peer) || __suggestUsers.find(u => u.email === peer) || peerToUser(peer, null);
+
+    // Update active state in list
     renderMessageList();
 
-    setTimeout(() => {
-        // Default Load (User 1) -> WONT RUN if list is empty, Safe.
-        const firstUser = MSG_USERS[0];
-        if (firstUser) {
-            activeChatUser = firstUser;
-            loadChat(firstUser.id);
-            updateHeaderInfo(firstUser.id);
-            loadUserNote(firstUser.id); 
-            unlockChatInputs(); 
-        }
-    }, 100);
+    updateHeaderInfo(peer);
+    loadUserNote(peer);
+    unlockChatInputs();
 
-    // ==========================================================
-    // 🔥 NEW MESSAGE UI LOGIC 🔥
-    // ==========================================================
+    await loadChat(peer);
+
+    // Poll active thread for new messages while messages view is open.
+    startActiveChatPolling();
+}
+
+async function loadChat(peerEmail) {
+    const peer = normalizeEmail(peerEmail);
+    if (!peer || !DOM.chatHistoryContainer) return;
+
+    try {
+        const res = await getMessageThread(peer);
+        const messages = Array.isArray(res?.messages) ? res.messages : [];
+
+        DOM.chatHistoryContainer.innerHTML = '';
+
+        for (const m of messages) {
+            const from = normalizeEmail(m?.from);
+            const isReceived = from === peer;
+            createMessageBubble(safeStr(m?.text), isReceived ? 'received' : 'sent', m?.sentAt);
+        }
+
+        // mark seen locally
+        const lastMsg = messages.length ? messages[messages.length - 1] : null;
+        const lastIso = safeStr(lastMsg?.sentAt) || new Date().toISOString();
+        setLastSeen(peer, lastIso);
+
+        // clear unread dot locally
+        const u = __msgUsers.find(x => x.email === peer);
+        if (u) u.unread = 0;
+        renderMessageList();
+
+        // Scroll to bottom
+        DOM.chatHistoryContainer.scrollTop = DOM.chatHistoryContainer.scrollHeight;
+    } catch (e) {
+        toastInstance?.fire?.({ icon: 'error', title: e?.message || 'Unable to load chat' });
+    }
+}
+
+function createMessageBubble(text, type, sentAtIso) {
+    if (!DOM.chatHistoryContainer) return;
+
+    const bubble = document.createElement('div');
+    bubble.className = `chat-bubble ${type}`;
+
+    const time = sentAtIso ? formatTimeShort(sentAtIso) : formatTimeShort(new Date().toISOString());
+
+    bubble.innerHTML = `
+        <div class="bubble-text">${escapeHtml(text)}</div>
+        <div class="bubble-meta">${time}</div>
+    `;
+
+    DOM.chatHistoryContainer.appendChild(bubble);
+}
+
+function escapeHtml(s) {
+    return safeStr(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function updateHeaderInfo(peerEmail) {
+    const peer = normalizeEmail(peerEmail);
+    const user = activeChatUser || __msgUsers.find(u => u.email === peer) || null;
+    if (!user) return;
+
+    if (DOM.activeChatAvatar) DOM.activeChatAvatar.src = user.avatar || DEFAULT_AVATAR;
+    if (DOM.activeChatName) DOM.activeChatName.textContent = user.name || 'User';
+
+    // Info panel
+    if (DOM.infoNickname) DOM.infoNickname.textContent = user.name || 'User';
+    if (DOM.infoHandle) DOM.infoHandle.textContent = user.handle || deriveHandle(peer);
+
+    // Joined / spent placeholders (backend not wired here yet)
+    if (DOM.infoJoined) DOM.infoJoined.textContent = DOM.infoJoined.textContent || '—';
+    if (DOM.infoSpent) DOM.infoSpent.textContent = DOM.infoSpent.textContent || '—';
+}
+
+function lockChatInputs() {
+    if (DOM.chatInput) DOM.chatInput.disabled = true;
+    if (DOM.btnSendMsg) DOM.btnSendMsg.disabled = true;
+}
+
+function unlockChatInputs() {
+    if (DOM.chatInput) DOM.chatInput.disabled = false;
+    if (DOM.btnSendMsg) DOM.btnSendMsg.disabled = false;
+}
+
+// -------------------------------
+// Notes
+// -------------------------------
+function loadUserNote(userId) {
+    const notes = JSON.parse(localStorage.getItem(TM_NOTES_KEY) || '{}');
+    const note = notes[userId] || '';
+
+    const noteInput = document.getElementById('user-note-input');
+    if (noteInput) {
+        noteInput.value = note;
+        noteInput.oninput = () => {
+            const updated = JSON.parse(localStorage.getItem(TM_NOTES_KEY) || '{}');
+            updated[userId] = noteInput.value;
+            localStorage.setItem(TM_NOTES_KEY, JSON.stringify(updated));
+        };
+    }
+}
+
+// -------------------------------
+// Search UI (left) + chat search
+// -------------------------------
+function initSearchUI() {
+    if (DOM.btnTriggerSearch && DOM.msgSearchBox && DOM.msgSearchInput) {
+        DOM.btnTriggerSearch.addEventListener('click', () => {
+            DOM.msgSearchBox.classList.remove('hidden');
+            DOM.msgSearchInput.focus();
+        });
+    }
+
+    if (DOM.btnCloseSearch && DOM.msgSearchBox && DOM.msgSearchInput) {
+        DOM.btnCloseSearch.addEventListener('click', () => {
+            DOM.msgSearchBox.classList.add('hidden');
+            DOM.msgSearchInput.value = '';
+            currentSearch = '';
+            renderMessageList();
+        });
+    }
+
+    if (DOM.msgSearchInput) {
+        DOM.msgSearchInput.addEventListener('input', () => {
+            currentSearch = DOM.msgSearchInput.value.trim();
+            renderMessageList();
+        });
+    }
+
+    // Inner chat search bar (search within rendered bubbles)
+    if (DOM.btnChatSearch && DOM.chatSearchBar && DOM.chatSearchInput) {
+        DOM.btnChatSearch.addEventListener('click', () => {
+            DOM.chatSearchBar.classList.toggle('hidden');
+            if (!DOM.chatSearchBar.classList.contains('hidden')) DOM.chatSearchInput.focus();
+        });
+    }
+
+    if (DOM.closeChatSearch && DOM.chatSearchBar && DOM.chatSearchInput) {
+        DOM.closeChatSearch.addEventListener('click', () => {
+            DOM.chatSearchBar.classList.add('hidden');
+            DOM.chatSearchInput.value = '';
+            clearChatHighlights();
+        });
+    }
+
+    if (DOM.chatSearchInput) {
+        DOM.chatSearchInput.addEventListener('input', () => {
+            const q = DOM.chatSearchInput.value.trim().toLowerCase();
+            highlightChatSearch(q);
+        });
+    }
+}
+
+function clearChatHighlights() {
+    const bubbles = DOM.chatHistoryContainer ? DOM.chatHistoryContainer.querySelectorAll('.chat-bubble .bubble-text') : [];
+    bubbles.forEach(b => {
+        const raw = b.getAttribute('data-raw');
+        if (raw !== null) b.innerHTML = escapeHtml(raw);
+    });
+}
+
+function highlightChatSearch(q) {
+    if (!DOM.chatHistoryContainer) return;
+    const bubbles = DOM.chatHistoryContainer.querySelectorAll('.chat-bubble .bubble-text');
+
+    bubbles.forEach(b => {
+        const raw = b.getAttribute('data-raw') ?? b.textContent;
+        if (!b.getAttribute('data-raw')) b.setAttribute('data-raw', raw);
+
+        if (!q) {
+            b.innerHTML = escapeHtml(raw);
+            return;
+        }
+
+        const idx = raw.toLowerCase().indexOf(q);
+        if (idx === -1) {
+            b.innerHTML = escapeHtml(raw);
+            return;
+        }
+
+        const before = escapeHtml(raw.slice(0, idx));
+        const match = escapeHtml(raw.slice(idx, idx + q.length));
+        const after = escapeHtml(raw.slice(idx + q.length));
+        b.innerHTML = `${before}<mark>${match}</mark>${after}`;
+    });
+}
+
+// -------------------------------
+// Tabs (All / Unread / Priority / $$$)
+// -------------------------------
+function initTabs() {
+    if (!DOM.msgTabs || !DOM.msgTabs.length) return;
+
+    DOM.msgTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            DOM.msgTabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            currentFilter = tab.textContent.trim();
+            renderMessageList();
+        });
+    });
+}
+
+// -------------------------------
+// New message overlay
+// -------------------------------
+function initNewMessageOverlay() {
     if (DOM.btnNewMsg) {
         DOM.btnNewMsg.addEventListener('click', () => {
+            if (!DOM.newMsgOverlay) return;
             DOM.newMsgOverlay.classList.remove('hidden');
             renderNewMessageSuggestions();
+            if (DOM.newMsgInput) DOM.newMsgInput.focus();
         });
     }
 
     if (DOM.btnCloseNewMsg) {
         DOM.btnCloseNewMsg.addEventListener('click', () => {
+            if (!DOM.newMsgOverlay) return;
             DOM.newMsgOverlay.classList.add('hidden');
         });
     }
 
-    // Function to render suggestions in the new message overlay
-    function renderNewMessageSuggestions() {
+    if (DOM.newMsgInput) {
+        DOM.newMsgInput.addEventListener('input', () => {
+            renderNewMessageSuggestions(DOM.newMsgInput.value);
+        });
+
+        DOM.newMsgInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const raw = (DOM.newMsgInput.value || '').trim();
+                if (!raw) return;
+
+                // If user typed @handle, treat as email-like key (we still store as string)
+                const candidate = raw.startsWith('@') ? raw.slice(1) : raw;
+                const peer = normalizeEmail(candidate.includes('@') ? candidate : `${candidate}@example.com`);
+
+                // Close overlay + open
+                DOM.newMsgOverlay.classList.add('hidden');
+                openChatWithUser(peer);
+                DOM.newMsgInput.value = '';
+            }
+        });
+    }
+
+    function renderNewMessageSuggestions(query = '') {
         if (!DOM.newMsgResults) return;
+
+        const q = String(query || '').trim().toLowerCase();
+        const list = Array.isArray(__suggestUsers) ? __suggestUsers.slice() : [];
+
+        const filtered = q
+            ? list.filter(u => (u.name || '').toLowerCase().includes(q) || (u.handle || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q))
+            : list;
+
         DOM.newMsgResults.innerHTML = '';
-        
-        MSG_USERS.forEach(user => {
+
+        if (!filtered.length) {
+            const empty = document.createElement('div');
+            empty.className = 'rs-col-empty';
+            empty.style.marginTop = '10px';
+            empty.innerHTML = `
+                <div class="empty-icon-wrap"><i class="fa-regular fa-user"></i></div>
+                <span>No results</span>
+            `;
+            DOM.newMsgResults.appendChild(empty);
+            return;
+        }
+
+        filtered.slice(0, 30).forEach(user => {
             const div = document.createElement('div');
             div.className = 'msg-user-item';
+            div.dataset.id = user.id;
             div.innerHTML = `
-                <img src="${user.avatar}" class="u-avatar">
-                <div class="u-info">
-                    <div class="u-name">${user.name} ${user.verified ? '<i class="fa-solid fa-circle-check verify-badge" style="color:var(--primary-cyan);"></i>' : ''}</div>
-                    <div class="u-preview">${user.handle}</div>
+                <img src="${user.avatar || DEFAULT_AVATAR}" class="msg-avatar" alt="Avatar">
+                <div class="msg-user-details">
+                    <div class="msg-user-top">
+                        <span class="msg-name">${user.name || 'User'} ${user.verified ? '<i class="fa-solid fa-circle-check verified"></i>' : ''}</span>
+                    </div>
+                    <div class="msg-preview">${user.handle || deriveHandle(user.email)}</div>
                 </div>
             `;
-            // Click to start chat
-            div.onclick = () => {
+
+            div.addEventListener('click', () => {
                 DOM.newMsgOverlay.classList.add('hidden');
-                openChatWithUser(user.id);
-            };
+                openChatWithUser(user.email);
+                if (DOM.newMsgInput) DOM.newMsgInput.value = '';
+            });
+
             DOM.newMsgResults.appendChild(div);
         });
     }
+}
 
-    // Helper to switch chat
-    function openChatWithUser(id) {
-        // Find user item in sidebar and click it
-        const sidebarItem = document.querySelector(`.msg-user-item[data-id="${id}"]`);
-        if (sidebarItem) {
-            sidebarItem.click();
-        } else {
-            // If filtering hid it, reset filters/search
-            currentFilter = 'All';
-            currentSearch = '';
-            renderMessageList();
-            setTimeout(() => {
-                const item = document.querySelector(`.msg-user-item[data-id="${id}"]`);
-                if(item) item.click();
-            }, 50);
-        }
+// -------------------------------
+// Sending messages
+// -------------------------------
+function initSendMessage() {
+    if (DOM.btnSendMsg) {
+        DOM.btnSendMsg.addEventListener('click', onSend);
     }
 
-
-    // ==========================================================
-    // 2. CLICK HEADER TO VISIT PROFILE
-    // ==========================================================
-    const chatHeaderUser = document.querySelector('.chat-header .ch-user');
-    
-    if (chatHeaderUser) {
-        chatHeaderUser.addEventListener('click', () => {
-            if (!activeChatUser) return;
-
-            if (DOM.navProfile) {
-                document.querySelectorAll('[id^="view-"]').forEach(el => el.style.display = 'none');
-                if(DOM.viewMyProfile) DOM.viewMyProfile.style.display = 'block';
-                document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-                if(DOM.navProfile) DOM.navProfile.classList.add('active');
-            }
-
-            if (DOM.profileName) DOM.profileName.innerHTML = `${activeChatUser.name} <i class="fa-solid fa-circle-check" style="color:var(--primary-cyan); font-size: 0.9rem;"></i>`;
-            if (DOM.profileHandle) DOM.profileHandle.innerHTML = `${activeChatUser.handle} &bull; <span style="cursor: pointer;">Available <i class="fa-solid fa-chevron-down" style="font-size: 0.75rem;"></i></span>`;
-            if (DOM.profileBio) DOM.profileBio.innerText = activeChatUser.preview || "No bio available.";
-            if (DOM.profileAvatar) DOM.profileAvatar.src = activeChatUser.avatar;
-
-            if (DOM.btnEditProfile) DOM.btnEditProfile.style.display = 'none';
-
-            const backBtn = document.getElementById('profile-back-btn');
-            if(backBtn) {
-                backBtn.onclick = () => {
-                    document.getElementById('nav-link-messages').click();
-                };
+    if (DOM.chatInput) {
+        DOM.chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                onSend();
             }
         });
     }
 
-    // ==========================================================
-    // TAB FILTERING LOGIC
-    // ==========================================================
-    const tabs = document.querySelectorAll('#msg-tabs span');
-    if (tabs) {
-        tabs.forEach(tab => {
-            tab.addEventListener('click', () => {
-                tabs.forEach(t => t.classList.remove('active'));
-                tab.classList.add('active');
-                currentFilter = tab.innerText.trim();
-                renderMessageList(); 
-            });
-        });
-    }
-
-    // AUTO-SAVE NOTES
-    const noteInput = document.getElementById('chat-user-note');
-    if (noteInput) {
-        noteInput.addEventListener('input', (e) => {
-            let activeUserId = 1; 
-            const activeItem = document.querySelector('.msg-user-item.active');
-            if (activeItem) activeUserId = activeItem.dataset.id;
-            localStorage.setItem(`tm_note_${activeUserId}`, e.target.value);
-        });
-    }
-
-    // NAV BUTTON LISTENERS
-    const btnSearchSidebar = document.getElementById('trigger-msg-search');
-    const searchBoxSidebar = document.getElementById('msg-search-box');
-    const btnCloseSearch = document.getElementById('close-msg-search');
-    const inputSearchSidebar = document.getElementById('msg-search-input');
-
-    if (btnSearchSidebar && searchBoxSidebar) {
-        btnSearchSidebar.addEventListener('click', () => {
-            searchBoxSidebar.classList.remove('hidden');
-            if(inputSearchSidebar) inputSearchSidebar.focus();
-        });
-    }
-
-    if (btnCloseSearch && searchBoxSidebar) {
-        btnCloseSearch.addEventListener('click', () => {
-            searchBoxSidebar.classList.add('hidden');
-            if(inputSearchSidebar) inputSearchSidebar.value = '';
-            currentSearch = '';
-            renderMessageList(); 
-        });
-    }
-
-    if (inputSearchSidebar) {
-        inputSearchSidebar.addEventListener('input', (e) => {
-            currentSearch = e.target.value;
-            renderMessageList();
-        });
-    }
-
-    const btnChatSearch = document.getElementById('btn-chat-search');
-    const btnChatStar = document.getElementById('btn-chat-star');
-
-    if (btnChatSearch) {
-        btnChatSearch.addEventListener('click', () => {
-            Swal.fire({
-                title: 'Search in Conversation',
-                input: 'text',
-                inputPlaceholder: 'Find text...',
-                confirmButtonColor: '#64E9EE',
-                background: '#0d1423',
-                color: '#fff'
-            });
-        });
-    }
-
-    if (btnChatStar) {
-        btnChatStar.addEventListener('click', function() {
-            if (this.classList.contains('fa-regular')) {
-                this.classList.replace('fa-regular', 'fa-solid');
-                this.style.color = 'gold'; 
-                TopToast.fire({ icon: 'success', title: 'Conversation Starred!' });
-            } else {
-                this.classList.replace('fa-solid', 'fa-regular');
-                this.style.color = ''; 
-            }
-        });
-    }
-
-    const btnMediaTop = document.getElementById('btn-chat-media-top');
-    const btnMediaBottom = document.getElementById('btn-chat-media-bottom');
-    
-    const openMediaGallery = () => {
-        const navCollections = document.getElementById('nav-link-collections');
-        if (navCollections) {
-            navCollections.click();
-            setTimeout(() => {
-                const tabBookmarks = document.getElementById('tab-col-bookmarks');
-                if (tabBookmarks) tabBookmarks.click();
-            }, 100);
+    async function onSend() {
+        if (!activePeerEmail) {
+            toastInstance?.fire?.({ icon: 'info', title: 'Select a conversation' });
+            return;
         }
-    };
 
-    if (btnMediaTop) btnMediaTop.addEventListener('click', openMediaGallery);
-    if (btnMediaBottom) btnMediaBottom.addEventListener('click', openMediaGallery);
+        const raw = DOM.chatInput ? DOM.chatInput.value : '';
+        const text = String(raw || '').trim();
+        if (!text) return;
 
-
-    // USER LIST CLICK HANDLER
-    setupInputListeners();
-
-    // 🆕 GLOBAL LISTENER: Close Dropdowns when clicking outside
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('.msg-item-actions')) {
-            document.querySelectorAll('.msg-dropdown').forEach(d => d.classList.add('hidden'));
-        }
-    });
-
-    // 🔥 FIX: Initialize Mobile Observers HERE (Once HTML is ready)
-    initMobileChatObservers();
-}
-
-// 🔥 FIX: Observer Logic moved inside a function called by initMessages
-function initMobileChatObservers() {
-    const viewMessages = document.getElementById('view-messages');
-    
-    if (viewMessages) {
-        // Observer to detect View Changes (Hidden/Visible) or Class Changes
-        const observer = new MutationObserver((mutations) => {
-            mutations.forEach((mutation) => {
-                // If 'mobile-chat-active' class is removed, Restore Input
-                if (mutation.attributeName === 'class' && !viewMessages.classList.contains('mobile-chat-active')) {
-                    restoreInputToChat();
-                }
-                // If View becomes hidden (e.g. switch to Home), Restore Input
-                if (mutation.attributeName === 'style' && viewMessages.style.display === 'none') {
-                    restoreInputToChat();
-                }
-            });
-        });
-        
-        observer.observe(viewMessages, { attributes: true });
-    }
-
-    // Safety: Window Resize Reset
-    window.addEventListener('resize', () => {
-        if (window.innerWidth > 1024 && DOM.viewMessages) {
-            DOM.viewMessages.classList.remove('mobile-chat-active');
-            restoreInputToChat();
-        }
-    });
-}
-
-function renderMessageList() {
-    const listContainer = document.getElementById('msg-user-list');
-    if (!listContainer) return;
-
-    listContainer.innerHTML = ''; 
-
-    if (typeof MSG_USERS === 'undefined' || !MSG_USERS) return;
-
-    // Get Data from Storage
-    const userTags = getUserTags();
-    const hiddenUsers = JSON.parse(localStorage.getItem('tm_hidden_chats') || '[]');
-
-    // 1. FILTERING LOGIC
-    let filteredUsers = MSG_USERS.filter(u => !hiddenUsers.includes(u.id)); // Remove deleted
-
-    if (currentFilter === 'Priority') {
-        filteredUsers = filteredUsers.filter(u => userTags[u.id] === 'priority');
-    } 
-    else if (currentFilter === '$$$') {
-        filteredUsers = filteredUsers.filter(u => userTags[u.id] === 'whale');
-    } 
-    else if (currentFilter === 'Unread') {
-        filteredUsers = filteredUsers.filter(u => u.unread > 0);
-    }
-
-    if (currentSearch) {
-        filteredUsers = filteredUsers.filter(user => 
-            user.name.toLowerCase().includes(currentSearch.toLowerCase()) || 
-            user.handle.toLowerCase().includes(currentSearch.toLowerCase())
-        );
-    }
-
-    if (filteredUsers.length === 0) {
-        listContainer.innerHTML = `<div style="text-align:center; padding:30px; color:var(--muted); font-size:0.9rem;">No conversations found.</div>`;
-        return;
-    }
-
-    filteredUsers.forEach(user => {
-        const div = document.createElement('div');
-        div.className = 'msg-user-item';
-        div.dataset.id = user.id;
-        
-        // Badges Logic
-        const isPriority = userTags[user.id] === 'priority';
-        const isWhale = userTags[user.id] === 'whale';
-        
-        let badgesHTML = '';
-        if (user.verified) badgesHTML += '<i class="fa-solid fa-circle-check verify-badge" style="color:var(--primary-cyan); margin-left:4px;" title="Verified"></i>';
-        if (isPriority) badgesHTML += '<i class="fa-solid fa-star" style="color:var(--primary-cyan); margin-left:4px;" title="Priority"></i>';
-        if (isWhale) badgesHTML += '<i class="fa-solid fa-sack-dollar" style="color:gold; margin-left:4px;" title="$$$"></i>';
-        
-        const unreadBadge = user.unread > 0 ? `<span style="background:var(--primary-cyan); color:#000; font-size:0.7rem; font-weight:bold; padding:2px 8px; border-radius:10px; margin-left:auto; display:inline-block;">${user.unread}</span>` : '';
-
-        // HTML Structure
-        div.innerHTML = `
-            <img src="${user.avatar}" class="u-avatar">
-            <div class="u-info">
-                <div class="u-name" style="display:flex; align-items:center; width:100%; padding-right: 10px;">
-                    ${user.name} ${badgesHTML} ${unreadBadge}
-                </div>
-                <div class="u-preview">${user.preview}</div>
-            </div>
-            
-            <div class="msg-item-actions">
-                <i class="fa-solid fa-ellipsis-vertical msg-opt-btn"></i>
-                <div class="msg-dropdown hidden">
-                    <div class="md-item action-tag-priority ${isPriority ? 'active' : ''}">
-                        <i class="fa-solid fa-crown" style="${isPriority ? 'color:var(--primary-cyan)' : ''}"></i> 
-                        ${isPriority ? 'Remove Priority' : 'Add to Priority'}
-                    </div>
-                    <div class="md-item action-tag-whale ${isWhale ? 'active' : ''}">
-                        <i class="fa-solid fa-money-bill" style="${isWhale ? 'color:gold' : ''}"></i> 
-                        ${isWhale ? 'Remove $$$' : 'Add to $$$'}
-                    </div>
-                    <div class="md-divider"></div>
-                    <div class="md-item action-view-profile">
-                        <i class="fa-regular fa-user"></i> View Profile
-                    </div>
-                    <div class="md-item danger action-delete">
-                        <i class="fa-regular fa-trash-can"></i> Delete
-                    </div>
-                </div>
-            </div>
-            <div class="u-meta">
-                <span class="time">${user.time}</span>
-            </div>
-        `;
-
-        // --- EVENTS ---
-        const btnOpt = div.querySelector('.msg-opt-btn');
-        const dropdown = div.querySelector('.msg-dropdown');
-        btnOpt.addEventListener('click', (e) => {
-            e.stopPropagation();
-            document.querySelectorAll('.msg-dropdown').forEach(d => { if(d !== dropdown) d.classList.add('hidden'); });
-            dropdown.classList.toggle('hidden');
-        });
-
-        div.querySelector('.action-tag-priority').addEventListener('click', (e) => { e.stopPropagation(); setUserTag(user.id, 'priority'); });
-        div.querySelector('.action-tag-whale').addEventListener('click', (e) => { e.stopPropagation(); setUserTag(user.id, 'whale'); });
-        div.querySelector('.action-view-profile').addEventListener('click', (e) => {
-            e.stopPropagation();
-            dropdown.classList.add('hidden');
-            if(DOM.navProfile) DOM.navProfile.click();
-            setTimeout(() => {
-                if(DOM.profileName) DOM.profileName.innerText = user.name;
-                if(DOM.profileHandle) DOM.profileHandle.innerText = user.handle;
-                if(DOM.profileAvatar) DOM.profileAvatar.src = user.avatar;
-            }, 100);
-        });
-        div.querySelector('.action-delete').addEventListener('click', (e) => {
-            e.stopPropagation();
-            Swal.fire({
-                title: 'Delete conversation?', text: "This will hide the chat from your list.", icon: 'warning',
-                showCancelButton: true, confirmButtonColor: '#ff4757', confirmButtonText: 'Delete', background: '#0d1423', color: '#fff'
-            }).then((result) => {
-                if (result.isConfirmed) deleteConversation(user.id);
-            });
-        });
-
-        // Main Click (Open Chat)
-        div.addEventListener('click', (e) => {
-            if(e.target.closest('.msg-item-actions')) return; 
-
-            document.querySelectorAll('.msg-user-item').forEach(i => i.classList.remove('active'));
-            div.classList.add('active');
-            
-            activeChatUser = user;
-            loadUserNote(user.id);
-            loadChat(user.id);
-            updateHeaderInfo(user.id);
-            unlockChatInputs();
-
-            initMobileBackBtn(); 
-            
-            // Trigger Mobile View
-            if (window.innerWidth <= 1024 && DOM.viewMessages) {
-                DOM.viewMessages.classList.add('mobile-chat-active');
-                requestAnimationFrame(() => { teleportInputToBody(); });
-            }
-        });
-
-        listContainer.appendChild(div);
-    });
-}
-
-function loadUserNote(userId) {
-    const noteInput = document.getElementById('chat-user-note');
-    if (noteInput) {
-        const savedNote = localStorage.getItem(`tm_note_${userId}`) || '';
-        noteInput.value = savedNote;
-    }
-}
-
-export function loadChat(userId) {
-    if (!DOM.chatHistoryContainer) return;
-    DOM.chatHistoryContainer.innerHTML = '';
-    
-    if (typeof CHAT_DATA === 'undefined') return;
-
-    const id = parseInt(userId);
-    const messages = CHAT_DATA[id] || [];
-    
-    messages.forEach(msg => {
-        DOM.chatHistoryContainer.appendChild(createMessageBubble(msg.text, msg.type, msg.time));
-    });
-    
-    DOM.chatHistoryContainer.scrollTop = DOM.chatHistoryContainer.scrollHeight;
-}
-
-function createMessageBubble(text, type, time) {
-    const div = document.createElement('div');
-    div.className = `chat-bubble ${type}`;
-    div.innerHTML = `${text} <span class="time">${time}</span>`;
-    return div;
-}
-
-function updateHeaderInfo(userId) {
-    const user = MSG_USERS.find(u => u.id === userId);
-    if(user && DOM.activeChatName) {
-         DOM.activeChatName.innerHTML = `${user.name} <i class="fa-solid fa-circle-check verify-badge" style="color: var(--primary-cyan); margin-left:5px;"></i>`;
-         if(DOM.activeChatAvatar) DOM.activeChatAvatar.src = user.avatar;
-    }
-}
-
-function unlockChatInputs() {
-    const chatInput = document.getElementById('chat-message-input');
-    const chatBox = document.querySelector('.chat-input-box');
-    const headerActions = document.querySelector('.ch-actions');
-
-    if(chatInput) {
-        chatInput.disabled = false; 
-        chatInput.placeholder = "Type a message...";
-    }
-    if(chatBox) {
-        chatBox.style.opacity = '1';
-        chatBox.style.pointerEvents = 'auto';
-    }
-    if(headerActions) {
-        headerActions.style.opacity = '1';
-        headerActions.style.pointerEvents = 'auto';
-    }
-}
-
-function setupInputListeners() {
-    document.addEventListener('click', (e) => {
-        if (e.target.classList.contains('fa-face-smile') || e.target.id === 'btn-emoji-trigger') {
-            e.stopPropagation();
-            const container = document.getElementById('emoji-picker-container');
-            if(container) container.classList.toggle('hidden');
-        }
-        if (e.target.classList.contains('fa-dollar-sign') || e.target.id === 'btn-ppv-trigger') {
-            Swal.fire({
-                title: 'Send Locked Message (PPV)',
-                html: `<input type="number" id="ppv-price" class="swal2-input" placeholder="Price ($)"><textarea id="ppv-desc" class="swal2-textarea" placeholder="Description..."></textarea>`,
-                showCancelButton: true, confirmButtonText: 'Attach Price', confirmButtonColor: '#2ecc71', background: '#0d1423', color: '#fff',
-                preConfirm: () => document.getElementById('ppv-price').value
-            }).then((result) => {
-                if(result.isConfirmed) {
-                    const input = document.getElementById('chat-message-input');
-                    if(input) {
-                        input.value = `[LOCKED: $${result.value}] `;
-                        input.focus();
-                    }
-                }
-            });
-        }
-    });
-
-    // Close Emoji Picker on Outside Click
-    document.addEventListener('click', (e) => {
-        const container = document.getElementById('emoji-picker-container');
-        if (container && !container.classList.contains('hidden')) {
-            const isBtn = e.target.classList.contains('fa-face-smile') || e.target.id === 'btn-emoji-trigger';
-            const isInsidePicker = container.contains(e.target);
-            if (!isInsidePicker && !isBtn) {
-                container.classList.add('hidden');
-            }
-        }
-    });
-
-    const btnSend = document.getElementById('btn-send-message');
-    const input = document.getElementById('chat-message-input');
-    
-    if (btnSend && input) {
-        const sendMsg = () => {
-            const text = input.value.trim();
-            const history = document.getElementById('chat-history-container');
-            if (text && history) {
-                const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                const msgElement = createMessageBubble(text, 'sent', time);
-                history.appendChild(msgElement);
-                history.scrollTop = history.scrollHeight;
-                input.value = '';
-            }
-        };
-        btnSend.addEventListener('click', sendMsg);
-        input.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMsg(); });
-        
-        input.addEventListener('focus', () => {
-            setTimeout(() => {
-                const history = document.getElementById('chat-history-container');
-                if (history) history.scrollTo({ top: history.scrollHeight, behavior: 'smooth' });
-            }, 300);
-        });
-    }
-
-    const emojiContainer = document.getElementById('emoji-picker-container');
-    if (window.picmo && emojiContainer) {
         try {
-            const picker = picmo.createPicker({
-                rootElement: emojiContainer, theme: 'dark', showPreview: false, autoFocus: 'search', visibleRows: 4
-            });
-            picker.addEventListener('emoji:select', (selection) => {
-                const input = document.getElementById('chat-message-input');
-                if(input) {
-                    input.value += selection.emoji;
-                    input.focus();
-                }
-            });
-        } catch (err) { console.log('Picmo init warning:', err); }
+            // Optimistic: disable briefly
+            if (DOM.btnSendMsg) DOM.btnSendMsg.disabled = true;
+
+            const res = await sendMessageTo(activePeerEmail, text);
+            const msg = res?.message || { text, sentAt: new Date().toISOString() };
+
+            createMessageBubble(text, 'sent', msg.sentAt);
+            if (DOM.chatInput) DOM.chatInput.value = '';
+            DOM.chatHistoryContainer.scrollTop = DOM.chatHistoryContainer.scrollHeight;
+
+            // Update preview/time in list
+            const u = __msgUsers.find(x => x.email === activePeerEmail);
+            if (u) {
+                u.preview = text;
+                u.time = formatListTime(msg.sentAt);
+            }
+            renderMessageList();
+
+        } catch (e) {
+            if (String(e?.message || '').includes('daily_message_limit_reached')) {
+                toastInstance?.fire?.({ icon: 'error', title: 'Daily message limit reached' });
+            } else {
+                toastInstance?.fire?.({ icon: 'error', title: e?.message || 'Unable to send message' });
+            }
+        } finally {
+            if (DOM.btnSendMsg) DOM.btnSendMsg.disabled = false;
+        }
     }
+}
+
+// -------------------------------
+// Emoji picker
+// -------------------------------
+function initEmojiPicker() {
+    if (!DOM.btnEmoji || !DOM.emojiContainer || !DOM.chatInput) return;
+
+    let picker = null;
+    try {
+        if (window?.picmo?.createPicker) {
+            picker = window.picmo.createPicker({ rootElement: DOM.emojiContainer });
+            picker.addEventListener('emoji:select', (event) => {
+                const emoji = event?.emoji || '';
+                if (!emoji) return;
+                const el = DOM.chatInput;
+                const start = el.selectionStart || el.value.length;
+                const end = el.selectionEnd || el.value.length;
+                el.value = el.value.slice(0, start) + emoji + el.value.slice(end);
+                el.focus();
+                const pos = start + emoji.length;
+                el.setSelectionRange(pos, pos);
+            });
+        }
+    } catch (e) {
+        // ignore
+    }
+
+    DOM.btnEmoji.addEventListener('click', () => {
+        DOM.emojiContainer.classList.toggle('hidden');
+    });
+
+    document.addEventListener('click', (e) => {
+        const inPicker = DOM.emojiContainer.contains(e.target);
+        const inBtn = DOM.btnEmoji.contains(e.target);
+        if (!inPicker && !inBtn) {
+            DOM.emojiContainer.classList.add('hidden');
+        }
+    });
+}
+
+// -------------------------------
+// PPV button (stub)
+// -------------------------------
+function initPPV() {
+    if (!DOM.btnPPV) return;
+    DOM.btnPPV.addEventListener('click', () => {
+        toastInstance?.fire?.({ icon: 'info', title: 'PPV coming soon' });
+    });
+}
+
+// -------------------------------
+// Star conversation (local-only stub)
+// -------------------------------
+function initStar() {
+    if (!DOM.btnChatStar) return;
+    DOM.btnChatStar.addEventListener('click', () => {
+        toastInstance?.fire?.({ icon: 'info', title: 'Star saved (UI only)' });
+    });
+}
+
+// -------------------------------
+// Mobile input teleport (kept)
+// -------------------------------
+function teleportInputToBody() {
+    const inputWrap = document.getElementById('chat-input-wrapper');
+    if (!inputWrap) return;
+    if (inputWrap.parentElement === document.body) return;
+
+    inputWrap.dataset.originalParent = 'chat-bottom-wrapper';
+    document.body.appendChild(inputWrap);
+    inputWrap.classList.add('floating-chat-input');
+}
+
+function restoreInputToChat() {
+    const inputWrap = document.getElementById('chat-input-wrapper');
+    const originalParent = document.getElementById('chat-bottom-wrapper');
+    if (!inputWrap || !originalParent) return;
+    if (inputWrap.parentElement === originalParent) return;
+
+    inputWrap.classList.remove('floating-chat-input');
+    originalParent.appendChild(inputWrap);
+}
+
+function initMobileChatObservers() {
+    const view = DOM.viewMessages;
+    if (!view) return;
+
+    const observer = new MutationObserver(() => {
+        const isMobile = window.innerWidth <= 768;
+        const viewVisible = getComputedStyle(view).display !== 'none';
+        if (!isMobile || !viewVisible) {
+            restoreInputToChat();
+            return;
+        }
+
+        const chatOpen = document.body.classList.contains('chat-open');
+        if (chatOpen) teleportInputToBody();
+        else restoreInputToChat();
+    });
+
+    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    window.addEventListener('resize', () => observer.takeRecords());
 }
 
 function initMobileBackBtn() {
-    const chatUserDiv = document.querySelector('.ch-user');
-    if (chatUserDiv) {
-        const existingBtn = chatUserDiv.querySelector('.back-to-list-btn');
-        if (!existingBtn) {
-            const backBtn = document.createElement('i');
-            backBtn.className = 'fa-solid fa-arrow-left back-to-list-btn';
-            backBtn.style.cursor = 'pointer';
-            backBtn.style.marginRight = '10px';
-            chatUserDiv.prepend(backBtn);
-            
-            backBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if(DOM.viewMessages) {
-                    DOM.viewMessages.classList.remove('mobile-chat-active');
-                    // restoreInputToChat is handled by MutationObserver automatically now
-                }
-            });
-        }
+    const backBtn = document.getElementById('btn-mobile-chat-back');
+    if (!backBtn) return;
+
+    backBtn.addEventListener('click', () => {
+        document.body.classList.remove('chat-open');
+        restoreInputToChat();
+    });
+}
+
+// -------------------------------
+// Polling
+// -------------------------------
+function startThreadsPolling() {
+    if (__threadsPoll) return;
+    __threadsPoll = setInterval(() => {
+        // Silent refresh to keep UI in sync
+        refreshThreads({ silent: true });
+    }, 15000);
+}
+
+function stopThreadsPolling() {
+    if (__threadsPoll) {
+        clearInterval(__threadsPoll);
+        __threadsPoll = null;
     }
 }
 
-// --- INPUT TELEPORTATION LOGIC ---
+function startActiveChatPolling() {
+    // Poll only when active chat exists
+    if (!activePeerEmail) return;
 
-const restoreInputToChat = () => {
-    const inputBox = document.querySelector('.chat-input-box');
-    const chatArea = document.querySelector('.msg-chat-area');
-    
-    // Check if input is attached to Body
-    if (inputBox && chatArea && inputBox.parentNode === document.body) {
-        chatArea.appendChild(inputBox); // Move back to Chat Area
-        inputBox.style = ''; // Reset Fixed Styles
-        inputBox.onclick = null; 
-        
-        const history = document.getElementById('chat-history-container');
-        if (history) history.style.paddingBottom = ''; 
-    }
-};
+    if (__activeChatPoll) return;
+    __activeChatPoll = setInterval(async () => {
+        // Only if Messages view is visible
+        const view = DOM.viewMessages;
+        if (!view || getComputedStyle(view).display === 'none') return;
+        if (!activePeerEmail) return;
 
-const teleportInputToBody = () => {
-    const inputBox = document.querySelector('.chat-input-box');
-    
-    // Only move if not already on body
-    if (inputBox && inputBox.parentNode !== document.body) {
-        document.body.appendChild(inputBox);
-        inputBox.style.display = 'flex';
-        inputBox.style.position = 'fixed';
-        inputBox.style.bottom = '0';
-        inputBox.style.left = '0';
-        inputBox.style.right = '0';
-        inputBox.style.width = '100%';
-        inputBox.style.zIndex = '2147483650'; 
-        inputBox.style.backgroundColor = 'var(--card-bg, #0d1423)';
-        inputBox.style.borderTop = '1px solid rgba(255,255,255,0.1)';
-        inputBox.style.padding = '10px 15px';
-        inputBox.style.paddingBottom = 'max(15px, env(safe-area-inset-bottom))';
-        inputBox.style.boxShadow = '0 -5px 20px rgba(0,0,0,0.5)';
-        inputBox.style.pointerEvents = 'auto'; 
-        
-        const history = document.getElementById('chat-history-container');
-        if (history) {
-            history.style.paddingBottom = '100px'; 
-            setTimeout(() => { history.scrollTop = history.scrollHeight; }, 50);
-        }
+        // Fetch thread and append only new messages
+        try {
+            const res = await getMessageThread(activePeerEmail);
+            const messages = Array.isArray(res?.messages) ? res.messages : [];
 
-        // Prevent body clicks from stealing focus
-        inputBox.onclick = (e) => {
-            if(e.target.tagName !== 'I') {
-                const field = document.getElementById('chat-message-input');
-                if(field) field.focus();
+            // Determine last rendered sentAt (best-effort)
+            const lastBubble = DOM.chatHistoryContainer?.lastElementChild;
+            const lastRendered = lastBubble?.querySelector('.bubble-meta')?.textContent || '';
+
+            // If we can't diff reliably, just re-render when count changes
+            const currentCount = DOM.chatHistoryContainer ? DOM.chatHistoryContainer.querySelectorAll('.chat-bubble').length : 0;
+            if (messages.length !== currentCount) {
+                await loadChat(activePeerEmail);
+
+                // Keep scroll near bottom
+                if (DOM.chatHistoryContainer) {
+                    const atBottom = (DOM.chatHistoryContainer.scrollHeight - DOM.chatHistoryContainer.scrollTop - DOM.chatHistoryContainer.clientHeight) < 120;
+                    if (atBottom) DOM.chatHistoryContainer.scrollTop = DOM.chatHistoryContainer.scrollHeight;
+                }
+            } else {
+                // No-op
+                void lastRendered;
             }
-        };
+        } catch {
+            // silent
+        }
+    }, 6000);
+}
+
+function stopActiveChatPolling() {
+    if (__activeChatPoll) {
+        clearInterval(__activeChatPoll);
+        __activeChatPoll = null;
     }
-};
+}
+
+// -------------------------------
+// Exported initializer
+// -------------------------------
+export function initMessages(TopToast) {
+    toastInstance = TopToast;
+
+    // If messages view hasn't been loaded, bail safely.
+    if (!DOM.viewMessages) return;
+
+    // Start locked until a chat is chosen
+    lockChatInputs();
+
+    // UI init
+    initTabs();
+    initSearchUI();
+    initNewMessageOverlay();
+    initSendMessage();
+    initEmojiPicker();
+    initPPV();
+    initStar();
+    initMobileBackBtn();
+    initMobileChatObservers();
+
+    // Initial load
+    refreshThreads({ silent: false });
+
+    // Poll threads in background
+    startThreadsPolling();
+
+    // If user navigates away from Messages view, stop active chat polling (but keep thread polling)
+    const nav = DOM.navMessages;
+    if (nav) {
+        nav.addEventListener('click', () => {
+            // When opening messages view, refresh immediately
+            refreshThreads({ silent: true });
+            startThreadsPolling();
+        });
+    }
+
+    // Global safety: when leaving the page
+    window.addEventListener('beforeunload', () => {
+        stopThreadsPolling();
+        stopActiveChatPolling();
+    });
+}

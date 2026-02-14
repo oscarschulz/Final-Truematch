@@ -150,6 +150,30 @@ export async function apiGetJson(path, opts = {}) {
     return data;
 }
 
+export async function apiPostJson(path, body, opts = {}) {
+    const url = tmApiUrl(path);
+    const res = await fetch(url, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            ...(opts.headers || {})
+        },
+        body: JSON.stringify(body || {}),
+        ...opts
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+        const msg = data?.message || `Request failed (${res.status})`;
+        const err = new Error(msg);
+        err.status = res.status;
+        err.data = data;
+        throw err;
+    }
+    return data;
+}
+
 export async function getMySubscriptions({ dir } = {}) {
     const q = dir ? `?dir=${encodeURIComponent(dir)}` : '';
     return apiGetJson(`/api/me/subscriptions${q}`);
@@ -158,6 +182,27 @@ export async function getMySubscriptions({ dir } = {}) {
 
 export async function getMyPayments() {
     return apiGetJson('/api/me/payments');
+}
+
+// =============================================================
+// MESSAGES (shared)
+// =============================================================
+export async function getMessageThreads() {
+    return apiGetJson('/api/messages');
+}
+
+export async function getMessageThread(peerEmail) {
+    const peer = encodeURIComponent(String(peerEmail || '').trim().toLowerCase());
+    if (!peer) throw new Error('peer required');
+    return apiGetJson(`/api/messages/thread/${peer}`);
+}
+
+export async function sendMessageTo(peerEmail, text) {
+    const to = String(peerEmail || '').trim().toLowerCase();
+    const msg = String(text || '').trim();
+    if (!to) throw new Error('peer required');
+    if (!msg) throw new Error('text required');
+    return apiPostJson('/api/messages/send', { to, text: msg });
 }
 
 // =============================================================
