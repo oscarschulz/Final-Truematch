@@ -1282,7 +1282,7 @@ function renderAdmirersPanel(payload) {
     const hasPhoto = !!it.photoUrl;
 
     html += `
-      <div class="admirer-row" data-email="${esc(it.email || '')}" style="justify-content:flex-start; gap:15px;">
+      <div class="admirer-row" data-email="${esc(it.email || '')}" data-name="${name}" data-age="${esc(it.age || '')}" data-city="${city}" data-photo="${esc(it.photoUrl || '')}" style="justify-content:flex-start; gap:15px;">
         <img class="${hasPhoto ? 'admirer-img' : 'admirer-img'}" src="${photo}" style="background:${hasPhoto ? 'transparent' : getRandomColor()}; object-fit:${hasPhoto ? 'cover' : 'contain'}">
         <div class="admirer-info" style="flex:1; text-align:left;">
           <div class="admirer-name">${name}${age}</div>
@@ -1296,9 +1296,28 @@ function renderAdmirersPanel(payload) {
 
   DOM.admirerContainer.querySelectorAll('.admirer-row[data-email]').forEach(row => {
     row.addEventListener('click', () => {
-      // In v1 we simply take you to Swipe to continue.
+      const email = String(row.dataset.email || '').toLowerCase();
+      if (!email) return;
+
+      const profile = {
+        id: email,
+        email,
+        name: row.dataset.name || 'Member',
+        age: row.dataset.age || '',
+        city: row.dataset.city || '',
+        photoUrl: row.dataset.photo || ''
+      };
+
       try { setActiveTab('swipe'); } catch {}
-      toast('Open Swipe to see new people.', 'info');
+      try {
+        if (SwipeController && typeof SwipeController.jumpTo === 'function') {
+          SwipeController.jumpTo(profile);
+        } else {
+          toast('Opening profile…', 'info');
+        }
+      } catch {
+        toast('Opening profile…', 'info');
+      }
     });
   });
 }
@@ -1340,7 +1359,7 @@ function renderActiveNearbyPanel(payload) {
     const photo = u.photoUrl ? esc(u.photoUrl) : 'assets/images/truematch-mark.png';
     const hasPhoto = !!u.photoUrl;
     html += `
-      <div class="active-item" data-email="${esc(u.email || '')}" title="${esc(u.name || 'Member')}">
+      <div class="active-item" data-email="${esc(u.email || '')}" data-name="${esc(u.name || 'Member')}" data-city="${esc(u.city || '')}" data-age="${esc(u.age || '')}" data-photo="${esc(u.photoUrl || '')}" title="${esc(u.name || 'Member')}">
         <img class="active-img" src="${photo}" style="background:${hasPhoto ? 'transparent' : getRandomColor()}; object-fit:${hasPhoto ? 'cover' : 'contain'};">
         <span class="online-dot"></span>
       </div>`;
@@ -1351,8 +1370,28 @@ function renderActiveNearbyPanel(payload) {
 
   DOM.activeNearbyContainer.querySelectorAll('.active-item').forEach(el => {
     el.addEventListener('click', () => {
+      const email = String(el.dataset.email || '').toLowerCase();
+      if (!email) return;
+
+      const profile = {
+        id: email,
+        email,
+        name: el.dataset.name || 'Member',
+        age: el.dataset.age || '',
+        city: el.dataset.city || '',
+        photoUrl: el.dataset.photo || ''
+      };
+
       try { setActiveTab('swipe'); } catch {}
-      toast('Swipe to discover more people.', 'info');
+      try {
+        if (SwipeController && typeof SwipeController.jumpTo === 'function') {
+          SwipeController.jumpTo(profile);
+        } else {
+          toast('Opening profile…', 'info');
+        }
+      } catch {
+        toast('Opening profile…', 'info');
+      }
     });
   });
 }
@@ -2700,6 +2739,8 @@ const SwipeController = (() => {
   let lastLimit = DAILY_SWIPE_LIMIT; // default (Free), may become null for paid
   let lastRemaining = DAILY_SWIPE_LIMIT;
 
+  const delay = (ms) => new Promise(r => setTimeout(r, ms));
+
   function setSwipeStats(remaining, limit) {
     // limit === null => unlimited
     lastLimit = (limit === null || typeof limit === 'undefined') ? null : Number(limit);
@@ -2719,6 +2760,53 @@ const SwipeController = (() => {
 
   async function init() {
     await loadCandidates();
+  }
+
+  async function jumpTo(profile) {
+    try {
+      const email = String((profile && (profile.email || profile.id)) || '').toLowerCase();
+      if (!email) return;
+
+      // If a load is in progress, wait briefly for it to finish.
+      if (isLoading) {
+        for (let i = 0; i < 12 && isLoading; i++) {
+          await delay(60);
+        }
+      }
+
+      // Ensure we have a deck.
+      if (!profiles.length) {
+        await loadCandidates();
+      }
+
+      if (!profiles.length) {
+        // Either no candidates or limit reached.
+        toast('No profiles to show right now.', 'info');
+        return;
+      }
+
+      let idx = profiles.findIndex(p => String(p && p.id || '').toLowerCase() === email);
+      if (idx === -1) {
+        // Not in current deck: prepend a minimal card so user can "open" it.
+        const cand = {
+          id: email,
+          name: (profile && profile.name) ? String(profile.name) : 'Member',
+          age: (profile && profile.age) ? String(profile.age) : '',
+          city: (profile && profile.city) ? String(profile.city) : '',
+          photoUrl: (profile && profile.photoUrl) ? String(profile.photoUrl) : ''
+        };
+        profiles = [cand, ...profiles];
+        idx = 0;
+      }
+
+      currentIndex = Math.max(0, idx);
+      if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = true;
+      if (DOM.swipeControls) DOM.swipeControls.style.display = 'flex';
+      renderCards();
+    } catch (e) {
+      console.warn('SwipeController.jumpTo failed:', e);
+      toast('Unable to open profile right now.', 'error');
+    }
   }
 
   async function loadCandidates() {
@@ -2879,7 +2967,8 @@ const SwipeController = (() => {
     init,
     like: () => handleAction('like'),
     pass: () => handleAction('pass'),
-    superLike: () => handleAction('superlike')
+    superLike: () => handleAction('superlike'),
+    jumpTo
   };
 })();;
 
