@@ -160,8 +160,8 @@ function cacheDom() {
   
   DOM.newMatchesRail = document.getElementById('newMatchesRail');
   DOM.matchesContainer = document.getElementById('matchesContainer');
-  DOM.newMatchCount = document.getElementById('newMatchCount');
   DOM.matchesSearch = document.getElementById('matchesSearch');
+  DOM.newMatchCount = document.getElementById('newMatchCount');
   
   // Modals & Dialogs
   DOM.dlgChat = document.getElementById('dlgChat');
@@ -177,6 +177,7 @@ function cacheDom() {
   DOM.chatReceiptLine = DOM.dlgChat ? DOM.dlgChat.querySelector('.chat-header p') : null;
 
   DOM.activeNearbyContainer = document.getElementById('activeNearbyContainer');
+  DOM.activeNearbyContainerSidebar = document.getElementById('activeNearbyContainerSidebar');
   DOM.btnNotifToggle = document.getElementById('btnNotifToggle');
   DOM.notifDropdown = document.getElementById('notifDropdown');
   DOM.notifDot = DOM.btnNotifToggle ? DOM.btnNotifToggle.querySelector('.notif-dot') : null;
@@ -563,8 +564,8 @@ async function initApp() {
   cacheDom();
   await loadMe();
   
-  // Swipe deck loads lazily when Swipe tab is opened.
-
+  SwipeController.init();
+  
   if (DEV_MODE) {
     populateMockContent();
   } else {
@@ -824,6 +825,14 @@ function setupEventListeners() {
   if (DOM.matchesContainer) DOM.matchesContainer.addEventListener('click', handleMatchClick);
   if (DOM.newMatchesRail) DOM.newMatchesRail.addEventListener('click', handleMatchClick);
 
+  // Matches search
+  if (DOM.matchesSearch && !DOM.matchesSearch._bound) {
+    DOM.matchesSearch._bound = true;
+    DOM.matchesSearch.addEventListener('input', () => {
+      try { applyMatchesSearchFilter(); } catch {}
+    });
+  }
+
   // 5. Modals Close
   if (DOM.btnCloseStory && DOM.dlgStory) DOM.btnCloseStory.addEventListener('click', () => MomentsController.closeStory());
   if (DOM.btnCloseChat && DOM.dlgChat) DOM.btnCloseChat.addEventListener('click', () => DOM.dlgChat.close());
@@ -1013,7 +1022,7 @@ if (DOM.frmPassword) DOM.frmPassword.addEventListener('submit', async (e) => {
   if (DOM.btnSwipePass) DOM.btnSwipePass.addEventListener('click', handlePass);
   if (DOM.btnSwipeLike) DOM.btnSwipeLike.addEventListener('click', handleLike);
   if (DOM.btnSwipeSuper) DOM.btnSwipeSuper.addEventListener('click', handleSuper);
-  if (DOM.btnRefreshSwipe) DOM.btnRefreshSwipe.addEventListener('click', () => SwipeController.init(true));
+  if (DOM.btnRefreshSwipe) DOM.btnRefreshSwipe.addEventListener('click', () => SwipeController.init());
   
   document.addEventListener('keydown', (e) => {
       if(state.activeTab !== 'swipe') return;
@@ -1176,9 +1185,6 @@ function onPanelActivated(tabName) {
   if (tabName === 'concierge') {
     loadConciergePanel();
   }
-  if (tabName === 'swipe') {
-    SwipeController.init(false);
-  }
 }
 
 
@@ -1298,7 +1304,7 @@ function renderAdmirersPanel(payload) {
 }
 
 async function loadActiveNearbyPanel(force = false) {
-  if (!DOM.activeNearbyContainer) return;
+  if (!DOM.activeNearbyContainer && !DOM.activeNearbyContainerSidebar) return;
   if (state.homeLoading && state.homeLoading.nearby) return;
 
   const now = Date.now();
@@ -1324,29 +1330,54 @@ async function loadActiveNearbyPanel(force = false) {
 function renderActiveNearbyPanel(payload) {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const items = Array.isArray(payload.items) ? payload.items : [];
+
+  const targets = [DOM.activeNearbyContainer, DOM.activeNearbyContainerSidebar].filter(Boolean);
+
+  // Helper: render empty state to all targets
+  const setEmpty = () => {
+    targets.forEach(el => {
+      // If the element is already the grid container, keep structure consistent
+      if (el.classList && el.classList.contains('active-grid')) {
+        el.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
+      } else {
+        el.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
+      }
+    });
+  };
+
   if (!items.length) {
-    DOM.activeNearbyContainer.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
+    setEmpty();
     return;
   }
 
-  let html = `<div class="active-grid">`;
+  // Build item markup (no outer wrapper)
+  let itemsHtml = '';
   items.forEach(u => {
     const photo = u.photoUrl ? esc(u.photoUrl) : 'assets/images/truematch-mark.png';
     const hasPhoto = !!u.photoUrl;
-    html += `
+    itemsHtml += `
       <div class="active-item" data-email="${esc(u.email || '')}" title="${esc(u.name || 'Member')}">
         <img src="${photo}" style="background:${hasPhoto ? 'transparent' : getRandomColor()}; object-fit:${hasPhoto ? 'cover' : 'contain'};">
         <span class="active-dot"></span>
       </div>`;
   });
-  html += `</div>`;
 
-  DOM.activeNearbyContainer.innerHTML = html;
+  // Render to both: home container wraps grid, sidebar already is grid
+  targets.forEach(el => {
+    if (el.classList && el.classList.contains('active-grid')) {
+      el.innerHTML = itemsHtml;
+    } else {
+      el.innerHTML = `<div class="active-grid">${itemsHtml}</div>`;
+    }
+  });
 
-  DOM.activeNearbyContainer.querySelectorAll('.active-item').forEach(el => {
-    el.addEventListener('click', () => {
-      try { setActiveTab('swipe'); } catch {}
-      toast('Swipe to discover more people.', 'info');
+  // Bind click handlers (on both targets)
+  targets.forEach(el => {
+    el.querySelectorAll('.active-item').forEach(node => {
+      node.addEventListener('click', () => {
+        try { setActiveTab('swipe'); } catch {}
+        toast('Swipe to discover more people.', 'info');
+      });
     });
   });
 }
@@ -2110,27 +2141,32 @@ async function loadMatchesPanel() {
       return;
     }
 
-    state.matchesAll = Array.isArray(res.matches) ? res.matches : [];
-    renderMatchesFromApi(state.matchesAll);
-    setupMatchesSearch();
-} catch (err) {
+    const allMatches = Array.isArray(res.matches) ? res.matches : [];
+    state.matchesAll = allMatches;
+    renderMatchesFromApi(allMatches, allMatches.length);
+    // Apply search filter (if user typed something)
+    try { applyMatchesSearchFilter(); } catch {}
+  } catch (err) {
     console.warn('loadMatchesPanel failed:', err);
   }
 }
 
-function renderMatchesFromApi(matches, opts = {}) {
-  const updateCounts = opts.updateCounts !== false;
-  // Update counters
-  const count = matches.length;
-  if (updateCounts) {
-    if (DOM.matchCount) DOM.matchCount.textContent = String(count);
-    if (DOM.newMatchCount) DOM.newMatchCount.textContent = String(Math.min(count, 6));
-  }
+function renderMatchesFromApi(matches, totalOverride = null) {
+  const total = (typeof totalOverride === 'number') ? totalOverride : (Array.isArray(matches) ? matches.length : 0);
+  matches = Array.isArray(matches) ? matches : [];
+
+  // Update counters (show TOTAL, not filtered count)
+  if (DOM.matchCount) DOM.matchCount.textContent = String(total);
+  if (DOM.newMatchCount) DOM.newMatchCount.textContent = String(Math.min(total, 6));
+
+  const isFilteredView = total > 0 && matches.length === 0;
 
   // --- Stories (new matches rail) ---
   if (DOM.newMatchesRail) {
-    if (!count) {
-      DOM.newMatchesRail.innerHTML = '<div style="color:rgba(255,255,255,0.65); font-size:0.9rem;"></div>';
+    if (total === 0) {
+      DOM.newMatchesRail.innerHTML = '<div style="color:rgba(255,255,255,0.65); font-size:0.9rem;">No matches yet.</div>';
+    } else if (isFilteredView) {
+      DOM.newMatchesRail.innerHTML = '<div style="color:rgba(255,255,255,0.65); font-size:0.9rem;">No results. Try another search.</div>';
     } else {
       DOM.newMatchesRail.innerHTML = matches.slice(0, 6).map(m => {
         const safeName = (m.name || 'Match').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -2149,8 +2185,12 @@ function renderMatchesFromApi(matches, opts = {}) {
 
   // --- Match cards ---
   if (DOM.matchesContainer) {
-    if (!count) {
+    if (total === 0) {
       DOM.matchesContainer.innerHTML = '<div style="color:rgba(255,255,255,0.65);">No matches yet. Keep swiping.</div>';
+      return;
+    }
+    if (isFilteredView) {
+      DOM.matchesContainer.innerHTML = '<div style="color:rgba(255,255,255,0.65);">No results. Try another search.</div>';
       return;
     }
 
@@ -2173,32 +2213,25 @@ function renderMatchesFromApi(matches, opts = {}) {
     }).join('');
   }
 }
-let _matchesSearchBound = false;
 
-function setupMatchesSearch() {
-  if (_matchesSearchBound) return;
+function applyMatchesSearchFilter() {
   if (!DOM.matchesSearch) return;
+  const qRaw = String(DOM.matchesSearch.value || '').trim().toLowerCase();
+  const all = Array.isArray(state.matchesAll) ? state.matchesAll : [];
 
-  _matchesSearchBound = true;
+  if (!qRaw) {
+    renderMatchesFromApi(all, all.length);
+    return;
+  }
 
-  DOM.matchesSearch.addEventListener('input', () => {
-    const q = String(DOM.matchesSearch.value || '').trim().toLowerCase();
-    const all = Array.isArray(state.matchesAll) ? state.matchesAll : [];
-
-    if (!q) {
-      renderMatchesFromApi(all, { updateCounts: false });
-      return;
-    }
-
-    const filtered = all.filter(m => {
-      const name = String(m.name || '').toLowerCase();
-      const email = String(m.email || m.id || '').toLowerCase();
-      const city = String(m.city || '').toLowerCase();
-      return name.includes(q) || email.includes(q) || city.includes(q);
-    });
-
-    renderMatchesFromApi(filtered, { updateCounts: false });
+  const filtered = all.filter(m => {
+    const name = String(m.name || '').toLowerCase();
+    const email = String(m.email || '').toLowerCase();
+    const city = String(m.city || '').toLowerCase();
+    return name.includes(qRaw) || email.includes(qRaw) || city.includes(qRaw);
   });
+
+  renderMatchesFromApi(filtered, all.length);
 }
 
 
@@ -2498,11 +2531,14 @@ function renderHomeEmptyStates() {
       DOM.admirerContainer.innerHTML = "<div class='tiny muted' style='padding:12px 2px;'>No likes yet. When someone likes you, they’ll appear here.</div>";
     }
   }
-  if (DOM.activeNearbyContainer) {
-    const hasActive = DOM.activeNearbyContainer.querySelector('.active-item');
-    if (!hasActive) {
-      DOM.activeNearbyContainer.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
-    }
+  const activeTargets = [DOM.activeNearbyContainer, DOM.activeNearbyContainerSidebar].filter(Boolean);
+  if (activeTargets.length) {
+    activeTargets.forEach(el => {
+      const hasActive = el.querySelector('.active-item');
+      if (!hasActive) {
+        el.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
+      }
+    });
   }
   if (DOM.storiesContainer) {
     const hasStories = DOM.storiesContainer.querySelector('.story-item');
@@ -3187,16 +3223,8 @@ const SwipeController = (() => {
   let profiles = [];
   let currentIndex = 0;
   let isLoading = false;
-  let isActing = false;
-  let everLoaded = false;
-
   let lastLimit = DAILY_SWIPE_LIMIT; // default (Free), may become null for paid
   let lastRemaining = DAILY_SWIPE_LIMIT;
-
-  function setButtonsDisabled(disabled) {
-    const btns = [DOM.btnSwipePass, DOM.btnSwipeLike, DOM.btnSwipeSuper];
-    btns.forEach(b => { if (b) b.disabled = !!disabled; });
-  }
 
   function setSwipeStats(remaining, limit) {
     // limit === null => unlimited
@@ -3215,38 +3243,42 @@ const SwipeController = (() => {
     updateSwipeStats(safeRemaining, safeLimit);
   }
 
-  async function init(force = false) {
-    if (!force && everLoaded) return;
+  async function init() {
     await loadCandidates();
   }
 
   async function loadCandidates() {
     if (isLoading) return;
     isLoading = true;
-    isActing = false;
-    setButtonsDisabled(true);
 
     if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
     if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = true;
 
     try {
       const data = await apiGet('/api/swipe/candidates');
-      everLoaded = true;
-
+      if (!data || !data.ok) {
+        const errMsg = (data && (data.message || data.error)) || 'Failed to load swipe deck.';
+        showToast(errMsg, 'error');
+        profiles = [];
+        currentIndex = 0;
+        if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
+        if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
+        if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
+        return;
+      }
       if (data && data.ok && (data.limit === null || typeof data.limit === 'number' || typeof data.limit === 'undefined')) {
         setSwipeStats(data.remaining, data.limit);
       }
 
-      const list = (data && Array.isArray(data.candidates)) ? data.candidates : [];
+      const list = (data && data.candidates) ? data.candidates : [];
 
       if (data && data.limitReached) {
         // Free cap reached: keep empty state visible and disable controls
-        profiles = [];
-        currentIndex = 0;
         if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
         if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
-        setButtonsDisabled(true);
         showToast('Daily swipe limit reached. Come back tomorrow.', 'error');
+        profiles = [];
+        currentIndex = 0;
         return;
       }
 
@@ -3256,22 +3288,15 @@ const SwipeController = (() => {
         if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = true;
         renderCards();
         if (DOM.swipeControls) DOM.swipeControls.style.display = 'flex';
-        setButtonsDisabled(false);
       } else {
         profiles = [];
         currentIndex = 0;
         if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
         if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
-        setButtonsDisabled(true);
       }
     } catch (e) {
       console.error('Swipe Error', e);
       showToast('Failed to load swipe deck.', 'error');
-      profiles = [];
-      currentIndex = 0;
-      if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
-      if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
-      setButtonsDisabled(true);
     } finally {
       isLoading = false;
     }
@@ -3327,60 +3352,74 @@ const SwipeController = (() => {
   }
 
   async function handleAction(type) {
-    if (isLoading || isActing) return;
     if (currentIndex >= profiles.length) return;
 
-    isActing = true;
-    setButtonsDisabled(true);
-
-    const active = document.getElementById('activeSwipeCard');
-    let animClass = 'swipe-out-right';
-    if (type === 'pass') animClass = 'swipe-out-left';
-    if (active) active.classList.add(animClass);
-
     const targetEmail = profiles[currentIndex].id;
+    const action = mapAction(type);
 
-    let okToAdvance = true;
-    let limitReachedAfter = false;
-
-    try {
-      const res = await apiPost('/api/swipe/action', { targetEmail, action: mapAction(type) });
-
-      if (!res || !res.ok) {
-        okToAdvance = false;
-        const code = String((res && (res.code || res.error || res.message)) || '').toLowerCase();
-
-        if (code === 'target_not_premium') {
-          showToast('You can only swipe on paid members.', 'error');
-        } else if (code === 'not_logged_in' || res?.status === 401) {
-          showToast('Session expired. Please sign in again.', 'error');
-          try { clearSession(); } catch {}
-          try { window.location.href = 'index.html'; } catch {}
-          return;
-        } else {
-          showToast((res && (res.error || res.message)) || 'Swipe failed. Please try again.', 'error');
-        }
-      } else {
-        setSwipeStats(res.remaining, res.limit);
-        limitReachedAfter = !!res.limitReached;
-
-        const isMatch = !!(res.isMatch || res.match);
-        if (isMatch) showToast("It’s a match! 🎉 Check Matches tab.", 'success');
-      }
-    } catch (e) {
-      console.error(e);
-      okToAdvance = false;
-      showToast('Swipe failed. Please try again.', 'error');
+    // Optimistic animation
+    const active = document.getElementById('activeSwipeCard');
+    if (active) {
+      let animClass = 'swipe-out-right';
+      if (type === 'pass') animClass = 'swipe-out-left';
+      active.classList.add(animClass);
     }
 
-    if (!okToAdvance) {
-      // Reset card UI (remove animation and re-render current top card)
-      if (active) active.classList.remove('swipe-out-left', 'swipe-out-right');
-      renderCards();
-      isActing = false;
-      setButtonsDisabled(false);
+    let res = null;
+    try {
+      res = await apiPost('/api/swipe/action', { targetEmail, action });
+    } catch (e) {
+      res = { ok: false, error: 'Network error' };
+    }
+
+    // Handle error responses (do NOT advance deck)
+    if (!res || !res.ok) {
+      const code = String((res && (res.code || res.error)) || '').toLowerCase();
+
+      if (code === 'daily_swipe_limit_reached' || (res && Number(res.status) === 429)) {
+        setSwipeStats(0, (res && res.limit) || DAILY_SWIPE_LIMIT);
+        showToast('Daily swipe limit reached. Come back tomorrow.', 'error');
+
+        profiles = [];
+        currentIndex = 0;
+        if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
+        if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
+        if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
+        return;
+      }
+
+      if (code === 'target_not_premium') {
+        showToast('This member requires a paid plan.', 'error');
+      } else {
+        const msg = (res && (res.message || res.error)) || 'Swipe failed. Please try again.';
+        showToast(msg, 'error');
+      }
+
+      // Re-render current cards (undo optimistic animation)
+      setTimeout(() => {
+        const a = document.getElementById('activeSwipeCard');
+        if (a) a.classList.remove('swipe-out-left', 'swipe-out-right');
+        renderCards();
+      }, 120);
+
       return;
     }
+
+    // Success
+    setSwipeStats(res.remaining, res.limit);
+
+    if (res.limitReached) {
+      showToast('Daily swipe limit reached. Come back tomorrow.', 'error');
+      profiles = [];
+      currentIndex = 0;
+      if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
+      if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
+      if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
+      return;
+    }
+
+    const isMatch = !!(res.isMatch || res.match);
+    if (isMatch) showToast('It’s a match! 🎉 Check Matches tab.', 'success');
 
     let msg = 'Liked!';
     if (type === 'pass') msg = 'Passed';
@@ -3388,30 +3427,15 @@ const SwipeController = (() => {
     showToast(msg);
 
     setTimeout(() => {
-      // If user just hit the daily cap, end the deck immediately.
-      if (limitReachedAfter) {
-        profiles = [];
-        currentIndex = 0;
-        if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
-        if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
-        if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
-        setButtonsDisabled(true);
-        isActing = false;
-        return;
-      }
-
       currentIndex++;
       if (currentIndex >= profiles.length) {
         if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
         if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
         if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
-        setButtonsDisabled(true);
       } else {
         renderCards();
-        setButtonsDisabled(false);
       }
-      isActing = false;
-    }, 420);
+    }, 300);
   }
 
   return {
