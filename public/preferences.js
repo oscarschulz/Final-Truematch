@@ -55,7 +55,7 @@
 
     if (!file) throw new Error('No file selected');
 
-    const maxBytes = 3 * 1024 * 1024; // 3MB (raw file)
+    const maxBytes = 12 * 1024 * 1024; // 12MB (raw file)
     if (file.size > maxBytes) {
       throw new Error('Please choose an image under 3MB.');
     }
@@ -145,7 +145,11 @@
       try { fileInput.removeAttribute('required'); } catch {}
     }
 
-    fileInput.addEventListener('change', async () => {
+    
+    else {
+      try { fileInput.setAttribute('required', 'required'); } catch {}
+    }
+fileInput.addEventListener('change', async () => {
       const f = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
       if (!f) {
         AVATAR_DATA_URL_FOR_UPLOAD = '';
@@ -948,7 +952,7 @@ if (prefs.intent && qs('select[name="intent"]')) {
       if (!validateFormValues(prefs)) return;
 
       const profile = getProfileValues();
-      const requireAll = PREFS_ONBOARDING_MODE === '1';
+      const requireAll = (PREFS_ONBOARDING_MODE === '1') || !EXISTING_AVATAR_URL;
       if (!validateProfileValues(profile, { requireAll })) return;
 
       // If the user picked a file but it has not been processed yet, process now.

@@ -305,8 +305,6 @@ app.get('/assets/js/creators/tm-api.js', (req, res, next) => {
   return next();
 });
 
-app.use(express.static(PUBLIC_DIR));
-app.use('/public', express.static(PUBLIC_DIR));
 
 
 // static files
@@ -782,7 +780,6 @@ app.use(async (req, res, next) => {
 
   // hydrate from cache (per-email); never carry plan/prefs from previous user
   DB.user = { ...user };
-  normalizeDBUser();
 
   // load per-email prefs map (not the global DB.prefs)
   if (Object.prototype.hasOwnProperty.call(DB.prefsByEmail, email)) {
@@ -797,6 +794,45 @@ app.use(async (req, res, next) => {
   return next();
 });
 
+
+
+
+// ------------------------------------------------------------
+// Onboarding gate (first login): require profile photo + preferences
+// If account has no avatar or no saved prefs, force user to complete preferences.html first.
+app.use((req, res, next) => {
+  try {
+    if (req.method !== 'GET') return next();
+
+    const p = req.path;
+
+    // Let users reach preferences page to complete setup
+    if (!PROTECTED_HTML.has(p) || p === '/preferences.html') return next();
+
+    const email = getSessionEmail(req);
+    if (!email) return next(); // protected-html gate handles auth
+
+    const user = DB.user || DB.users[email] || null;
+    const prefs = DB.prefs;
+
+    const hasAvatar = !!(user && (user.avatarUrl || user.avatarPath));
+    const prefsSaved = !!(user && user.prefsSaved);
+    const hasPrefs = !!prefs;
+
+    if (!hasAvatar || !prefsSaved || !hasPrefs) {
+      const from = encodeURIComponent(req.originalUrl || p);
+      return res.redirect(`/preferences.html?onboarding=1&from=${from}`);
+    }
+
+    return next();
+  } catch (e) {
+    return next();
+  }
+});
+
+// Serve static files AFTER session + onboarding gates
+app.use(express.static(PUBLIC_DIR));
+app.use('/public', express.static(PUBLIC_DIR));
 
 // ============================================================
 // Auth middleware (cookie-based)
@@ -818,7 +854,6 @@ function authMiddleware(req, res, next) {
     if (!DB.user || String(DB.user.email || '').trim().toLowerCase() !== email) {
       const cached = (DB.users && DB.users[email]) ? DB.users[email] : null;
       if (cached) DB.user = { ...cached };
-      normalizeDBUser();
     }
 
     req.user = DB.user ? { ...DB.user } : { email };
@@ -1716,8 +1751,6 @@ function publicUser(doc) {
     phone: doc.phone || doc.phoneNumber || doc.phone_number || '',
     linkedAccounts: doc.linkedAccounts || doc.linked_accounts || null,
     city: doc.city || doc.location || '',
-    age: doc.age ?? null,
-    creatorApplication: doc.creatorApplication ?? doc.creator_application ?? null,
     avatarUrl: doc.avatarUrl || doc.avatar || '',
     creatorStatus: doc.creatorStatus ?? doc.creator_status ?? null,
     hasCreatorAccess: Boolean(doc.hasCreatorAccess ?? doc.creatorApproved ?? false),
@@ -1735,14 +1768,6 @@ verified: Boolean(doc.verified),
     lastSeenAt: doc.lastSeenAt ?? doc.last_seen_at ?? null,
   };
 }
-
-function normalizeDBUser() {
-  if (!DB.user || typeof DB.user !== 'object') return;
-  // Never keep auth secrets in DB.user (frontend-safe object)
-  if ('passwordHash' in DB.user) delete DB.user.passwordHash;
-  if ('_pwHash' in DB.user) delete DB.user._pwHash;
-}
-
 
 async function findUserByEmail(email) {
   const emailNorm = String(email || '').trim().toLowerCase();
@@ -2421,7 +2446,6 @@ app.post('/api/auth/login', async (req, res) => {
       // hydrate clean per-user state (do NOT inherit previous DB.user)
       if (stored) {
         DB.user = { ...stored };
-  normalizeDBUser();
       } else {
         DB.user = {
           id: 'demo-1',
@@ -2991,7 +3015,6 @@ app.get('/api/me', async (req, res) => {
 
     // Keep central DB pointers in sync
     DB.user = { ...user, prefsSaved };
-  normalizeDBUser();
     DB.prefs = prefs || null;
     DB.users[email] = { ...DB.user };
     if (prefs) {
@@ -3638,6 +3661,31 @@ app.post('/api/me/preferences', async (req, res) => {
   try {
     const body = req.body || {};
 
+    const sessionEmail = (DB.user && DB.user.email) ? DB.user.email : getSessionEmail(req);
+    if (!sessionEmail) {
+      return res.status(401).json({ ok: false, message: 'Not signed in' });
+    }
+
+    // Enforce profile picture requirement before saving preferences (onboarding hard requirement).
+    let _user = null;
+    try {
+      if (hasFirebase) {
+        _user = await findUserByEmail(sessionEmail);
+      }
+    } catch (_) {
+      _user = null;
+    }
+    if (!_user) _user = DB.users[sessionEmail] || DB.user || null;
+
+    if (!_user) {
+      return res.status(401).json({ ok: false, message: 'Not signed in' });
+    }
+    const _hasAvatar = !!(_user.avatarUrl || _user.avatarPath);
+    if (!_hasAvatar) {
+      return res.status(400).json({ ok: false, message: 'profile picture required' });
+    }
+
+
     const cityRaw = body.city;
     const ageMinRaw = (typeof body.ageMin !== 'undefined') ? body.ageMin : body.minAge;
     const ageMaxRaw = (typeof body.ageMax !== 'undefined') ? body.ageMax : body.maxAge;
@@ -4127,7 +4175,6 @@ app.post('/api/me/linked-accounts/connect', authMiddleware, async (req, res) => 
       if (!DB.users) DB.users = {};
       DB.users[email] = u;
       if (DB.user && String(DB.user.email || '').toLowerCase() === email) DB.user = u;
-    normalizeDBUser();
       try { saveUsersStore(); } catch {}
       nextUser = u;
     }
@@ -4186,7 +4233,6 @@ app.post('/api/me/linked-accounts/disconnect', authMiddleware, async (req, res) 
       u.linkedAccountsUpdatedAt = new Date().toISOString();
       if (DB.users) DB.users[email] = u;
       if (DB.user && String(DB.user.email || '').toLowerCase() === email) DB.user = u;
-    normalizeDBUser();
       try { saveUsersStore(); } catch {}
     }
 
@@ -6936,7 +6982,6 @@ const currentStatus = String(userDoc.premiumStatus || '').toLowerCase();
         DB.users[email].premiumApplication = fresh.premiumApplication ?? null;
         if (DB.user && String(DB.user.email || '').toLowerCase() === email) {
           DB.user = { ...DB.users[email] };
-  normalizeDBUser();
         }
       }
     } else {
@@ -7285,7 +7330,6 @@ app.post('/api/admin/premium/decision', requireAdmin, async (req, res) => {
         DB.users[e] = { ...publicUser({ id: fresh.id, ...fresh }) };
         if (DB.user && String(DB.user.email || '').toLowerCase() === e) {
           DB.user = { ...DB.users[e] };
-  normalizeDBUser();
         }
       }
     } else {
@@ -7780,7 +7824,7 @@ app.get('/api/premium-society/candidates', authMiddleware, async (req, res) => {
           name: pu.name,
           age: pu.age,
           city: pu.location || pu.city || '',
-          photoUrl: pu.avatarUrl || pu.photoUrl || pu.profilePhotoUrl || ''
+          photoUrl: pu.photoUrl || pu.profilePhotoUrl || ''
         });
       });
     } else {
@@ -7799,7 +7843,7 @@ app.get('/api/premium-society/candidates', authMiddleware, async (req, res) => {
           name: pu.name,
           age: pu.age,
           city: pu.location || pu.city || '',
-          photoUrl: pu.avatarUrl || pu.photoUrl || pu.profilePhotoUrl || ''
+          photoUrl: pu.photoUrl || pu.profilePhotoUrl || ''
         });
       }
     }
