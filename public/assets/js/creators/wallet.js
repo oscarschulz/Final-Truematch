@@ -37,6 +37,155 @@ function tmDigits(raw) {
   return String(raw || '').replace(/\D+/g, '');
 }
 
+function tmReadMe() {
+  try { return window.__tmMe || window.tmMeCache || null; } catch { return null; }
+}
+
+function tmSafeTrim(v) {
+  return String(v || '').trim();
+}
+
+function tmFormatCardNumberValue(raw) {
+  const digits = tmDigits(raw).slice(0, 19); // allow up to 19 digits
+  if (!digits) return '';
+
+  // AmEx formatting: 4-6-5
+  if (digits.startsWith('34') || digits.startsWith('37')) {
+    const a = digits.slice(0, 4);
+    const b = digits.slice(4, 10);
+    const c = digits.slice(10, 15);
+    return [a, b, c].filter(Boolean).join(' ');
+  }
+
+  // Default: groups of 4
+  return digits.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
+}
+
+function tmBindCardNumberAutoFormat(root) {
+  if (!root) return;
+  const { number } = tmGetFieldsFromCardForm(root);
+  if (!number) return;
+
+  if (number.dataset.tmCardNumBound === '1') return;
+  number.dataset.tmCardNumBound = '1';
+
+  try { number.setAttribute('inputmode', 'numeric'); } catch {}
+  try { number.setAttribute('autocomplete', 'cc-number'); } catch {}
+
+  const handler = () => {
+    const prev = number.value || '';
+    const prevPos = (typeof number.selectionStart === 'number') ? number.selectionStart : prev.length;
+    const digitsBefore = prev.slice(0, prevPos).replace(/\D+/g, '').length;
+
+    const formatted = tmFormatCardNumberValue(prev);
+    number.value = formatted;
+
+    if (document.activeElement === number && typeof number.setSelectionRange === 'function') {
+      let pos = 0;
+      let seen = 0;
+      while (pos < formatted.length && seen < digitsBefore) {
+        if (/\d/.test(formatted[pos])) seen += 1;
+        pos += 1;
+      }
+      try { number.setSelectionRange(pos, pos); } catch {}
+    }
+  };
+
+  number.addEventListener('input', handler, { passive: true });
+}
+
+function tmBindCvcAutoFormat(root) {
+  if (!root) return;
+  const { cvc, number } = tmGetFieldsFromCardForm(root);
+  if (!cvc) return;
+
+  if (cvc.dataset.tmCvcBound === '1') return;
+  cvc.dataset.tmCvcBound = '1';
+
+  try { cvc.setAttribute('inputmode', 'numeric'); } catch {}
+  try { cvc.setAttribute('autocomplete', 'cc-csc'); } catch {}
+  try { cvc.setAttribute('maxlength', '4'); } catch {}
+
+  const handler = () => {
+    const raw = tmDigits(cvc.value).slice(0, 4);
+    cvc.value = raw;
+
+    // If card brand is AMEX, allow 4 digits; else 3 digits feels standard.
+    const nd = tmDigits(number?.value);
+    const isAmex = nd.startsWith('34') || nd.startsWith('37');
+    if (!isAmex) {
+      cvc.value = raw.slice(0, 3);
+    }
+  };
+
+  cvc.addEventListener('input', handler, { passive: true });
+}
+
+function tmPrefillCardForm(root) {
+  if (!root) return;
+  const me = tmReadMe();
+  if (!me) return;
+
+  const fields = tmGetFieldsFromCardForm(root);
+
+  try {
+    if (fields.email && !tmSafeTrim(fields.email.value) && me.email) {
+      fields.email.value = tmSafeTrim(me.email).toLowerCase();
+      try { fields.email.setAttribute('autocomplete', 'email'); } catch {}
+    }
+    if (fields.name && !tmSafeTrim(fields.name.value) && me.name) {
+      fields.name.value = tmSafeTrim(me.name);
+      try { fields.name.setAttribute('autocomplete', 'cc-name'); } catch {}
+    }
+  } catch {}
+}
+
+function tmBindCardFormUX(root, toast) {
+  if (!root) return;
+
+  tmPrefillCardForm(root);
+  tmBindCardNumberAutoFormat(root);
+  tmBindExpAutoFormat(root);
+  tmBindCvcAutoFormat(root);
+
+  // "My card number is longer" hint
+  const hintLink = root.querySelector('.link-small, .ac-link');
+  if (hintLink && hintLink.dataset.tmHintBound !== '1') {
+    hintLink.dataset.tmHintBound = '1';
+    hintLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        toast?.fire?.({
+          icon: 'info',
+          title: 'Tip',
+          text: 'Enter your full card number. We only save the last 4 digits (no CVC stored).'
+        });
+      } catch (_) {}
+    });
+  }
+}
+
+function tmBindVerifyButtons(toast) {
+  // One global handler, avoids per-view duplication
+  if (document.body && document.body.dataset.tmVerifyBound === '1') return;
+  if (document.body) document.body.dataset.tmVerifyBound = '1';
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-verify');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      toast?.fire?.({
+        icon: 'info',
+        title: 'Verification',
+        text: 'Verification is coming soon.'
+      });
+    } catch (_) {}
+  });
+}
+
 function tmCardBrand(digits) {
   const d = tmDigits(digits);
   if (!d) return 'card';
@@ -152,12 +301,20 @@ function tmValidateCardPayload(payload, needsAgeConfirm) {
   const last4 = String(payload.last4 || '').trim();
   const expMonth = String(payload.expMonth || '').trim();
   const expYear = String(payload.expYear || '').trim();
+  const numberLen = parseInt(payload.numberLen || '0', 10) || 0;
+  const cvc = String(payload.cvc || '').trim();
+  const brand = String(payload.brand || '').trim().toLowerCase();
 
   if (!email || !email.includes('@')) problems.push('Email');
   if (!name) problems.push('Name on the card');
-  if (!last4 || last4.length !== 4) problems.push('Card number');
+  if (!last4 || last4.length !== 4 || (numberLen && numberLen < 12)) problems.push('Card number');
   if (!expMonth || expMonth.length !== 2) problems.push('Expiration');
   if (!expYear || expYear.length !== 4) problems.push('Expiration');
+
+  // CVC checks (we never store it, but we validate input)
+  const cvcOk = (brand === 'amex') ? /^\d{4}$/.test(cvc) : /^\d{3,4}$/.test(cvc);
+  if (!cvcOk) problems.push('CVC');
+
   if (needsAgeConfirm) problems.push('Age confirmation');
 
   // Month range check
@@ -273,15 +430,18 @@ function tmNavigateToYourCards() {
 function tmBuildCardFromForm(root) {
   const fields = tmGetFieldsFromCardForm(root);
 
-  const digits = tmDigits(fields.number?.value);
+  const numDigits = tmDigits(fields.number?.value);
+  const cvcDigits = tmDigits(fields.cvc?.value).slice(0, 4);
   const { month, year } = tmParseExp(fields.exp?.value);
 
   const card = {
     id: tmUid('card'),
-    brand: tmCardBrand(digits),
-    last4: digits.slice(-4),
+    brand: tmCardBrand(numDigits),
+    last4: numDigits.slice(-4),
+    numberLen: numDigits.length,
     expMonth: month,
     expYear: year,
+    cvc: cvcDigits,
     nameOnCard: String(fields.name?.value || '').trim(),
     email: String(fields.email?.value || '').trim(),
     country: String(fields.country?.value || '').trim(),
@@ -805,7 +965,7 @@ export function initWallet(TopToast) {
   }
 
   // Save from modal
-  tmBindExpAutoFormat(modal);
+  tmBindCardFormUX(modal, toast);
   if (modal && btnSubmitModal) {
     tmBindFormSubmit({
       root: modal,
@@ -827,7 +987,7 @@ export function initWallet(TopToast) {
   // -----------------------------
   const viewAddCard = DOM.viewAddCard;
   if (viewAddCard) {
-    tmBindExpAutoFormat(viewAddCard);
+    tmBindCardFormUX(viewAddCard, toast);
     const btnSubmitPage = viewAddCard.querySelector('.btn-submit-card');
     tmBindFormSubmit({
       root: viewAddCard,
@@ -877,6 +1037,9 @@ export function initWallet(TopToast) {
       try { toast.fire({ icon: 'error', title: 'Action failed' }); } catch (_) {}
     }
   });
+
+  // Wallet header: Verify button (no-op placeholder)
+  tmBindVerifyButtons(toast);
 
   // Auto-refresh list when Your Cards view opens
   tmInstallAutoRefresh();
