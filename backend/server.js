@@ -132,7 +132,7 @@ app.use(cors(corsOptions));
 app.use(express.json({
   // Increased to support small photo/video "Recent Moments" uploads (base64 payload)
   // Note: client & server still enforce stricter per-upload limits.
-  limit: '15mb',
+  limit: '35mb',
   verify: (req, res, buf) => {
     // Keep raw body for Coinbase Commerce webhook signature verification
     if (req.originalUrl && req.originalUrl.startsWith('/api/coinbase/webhook')) {
@@ -140,7 +140,7 @@ app.use(express.json({
     }
   }
 }));
-app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '35mb' }));
 
 
 app.use(cookieParser());
@@ -1715,6 +1715,7 @@ function publicUser(doc) {
     linkedAccounts: doc.linkedAccounts || doc.linked_accounts || null,
     city: doc.city || doc.location || '',
     avatarUrl: doc.avatarUrl || doc.avatar || '',
+    headerUrl: doc.headerUrl || doc.coverUrl || doc.header || '',
     creatorStatus: doc.creatorStatus ?? doc.creator_status ?? null,
     hasCreatorAccess: Boolean(doc.hasCreatorAccess ?? doc.creatorApproved ?? false),
     premiumStatus: doc.premiumStatus ?? doc.premium_status ?? null,
@@ -1857,6 +1858,69 @@ async function uploadAvatarDataUrlToStorage(email, avatarDataUrl, prevAvatarPath
 
   return { url, path: filePath };
 }
+
+
+
+async function uploadHeaderDataUrlToStorage(email, headerDataUrl, prevHeaderPath) {
+  if (!hasFirebase || !admin) {
+    throw new Error('firebase not configured');
+  }
+  if (!hasStorage || !storageBucket) {
+    throw new Error('storage not configured');
+  }
+
+  const raw = String(headerDataUrl || '');
+  const m = raw.match(/^data:(image\/[^;]+);base64,(.+)$/);
+  if (!m) {
+    throw new Error('invalid header data');
+  }
+
+  const mime = m[1];
+  const b64 = m[2];
+  const buf = Buffer.from(b64, 'base64');
+
+  // Safety: ~12MB decoded max (JSON limit is higher but we still cap it)
+  const maxBytes = 12 * 1024 * 1024;
+  if (buf.length > maxBytes) {
+    throw new Error('header too large');
+  }
+
+  // Best-effort cleanup of previous file
+  if (prevHeaderPath) {
+    try {
+      await storageBucket.file(prevHeaderPath).delete({ ignoreNotFound: true });
+    } catch {}
+  }
+
+  const token = (crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex'));
+
+  const safeEmail = String(email || 'user')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '_');
+
+  const ext =
+    mime === 'image/png' ? 'png' :
+    (mime === 'image/webp' ? 'webp' : 'jpg');
+
+  const filePath = `headers/${safeEmail}/${Date.now()}.${ext}`;
+  const file = storageBucket.file(filePath);
+
+  await file.save(buf, {
+    resumable: false,
+    contentType: mime,
+    metadata: {
+      metadata: {
+        firebaseStorageDownloadTokens: token
+      }
+    }
+  });
+
+  const encoded = encodeURIComponent(filePath);
+  const url = `https://firebasestorage.googleapis.com/v0/b/${storageBucket.name}/o/${encoded}?alt=media&token=${token}`;
+
+  return { url, path: filePath };
+}
+
 
 
 // ---------- Shortlist & dates helpers (plan-based serving) ----------
@@ -3687,6 +3751,8 @@ app.post('/api/me/profile', async (req, res) => {
       password,
       avatarDataUrl,
       avatarUrl,
+      headerDataUrl,
+      headerUrl,
       age,
       city,
       username,
@@ -3702,6 +3768,8 @@ app.post('/api/me/profile', async (req, res) => {
     age = (typeof age !== 'undefined' && age !== null && age !== '') ? Number(age) : null;
     avatarDataUrl = (avatarDataUrl || '').toString();
     avatarUrl = (avatarUrl || '').toString();
+    headerDataUrl = (headerDataUrl || '').toString();
+    headerUrl = (headerUrl || '').toString();
     requireProfileCompletion = !!requireProfileCompletion;
 
     // 2) Validate
@@ -3759,6 +3827,18 @@ app.post('/api/me/profile', async (req, res) => {
       (existingDoc && existingDoc.avatarPath) ||
       (DB.users && DB.users[oldEmail] && DB.users[oldEmail].avatarPath) ||
       (DB.user && DB.user.avatarPath) ||
+      '';
+
+    const existingHeaderUrl =
+      (existingDoc && existingDoc.headerUrl) ||
+      (DB.users && DB.users[oldEmail] && DB.users[oldEmail].headerUrl) ||
+      (DB.user && DB.user.headerUrl) ||
+      '';
+
+    const existingHeaderPath =
+      (existingDoc && existingDoc.headerPath) ||
+      (DB.users && DB.users[oldEmail] && DB.users[oldEmail].headerPath) ||
+      (DB.user && DB.user.headerPath) ||
       '';
 
     // Onboarding validation (required fields)
@@ -3825,6 +3905,58 @@ app.post('/api/me/profile', async (req, res) => {
       }
     } else if (avatarUrl) {
       fields.avatarUrl = avatarUrl;
+    }
+
+
+    // 4b) Header/Cover upload: prefer Firebase Storage, fallback to inline dataURL
+    if (headerDataUrl) {
+      const hd = String(headerDataUrl || '');
+      const m = hd.match(/^data:(image\/[^;]+);base64,(.+)$/);
+      if (!m) {
+        return res.status(400).json({ ok: false, message: 'invalid_header_data' });
+      }
+
+      // Firestore doc max is ~1MB; only allow inline as a small fallback.
+      const inlineMaxBytes = 900 * 1024; // ~900KB decoded
+      let inlineBufSize = 0;
+      try { inlineBufSize = Buffer.from(m[2], 'base64').length; } catch {}
+      const canInline = inlineBufSize > 0 && inlineBufSize <= inlineMaxBytes;
+      const canUseStorage = !!(hasFirebase && hasStorage && storageBucket);
+
+      const setInlineHeader = () => {
+        if (!canInline) {
+          return res.status(413).json({
+            ok: false,
+            message: 'header_too_large'
+          });
+        }
+        fields.headerUrl = hd;
+        fields.headerPath = '';
+        fields.headerUpdatedAt = new Date().toISOString();
+        return null;
+      };
+
+      if (canUseStorage) {
+        try {
+          const up = await uploadHeaderDataUrlToStorage(
+            (email || oldEmail),
+            hd,
+            existingHeaderPath
+          );
+          fields.headerUrl = up.url;
+          fields.headerPath = up.path;
+          fields.headerUpdatedAt = new Date().toISOString();
+        } catch (e) {
+          console.warn('[Header] Storage upload failed; using inline headerUrl. Reason:', e?.message || e);
+          const resp = setInlineHeader();
+          if (resp) return resp;
+        }
+      } else {
+        const resp = setInlineHeader();
+        if (resp) return resp;
+      }
+    } else if (headerUrl) {
+      fields.headerUrl = headerUrl;
     }
 
     // 5) Password update (optional)

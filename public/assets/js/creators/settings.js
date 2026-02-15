@@ -727,6 +727,177 @@ function bindMetaCounter(fieldEl) {
   update();
 }
 
+
+function tmCssUrlSafe(u) {
+  // Minimal escaping for use inside CSS url("...")
+  return String(u || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+async function tmImageFileToDataUrl(file, opts = {}) {
+  const maxDim = opts.maxDim || 2400;
+  const quality = (typeof opts.quality === 'number') ? opts.quality : 0.9;
+  const mime = opts.mime || 'image/jpeg';
+
+  if (!file) throw new Error('No file selected');
+  if (!/^image\//i.test(file.type || '')) throw new Error('Please select an image file');
+
+  // Use createImageBitmap when available (faster, handles large images better)
+  const bitmap = await (async () => {
+    if (window.createImageBitmap) {
+      try { return await window.createImageBitmap(file); } catch {}
+    }
+    return await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      const url = URL.createObjectURL(file);
+      img.src = url;
+      img.__tmObjectUrl = url;
+    });
+  })();
+
+  const srcW = bitmap.width || bitmap.naturalWidth || 0;
+  const srcH = bitmap.height || bitmap.naturalHeight || 0;
+  if (!srcW || !srcH) throw new Error('Invalid image');
+
+  const scale = Math.min(1, maxDim / Math.max(srcW, srcH));
+  const dstW = Math.max(1, Math.round(srcW * scale));
+  const dstH = Math.max(1, Math.round(srcH * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = dstW;
+  canvas.height = dstH;
+
+  const ctx = canvas.getContext('2d', { alpha: false });
+  ctx.drawImage(bitmap, 0, 0, dstW, dstH);
+
+  // Cleanup objectURL when we used Image() fallback
+  try {
+    if (bitmap.__tmObjectUrl) URL.revokeObjectURL(bitmap.__tmObjectUrl);
+  } catch {}
+
+  // Export
+  let dataUrl = '';
+  try {
+    dataUrl = canvas.toDataURL(mime, quality);
+  } catch {
+    // Fallback to PNG when browser rejects mime/quality combo
+    dataUrl = canvas.toDataURL('image/png');
+  }
+
+  // Best-effort free
+  try { canvas.width = canvas.height = 1; } catch {}
+  try { if (bitmap.close) bitmap.close(); } catch {}
+
+  return dataUrl;
+}
+
+function bindProfilePhotoControls(container, me) {
+  const cover = container.querySelector('#tm-set-cover');
+  const btnCover = container.querySelector('#tm-btn-cover');
+  const inputCover = container.querySelector('#tm-input-cover');
+
+  const avatarImg = container.querySelector('#tm-set-avatar-img');
+  const btnAvatar = container.querySelector('#tm-btn-avatar');
+  const inputAvatar = container.querySelector('#tm-input-avatar');
+
+  if (!cover || !btnCover || !inputCover || !avatarImg || !btnAvatar || !inputAvatar) return;
+
+  if (container.__tmMediaBound) return;
+  container.__tmMediaBound = true;
+
+  // Initial paint
+  const user = me?.user || {};
+  const email = String(user.email || '').trim().toLowerCase();
+
+  let headerUrl = String(user.headerUrl || '').trim();
+  if (!headerUrl && email) {
+    try {
+      const k = `tm_creator_header_${email}`;
+      const localHdr = window.localStorage ? (window.localStorage.getItem(k) || '') : '';
+      if (localHdr) headerUrl = localHdr;
+    } catch {}
+  }
+  if (headerUrl) {
+    cover.style.backgroundImage = `url("${tmCssUrlSafe(headerUrl)}")`;
+  }
+
+  if (user.avatarUrl) {
+    avatarImg.src = user.avatarUrl;
+  }
+
+  const pickCover = () => inputCover.click();
+  const pickAvatar = () => inputAvatar.click();
+
+  btnCover.addEventListener('click', pickCover);
+  cover.addEventListener('dblclick', pickCover); // quick shortcut
+  btnAvatar.addEventListener('click', pickAvatar);
+
+  inputCover.addEventListener('change', async () => {
+    const file = inputCover.files && inputCover.files[0];
+    if (!file) return;
+    try {
+      // Allow ANY input size; we auto-optimize so it always saves reliably
+      const dataUrl = await tmImageFileToDataUrl(file, { maxDim: 2400, quality: 0.88, mime: 'image/jpeg' });
+      cover.style.backgroundImage = `url("${tmCssUrlSafe(dataUrl)}")`;
+      container.__tmPendingHeaderDataUrl = dataUrl;
+    } catch (e) {
+      console.error(e);
+      alert(e?.message || 'Failed to read cover image.');
+    } finally {
+      // Reset so same file can be picked again
+      inputCover.value = '';
+    }
+  });
+
+  inputAvatar.addEventListener('change', async () => {
+    const file = inputAvatar.files && inputAvatar.files[0];
+    if (!file) return;
+    try {
+      const dataUrl = await tmImageFileToDataUrl(file, { maxDim: 900, quality: 0.9, mime: 'image/jpeg' });
+      avatarImg.src = dataUrl;
+      container.__tmPendingAvatarDataUrl = dataUrl;
+    } catch (e) {
+      console.error(e);
+      alert(e?.message || 'Failed to read avatar image.');
+    } finally {
+      inputAvatar.value = '';
+    }
+  });
+}
+
+async function saveProfilePhotos(container) {
+  const avatarDataUrl = String(container.__tmPendingAvatarDataUrl || '').trim();
+  const headerDataUrl = String(container.__tmPendingHeaderDataUrl || '').trim();
+  if (!avatarDataUrl && !headerDataUrl) return null;
+
+  const payload = {};
+  if (avatarDataUrl) payload.avatarDataUrl = avatarDataUrl;
+  if (headerDataUrl) payload.headerDataUrl = headerDataUrl;
+
+  const resp = await apiPost('/api/me/profile', payload).catch(() => null);
+  if (!resp?.ok) {
+    throw new Error(resp?.message || 'Failed to upload profile images.');
+  }
+
+  // Keep legacy header fallback key in sync
+  try {
+    const email = String(resp?.user?.email || '').trim().toLowerCase();
+    const hdr = String(resp?.user?.headerUrl || '').trim();
+    if (email && hdr && window.localStorage) {
+      window.localStorage.setItem(`tm_creator_header_${email}`, hdr);
+    }
+  } catch {}
+
+  // Clear pending
+  container.__tmPendingAvatarDataUrl = '';
+  container.__tmPendingHeaderDataUrl = '';
+  __meCache = resp;
+
+  return resp;
+}
+
+
 function hydrateCreatorProfileForm(container, me) {
   const packed = me?.user?.creatorApplication?.contentStyle || '';
   const map = parsePacked(packed);
@@ -751,7 +922,9 @@ function hydrateCreatorProfileForm(container, me) {
       try {
         await saveCreatorProfile(container);
         // Keep everything consistent (profile card, popovers, etc.)
-        window.location.reload();
+        if (opts && opts.reload) {
+      window.location.reload();
+    }
       } catch (e) {
         console.error(e);
         alert(e?.message || 'Failed to save. Please try again.');
@@ -763,7 +936,7 @@ function hydrateCreatorProfileForm(container, me) {
   }
 }
 
-async function saveCreatorProfile(container) {
+async function saveCreatorProfile(container, opts = {}) {
   const me = await ensureMe(true);
   if (!me?.ok) throw new Error('Not logged in');
 
