@@ -20,33 +20,109 @@ function maskEmail(email) {
   return `${first}${stars}@${domain}`;
 }
 
-// --- Image helper (same behavior as Preferences page: crop to square + compress) ---
-function readFileAsDataUrl(file) {
+// --- Image helper (avatar upload): robust decode + square crop + size cap ---
+// Note: Some formats (HEIC/HEIF) are not decodable in most desktop browsers without extra libs.
+function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = reject;
-    reader.readAsDataUrl(file);
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result || ''));
+    r.onerror = reject;
+    r.readAsDataURL(blob);
   });
 }
 
-async function fileToOptimizedSquareDataUrl(file, maxSize = 768, quality = 0.85) {
-  const dataUrl = await readFileAsDataUrl(file);
-  const img = new Image();
-  img.src = dataUrl;
-  await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+function isHeicLike(file) {
+  const t = String(file?.type || '').toLowerCase();
+  const n = String(file?.name || '').toLowerCase();
+  return t === 'image/heic' || t === 'image/heif' || n.endsWith('.heic') || n.endsWith('.heif');
+}
 
-  const s = Math.min(img.width, img.height);
-  const sx = (img.width - s) / 2;
-  const sy = (img.height - s) / 2;
+async function fileToOptimizedSquareDataUrl(file, maxSize = 768, quality = 0.85, maxBytes = 420 * 1024) {
+  if (!file) throw new Error('no_file');
+  if (isHeicLike(file)) {
+    const err = new Error('unsupported_format');
+    err.code = 'unsupported_format';
+    err.format = 'heic';
+    throw err;
+  }
 
-  const canvas = document.createElement('canvas');
-  const out = Math.min(maxSize, s);
-  canvas.width = out;
-  canvas.height = out;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(img, sx, sy, s, s, 0, 0, out, out);
-  return canvas.toDataURL('image/jpeg', quality);
+  const objectUrl = URL.createObjectURL(file);
+  let source = null;
+  let sw = 0, sh = 0;
+
+  try {
+    // Prefer createImageBitmap (fast + avoids huge base64 in memory)
+    if (typeof createImageBitmap === 'function') {
+      try {
+        source = await createImageBitmap(file, { imageOrientation: 'from-image' });
+        sw = source.width;
+        sh = source.height;
+      } catch (_) {
+        source = null;
+      }
+    }
+
+    if (!source) {
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = objectUrl;
+      if (img.decode) {
+        await img.decode();
+      } else {
+        await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+      }
+      source = img;
+      sw = img.naturalWidth || img.width;
+      sh = img.naturalHeight || img.height;
+    }
+
+    if (!sw || !sh) throw new Error('image_decode_failed');
+
+    const s = Math.min(sw, sh);
+    const sx = Math.floor((sw - s) / 2);
+    const sy = Math.floor((sh - s) / 2);
+
+    // Try combinations until we fit under maxBytes (also helps server-side limits)
+    const sizeCandidates = [];
+    const startOut = Math.min(maxSize, s);
+
+    if (startOut <= 256) {
+      sizeCandidates.push(startOut);
+    } else {
+      for (let cur = startOut; cur >= 256; cur = Math.floor(cur * 0.82)) {
+        sizeCandidates.push(cur);
+        if (cur <= 256) break;
+      }
+      if (sizeCandidates[sizeCandidates.length - 1] !== 256) sizeCandidates.push(256);
+    }
+
+    const qCandidates = [quality, 0.82, 0.78, 0.74, 0.70, 0.66, 0.62, 0.58];
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('canvas_unsupported');
+
+    for (const out of sizeCandidates) {
+      canvas.width = out;
+      canvas.height = out;
+      ctx.clearRect(0, 0, out, out);
+      ctx.drawImage(source, sx, sy, s, s, 0, 0, out, out);
+
+      for (const q of qCandidates) {
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', q));
+        if (!blob) continue;
+        if (blob.size <= maxBytes) {
+          return await blobToDataUrl(blob);
+        }
+      }
+    }
+
+    // Last resort: return a compressed JPEG even if it slightly exceeds maxBytes.
+    return canvas.toDataURL('image/jpeg', Math.max(0.55, quality));
+  } finally {
+    try { URL.revokeObjectURL(objectUrl); } catch {}
+    try { if (source && typeof source.close === 'function') source.close(); } catch {}
+  }
 }
 
 const state = { me: null, prefs: null, plan: 'free', activeTab: 'home', isLoading: false, selectedAvatarDataUrl: null, homeCache: { admirersTs: 0, nearbyTs: 0 }, homeLoading: { admirers: false, nearby: false } };
@@ -889,7 +965,15 @@ function setupEventListeners() {
         if (DOM.avatarFilename) DOM.avatarFilename.textContent = file.name;
       } catch (err) {
         console.error(err);
-        showToast('Failed to read that image. Please try another file.', 'error');
+        const code = err && (err.code || err.message || '');
+        if (code === 'unsupported_format' || /heic|heif/i.test(String(code))) {
+          showToast('This photo format isn’t supported (HEIC). Please convert it to JPG or PNG then try again.', 'error');
+        } else {
+          showToast('Failed to process that image. Please try another photo.', 'error');
+        }
+      } finally {
+        // Allow re-selecting the same file again
+        DOM.inpAvatarFile.value = '';
       }
     });
   }

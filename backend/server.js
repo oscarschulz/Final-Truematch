@@ -7780,7 +7780,7 @@ app.get('/api/premium-society/candidates', authMiddleware, async (req, res) => {
           name: pu.name,
           age: pu.age,
           city: pu.location || pu.city || '',
-          photoUrl: pu.photoUrl || pu.profilePhotoUrl || ''
+          photoUrl: pu.avatarUrl || pu.photoUrl || pu.profilePhotoUrl || ''
         });
       });
     } else {
@@ -7799,7 +7799,7 @@ app.get('/api/premium-society/candidates', authMiddleware, async (req, res) => {
           name: pu.name,
           age: pu.age,
           city: pu.location || pu.city || '',
-          photoUrl: pu.photoUrl || pu.profilePhotoUrl || ''
+          photoUrl: pu.avatarUrl || pu.photoUrl || pu.profilePhotoUrl || ''
         });
       }
     }
