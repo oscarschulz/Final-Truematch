@@ -5,6 +5,7 @@ import {
   tmCardsRemove,
   tmCardsSetPrimary,
   tmCardsMask,
+  tmWalletHydrate,
   tmWalletPrefsGet,
   tmWalletPrefsSet,
   tmTransactionsGet,
@@ -171,7 +172,7 @@ function tmBindVerifyButtons(toast) {
   if (document.body && document.body.dataset.tmVerifyBound === '1') return;
   if (document.body) document.body.dataset.tmVerifyBound = '1';
 
-  document.addEventListener('click', (e) => {
+  document.addEventListener('click', async (e) => {
     const btn = e.target.closest('.btn-verify');
     if (!btn) return;
     e.preventDefault();
@@ -472,7 +473,7 @@ function tmBindFormSubmit({
 }) {
   if (!root || !submitBtn) return;
 
-  submitBtn.addEventListener('click', (e) => {
+  submitBtn.addEventListener('click', async (e) => {
     e.preventDefault();
 
     const ageOk = !!(getAgeConfirmed ? getAgeConfirmed() : true);
@@ -490,10 +491,15 @@ function tmBindFormSubmit({
     }
 
     try {
-      tmCardsAdd(card);
+      try {
+        await tmCardsAdd(card);
+      } catch (e) {
+        toast.error(e?.message || 'Failed to add card');
+        return;
+      }
       tmRenderCardsList();
       tmClearForm(fields);
-      if (typeof onSuccess === 'function') onSuccess(card);
+      if (typeof onSuccess === 'function') await onSuccess(card);
       try { toast.fire({ icon: 'success', title: 'Card saved' }); } catch (_) {}
     } catch (err) {
       console.error(err);
@@ -924,10 +930,19 @@ function tmBindWalletRebillToggle(toast) {
   const prefs = tmWalletPrefsGet();
   toggle.checked = !!prefs.rebillPrimary;
 
-  toggle.addEventListener('change', () => {
-    const next = tmWalletPrefsSet({ rebillPrimary: !!toggle.checked });
-    try { toast.fire({ icon: 'success', title: next.rebillPrimary ? 'Wallet set as primary for rebills' : 'Wallet rebills disabled' }); } catch(_) {}
-  }, { passive: true });
+  toggle.addEventListener('change', async () => {
+    const desired = !!toggle.checked;
+    try {
+      const next = await tmWalletPrefsSet({ rebillPrimary: desired });
+      try {
+        toast.fire({ icon: 'success', title: next.rebillPrimary ? 'Wallet set as primary for rebills' : 'Wallet rebills disabled' });
+      } catch (_) {}
+    } catch (e) {
+      // revert if backend fails
+      toggle.checked = !desired;
+      try { toast.fire({ icon: 'error', title: 'Failed to save wallet setting' }); } catch(_) {}
+    }
+  });
 }
 
 
@@ -972,8 +987,8 @@ export function initWallet(TopToast) {
       submitBtn: btnSubmitModal,
       getAgeConfirmed: () => !!document.getElementById('ageCheckModal')?.checked,
       toast,
-      onSuccess: (card) => {
-        try { tmTransactionsAdd({ type: 'activity', title: `Card added • ${tmCardsMask(card)}`, amount: 0 }); } catch(_) {}
+      onSuccess: async (card) => {
+        try { await tmTransactionsAdd({ type: 'activity', title: `Card added • ${tmCardsMask(card)}`, amount: 0 }); } catch(_) {}
         tmRenderWalletTransactions();
         closeModal();
         // Optional: take user to Your Cards view
@@ -994,8 +1009,8 @@ export function initWallet(TopToast) {
       submitBtn: btnSubmitPage,
       getAgeConfirmed: () => !!document.getElementById('ageCheck')?.checked,
       toast,
-      onSuccess: (card) => {
-        try { tmTransactionsAdd({ type: 'activity', title: `Card added • ${tmCardsMask(card)}`, amount: 0 }); } catch(_) {}
+      onSuccess: async (card) => {
+        try { await tmTransactionsAdd({ type: 'activity', title: `Card added • ${tmCardsMask(card)}`, amount: 0 }); } catch(_) {}
         tmRenderWalletTransactions();
         // Navigate to Your Cards so they immediately see saved card(s)
         setTimeout(() => tmNavigateToYourCards(), 50);
@@ -1006,7 +1021,7 @@ export function initWallet(TopToast) {
   // -----------------------------
   // Actions: Remove / Primary
   // -----------------------------
-  document.addEventListener('click', (e) => {
+  document.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-action="tm-card-remove"], [data-action="tm-card-primary"]');
     if (!btn) return;
     e.preventDefault();
@@ -1018,17 +1033,17 @@ export function initWallet(TopToast) {
     try {
       if (action === 'tm-card-remove') {
         const before = tmCardsGetAll().find(x => x.id === id);
-        tmCardsRemove(id);
+        await tmCardsRemove(id);
         tmRenderCardsList();
-        try { tmTransactionsAdd({ type: 'activity', title: `Card removed • ${before ? tmCardsMask(before) : '****'}`, amount: 0 }); } catch(_) {}
+        try { await tmTransactionsAdd({ type: 'activity', title: `Card removed • ${before ? tmCardsMask(before) : '****'}`, amount: 0 }); } catch(_) {}
         tmRenderWalletTransactions();
         try { toast.fire({ icon: 'success', title: 'Card removed' }); } catch (_) {}
       }
       if (action === 'tm-card-primary') {
         const before = tmCardsGetAll().find(x => x.id === id);
-        tmCardsSetPrimary(id);
+        await tmCardsSetPrimary(id);
         tmRenderCardsList();
-        try { tmTransactionsAdd({ type: 'activity', title: `Primary card set • ${before ? tmCardsMask(before) : '****'}`, amount: 0 }); } catch(_) {}
+        try { await tmTransactionsAdd({ type: 'activity', title: `Primary card set • ${before ? tmCardsMask(before) : '****'}`, amount: 0 }); } catch(_) {}
         tmRenderWalletTransactions();
         try { toast.fire({ icon: 'success', title: 'Primary card updated' }); } catch (_) {}
       }

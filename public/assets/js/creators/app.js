@@ -1566,10 +1566,18 @@ function setupNavigation() {
 
 
     document.querySelectorAll('.pop-item').forEach(link => {
-        link.addEventListener('click', (e) => {
+        link.addEventListener('click', async (e) => {
             const text = link.innerText.trim().toLowerCase();
             const popover = document.getElementById('settings-popover');
             if (popover) popover.classList.remove('is-open');
+
+            // ✅ Logout should invalidate the session on the backend (not just redirect)
+            if (text.includes('log out') || text.includes('logout')) {
+                e.preventDefault();
+                try { await apiPost('/api/auth/logout', {}); } catch (err) { /* ignore */ }
+                window.location.href = 'index.html';
+                return;
+            }
 
             // Map popover items → views (Choice set by user)
             if (text.includes('cards')) { 

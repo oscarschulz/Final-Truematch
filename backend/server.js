@@ -6000,6 +6000,363 @@ app.post('/api/creator/unsubscribe', async (req, res) => {
 });
 
 
+
+// ---------------- Wallet + Payments + Support ----------------
+// NOTE: These endpoints make "More" + Wallet actions real (backend + DB), not UI-only.
+
+const WALLET_COLLECTION = process.env.WALLET_COLLECTION || 'iTrueMatchWallets';
+const SUPPORT_TICKETS_COLLECTION = process.env.SUPPORT_TICKETS_COLLECTION || 'iTrueMatchSupportTickets';
+
+function _walletDefault(email) {
+  return {
+    email: safeStr(email || ''),
+    balance: { credits: 0 },
+    prefs: { rebillPrimary: false },
+    cards: [],
+    tx: [],
+    updatedAt: new Date(),
+    createdAt: new Date()
+  };
+}
+
+function _capArray(arr, max) {
+  if (!Array.isArray(arr)) return [];
+  if (arr.length <= max) return arr;
+  return arr.slice(0, max);
+}
+
+function _sanitizeCardInput(raw) {
+  const c = raw && typeof raw === 'object' ? raw : {};
+  const last4 = String(c.last4 || '').replace(/\D/g, '').slice(-4);
+  const expMonth = Number(c.expMonth || 0);
+  const expYear = Number(c.expYear || 0);
+  const brand = safeStr(c.brand || '');
+  const nameOnCard = safeStr(c.nameOnCard || c.name || '');
+
+  // Billing address (optional)
+  const billing = {
+    country: safeStr(c.country || ''),
+    state: safeStr(c.state || ''),
+    city: safeStr(c.city || ''),
+    address: safeStr(c.address || ''),
+    zip: safeStr(c.zip || '')
+  };
+
+  // Never store PAN / CVV even if accidentally sent
+  return {
+    id: safeStr(c.id || '') || `card_${crypto.randomUUID()}`,
+    brand,
+    last4,
+    expMonth: Number.isFinite(expMonth) ? expMonth : 0,
+    expYear: Number.isFinite(expYear) ? expYear : 0,
+    nameOnCard,
+    billing,
+    isPrimary: !!c.isPrimary,
+    createdAtMs: Number(c.createdAtMs || Date.now())
+  };
+}
+
+async function _walletLoad(email) {
+  const key = safeStr(email || '').toLowerCase();
+  if (!key) return _walletDefault(email);
+
+  if (hasFirebase && firestore) {
+    const ref = firestore.collection(WALLET_COLLECTION).doc(key);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      const def = _walletDefault(key);
+      await ref.set(def, { merge: true });
+      return def;
+    }
+    const data = snap.data() || {};
+    return {
+      ..._walletDefault(key),
+      ...data,
+      balance: { ...(_walletDefault(key).balance), ...(data.balance || {}) },
+      prefs: { ...(_walletDefault(key).prefs), ...(data.prefs || {}) },
+      cards: Array.isArray(data.cards) ? data.cards : [],
+      tx: Array.isArray(data.tx) ? data.tx : []
+    };
+  }
+
+  // Fallback (no Firebase): in-memory only
+  DB.wallets = DB.wallets || {};
+  if (!DB.wallets[key]) DB.wallets[key] = _walletDefault(key);
+  return DB.wallets[key];
+}
+
+async function _walletSave(email, wallet) {
+  const key = safeStr(email || '').toLowerCase();
+  const next = { ...(wallet || _walletDefault(key)), updatedAt: new Date() };
+
+  // Cap lists to prevent unbounded growth
+  next.cards = _capArray(next.cards || [], 25);
+  next.tx = _capArray(next.tx || [], 200);
+
+  if (hasFirebase && firestore) {
+    const ref = firestore.collection(WALLET_COLLECTION).doc(key);
+    await ref.set(next, { merge: true });
+  } else {
+    DB.wallets = DB.wallets || {};
+    DB.wallets[key] = next;
+  }
+
+  return next;
+}
+
+app.get('/api/me/wallet', async (req, res) => {
+  try {
+    if (!DB.user) return res.status(401).json({ ok: false, message: 'Not signed in' });
+    const email = DB.user.email;
+    const wallet = await _walletLoad(email);
+    return res.json({ ok: true, wallet });
+  } catch (e) {
+    console.error('[wallet] get error', e);
+    return res.status(500).json({ ok: false, message: 'Wallet load failed' });
+  }
+});
+
+app.post('/api/me/wallet/cards/add', async (req, res) => {
+  try {
+    if (!DB.user) return res.status(401).json({ ok: false, message: 'Not signed in' });
+    const email = DB.user.email;
+
+    const card = _sanitizeCardInput(req.body && req.body.card);
+    if (!card.last4 || card.last4.length !== 4) {
+      return res.status(400).json({ ok: false, message: 'Invalid card details' });
+    }
+    if (card.expMonth < 1 || card.expMonth > 12) {
+      return res.status(400).json({ ok: false, message: 'Invalid expiry month' });
+    }
+    if (card.expYear < 0) {
+      return res.status(400).json({ ok: false, message: 'Invalid expiry year' });
+    }
+
+    const wallet = await _walletLoad(email);
+    const cards = Array.isArray(wallet.cards) ? wallet.cards.slice() : [];
+
+    // De-dupe by last4+exp (best-effort)
+    const dup = cards.some(c => String(c.last4) === String(card.last4) && Number(c.expMonth) === Number(card.expMonth) && Number(c.expYear) === Number(card.expYear));
+    if (dup) return res.status(409).json({ ok: false, message: 'This card already exists' });
+
+    if (cards.length >= 25) return res.status(400).json({ ok: false, message: 'Card limit reached' });
+
+    // Primary logic: first card becomes primary automatically
+    if (cards.length === 0) card.isPrimary = true;
+    if (card.isPrimary) cards.forEach(c => { c.isPrimary = false; });
+
+    cards.unshift(card);
+
+    // Ensure exactly one primary
+    if (!cards.some(c => !!c.isPrimary) && cards[0]) cards[0].isPrimary = true;
+
+    const next = await _walletSave(email, { ...wallet, cards });
+
+    return res.json({ ok: true, wallet: next, cards: next.cards });
+  } catch (e) {
+    console.error('[wallet] add-card error', e);
+    return res.status(500).json({ ok: false, message: 'Failed to add card' });
+  }
+});
+
+app.post('/api/me/wallet/cards/remove', async (req, res) => {
+  try {
+    if (!DB.user) return res.status(401).json({ ok: false, message: 'Not signed in' });
+    const email = DB.user.email;
+
+    const cardId = safeStr(req.body && req.body.cardId);
+    if (!cardId) return res.status(400).json({ ok: false, message: 'Missing cardId' });
+
+    const wallet = await _walletLoad(email);
+    const cards = (wallet.cards || []).filter(c => safeStr(c.id) !== cardId);
+
+    // Re-assign primary if needed
+    if (cards.length && !cards.some(c => !!c.isPrimary)) cards[0].isPrimary = true;
+
+    const next = await _walletSave(email, { ...wallet, cards });
+
+    return res.json({ ok: true, wallet: next, cards: next.cards });
+  } catch (e) {
+    console.error('[wallet] remove-card error', e);
+    return res.status(500).json({ ok: false, message: 'Failed to remove card' });
+  }
+});
+
+app.post('/api/me/wallet/cards/primary', async (req, res) => {
+  try {
+    if (!DB.user) return res.status(401).json({ ok: false, message: 'Not signed in' });
+    const email = DB.user.email;
+
+    const cardId = safeStr(req.body && req.body.cardId);
+    if (!cardId) return res.status(400).json({ ok: false, message: 'Missing cardId' });
+
+    const wallet = await _walletLoad(email);
+    const cards = (wallet.cards || []).map(c => ({ ...c, isPrimary: safeStr(c.id) === cardId }));
+
+    if (!cards.some(c => !!c.isPrimary)) return res.status(404).json({ ok: false, message: 'Card not found' });
+
+    const next = await _walletSave(email, { ...wallet, cards });
+
+    return res.json({ ok: true, wallet: next, cards: next.cards });
+  } catch (e) {
+    console.error('[wallet] set-primary error', e);
+    return res.status(500).json({ ok: false, message: 'Failed to set primary card' });
+  }
+});
+
+app.post('/api/me/wallet/prefs', async (req, res) => {
+  try {
+    if (!DB.user) return res.status(401).json({ ok: false, message: 'Not signed in' });
+    const email = DB.user.email;
+
+    const rebillPrimary = !!(req.body && req.body.rebillPrimary);
+
+    const wallet = await _walletLoad(email);
+    const next = await _walletSave(email, { ...wallet, prefs: { ...(wallet.prefs || {}), rebillPrimary } });
+
+    return res.json({ ok: true, wallet: next, prefs: next.prefs });
+  } catch (e) {
+    console.error('[wallet] prefs error', e);
+    return res.status(500).json({ ok: false, message: 'Failed to update wallet preferences' });
+  }
+});
+
+app.post('/api/me/wallet/tx/add', async (req, res) => {
+  try {
+    if (!DB.user) return res.status(401).json({ ok: false, message: 'Not signed in' });
+    const email = DB.user.email;
+
+    const raw = req.body && req.body.tx;
+    const tx = raw && typeof raw === 'object' ? raw : {};
+    const nextTx = {
+      id: safeStr(tx.id || '') || `tx_${crypto.randomUUID()}`,
+      title: safeStr(tx.title || ''),
+      type: safeStr(tx.type || 'activity'),
+      amount: Number(tx.amount || 0),
+      createdAtMs: Number(tx.createdAtMs || Date.now())
+    };
+
+    const wallet = await _walletLoad(email);
+    const txList = Array.isArray(wallet.tx) ? wallet.tx.slice() : [];
+    txList.unshift(nextTx);
+
+    const next = await _walletSave(email, { ...wallet, tx: txList });
+
+    return res.json({ ok: true, wallet: next, tx: next.tx });
+  } catch (e) {
+    console.error('[wallet] tx/add error', e);
+    return res.status(500).json({ ok: false, message: 'Failed to add transaction' });
+  }
+});
+
+app.get('/api/me/payments', async (req, res) => {
+  try {
+    if (!DB.user) return res.status(401).json({ ok: false, message: 'Not signed in' });
+    const email = DB.user.email;
+
+    let subs = [];
+    if (hasFirebase && firestore) {
+      const snap = await firestore.collection(CREATOR_SUBS_COLLECTION).where('subscriberEmail', '==', email).get();
+      subs = snap.docs.map(d => ({ id: d.id, ...(d.data() || {}) }));
+    } else {
+      // Fallback in-memory
+      subs = Object.values(DB.creatorSubs || {}).filter(s => safeStr(s.subscriberEmail).toLowerCase() === safeStr(email).toLowerCase());
+    }
+
+    const payments = subs.map(s => {
+      const creatorEmail = safeStr(s.creatorEmail || '');
+      const status = safeStr(s.status || '');
+      const createdAtMs = s.createdAt && typeof s.createdAt.toMillis === 'function'
+        ? s.createdAt.toMillis()
+        : Number(s.createdAtMs || (s.createdAt ? new Date(s.createdAt).getTime() : Date.now()));
+
+      // Amount is best-effort: use stored price if present, else null (avoid lying)
+      const amount = (typeof s.amount === 'number') ? s.amount : (typeof s.price === 'number' ? s.price : null);
+
+      return {
+        id: safeStr(s.id || '') || `pay_${crypto.randomUUID()}`,
+        kind: 'subscription',
+        creatorEmail,
+        status: status || 'active',
+        currency: safeStr(s.currency || 'USD'),
+        amount,
+        createdAtMs
+      };
+    });
+
+    // Most recent first
+    payments.sort((a, b) => Number(b.createdAtMs || 0) - Number(a.createdAtMs || 0));
+
+    return res.json({ ok: true, payments });
+  } catch (e) {
+    console.error('[payments] error', e);
+    return res.status(500).json({ ok: false, message: 'Failed to load payments' });
+  }
+});
+
+app.post('/api/support/email', async (req, res) => {
+  try {
+    if (!DB.user) return res.status(401).json({ ok: false, message: 'Not signed in' });
+
+    const fromEmail = safeStr(DB.user.email || '');
+    const name = safeStr((req.body && req.body.name) || '');
+    const subject = safeStr((req.body && req.body.subject) || 'Support request');
+    const message = safeStr((req.body && req.body.message) || '');
+
+    if (!message) return res.status(400).json({ ok: false, message: 'Message is required' });
+
+    const ticketId = `tkt_${crypto.randomUUID()}`;
+    const ticket = {
+      id: ticketId,
+      fromEmail,
+      name,
+      subject,
+      message,
+      status: 'open',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ua: safeStr(req.headers['user-agent'] || ''),
+      ip: safeStr(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '')
+    };
+
+    // Store to DB (Firestore primary if available)
+    if (hasFirebase && firestore) {
+      await firestore.collection(SUPPORT_TICKETS_COLLECTION).doc(ticketId).set(ticket, { merge: true });
+    } else {
+      DB.supportTickets = DB.supportTickets || {};
+      DB.supportTickets[ticketId] = ticket;
+    }
+
+    // Email notify (best-effort)
+    const toEmail = process.env.SUPPORT_EMAIL || process.env.ADMIN_EMAIL || process.env.MAIL_TO || fromEmail;
+    try {
+      await sendMail({
+        to: toEmail,
+        subject: `[TrueMatch Support] ${subject}`,
+        html: `
+          <div style="font-family:Arial,sans-serif;line-height:1.5">
+            <h3>New Support Ticket</h3>
+            <p><b>Ticket:</b> ${ticketId}</p>
+            <p><b>From:</b> ${name ? `${name} &lt;${fromEmail}&gt;` : fromEmail}</p>
+            <p><b>Subject:</b> ${subject}</p>
+            <pre style="white-space:pre-wrap;background:#f6f6f6;padding:12px;border-radius:8px">${message}</pre>
+          </div>
+        `
+      });
+    } catch (mailErr) {
+      console.warn('[support] email notify failed:', mailErr && mailErr.message ? mailErr.message : mailErr);
+    }
+
+    return res.json({ ok: true, ticketId });
+  } catch (e) {
+    console.error('[support] error', e);
+    return res.status(500).json({ ok: false, message: 'Failed to submit support request' });
+  }
+});
+
+// ---------------- End Wallet + Payments + Support ----------------
+
+
 // ---------------- Creator Posts (Feed) ----------------
 const CREATOR_POSTS_COLLECTION = process.env.CREATOR_POSTS_COLLECTION || 'iTrueMatchCreatorPosts';
 

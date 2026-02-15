@@ -212,204 +212,151 @@ export async function sendMessageTo(peerEmail, text) {
 // - We DO NOT store full card numbers or CVC.
 // =============================================================
 const TM_CARDS_KEY = 'tm_cards_v1';
-
-function tmSafeParse(json, fallback) {
-    try {
-        const v = JSON.parse(json);
-        return (v === null || v === undefined) ? fallback : v;
-    } catch {
-        return fallback;
-    }
-}
-
-function tmSafeString(v) {
-    return (v === null || v === undefined) ? '' : String(v);
-}
-
-export function tmCardsGetAll() {
-    if (typeof window === 'undefined' || !window.localStorage) return [];
-    const raw = window.localStorage.getItem(TM_CARDS_KEY);
-    const arr = tmSafeParse(raw, []);
-    if (!Array.isArray(arr)) return [];
-
-    // Normalize
-    return arr
-        .filter(Boolean)
-        .map((c) => ({
-            id: tmSafeString(c.id),
-            brand: tmSafeString(c.brand) || 'card',
-            last4: tmSafeString(c.last4),
-            expMonth: tmSafeString(c.expMonth),
-            expYear: tmSafeString(c.expYear),
-            nameOnCard: tmSafeString(c.nameOnCard),
-            email: tmSafeString(c.email),
-            country: tmSafeString(c.country),
-            state: tmSafeString(c.state),
-            address: tmSafeString(c.address),
-            city: tmSafeString(c.city),
-            zip: tmSafeString(c.zip),
-            createdAt: tmSafeString(c.createdAt),
-            isPrimary: !!c.isPrimary
-        }))
-        .filter(c => !!c.id);
-}
-
-function tmCardsSaveAll(cards) {
-    if (typeof window === 'undefined' || !window.localStorage) return;
-    window.localStorage.setItem(TM_CARDS_KEY, JSON.stringify(cards || []));
-}
-
-export function tmCardsAdd(card) {
-    const cards = tmCardsGetAll();
-    const c = {
-        id: tmSafeString(card?.id),
-        brand: tmSafeString(card?.brand) || 'card',
-        last4: tmSafeString(card?.last4),
-        expMonth: tmSafeString(card?.expMonth),
-        expYear: tmSafeString(card?.expYear),
-        nameOnCard: tmSafeString(card?.nameOnCard),
-        email: tmSafeString(card?.email),
-        country: tmSafeString(card?.country),
-        state: tmSafeString(card?.state),
-        address: tmSafeString(card?.address),
-        city: tmSafeString(card?.city),
-        zip: tmSafeString(card?.zip),
-        createdAt: tmSafeString(card?.createdAt) || (new Date().toISOString()),
-        isPrimary: !!card?.isPrimary
-    };
-
-    if (!c.id) throw new Error('Missing card id');
-    if (!c.last4 || c.last4.length !== 4) throw new Error('Missing last4');
-
-    // If this is the first card, auto primary.
-    if (!cards.length) c.isPrimary = true;
-
-    // If setting primary, unset others.
-    if (c.isPrimary) {
-        cards.forEach(x => { x.isPrimary = false; });
-    }
-
-    cards.unshift(c);
-    tmCardsSaveAll(cards);
-    return c;
-}
-
-export function tmCardsRemove(cardId) {
-    const id = tmSafeString(cardId);
-    const cards = tmCardsGetAll();
-    const next = cards.filter(c => c.id !== id);
-
-    // Keep at least one primary if cards remain
-    if (next.length && !next.some(c => c.isPrimary)) {
-        next[0].isPrimary = true;
-    }
-
-    tmCardsSaveAll(next);
-    return next;
-}
-
-export function tmCardsSetPrimary(cardId) {
-    const id = tmSafeString(cardId);
-    const cards = tmCardsGetAll();
-    let found = false;
-    cards.forEach(c => {
-        if (c.id === id) {
-            c.isPrimary = true;
-            found = true;
-        } else {
-            c.isPrimary = false;
-        }
-    });
-    if (!found) throw new Error('Card not found');
-    tmCardsSaveAll(cards);
-    return cards;
-}
-
-export function tmCardsMask(card) {
-    const brand = tmSafeString(card?.brand).toLowerCase();
-    const last4 = tmSafeString(card?.last4);
-    const label = brand ? brand.toUpperCase() : 'CARD';
-    return `${label} •••• ${last4}`;
-}
-
-// =============================================================
-// Wallet (Data #7)
-// - Persist wallet rebill preference
-// - Simple local transaction log for Wallet "Latest transactions"
-// =============================================================
-
 const TM_WALLET_PREFS_KEY = 'tm_wallet_prefs_v1';
-const TM_WALLET_TX_KEY = 'tm_wallet_tx_v1';
+const TM_TX_KEY = 'tm_tx_v1';
 
-function tmSafeJsonParse(raw, fallback) {
-  try { return JSON.parse(raw); } catch { return fallback; }
-}
+// NOTE: Wallet/Cards storage is now backend-first (Firestore).
+// These are kept only as minimal client-side cache keys (not the source of truth).
 
-function tmSafeJsonStringify(obj, fallback = 'null') {
-  try { return JSON.stringify(obj); } catch { return fallback; }
-}
+let __tmWalletCache = null;
 
-function tmReadLS(key, fallback) {
-  try {
-    const v = localStorage.getItem(key);
-    if (v == null) return fallback;
-    return v;
-  } catch {
-    return fallback;
-  }
-}
-
-function tmWriteLS(key, value) {
-  try { localStorage.setItem(key, value); } catch { /* ignore */ }
-}
-
-export function tmWalletPrefsGet() {
-  const raw = tmReadLS(TM_WALLET_PREFS_KEY, null);
-  const prefs = raw ? tmSafeJsonParse(raw, null) : null;
-  return prefs && typeof prefs === 'object' ? prefs : { rebillPrimary: false };
-}
-
-export function tmWalletPrefsSet(nextPrefs) {
-  const cur = tmWalletPrefsGet();
-  const merged = { ...cur, ...(nextPrefs || {}) };
-  // normalize
-  merged.rebillPrimary = !!merged.rebillPrimary;
-  tmWriteLS(TM_WALLET_PREFS_KEY, tmSafeJsonStringify(merged, '{"rebillPrimary":false}'));
-  return merged;
-}
-
-function tmTxNormalize(tx) {
-  const nowIso = (() => { try { return new Date().toISOString(); } catch { return String(Date.now()); } })();
-  const t = tx && typeof tx === 'object' ? tx : {};
+function _tmWalletFallback() {
   return {
-    id: String(t.id || `tx_${Math.random().toString(16).slice(2)}_${Date.now()}`),
-    title: String(t.title || 'Activity'),
-    amount: typeof t.amount === 'number' ? t.amount : 0,
-    type: String(t.type || 'activity'),
-    createdAt: String(t.createdAt || nowIso)
+    balance: { credits: 0 },
+    prefs: { rebillPrimary: false },
+    cards: [],
+    tx: []
   };
 }
 
+// Optional: local cache fallback (safe-ish, no sensitive PAN/CVV)
+function _readLocal(key, fallback) {
+  try {
+    const v = localStorage.getItem(key);
+    if (!v) return fallback;
+    return JSON.parse(v);
+  } catch (e) {
+    return fallback;
+  }
+}
+function _writeLocal(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+}
+
+export async function tmWalletHydrate(force = false) {
+  if (__tmWalletCache && !force) return __tmWalletCache;
+
+  try {
+    const out = await apiGetJson('/api/me/wallet');
+    if (out && out.ok && out.wallet) {
+      __tmWalletCache = out.wallet;
+      // store non-sensitive cache
+      _writeLocal(TM_CARDS_KEY, __tmWalletCache.cards || []);
+      _writeLocal(TM_WALLET_PREFS_KEY, __tmWalletCache.prefs || { rebillPrimary: false });
+      _writeLocal(TM_TX_KEY, __tmWalletCache.tx || []);
+      return __tmWalletCache;
+    }
+  } catch (e) {
+    // ignore - will fall back to local cache
+  }
+
+  // fallback (offline / backend issue): use local cache to still render UI
+  const cards = _readLocal(TM_CARDS_KEY, []);
+  const prefs = _readLocal(TM_WALLET_PREFS_KEY, { rebillPrimary: false });
+  const tx = _readLocal(TM_TX_KEY, []);
+  __tmWalletCache = { ..._tmWalletFallback(), cards, prefs, tx };
+  return __tmWalletCache;
+}
+
+export function tmWalletGetCached() {
+  return __tmWalletCache || { ..._tmWalletFallback() };
+}
+
+// Format helper (safe display)
+export function tmCardsMask(card) {
+  const last4 = String(card?.last4 || '0000').slice(-4);
+  return `•••• ${last4}`;
+}
+
+// -------------------------------------------------------------
+// Cards (real backend storage)
+// -------------------------------------------------------------
+
+export function tmCardsGetAll() {
+  const w = tmWalletGetCached();
+  return Array.isArray(w.cards) ? w.cards : [];
+}
+
+export async function tmCardsAdd(card) {
+  const out = await apiPostJson('/api/me/wallet/cards/add', { card });
+  if (!out || !out.ok) throw new Error(out?.message || 'Failed to add card');
+  if (out.wallet) __tmWalletCache = out.wallet;
+  if (out.cards) _writeLocal(TM_CARDS_KEY, out.cards);
+  return tmCardsGetAll();
+}
+
+export async function tmCardsRemove(cardId) {
+  const out = await apiPostJson('/api/me/wallet/cards/remove', { cardId });
+  if (!out || !out.ok) throw new Error(out?.message || 'Failed to remove card');
+  if (out.wallet) __tmWalletCache = out.wallet;
+  if (out.cards) _writeLocal(TM_CARDS_KEY, out.cards);
+  return tmCardsGetAll();
+}
+
+export async function tmCardsSetPrimary(cardId) {
+  const out = await apiPostJson('/api/me/wallet/cards/primary', { cardId });
+  if (!out || !out.ok) throw new Error(out?.message || 'Failed to set primary card');
+  if (out.wallet) __tmWalletCache = out.wallet;
+  if (out.cards) _writeLocal(TM_CARDS_KEY, out.cards);
+  return tmCardsGetAll();
+}
+
+export function tmCardsGetPrimary() {
+  const cards = tmCardsGetAll();
+  return cards.find(c => !!c.isPrimary) || null;
+}
+
+// -------------------------------------------------------------
+// Wallet preferences (real backend storage)
+// -------------------------------------------------------------
+
+export function tmWalletPrefsGet() {
+  const w = tmWalletGetCached();
+  if (w.prefs && typeof w.prefs === 'object') return w.prefs;
+  return { rebillPrimary: false };
+}
+
+export async function tmWalletPrefsSet(nextPrefs) {
+  const payload = { rebillPrimary: !!(nextPrefs && nextPrefs.rebillPrimary) };
+  const out = await apiPostJson('/api/me/wallet/prefs', payload);
+  if (!out || !out.ok) throw new Error(out?.message || 'Failed to update wallet preferences');
+  if (out.wallet) __tmWalletCache = out.wallet;
+  _writeLocal(TM_WALLET_PREFS_KEY, out.prefs || payload);
+  return tmWalletPrefsGet();
+}
+
+// -------------------------------------------------------------
+// Transactions (activity feed) (real backend storage)
+// -------------------------------------------------------------
+
 export function tmTransactionsGet() {
-  const raw = tmReadLS(TM_WALLET_TX_KEY, null);
-  const arr = raw ? tmSafeJsonParse(raw, []) : [];
-  if (!Array.isArray(arr)) return [];
-  const norm = arr.map(tmTxNormalize);
-  // sort latest first
-  norm.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-  return norm;
+  const w = tmWalletGetCached();
+  return Array.isArray(w.tx) ? w.tx : [];
 }
 
-export function tmTransactionsAdd(tx) {
-  const list = tmTransactionsGet();
-  const t = tmTxNormalize(tx);
-  const next = [t, ...list].slice(0, 25);
-  tmWriteLS(TM_WALLET_TX_KEY, tmSafeJsonStringify(next, '[]'));
-  return next;
+export async function tmTransactionsAdd(tx) {
+  const out = await apiPostJson('/api/me/wallet/tx/add', { tx });
+  if (!out || !out.ok) throw new Error(out?.message || 'Failed to add activity');
+  if (out.wallet) __tmWalletCache = out.wallet;
+  _writeLocal(TM_TX_KEY, out.tx || []);
+  return tmTransactionsGet();
 }
 
-export function tmTransactionsClear() {
-  tmWriteLS(TM_WALLET_TX_KEY, '[]');
+export async function tmTransactionsClear() {
+  // optional endpoint not required yet – clear locally as UX fallback
+  _writeLocal(TM_TX_KEY, []);
+  if (__tmWalletCache) __tmWalletCache.tx = [];
+  return [];
 }
 
 
