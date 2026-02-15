@@ -180,6 +180,96 @@ try {
 }
 
 
+// =============================================================
+// CREATOR ACCESS PAYWALL (Creator Access plan)
+// - If user.hasCreatorAccess is false → show payment modal
+// - Proceed to Pay → create Coinbase charge (planKey: creator_access) and redirect
+// - Cancel → redirect back to dashboard
+// =============================================================
+const tmPaywallState = { bound: false };
+
+function tmHasCreatorAccess() {
+  const u = tmMeCache || (typeof window !== 'undefined' ? window.__tmMe : null) || null;
+  return !!(u && u.hasCreatorAccess);
+}
+
+function tmShowCreatorAccessModal() {
+  const modal = DOM.paymentModal;
+  if (!modal) return;
+  modal.classList.add('is-visible');
+  modal.setAttribute('aria-hidden', 'false');
+}
+
+function tmHideCreatorAccessModal() {
+  const modal = DOM.paymentModal;
+  if (!modal) return;
+  modal.classList.remove('is-visible');
+  modal.setAttribute('aria-hidden', 'true');
+}
+
+function tmHandleCreatorAccessCancel() {
+  // Hard gate: leave creators page
+  try { tmHideCreatorAccessModal(); } catch {}
+  try { window.location.href = 'dashboard.html'; } catch (_) {}
+}
+
+async function tmStartCreatorAccessPayment() {
+  const btn = DOM.btnPayConfirm;
+  const btnCancel = DOM.btnPayCancel;
+  const prevText = btn ? btn.textContent : '';
+
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = 'Redirecting...'; }
+    if (btnCancel) btnCancel.disabled = true;
+
+    const res = await fetch('/api/coinbase/create-charge', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ planKey: 'creator_access' })
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data || data.ok !== true || !data.url) {
+      throw new Error(data?.message || data?.error || 'Unable to start payment');
+    }
+
+    window.location.href = data.url;
+  } catch (err) {
+    console.error(err);
+    try { TopToast.fire({ icon: 'error', title: err?.message || 'Unable to start payment' }); } catch (_) {}
+    if (btn) { btn.disabled = false; btn.textContent = prevText || 'Proceed to Pay'; }
+    if (btnCancel) btnCancel.disabled = false;
+  }
+}
+
+function tmBindCreatorAccessPaywall() {
+  if (tmPaywallState.bound) return;
+  tmPaywallState.bound = true;
+
+  const modal = DOM.paymentModal;
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) tmHandleCreatorAccessCancel();
+    });
+  }
+
+  if (DOM.btnPayConfirm) DOM.btnPayConfirm.addEventListener('click', (e) => { e.preventDefault(); tmStartCreatorAccessPayment(); });
+  if (DOM.btnPayCancel) DOM.btnPayCancel.addEventListener('click', (e) => { e.preventDefault(); tmHandleCreatorAccessCancel(); });
+
+  // Allow any module to request the modal
+  window.addEventListener('tm:request-creator-access', () => tmShowCreatorAccessModal());
+}
+
+function tmEnforceCreatorAccess() {
+  if (tmHasCreatorAccess()) {
+    tmHideCreatorAccessModal();
+    return;
+  }
+  tmShowCreatorAccessModal();
+}
+
+
 
 // =============================================================
 // DATA #3 — BANK DETAILS (Become a Creator)
@@ -563,12 +653,17 @@ function tmLoadBankingFromCache() {
   const av = u?.avatarUrl || '';
   tmApplyAvatarPreview(av);
 
-  // Header preview (local only, until backend field exists)
+  // Header preview (backend-first; local fallback only if backend is empty)
   try {
-    const email = u?.email || '';
-    const k = tmBankHeaderKey(email);
-    const localHdr = window.localStorage ? (window.localStorage.getItem(k) || '') : '';
-    if (localHdr) tmApplyHeaderPreview(localHdr);
+    const hdr = String(u?.headerUrl || '').trim();
+    if (hdr) {
+      tmApplyHeaderPreview(hdr);
+    } else {
+      const email = u?.email || '';
+      const k = tmBankHeaderKey(email);
+      const localHdr = window.localStorage ? (window.localStorage.getItem(k) || '') : '';
+      if (localHdr) tmApplyHeaderPreview(localHdr);
+    }
   } catch {}
 
   // Reset pending
@@ -606,11 +701,13 @@ async function tmSaveBanking() {
       tmBankState.pendingAvatarDataUrl = '';
     }
 
-    // Header → local (until backend exists)
+    // Header → backend (+ local fallback cache)
     if (tmBankState.pendingHeaderDataUrl) {
+      const hdr = tmBankState.pendingHeaderDataUrl;
+      await tmPostJson('/api/me/profile', { headerDataUrl: hdr });
       try {
         const k = tmBankHeaderKey(email);
-        window.localStorage && window.localStorage.setItem(k, tmBankState.pendingHeaderDataUrl);
+        window.localStorage && window.localStorage.setItem(k, hdr);
       } catch {}
       tmBankState.pendingHeaderDataUrl = '';
     }
@@ -1217,6 +1314,8 @@ async function init() {
   tmInitGlobalSearch();
   tmInitSuggestionsSidebar();
   await tmHydrateCreatorsFromMe();
+  try { tmBindCreatorAccessPaywall(); } catch (e) { console.error(e); }
+  try { tmEnforceCreatorAccess(); } catch (e) { console.error(e); }
   try { tmInitBankingView(); } catch (e) { console.error(e); }
 
   
@@ -1450,6 +1549,16 @@ function setupGlobalEvents() {
             }
         }
     });
+
+    // Refresh derived UI when profile/settings updates /api/me
+    if (!window.__tmBoundMeUpdated) {
+        window.__tmBoundMeUpdated = true;
+        window.addEventListener('tm:me-updated', async () => {
+            try { await tmHydrateCreatorsFromMe(); } catch (e) { console.error(e); }
+            try { tmLoadBankingFromCache(); } catch (_) {}
+            try { tmEnforceCreatorAccess(); } catch (_) {}
+        });
+    }
 }
 
 function initNewPostButton() {
