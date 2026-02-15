@@ -2,6 +2,7 @@ import { DOM } from './dom.js';
 
 // TODO: Backend Integration - Replace STORAGE_KEY with API Endpoints
 const STORAGE_KEY = 'tm_user_posts';
+const BOOKMARKS_KEY = 'tm_creator_bookmarks';
 
 
 
@@ -41,6 +42,150 @@ function tmToast(TopToast, icon, title) {
 function tmNowId() {
     return String(Date.now()) + '-' + Math.random().toString(16).slice(2);
 }
+
+
+// ------------------------------
+// Local bookmarks (Home feed)
+// ------------------------------
+function tmGetBookmarksSet() {
+    try {
+        const raw = localStorage.getItem(BOOKMARKS_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        return new Set(Array.isArray(arr) ? arr.map(String) : []);
+    } catch {
+        return new Set();
+    }
+}
+
+function tmIsBookmarked(postId) {
+    return tmGetBookmarksSet().has(String(postId));
+}
+
+function tmToggleBookmark(postId) {
+    const id = String(postId);
+    const set = tmGetBookmarksSet();
+    if (set.has(id)) set.delete(id);
+    else set.add(id);
+    try {
+        localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(Array.from(set)));
+    } catch {}
+    return set.has(id);
+}
+
+// ------------------------------
+// Text formatting helpers (mini-markdown)
+// **bold**  *italic*  __underline__  - list
+// ------------------------------
+function tmWrapSelection(textarea, left, right) {
+    if (!textarea) return;
+    const start = textarea.selectionStart ?? 0;
+    const end = textarea.selectionEnd ?? 0;
+
+    const v = textarea.value || '';
+    const sel = v.slice(start, end);
+
+    const next = v.slice(0, start) + left + sel + right + v.slice(end);
+    textarea.value = next;
+
+    const cursorStart = start + left.length;
+    const cursorEnd = cursorStart + sel.length;
+    textarea.setSelectionRange(cursorStart, cursorEnd);
+    textarea.focus();
+}
+
+function tmToggleLinePrefix(textarea, prefix) {
+    if (!textarea) return;
+    const v = textarea.value || '';
+    const start = textarea.selectionStart ?? 0;
+    const end = textarea.selectionEnd ?? 0;
+
+    // Expand selection to full lines
+    const lineStart = v.lastIndexOf('\n', start - 1) + 1;
+    const lineEnd = (() => {
+        const idx = v.indexOf('\n', end);
+        return idx === -1 ? v.length : idx;
+    })();
+
+    const block = v.slice(lineStart, lineEnd);
+    const lines = block.split(/\n/);
+
+    const allPrefixed = lines.every(l => l.startsWith(prefix) || l.trim() === '');
+    const nextLines = lines.map(l => {
+        if (!l.trim()) return l;
+        return allPrefixed ? l.replace(new RegExp('^' + prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), '') : (prefix + l);
+    });
+
+    const nextBlock = nextLines.join('\n');
+    textarea.value = v.slice(0, lineStart) + nextBlock + v.slice(lineEnd);
+
+    const newEnd = lineStart + nextBlock.length;
+    textarea.setSelectionRange(lineStart, newEnd);
+    textarea.focus();
+}
+
+function tmRenderFormattedText(rawText) {
+    const raw = String(rawText || '');
+
+    // Build lists from lines first
+    const lines = raw.split(/\n/);
+    let out = '';
+    let inList = false;
+
+    const flushList = () => {
+        if (inList) {
+            out += '</ul>';
+            inList = false;
+        }
+    };
+
+    const formatInline = (s) => {
+        let safe = tmEscapeHtml(s);
+        safe = safe.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        safe = safe.replace(/__(.+?)__/g, '<u>$1</u>');
+        safe = safe.replace(/\*(.+?)\*/g, '<em>$1</em>');
+        return safe;
+    };
+
+    for (const line of lines) {
+        const m = line.match(/^\s*[-•*]\s+(.*)$/);
+        if (m) {
+            if (!inList) {
+                out += '<ul style="margin: 6px 0 10px 18px; padding:0;">';
+                inList = true;
+            }
+            out += `<li style="margin:4px 0;">${formatInline(m[1] || '')}</li>`;
+        } else {
+            flushList();
+            out += formatInline(line) + '<br>';
+        }
+    }
+    flushList();
+
+    // Trim trailing <br>
+    out = out.replace(/(<br>)+$/g, '');
+    return out;
+}
+
+function tmGetLikeUi(reactionType) {
+    const t = String(reactionType || '').toLowerCase();
+    if (!t) return { icon: 'fa-regular fa-thumbs-up', color: '' };
+
+    switch (t) {
+        case 'like': return { icon: 'fa-solid fa-thumbs-up', color: '#64E9EE' };
+        case 'love': return { icon: 'fa-solid fa-heart', color: '#ff4757' };
+        case 'haha': return { icon: 'fa-solid fa-face-laugh-squint', color: '#f1c40f' };
+        case 'wow': return { icon: 'fa-solid fa-face-surprise', color: '#f1c40f' };
+        case 'sad': return { icon: 'fa-solid fa-face-sad-tear', color: '#e67e22' };
+        case 'angry': return { icon: 'fa-solid fa-face-angry', color: '#e74c3c' };
+        default: return { icon: 'fa-regular fa-thumbs-up', color: '' };
+    }
+}
+
+function tmLikesText(count) {
+    const n = Number(count || 0) || 0;
+    return `${n} Like${n === 1 ? '' : 's'}`;
+}
+
 
 function tmGetMeEmail() {
     try {
@@ -94,94 +239,122 @@ export function initHome(TopToast) {
     // 0. LOAD POSTS FROM STORAGE (With 24h Check)
     loadPosts();
 
-    // 1. ENABLE/DISABLE POST BUTTON (Typing Logic)
+    // 1. ENABLE/DISABLE POST BUTTON (Text + Poll Options)
+    function syncPostButtonState() {
+        if (!DOM.btnPostSubmit) return;
+
+        const text = (DOM.composeInput?.value || '').trim();
+
+        const pollIsOpen = DOM.pollUI && !DOM.pollUI.classList.contains('hidden');
+        const pollInputs = pollIsOpen ? Array.from(DOM.pollUI.querySelectorAll('input[type="text"]')) : [];
+        const pollOptions = pollInputs.map(i => (i.value || '').trim()).filter(Boolean);
+
+        const canPost = (text.length > 0) || (pollIsOpen && pollOptions.length >= 2);
+
+        if (canPost) {
+            DOM.btnPostSubmit.removeAttribute('disabled');
+            DOM.btnPostSubmit.style.opacity = '1';
+            DOM.btnPostSubmit.style.cursor = 'pointer';
+        } else {
+            DOM.btnPostSubmit.setAttribute('disabled', 'true');
+            DOM.btnPostSubmit.style.opacity = '0.5';
+            DOM.btnPostSubmit.style.cursor = 'not-allowed';
+        }
+    }
+
     if (DOM.composeInput && DOM.btnPostSubmit) {
-        DOM.composeInput.addEventListener('input', (e) => {
-            const val = e.target.value.trim();
-            if (val.length > 0) {
-                DOM.btnPostSubmit.removeAttribute('disabled');
-                DOM.btnPostSubmit.style.opacity = '1';
-                DOM.btnPostSubmit.style.cursor = 'pointer';
-            } else {
-                DOM.btnPostSubmit.setAttribute('disabled', 'true');
-                DOM.btnPostSubmit.style.opacity = '0.5';
-                DOM.btnPostSubmit.style.cursor = 'not-allowed';
-            }
+        DOM.composeInput.addEventListener('input', syncPostButtonState);
+        if (DOM.pollUI) DOM.pollUI.addEventListener('input', syncPostButtonState);
+
+        // Keyboard shortcuts for formatting
+        DOM.composeInput.addEventListener('keydown', (e) => {
+            const key = String(e.key || '').toLowerCase();
+            const isMod = e.ctrlKey || e.metaKey;
+
+            if (!isMod) return;
+
+            if (key === 'b') { e.preventDefault(); tmWrapSelection(DOM.composeInput, '**', '**'); }
+            if (key === 'i') { e.preventDefault(); tmWrapSelection(DOM.composeInput, '*', '*'); }
+            if (key === 'u') { e.preventDefault(); tmWrapSelection(DOM.composeInput, '__', '__'); }
         });
+
+        syncPostButtonState();
 
         // 2. POST SUBMIT LOGIC
         DOM.btnPostSubmit.addEventListener('click', async () => {
-            const text = DOM.composeInput.value.trim();
-            if (!text) return;
+            const text = (DOM.composeInput.value || '').trim();
 
             // If poll UI is open and user typed poll options, turn this into a poll-post
             const pollIsOpen = DOM.pollUI && !DOM.pollUI.classList.contains('hidden');
-            const pollInputs = pollIsOpen ? Array.from(DOM.pollUI.querySelectorAll('input[type=\"text\"]')) : [];
+            const pollInputs = pollIsOpen ? Array.from(DOM.pollUI.querySelectorAll('input[type="text"]')) : [];
             const pollOptions = pollInputs
                 .map(i => (i.value || '').trim())
                 .filter(Boolean);
 
-            const isPollPost = pollIsOpen && pollOptions.length > 0;
-            if (isPollPost && pollOptions.length < 2) {
+            const isPollDraft = pollIsOpen && pollOptions.length > 0;
+            const isPollPost = pollIsOpen && pollOptions.length >= 2;
+
+            if (isPollDraft && pollOptions.length < 2) {
                 tmToast(TopToast, 'warning', 'Add at least 2 poll options');
                 return;
             }
 
+            if (!text && !isPollPost) {
+                tmToast(TopToast, 'warning', 'Write something or add a poll');
+                return;
+            }
+
             // Create post via backend (single-source-of-truth). Fallback to local-only if backend is unavailable.
-const draft = {
-    type: isPollPost ? 'poll' : 'text',
-    text: text,
-};
+            const draft = {
+                type: isPollPost ? 'poll' : 'text',
+                text: text,
+            };
 
-if (isPollPost) {
-    draft.poll = { options: pollOptions.slice(0, 6) };
-}
+            if (isPollPost) {
+                draft.poll = { options: pollOptions.slice(0, 6) };
+            }
 
-let createdPost = await tmCreateCreatorPost(draft);
+            let createdPost = await tmCreateCreatorPost(draft);
 
-if (!createdPost) {
-    const meEmail = tmGetMeEmail();
-    const myIdentity = tmGetCreatorIdentity();
-    createdPost = {
-        id: tmNowId(),
-        creatorEmail: meEmail || null,
-        creatorName: myIdentity.name,
-        creatorHandle: myIdentity.handle,
-        creatorAvatarUrl: myIdentity.avatarUrl,
-        creatorVerified: true,
-        type: draft.type,
-        text: text,
-        timestamp: Date.now(),
-        comments: [],
-    };
+            if (!createdPost) {
+                const meEmail = tmGetMeEmail();
+                const myIdentity = tmGetCreatorIdentity();
+                createdPost = {
+                    id: tmNowId(),
+                    creatorEmail: meEmail || null,
+                    creatorName: myIdentity.name,
+                    creatorHandle: myIdentity.handle,
+                    creatorAvatarUrl: myIdentity.avatarUrl,
+                    creatorVerified: true,
+                    type: draft.type,
+                    text: text,
+                    timestamp: Date.now(),
+                    comments: [],
+                };
 
-    if (isPollPost) {
-        createdPost.poll = { options: pollOptions.slice(0, 6) };
-        createdPost.pollVotes = new Array(createdPost.poll.options.length).fill(0);
-        createdPost.pollMyVote = null;
-    }
-} else {
-    // Ensure client-side fields exist (prototype interactions)
-    createdPost.comments = Array.isArray(createdPost.comments) ? createdPost.comments : [];
-    if (createdPost.type === 'poll' && createdPost.poll && Array.isArray(createdPost.poll.options)) {
-        createdPost.pollVotes = Array.isArray(createdPost.pollVotes)
-            ? createdPost.pollVotes
-            : new Array(createdPost.poll.options.length).fill(0);
-        createdPost.pollMyVote = null;
-    }
-}
+                if (isPollPost) {
+                    createdPost.poll = { options: pollOptions.slice(0, 6) };
+                    createdPost.pollVotes = new Array(createdPost.poll.options.length).fill(0);
+                    createdPost.pollMyVote = null;
+                }
+            } else {
+                // Ensure client-side fields exist (prototype interactions)
+                createdPost.comments = Array.isArray(createdPost.comments) ? createdPost.comments : [];
+                if (createdPost.type === 'poll' && createdPost.poll && Array.isArray(createdPost.poll.options)) {
+                    createdPost.pollVotes = Array.isArray(createdPost.pollVotes)
+                        ? createdPost.pollVotes
+                        : new Array(createdPost.poll.options.length).fill(0);
+                    createdPost.pollMyVote = null;
+                }
+            }
 
-savePost(createdPost);
-renderPost(createdPost, true);
-if (DOM.feedEmptyState) DOM.feedEmptyState.style.display = 'none';
-
-
+            savePost(createdPost);
+            renderPost(createdPost, true);
+            if (DOM.feedEmptyState) DOM.feedEmptyState.style.display = 'none';
 
             // Reset composer
             DOM.composeInput.value = '';
-            DOM.btnPostSubmit.setAttribute('disabled', 'true');
-            DOM.btnPostSubmit.style.opacity = '0.5';
-            DOM.btnPostSubmit.style.cursor = 'not-allowed';
+            syncPostButtonState();
 
             // Reset poll UI
             if (isPollPost && DOM.pollUI) {
@@ -196,13 +369,16 @@ if (DOM.feedEmptyState) DOM.feedEmptyState.style.display = 'none';
         });
     }
 
-    // 3. Compose Actions (Redirect Image to Bookmarks, Poll, Text)
+
+// 3. Compose Actions (Redirect Image to Bookmarks, Poll, Text)
     if (DOM.composeActions) {
         DOM.composeActions.addEventListener('click', (e) => {
             const target = e.target;
-            
+            const el = target.closest('i, span');
+            if (!el) return;
+
             // --- UPDATED: IMAGE ICON -> GO TO COLLECTIONS > BOOKMARKS ---
-            if (target.classList.contains('fa-image')) {
+            if (el.classList.contains('fa-image')) {
                 if (DOM.navCollections) {
                     DOM.navCollections.click();
                     setTimeout(() => {
@@ -213,15 +389,16 @@ if (DOM.feedEmptyState) DOM.feedEmptyState.style.display = 'none';
                 }
             }
             // Poll Toggle
-            else if (target.classList.contains('fa-square-poll-horizontal') || target.id === 'btn-trigger-poll') {
+            else if (el.classList.contains('fa-square-poll-horizontal') || el.id === 'btn-trigger-poll') {
                 if(DOM.pollUI) DOM.pollUI.classList.toggle('hidden');
+                syncPostButtonState();
             }
             // Quiz Composer
-            else if (target.classList.contains('fa-clipboard-question')) {
+            else if (el.classList.contains('fa-clipboard-question')) {
                 tmOpenQuizComposer(TopToast);
             }
             // Text Tools Toggle
-            else if (target.id === 'btn-trigger-text' || target.innerText === 'Aa') {
+            else if (el.id === 'btn-trigger-text' || (el.textContent || '').trim() === 'Aa') {
                 if(DOM.textTools) DOM.textTools.classList.toggle('hidden');
             }
         });
@@ -230,6 +407,25 @@ if (DOM.feedEmptyState) DOM.feedEmptyState.style.display = 'none';
     if (DOM.closePollBtn) {
         DOM.closePollBtn.addEventListener('click', () => {
             if(DOM.pollUI) DOM.pollUI.classList.add('hidden');
+            syncPostButtonState();
+        });
+    }
+
+    // 3b. Text Toolbar Formatting Buttons
+    if (DOM.textTools && DOM.composeInput) {
+        DOM.textTools.addEventListener('click', (e) => {
+            const btn = e.target.closest('button');
+            if (!btn) return;
+
+            const icon = btn.querySelector('i') || e.target.closest('i');
+            if (!icon) return;
+
+            if (icon.classList.contains('fa-bold')) tmWrapSelection(DOM.composeInput, '**', '**');
+            else if (icon.classList.contains('fa-italic')) tmWrapSelection(DOM.composeInput, '*', '*');
+            else if (icon.classList.contains('fa-underline')) tmWrapSelection(DOM.composeInput, '__', '__');
+            else if (icon.classList.contains('fa-list-ul')) tmToggleLinePrefix(DOM.composeInput, '- ');
+
+            syncPostButtonState();
         });
     }
 
@@ -281,6 +477,52 @@ if (DOM.feedEmptyState) DOM.feedEmptyState.style.display = 'none';
         // CLICK HANDLER
         feed.addEventListener('click', (e) => {
             const target = e.target;
+
+            // --- POST MENU ACTIONS (Copy Link / Pin) ---
+            const menuCopy = target.closest('.action-copy-link');
+            if (menuCopy) {
+                const postCard = target.closest('.post-card');
+                const postId = postCard?.dataset?.postId;
+                const url = postId ? `${location.origin}${location.pathname}#post-${postId}` : location.href;
+
+                try {
+                    navigator.clipboard.writeText(url);
+                    tmToast(TopToast, 'success', 'Link copied');
+                } catch {
+                    tmToast(TopToast, 'info', 'Copy not supported');
+                }
+
+                const dropdown = target.closest('.post-menu-dropdown');
+                if (dropdown) dropdown.classList.add('hidden');
+                return;
+            }
+
+            const menuPin = target.closest('.action-pin');
+            if (menuPin) {
+                const postCard = target.closest('.post-card');
+                const postId = postCard?.dataset?.postId;
+                if (!postId) return;
+
+                const posts = getPosts();
+                const p = posts.find(x => String(x.id) === String(postId));
+                if (!p) return;
+
+                const nextPinned = !p.pinned;
+                updatePost(postId, { pinned: nextPinned });
+
+                // Re-render at top (keeps UX simple)
+                const el = document.querySelector(`[data-post-id="${String(postId)}"]`);
+                if (el && el.parentNode) el.parentNode.removeChild(el);
+
+                const updated = getPosts().find(x => String(x.id) === String(postId));
+                if (updated) renderPost(updated, true);
+
+                tmToast(TopToast, 'success', nextPinned ? 'Pinned' : 'Unpinned');
+
+                const dropdown = target.closest('.post-menu-dropdown');
+                if (dropdown) dropdown.classList.add('hidden');
+                return;
+            }
 
             // --- QUIZ OPTION CLICK ---
             const quizBtn = target.closest('.quiz-option-btn');
@@ -385,27 +627,25 @@ if (DOM.feedEmptyState) DOM.feedEmptyState.style.display = 'none';
 
                 // POST REACTION
                 if (context === 'post') {
-                    const mainIcon = postCard.querySelector('.main-like-btn');
-                    const likesCount = postCard.querySelector('.post-likes'); 
-                    
+                    const postCard = target.closest('.post-card');
+                    const postId = postCard?.dataset?.postId;
+
+                    const mainIcon = postCard?.querySelector('.main-like-btn');
+                    const likesCount = postCard?.querySelector('.post-likes');
+
+                    if (postId) {
+                        updatePost(postId, { reaction: reactionType, reactionCount: 1 });
+                    }
+
+                    const ui = tmGetLikeUi(reactionType);
+
                     if (mainIcon) {
-                        mainIcon.className = 'fa-solid main-like-btn action-like';
-                        mainIcon.style.color = ''; // Reset
-                        
-                        // Set Icon & Color
-                        switch(reactionType) {
-                            case 'like': mainIcon.classList.add('fa-thumbs-up'); mainIcon.style.color = '#64E9EE'; break;
-                            case 'love': mainIcon.classList.add('fa-heart'); mainIcon.style.color = '#ff4757'; break;
-                            case 'haha': mainIcon.classList.add('fa-face-laugh-squint'); mainIcon.style.color = '#f1c40f'; break;
-                            case 'wow': mainIcon.classList.add('fa-face-surprise'); mainIcon.style.color = '#f1c40f'; break;
-                            case 'sad': mainIcon.classList.add('fa-face-sad-tear'); mainIcon.style.color = '#e67e22'; break;
-                            case 'angry': mainIcon.classList.add('fa-face-angry'); mainIcon.style.color = '#e74c3c'; break;
-                        }
-                        // Animation
+                        mainIcon.className = `${ui.icon} main-like-btn action-like`;
+                        mainIcon.style.color = ui.color || '';
                         mainIcon.style.transform = 'scale(1.4)';
                         setTimeout(() => mainIcon.style.transform = 'scale(1)', 200);
                     }
-                    if(likesCount) likesCount.innerText = "1 Like";
+                    if (likesCount) likesCount.innerText = tmLikesText(1);
                 }
                 // COMMENT REACTION
                 else if (context === 'comment') {
@@ -426,19 +666,29 @@ if (DOM.feedEmptyState) DOM.feedEmptyState.style.display = 'none';
             if (target.classList.contains('main-like-btn')) {
                 const icon = target;
                 const postCard = target.closest('.post-card');
-                const likesCount = postCard.querySelector('.post-likes');
+                const postId = postCard?.dataset?.postId;
+                const likesCount = postCard?.querySelector('.post-likes');
 
-                if (icon.classList.contains('fa-regular')) {
-                    icon.className = 'fa-solid fa-thumbs-up main-like-btn action-like';
-                    icon.style.color = '#64E9EE';
-                    icon.style.transform = 'scale(1.3)';
-                    setTimeout(() => icon.style.transform = 'scale(1)', 200);
-                    if(likesCount) likesCount.innerText = "1 Like";
-                } else {
-                    icon.className = 'fa-regular fa-thumbs-up main-like-btn action-like';
-                    icon.style.color = '';
-                    if(likesCount) likesCount.innerText = "0 Likes";
-                }
+                if (!postId) return;
+
+                const posts = getPosts();
+                const p = posts.find(x => String(x.id) === String(postId));
+                const hasReaction = !!(p && p.reaction);
+
+                const nextReaction = hasReaction ? null : 'like';
+                const nextCount = hasReaction ? 0 : 1;
+
+                updatePost(postId, { reaction: nextReaction, reactionCount: nextCount });
+
+                const ui = tmGetLikeUi(nextReaction);
+
+                icon.className = `${ui.icon} main-like-btn action-like`;
+                icon.style.color = ui.color || '';
+                icon.style.transform = 'scale(1.3)';
+                setTimeout(() => icon.style.transform = 'scale(1)', 200);
+
+                if (likesCount) likesCount.innerText = tmLikesText(nextCount);
+                return;
             }
 
             // --- COMMENT LIKE CLICK (Toggle Default) ---
@@ -515,15 +765,19 @@ if (DOM.feedEmptyState) DOM.feedEmptyState.style.display = 'none';
             }
 
             // Bookmark & Tip
-            if (target.classList.contains('fa-bookmark')) {
-                if (target.classList.contains('fa-regular')) {
-                    target.classList.replace('fa-regular', 'fa-solid');
-                    target.style.color = '#64E9EE';
-                    if(TopToast) TopToast.fire({ icon: 'success', title: 'Saved' });
-                } else {
-                    target.classList.replace('fa-solid', 'fa-regular');
-                    target.style.color = '';
+            const bmIcon = target.closest('.fa-bookmark');
+            if (bmIcon && bmIcon.closest('.post-actions')) {
+                const postCard = bmIcon.closest('.post-card');
+                const postId = postCard?.dataset?.postId;
+
+                if (postId) {
+                    const saved = tmToggleBookmark(postId);
+                    bmIcon.classList.toggle('fa-solid', saved);
+                    bmIcon.classList.toggle('fa-regular', !saved);
+                    bmIcon.style.color = saved ? '#64E9EE' : '';
+                    tmToast(TopToast, saved ? 'success' : 'info', saved ? 'Saved' : 'Removed');
                 }
+                return;
             }
 
             if (target.classList.contains('fa-dollar-sign') && target.closest('.post-actions')) {
@@ -922,12 +1176,17 @@ function renderPost(post, animate) {
     const timeAgo = getTimeAgo(post.timestamp || Date.now());
     const animationStyle = animate ? 'animation: fadeIn 0.3s ease;' : '';
 
-    const { name, handle, avatarUrl } = tmGetPostIdentity(post);
+    const { name, handle, avatarUrl, verified } = tmGetPostIdentity(post);
 
-    const safeText = tmEscapeHtml(post.text || '').replace(/\n/g, '<br>');
+    const safeText = tmRenderFormattedText(post.text || '');
     const meEmail = tmGetMeEmail();
     const canDelete = !!(meEmail && post.creatorEmail && meEmail === String(post.creatorEmail).toLowerCase());
 
+    const isBookmarked = tmIsBookmarked(post.id);
+    const likeCount = post.reaction ? (Number(post.reactionCount) || 1) : (Number(post.reactionCount) || 0);
+    const likeUI = tmGetLikeUi(post.reaction);
+    const likeIconClass = `${likeUI.icon} main-like-btn action-like`;
+    const likeColorStyle = likeUI.color ? `color: ${likeUI.color};` : '';
 
     const comments = Array.isArray(post.comments) ? post.comments : [];
     const commentsHTML = comments.map(c => generateCommentHTML(c.text, c.timestamp)).join('');
@@ -944,15 +1203,15 @@ function renderPost(post, animate) {
                     <img src="${tmEscapeHtml(avatarUrl)}" style="width: 45px; height: 45px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary-cyan);">
                     <div style="display: flex; flex-direction: column;">
                         <span style="font-weight: 700; font-size: 1rem;">${tmEscapeHtml(name)} ${verified ? '<i class="fa-solid fa-circle-check" style="color:var(--primary-cyan); font-size:0.8rem;"></i>' : ''}</span>
-                        <span style="font-size: 0.85rem; color: var(--muted);">${tmEscapeHtml(handle)} &bull; ${timeAgo}</span>
+                        <span style="font-size: 0.85rem; color: var(--muted);">${tmEscapeHtml(handle)} &bull; ${timeAgo}${post?.pinned ? ' &bull; <span style="color:var(--primary-cyan); font-weight:800;">Pinned</span>' : ''}</span>
                     </div>
                 </div>
 
                 <div style="position:relative;">
                     <div class="post-options-btn"><i class="fa-solid fa-ellipsis"></i></div>
                     <div class="post-menu-dropdown hidden">
-                        <div class="menu-item"><i class="fa-regular fa-copy"></i> Copy Link</div>
-                        <div class="menu-item"><i class="fa-solid fa-thumbtack"></i> Pin to Profile</div>
+                        <div class="menu-item action-copy-link"><i class="fa-regular fa-copy"></i> Copy Link</div>
+                        <div class="menu-item action-pin"><i class="fa-solid fa-thumbtack"></i> ${post?.pinned ? "Unpin from Profile" : "Pin to Profile"}</div>
                         ${canDelete ? `<div class=\"menu-item danger action-delete\"><i class=\"fa-regular fa-trash-can\"></i> Delete Post</div>` : ''}
                     </div>
                 </div>
@@ -966,7 +1225,7 @@ function renderPost(post, animate) {
                 <div style="display: flex; gap: 25px; font-size: 1.3rem; align-items: center;">
 
                     <div class="reaction-wrapper">
-                        <i class="fa-regular fa-thumbs-up main-like-btn" style="cursor: pointer; transition: 0.2s;"></i>
+                        <i class="${likeIconClass}" style="cursor: pointer; transition: 0.2s; ${likeColorStyle}"></i>
                         <div class="reaction-picker">
                             <span class="react-emoji" data-type="post" data-reaction="like">👍</span>
                             <span class="react-emoji" data-type="post" data-reaction="love">❤️</span>
@@ -980,10 +1239,10 @@ function renderPost(post, animate) {
                     <i class="fa-regular fa-comment btn-toggle-comment" style="cursor: pointer; transition: 0.2s;"></i>
                     <i class="fa-solid fa-dollar-sign" style="cursor: pointer; transition: 0.2s;"></i>
                 </div>
-                <i class="fa-regular fa-bookmark" style="cursor: pointer; font-size: 1.2rem; transition: 0.2s;"></i>
+                <i class="${isBookmarked ? 'fa-solid' : 'fa-regular'} fa-bookmark" style="cursor: pointer; font-size: 1.2rem; transition: 0.2s; ${isBookmarked ? 'color: #64E9EE;' : ''}"></i>
             </div>
 
-            <div class="post-likes" style="font-size: 0.85rem; font-weight: 700; margin-top: 10px; color: var(--text);">0 Likes</div>
+            <div class="post-likes" style="font-size: 0.85rem; font-weight: 700; margin-top: 10px; color: var(--text);">${tmLikesText(likeCount)}</div>
 
             <div class="post-comments-section hidden">
                  <div class="comment-list">
