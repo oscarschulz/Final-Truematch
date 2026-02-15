@@ -124,24 +124,14 @@
             <button class="btn-submit-card" style="width:auto; padding: 8px 20px; font-size:0.8rem; min-width:auto;" data-action="save-profile" type="button">SAVE</button>
         </div>
         
-        
-<div style="position:relative; margin-bottom:60px;">
-  <div id="tm-set-cover" style="height:200px; background:linear-gradient(180deg, rgba(0,0,0,.25), rgba(0,0,0,.8)); border-radius:8px; position:relative; overflow:hidden; background-size:cover; background-position:center;">
-    <button type="button" id="tm-btn-cover" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:transparent; border:0; color:#fff; font-size:1.5rem; cursor:pointer; opacity:.9;">
-      <i class="fa-solid fa-camera"></i>
-    </button>
-    <input type="file" id="tm-input-cover" accept="image/*" style="display:none;">
-  </div>
-
-  <div style="position:absolute; bottom:-40px; left:20px; width:80px; height:80px;">
-    <img id="tm-set-avatar-img" src="assets/images/truematch-mark.png" style="width:100%; height:100%; border-radius:50%; border:3px solid #111; object-fit:cover; display:block;" alt="Avatar">
-    <button type="button" id="tm-btn-avatar" style="position:absolute; right:-5px; bottom:-5px; background:#111; border:1px solid rgba(255,255,255,.2); color:#fff; border-radius:50%; width:28px; height:28px; display:flex; align-items:center; justify-content:center; cursor:pointer;">
-      <i class="fa-solid fa-camera" style="font-size:.85rem;"></i>
-    </button>
-    <input type="file" id="tm-input-avatar" accept="image/*" style="display:none;">
-  </div>
-</div>
-
+        <div style="position:relative; margin-bottom:60px;">
+            <div style="height:200px; background: linear-gradient(135deg, #1e1e1e 0%, #333 100%); border-radius:8px; position:relative; overflow:hidden;">
+                <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#fff; font-size:1.5rem; cursor:pointer; opacity:0.8;"><i class="fa-solid fa-camera"></i></div>
+            </div>
+            <div style="position:absolute; bottom:-40px; left:20px; width:80px; height:80px;">
+                <img src="assets/images/truematch-mark.png" style="width:100%; height:100%; border-radius:50%; border:3px solid var(--bg); object-fit:cover; background:#000;">
+                <div style="position:absolute; bottom:0; right:0; background:rgba(0,0,0,0.5); border-radius:50%; width:24px; height:24px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:0.8rem; cursor:pointer;"><i class="fa-solid fa-camera"></i></div>
+            </div>
         </div>
 
         <div class="ac-section" style="max-width: 700px; margin: 0 auto;">
