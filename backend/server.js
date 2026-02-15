@@ -5183,6 +5183,34 @@ app.post('/api/messages/send', (req, res) => {
 const FREE_UPGRADE_MODE = String(process.env.FREE_UPGRADE_MODE || '0') === '1';
 const FREE_UPGRADE_KEY = String(process.env.FREE_UPGRADE_KEY || '').trim();
 
+
+// ---------- Small helpers ----------
+// safeStr: always returns a string (never throws) without trimming by default.
+function safeStr(v) {
+  if (v === null || v === undefined) return '';
+  try { return String(v); } catch { return ''; }
+}
+
+// pruneUndefinedDeep: remove undefined values recursively (Firestore rejects undefined).
+function pruneUndefinedDeep(input) {
+  if (input === undefined) return undefined;
+  if (Array.isArray(input)) {
+    const arr = input
+      .map(pruneUndefinedDeep)
+      .filter(v => v !== undefined);
+    return arr;
+  }
+  if (input && typeof input === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(input)) {
+      const pv = pruneUndefinedDeep(v);
+      if (pv !== undefined) out[k] = pv;
+    }
+    return out;
+  }
+  return input;
+}
+
 function safeEqualStr(a, b) {
   try {
     const aa = Buffer.from(String(a || ''), 'utf8');
@@ -5821,23 +5849,25 @@ app.post('/api/me/creator/profile', async (req, res) => {
 
     next.updatedAt = new Date().toISOString();
 
-    DB.user.creatorApplication = next;
+    const cleaned = pruneUndefinedDeep(next);
+
+    DB.user.creatorApplication = cleaned;
     DB.user.creatorStatus = preservedStatus;
 
-    if (DB.user.email && DB.users[DB.user.email]) {
-      DB.users[DB.user.email].creatorApplication = next;
+    if (DB.user.email && DB.users && DB.users[DB.user.email]) {
+      DB.users[DB.user.email].creatorApplication = cleaned;
       DB.users[DB.user.email].creatorStatus = preservedStatus;
     }
 
     // Persist
     if (DB.user.email) {
       await updateUserByEmail(DB.user.email, {
-        creatorApplication: next,
+        creatorApplication: cleaned,
         creatorStatus: preservedStatus,
       });
     }
 
-    return res.json({ ok: true, creatorApplication: next });
+    return res.json({ ok: true, creatorApplication: cleaned });
   } catch (e) {
     console.error('creator/profile error', e);
     return res.status(500).json({ ok: false, error: 'Server error' });
