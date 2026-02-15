@@ -2910,6 +2910,218 @@ app.get('/api/me', async (req, res) => {
     return res.status(500).json({ ok: false, user: null, message: 'internal error' });
   }
 });
+
+// ---------------- Home widgets: Admirers + Active Nearby -------------------
+// These endpoints are used by dashboard.js Home panel widgets:
+// - GET /api/me/admirers?limit=12
+// - GET /api/me/active-nearby?limit=9
+// They are intentionally lightweight and only return public profile fields.
+
+function _miniProfileFromDoc(doc, emailFallback) {
+  const d = doc ? (doc.id ? { id: doc.id, ...doc } : { ...doc }) : {};
+  const pu = (typeof publicUser === 'function') ? (publicUser(d) || {}) : (d || {});
+  const email = String(pu.email || emailFallback || '').trim().toLowerCase();
+  return {
+    email,
+    name: pu.name || pu.fullName || pu.displayName || pu.username || 'Member',
+    age: (pu.age !== undefined && pu.age !== null && pu.age !== '') ? pu.age : null,
+    city: pu.city || pu.location || null,
+    photoUrl: pu.avatarUrl || pu.photoUrl || pu.avatar || 'assets/images/truematch-mark.png'
+  };
+}
+
+function _isPremiumCandidateDoc(u) {
+  const pk = normalizePlanKey((u && u.plan) || 'free');
+  const act = (u && typeof u.planActive === 'boolean') ? u.planActive : true;
+  return pk !== 'free' && act !== false;
+}
+
+// Who liked you (not yet acted on by you)
+app.get('/api/me/admirers', authMiddleware, async (req, res) => {
+  try {
+    const myEmail = String((req.user && req.user.email) || '').trim().toLowerCase();
+    if (!myEmail) return res.status(401).json({ ok: false, error: 'Not authenticated' });
+
+    const limitRaw = Number(req.query && req.query.limit ? req.query.limit : 12);
+    const limit = Math.max(1, Math.min(50, Number.isFinite(limitRaw) ? limitRaw : 12));
+
+    const userDoc = (DB.users && DB.users[myEmail]) || DB.user || {};
+    const planKey = normalizePlanKey((req.user && req.user.plan) || userDoc.plan || 'free');
+    const planActive = (typeof userDoc.planActive === 'boolean') ? userDoc.planActive
+                      : (typeof req.user.planActive === 'boolean') ? req.user.planActive
+                      : true;
+
+    // Locked for free or inactive subscriptions (server side; frontend also locks for free)
+    const locked = (planKey === 'free') || (planActive === false);
+
+    // My outgoing swipes (so we can show only "new" likes)
+    const mySwipes = await _getSwipeMapFor(myEmail);
+    const hasActedOn = (otherEmail) => {
+      const e = String(otherEmail || '').trim().toLowerCase();
+      if (!e) return false;
+      return !!(mySwipes && mySwipes[e]);
+    };
+
+    // Collect incoming positive swipes (bounded scan to keep it light)
+    const SCAN_MAX = Math.max(200, Math.min(800, limit * 20));
+    const incoming = [];
+
+    if (hasFirebase && firestore) {
+      let snap = null;
+      try {
+        snap = await firestore
+          .collection(SWIPES_COLLECTION)
+          .where('to', '==', myEmail)
+          .where('type', 'in', ['like', 'superlike', 'super'])
+          .limit(SCAN_MAX)
+          .get();
+      } catch (e) {
+        // Fallback: if "in" query is not allowed (older Firestore rules), use a single equality query.
+        snap = await firestore
+          .collection(SWIPES_COLLECTION)
+          .where('to', '==', myEmail)
+          .limit(SCAN_MAX)
+          .get();
+      }
+
+      for (const d of (snap && snap.docs) ? snap.docs : []) {
+        const v = d.data() || {};
+        const from = String(v.from || '').trim().toLowerCase();
+        const type = String(v.type || '').trim().toLowerCase();
+        const ts = Number(v.ts) || 0;
+        if (!from || from === myEmail) continue;
+        if (!_isPositiveSwipe(type)) continue;
+        if (hasActedOn(from)) continue; // only show new/unseen likes
+        incoming.push({ email: from, ts });
+      }
+    } else {
+      const sw = DB.swipes && typeof DB.swipes === 'object' ? DB.swipes : {};
+      for (const from of Object.keys(sw)) {
+        const fromEmail = String(from || '').trim().toLowerCase();
+        if (!fromEmail || fromEmail === myEmail) continue;
+        const rec = sw[fromEmail] && sw[fromEmail][myEmail] ? sw[fromEmail][myEmail] : null;
+        if (!rec) continue;
+        const type = String(rec.type || '').trim().toLowerCase();
+        const ts = Number(rec.ts) || 0;
+        if (!_isPositiveSwipe(type)) continue;
+        if (hasActedOn(fromEmail)) continue; // only show new/unseen likes
+        incoming.push({ email: fromEmail, ts });
+      }
+    }
+
+    // Sort newest first
+    incoming.sort((a, b) => (Number(b.ts) || 0) - (Number(a.ts) || 0));
+
+    const count = incoming.length;
+
+    // For locked users, return only count (marketing); items omitted
+    if (locked) {
+      return res.json({ ok: true, count, locked: true, items: [] });
+    }
+
+    // Build items
+    const items = [];
+    for (const it of incoming.slice(0, limit)) {
+      const e = String(it.email || '').trim().toLowerCase();
+      if (!e) continue;
+
+      let doc = null;
+      if (hasFirebase) {
+        try { doc = await findUserByEmail(e); } catch { doc = null; }
+      } else {
+        doc = (DB.users && DB.users[e]) ? { ...DB.users[e] } : null;
+      }
+
+      const mini = _miniProfileFromDoc(doc || { email: e }, e);
+      // Ensure email always present
+      mini.email = e;
+      items.push(mini);
+    }
+
+    return res.json({ ok: true, count, locked: false, items });
+  } catch (e) {
+    console.error('GET /api/me/admirers error:', e);
+    return res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+// Active nearby (simple: same city if available; premium users see premium-only)
+app.get('/api/me/active-nearby', authMiddleware, async (req, res) => {
+  try {
+    const myEmail = String((req.user && req.user.email) || '').trim().toLowerCase();
+    if (!myEmail) return res.status(401).json({ ok: false, error: 'Not authenticated' });
+
+    const limitRaw = Number(req.query && req.query.limit ? req.query.limit : 9);
+    const limit = Math.max(1, Math.min(30, Number.isFinite(limitRaw) ? limitRaw : 9));
+
+    const userDoc = (DB.users && DB.users[myEmail]) || DB.user || {};
+    const planKey = normalizePlanKey((req.user && req.user.plan) || userDoc.plan || 'free');
+    const planActive = (typeof userDoc.planActive === 'boolean') ? userDoc.planActive
+                      : (typeof req.user.planActive === 'boolean') ? req.user.planActive
+                      : true;
+
+    const isPremium = (planKey !== 'free') && (planActive !== false);
+
+    const myCity = String(userDoc.city || userDoc.location || '').trim();
+    const out = [];
+
+    const pushCandidate = (doc) => {
+      const mini = _miniProfileFromDoc(doc, doc && doc.email ? doc.email : '');
+      const e = String(mini.email || '').trim().toLowerCase();
+      if (!e || e === myEmail) return;
+      if (isPremium && !_isPremiumCandidateDoc(doc || mini)) return; // premium-only browsing
+      out.push({ ...mini, email: e });
+    };
+
+    if (hasFirebase && usersCollection) {
+      let snap = null;
+      try {
+        if (myCity && myCity !== '—') {
+          snap = await usersCollection.where('city', '==', myCity).limit(80).get();
+        } else {
+          snap = await usersCollection.limit(80).get();
+        }
+      } catch (e) {
+        // fallback: no city index/rules
+        snap = await usersCollection.limit(80).get();
+      }
+
+      for (const d of (snap && snap.docs) ? snap.docs : []) {
+        const u = { id: d.id, ...(d.data() || {}) };
+        const e = String(u.email || '').trim().toLowerCase();
+        if (!e || e === myEmail) continue;
+        if (myCity && myCity !== '—') {
+          const c = String(u.city || u.location || '').trim();
+          if (c && c !== myCity) continue;
+        }
+        if (isPremium && !_isPremiumCandidateDoc(u)) continue;
+        pushCandidate(u);
+        if (out.length >= limit) break;
+      }
+    } else {
+      const all = Object.values(DB.users || {});
+      for (const u0 of all) {
+        const u = u0 || {};
+        const e = String(u.email || '').trim().toLowerCase();
+        if (!e || e === myEmail) continue;
+        if (myCity && myCity !== '—') {
+          const c = String(u.city || u.location || '').trim();
+          if (c && c !== myCity) continue;
+        }
+        if (isPremium && !_isPremiumCandidateDoc(u)) continue;
+        pushCandidate(u);
+        if (out.length >= limit) break;
+      }
+    }
+
+    return res.json({ ok: true, items: out.slice(0, limit) });
+  } catch (e) {
+    console.error('GET /api/me/active-nearby error:', e);
+    return res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+
 // ---------------- Notifications (Dashboard bell) -------------------
 // Simple per-user notifications stored under users/{id}/notifications.
 // Frontend: dashboard.js loads these when the bell is opened.
