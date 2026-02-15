@@ -1,9 +1,165 @@
 import { DOM } from './dom.js';
-import { COLLECTIONS_DB, BLANK_IMG, DEFAULT_AVATAR, getMySubscriptions } from './data.js';
+import { COLLECTIONS_DB, BLANK_IMG, DEFAULT_AVATAR, getMySubscriptions, apiGetJson, apiPostJson } from './data.js';
 
 // TODO: Backend Integration - Replace LocalStorage with API Endpoints
 let currentColType = 'user'; // 'user' (Lists) or 'post' (Vault)
 let currentMediaFilter = 'all'; // 'all', 'image', 'video'
+
+// ===============================
+// Backend-first Collections (Lists) cache + API wiring
+// - Custom user Lists persist via /api/collections (Firestore when available)
+// - System Lists (Fans/Following/Restricted/Blocked) remain derived
+// - Falls back to localStorage if API is unavailable
+// ===============================
+const TM_COL_API_CACHE_KEY = 'tm_collections_api_cache_v1';
+const TM_COL_SYS_COUNTS_KEY = 'tm_collections_sys_counts_v1';
+
+let __apiLists = null;          // cached API lists (with items)
+let __apiListsLoaded = false;
+let __apiListsLoading = false;
+
+function tmLsRead(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+function tmLsWrite(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+}
+
+function tmLocalCount(key) {
+  try {
+    const arr = JSON.parse(localStorage.getItem(key) || '[]');
+    return Array.isArray(arr) ? arr.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function tmGetSysCounts() {
+  const o = tmLsRead(TM_COL_SYS_COUNTS_KEY, {}) || {};
+  return (o && typeof o === 'object') ? o : {};
+}
+
+function tmNormalizeApiList(l) {
+  if (!l) return null;
+  const id = l.id != null ? String(l.id) : '';
+  const name = String(l.name || '').trim();
+  if (!id || !name) return null;
+
+  const items = Array.isArray(l.items) ? l.items : [];
+  const count = (typeof l.count === 'number') ? l.count : items.length;
+
+  return { id, name, type: 'user', count, system: false, items, _source: 'api' };
+}
+
+async function tmSyncCollectionsFromApi({ silent = false } = {}) {
+  if (__apiListsLoading) return;
+  __apiListsLoading = true;
+
+  try {
+    const data = await apiGetJson('/api/collections?includeItems=1');
+    const apiItems = Array.isArray(data?.items) ? data.items : [];
+    __apiLists = apiItems.map(tmNormalizeApiList).filter(Boolean);
+    __apiListsLoaded = true;
+    tmLsWrite(TM_COL_API_CACHE_KEY, __apiLists);
+
+    // System counts (fans/following from backend; restricted/blocked local)
+    const counts = {
+      fans: 0,
+      following: 0,
+      restricted: tmLocalCount('tm_restricted_users'),
+      blocked: tmLocalCount('tm_blocked_users')
+    };
+
+    const [fansRes, followingRes] = await Promise.allSettled([
+      getMySubscriptions({ dir: 'fans' }),
+      getMySubscriptions({ dir: 'subscribed' })
+    ]);
+
+    if (fansRes.status === 'fulfilled') {
+      const pack = fansRes.value?.subscribers || {};
+      const c = pack.counts || {};
+      counts.fans = Number(c.all || pack.items?.length || 0) || 0;
+    }
+
+    if (followingRes.status === 'fulfilled') {
+      const pack = followingRes.value?.subscribed || {};
+      const c = pack.counts || {};
+      counts.following = Number(c.all || pack.items?.length || 0) || 0;
+    }
+
+    tmLsWrite(TM_COL_SYS_COUNTS_KEY, counts);
+    if (!silent) {
+      try { rsToast('success', 'Collections synced'); } catch {}
+    }
+  } catch (e) {
+    // Keep UI working using localStorage; don’t hard-fail.
+    if (!silent) {
+      try { rsToast('error', 'Collections offline'); } catch {}
+    }
+  } finally {
+    __apiListsLoading = false;
+  }
+}
+
+function tmInitCollectionsBackendFirst() {
+  // Prime from cache then background-sync.
+  const cached = tmLsRead(TM_COL_API_CACHE_KEY, null);
+  if (Array.isArray(cached)) {
+    __apiLists = cached;
+    __apiListsLoaded = true;
+  }
+  tmSyncCollectionsFromApi({ silent: true }).then(() => {
+    try { renderCollections(DOM.colSearchInput?.value || ''); } catch (_) {}
+  });
+}
+
+async function tmCreateUserList(name) {
+  const nm = String(name || '').trim().slice(0, 60);
+  if (!nm) throw new Error('Missing list name');
+
+  try {
+    const out = await apiPostJson('/api/collections/create', { name: nm });
+    if (out?.ok) {
+      await tmSyncCollectionsFromApi({ silent: true });
+      return { ok: true, id: out.id, source: 'api' };
+    }
+    throw new Error(out?.error || 'Create failed');
+  } catch (e) {
+    // Fallback: local
+    const newCol = { id: Date.now(), name: nm, type: 'user', count: 0, system: false };
+    saveCollectionToStorage(newCol);
+    return { ok: true, id: newCol.id, source: 'local' };
+  }
+}
+
+async function tmDeleteUserList(col) {
+  const id = String(col?.id || '').trim();
+  if (!id) throw new Error('Missing list id');
+
+  // Only delete API lists via API
+  if (String(col?._source || '') === 'api') {
+    try {
+      const out = await apiPostJson('/api/collections/delete', { id });
+      if (!out?.ok) throw new Error(out?.error || 'Delete failed');
+      await tmSyncCollectionsFromApi({ silent: true });
+      return { ok: true, source: 'api' };
+    } catch (e) {
+      // If API failed, keep it visible from cache rather than corrupt local storage.
+      throw e;
+    }
+  }
+
+  // Local list delete
+  deleteCollectionFromStorage(col.id);
+  return { ok: true, source: 'local' };
+}
 
 
 // ===============================
@@ -118,6 +274,18 @@ function rsNormalizeSimpleUser(it) {
   const ts = it?.ts ? Number(it.ts) : 0;
   return { email, name, handle, avatar, verified, isActive: true, ts };
 }
+
+function rsNormalizeCollectionItem(it) {
+  // Items returned from /api/collections (email/handle/name/avatarUrl/verified/addedAt)
+  const email = it?.email ? String(it.email) : '';
+  const name = it?.name ? String(it.name) : '';
+  const handle = it?.handle ? String(it.handle) : '';
+  const avatar = it?.avatarUrl ? String(it.avatarUrl) : (DEFAULT_AVATAR || BLANK_IMG);
+  const verified = !!it?.verified;
+  const ts = it?.addedAt ? Date.parse(String(it.addedAt)) : 0;
+  return { email, name, handle, avatar, verified, isActive: true, ts };
+}
+
 
 function rsApplyFilter(items) {
   let out = Array.isArray(items) ? [...items] : [];
@@ -424,7 +592,23 @@ async function rsLoadUsersForCollection(col) {
     }
   }
 
-  // For other lists: show empty (until you add data sources)
+  // Custom user lists (API-backed): show stored items if available
+  try {
+    const items = Array.isArray(col?.items) ? col.items : [];
+    if (items.length) {
+      RS_USERS.items = items.map(rsNormalizeCollectionItem);
+      RS_USERS.counts.all = items.length;
+      RS_USERS.counts.active = items.length;
+      RS_USERS.counts.expired = 0;
+
+      rsSetChipLabels(RS_USERS.counts);
+      rsSetUsersEmptyState(false, '');
+      rsRenderUsers();
+      return;
+    }
+  } catch (e) {}
+
+// For other lists: show empty (until you add data sources)
   rsSetChipLabels(RS_USERS.counts);
   rsSetUsersEmptyState(true, 'No users yet');
 }
@@ -807,6 +991,9 @@ function rsBindMediaSidebar() {
 export function initCollections(TopToast) {
     _TopToast = TopToast;
 
+    // Backend-first: load cached API lists then sync in background
+    try { tmInitCollectionsBackendFirst(); } catch(e) {}
+
     
     // 1. EVENT LISTENERS FOR SEARCH
     if (DOM.colBtnSearch) DOM.colBtnSearch.addEventListener('click', () => { 
@@ -836,10 +1023,15 @@ export function initCollections(TopToast) {
                 color: '#fff'
             }).then((result) => {
                 if (result.isConfirmed && result.value) {
-                    const newCol = { id: Date.now(), name: result.value, type: 'user', count: 0, system: false };
-                    saveCollectionToStorage(newCol);
-                    renderCollections();
-                    TopToast.fire({ icon: 'success', title: 'List created' });
+                    const nm = String(result.value || '').trim();
+                    tmCreateUserList(nm)
+                      .then((out) => {
+                        renderCollections();
+                        TopToast.fire({ icon: 'success', title: (out?.source === 'api') ? 'List created' : 'Saved locally' });
+                      })
+                      .catch((e) => {
+                        TopToast.fire({ icon: 'error', title: e?.message || 'Create failed' });
+                      });
                 }
             });
         });
@@ -1144,8 +1336,11 @@ export function renderCollections(filter = '') {
                         title: 'Delete List?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#ff4757', confirmButtonText: 'Delete', background: '#0d1423', color: '#fff'
                     }).then((result) => {
                         if (result.isConfirmed) {
-                            deleteCollectionFromStorage(col.id);
-                            renderCollections();
+                            tmDeleteUserList(col)
+                              .then(() => { renderCollections(); })
+                              .catch((e) => {
+                                Swal.fire({ icon: 'error', title: 'Delete failed', text: e?.message || 'Request failed', background: '#0d1423', color: '#fff' });
+                              });
                         }
                     });
                 });
@@ -1174,8 +1369,55 @@ function getCollectionsFromStorage() {
         { id: 'favorites', name: 'Favorite Posts', type: 'post', count: 0, system: true },
         { id: 'watch_later', name: 'Watch Later', type: 'post', count: 0, system: false }
     ];
-    return JSON.parse(localStorage.getItem('tm_collections') || JSON.stringify(defaults));
+
+    // Local base (keeps Vault + any offline custom lists)
+    let local;
+    try { local = JSON.parse(localStorage.getItem('tm_collections') || 'null'); } catch { local = null; }
+    if (!Array.isArray(local)) local = defaults.map(d => ({ ...d }));
+
+    // Ensure required defaults exist (by id)
+    try {
+        const has = new Set(local.map(x => String(x?.id || '')));
+        let changed = false;
+        defaults.forEach(d => {
+            if (!has.has(String(d.id))) {
+                local.push({ ...d });
+                changed = true;
+            }
+        });
+        if (changed) localStorage.setItem('tm_collections', JSON.stringify(local));
+    } catch {}
+
+    const localTagged = local.map(c => {
+        const o = { ...c };
+        o._source = o.system ? 'system' : 'local';
+        return o;
+    });
+
+    // API lists (custom user lists)
+    const apiCached = tmLsRead(TM_COL_API_CACHE_KEY, null);
+    const apiBase = Array.isArray(__apiLists) ? __apiLists : (Array.isArray(apiCached) ? apiCached : []);
+    const apiTagged = (apiBase || []).map(tmNormalizeApiList).filter(Boolean);
+
+    // Merge: prefer API for same id
+    const apiIds = new Set(apiTagged.map(x => String(x.id)));
+    let merged = localTagged.filter(x => !(apiIds.has(String(x.id)) && x.type === 'user' && !x.system));
+    merged = merged.concat(apiTagged);
+
+    // Apply cached system counts (derived)
+    const sc = tmGetSysCounts();
+    merged = merged.map(c => {
+        const id = String(c.id || '');
+        if (id === 'fans' && typeof sc.fans === 'number') return { ...c, count: sc.fans };
+        if (id === 'following' && typeof sc.following === 'number') return { ...c, count: sc.following };
+        if (id === 'restricted' && typeof sc.restricted === 'number') return { ...c, count: sc.restricted };
+        if (id === 'blocked' && typeof sc.blocked === 'number') return { ...c, count: sc.blocked };
+        return c;
+    });
+
+    return merged;
 }
+
 
 function saveCollectionToStorage(col) {
     const list = getCollectionsFromStorage();
