@@ -48,11 +48,77 @@ export function initProfilePage() {
     setupProfileTabs();
     setupProfileHeaderActions();
 
+    setupProfileLiveSync();
+
     // 2. Load Content
     tmHydrateProfileHeader().catch(() => {});
+    tmHydrateProfileAvatar().catch(() => {});
     // async-safe
     renderProfilePosts().catch(() => {});
     renderProfileMedia();
+}
+
+function setupProfileLiveSync() {
+    const root = document.getElementById('view-my-profile');
+    if (!root) return;
+    if (root.dataset.liveSyncBound === '1') return;
+    root.dataset.liveSyncBound = '1';
+
+    // When Settings (or any other view) updates /api/me, we refresh profile UI instantly.
+    document.addEventListener('tm:me-updated', () => {
+        tmHydrateProfileHeader().catch(() => {});
+        tmHydrateProfileAvatar().catch(() => {});
+    });
+}
+
+function tmGuessAvatarFromMe(me) {
+    try {
+        const direct =
+            me?.avatarUrl ||
+            me?.avatar ||
+            me?.profilePhotoUrl ||
+            me?.profilePhoto ||
+            me?.photoURL ||
+            me?.photoUrl ||
+            me?.profilePicture ||
+            me?.picture ||
+            me?.creatorApplication?.avatarUrl ||
+            me?.creatorApplication?.profilePhotoUrl ||
+            me?.creatorApplication?.profilePhoto;
+
+        const u = String(direct || '').trim();
+        return u || '';
+    } catch (_) {
+        return '';
+    }
+}
+
+function tmApplyProfileAvatar(url) {
+    const u = String(url || '').trim();
+    if (!u) return;
+
+    const els = [
+        document.querySelector('#view-my-profile .profile-avatar-main'),
+        document.getElementById('creatorProfileAvatar')
+    ].filter(Boolean);
+
+    for (const el of els) {
+        try {
+            if (el.getAttribute && el.getAttribute('src') === u) continue;
+            el.setAttribute ? el.setAttribute('src', u) : (el.src = u);
+        } catch (_) {}
+    }
+
+    try {
+        if (DOM?.profileAvatar) DOM.profileAvatar.src = u;
+    } catch (_) {}
+}
+
+async function tmHydrateProfileAvatar() {
+    const me = await tmGetMeSafe();
+    const u = tmGuessAvatarFromMe(me);
+    if (!u) return;
+    tmApplyProfileAvatar(u);
 }
 
 async function tmHydrateProfileHeader() {
