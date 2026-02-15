@@ -275,6 +275,36 @@ app.get('/admin.css', adminGate, sendAdminFile('admin.css'));
 app.get('/admin.js', adminGate, sendAdminFile('admin.js'));
 app.get('/admin-login.js', sendAdminFile('admin-login.js'));
 
+
+// =========================
+// Static aliases for Creators modules
+// =========================
+// Some Creators page modules import "./tm-api.js" relative to /assets/js/creators/.
+// If tm-api.js is deployed in /assets/js/ (shared) instead of /assets/js/creators/,
+// the browser requests /assets/js/creators/tm-api.js and gets 404.
+// This alias serves the shared file so the page doesn't break.
+app.get('/assets/js/creators/tm-api.js', (req, res, next) => {
+  try {
+    const candidates = [
+      path.join(PUBLIC_DIR, 'assets', 'js', 'creators', 'tm-api.js'),
+      path.join(PUBLIC_DIR, 'assets', 'js', 'tm-api.js'),
+      path.join(PUBLIC_DIR, 'tm-api.js'),
+    ];
+
+    for (const f of candidates) {
+      try {
+        if (fs.existsSync(f)) {
+          res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+          // Avoid stale cache when you move JS files around.
+          res.setHeader('Cache-Control', 'no-store');
+          return res.sendFile(f);
+        }
+      } catch (_) {}
+    }
+  } catch (_) {}
+  return next();
+});
+
 app.use(express.static(PUBLIC_DIR));
 app.use('/public', express.static(PUBLIC_DIR));
 
