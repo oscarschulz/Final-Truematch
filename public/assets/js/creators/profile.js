@@ -10,10 +10,167 @@ const QUICK_EMOJIS = ["😀", "😂", "😍", "🔥", "😭", "🥰", "👍", "�
 export function initProfilePage() {
     // 1. Setup Listeners
     setupProfileFeedInteractions();
+    setupProfileTabs();
+    setupProfileHeaderActions();
 
     // 2. Load Content
     renderProfilePosts();
     renderProfileMedia();
+}
+
+// ------------------------------
+// Profile header actions (Edit)
+// ------------------------------
+
+function setupProfileHeaderActions() {
+    const btnEdit = document.getElementById('btn-edit-profile');
+    if (btnEdit && btnEdit.dataset.bound === '1') return;
+    if (btnEdit) btnEdit.dataset.bound = '1';
+
+    // Edit Profile → edits Display name + Bio (backend-first, safe local fallback)
+    if (btnEdit) {
+        btnEdit.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const me = await tmGetMeSafe();
+            const email = String(me?.email || '').toLowerCase().trim();
+
+            // Pull from packed creatorApplication.contentStyle (preferred)
+            const packed = String(me?.creatorApplication?.contentStyle || tmReadLocalPacked(email) || '').trim();
+            const currentName = (
+                tmGetPacked(packed, 'Display name') ||
+                tmGetPacked(packed, 'Name') ||
+                (document.getElementById('creatorHeaderName')?.textContent || '').trim() ||
+                (me?.name || '').trim() ||
+                'Your Name'
+            );
+
+            const bioFromPacked = tmGetPacked(packed, 'Bio');
+            const bioFromUI = (document.querySelector('#view-my-profile .profile-bio-text')?.textContent || '').trim();
+            const currentBio = (bioFromPacked || '').trim() || (bioFromUI.includes('No bio yet') ? '' : bioFromUI);
+
+            const { value: form } = await Swal.fire({
+                title: 'Edit Profile',
+                background: '#0d1423',
+                color: '#fff',
+                confirmButtonText: 'Save',
+                showCancelButton: true,
+                focusConfirm: false,
+                html: `
+                    <div style="text-align:left;">
+                      <label style="display:block; margin: 6px 0 6px; font-weight:700;">Display name</label>
+                      <input id="tm-edit-display" class="swal2-input" style="width:100%; margin:0;" value="${tmEscapeAttr(currentName)}" placeholder="Your name">
+
+                      <label style="display:block; margin: 12px 0 6px; font-weight:700;">Bio</label>
+                      <textarea id="tm-edit-bio" class="swal2-textarea" style="width:100%; min-height: 110px; margin:0;" placeholder="Write a short bio...">${tmEscapeHtml(currentBio)}</textarea>
+
+                      <div style="margin-top:10px; font-size:12px; color: rgba(255,255,255,0.65); line-height:1.4;">
+                        Tip: Keep it short and clear. You can update anytime.
+                      </div>
+                    </div>
+                `,
+                preConfirm: () => {
+                    const nameEl = document.getElementById('tm-edit-display');
+                    const bioEl = document.getElementById('tm-edit-bio');
+                    const nextName = (nameEl?.value || '').trim();
+                    const nextBio = (bioEl?.value || '').trim();
+                    if (!nextName) {
+                        Swal.showValidationMessage('Display name is required');
+                        return null;
+                    }
+                    return { nextName, nextBio };
+                }
+            });
+
+            if (!form) return;
+
+            const nextName = String(form.nextName || '').trim();
+            const nextBio = String(form.nextBio || '').trim();
+
+            let nextPacked = packed || '';
+            nextPacked = tmSetPacked(nextPacked, 'Display name', nextName);
+            nextPacked = tmSetPacked(nextPacked, 'Bio', nextBio);
+
+            try {
+                // Backend save (preferred)
+                const saved = await tmSaveCreatorProfilePacked(nextPacked);
+                nextPacked = saved || nextPacked;
+
+                // Sync local cache
+                try {
+                    if (window.__tmMe) {
+                        window.__tmMe.creatorApplication = window.__tmMe.creatorApplication || {};
+                        window.__tmMe.creatorApplication.contentStyle = nextPacked;
+                    }
+                } catch (_) {}
+
+                // Update UI
+                tmApplyProfileName(nextName);
+                tmApplyProfileBio(nextBio);
+                if (email) tmWriteLocalPacked(email, nextPacked);
+
+                tmToastOk('Saved');
+            } catch (err) {
+                // Safe local fallback (doesn't break UX)
+                if (email) tmWriteLocalPacked(email, nextPacked);
+                tmApplyProfileName(nextName);
+                tmApplyProfileBio(nextBio);
+                tmToastErr(err?.message || 'Saved locally (server unavailable)');
+            }
+        });
+    }
+
+    // Back button fallback (if not bound elsewhere)
+    const back = document.getElementById('profile-back-btn');
+    if (back && back.dataset.bound !== '1') {
+        back.dataset.bound = '1';
+        back.addEventListener('click', (e) => {
+            e.preventDefault();
+            document.getElementById('nav-link-home')?.click();
+        });
+    }
+}
+
+// ------------------------------
+// Tabs: Posts / Media (safe)
+// ------------------------------
+
+function setupProfileTabs() {
+    const tabPosts = document.getElementById('tab-profile-posts');
+    const tabMedia = document.getElementById('tab-profile-media');
+    const posts = document.getElementById('profile-content-posts');
+    const media = document.getElementById('profile-content-media');
+
+    if (!tabPosts || !tabMedia || !posts || !media) return;
+    if (tabPosts.dataset.boundTabs === '1') return;
+    tabPosts.dataset.boundTabs = '1';
+
+    const setActive = (which) => {
+        const isPosts = which === 'posts';
+        if (isPosts) {
+            posts.classList.remove('hidden');
+            media.classList.add('hidden');
+            tabPosts.style.borderBottomColor = 'var(--text)';
+            tabPosts.style.color = 'var(--text)';
+            tabPosts.style.fontWeight = '700';
+            tabMedia.style.borderBottomColor = 'transparent';
+            tabMedia.style.color = 'var(--muted)';
+            tabMedia.style.fontWeight = '600';
+        } else {
+            posts.classList.add('hidden');
+            media.classList.remove('hidden');
+            tabMedia.style.borderBottomColor = 'var(--text)';
+            tabMedia.style.color = 'var(--text)';
+            tabMedia.style.fontWeight = '700';
+            tabPosts.style.borderBottomColor = 'transparent';
+            tabPosts.style.color = 'var(--muted)';
+            tabPosts.style.fontWeight = '600';
+        }
+    };
+
+    tabPosts.addEventListener('click', (e) => { e.preventDefault(); setActive('posts'); });
+    tabMedia.addEventListener('click', (e) => { e.preventDefault(); setActive('media'); });
 }
 
 function renderProfilePosts() {
@@ -469,4 +626,171 @@ function renderProfileMedia() {
         }
         grid.appendChild(div);
     });
+}
+
+// ==========================================
+// Helpers (Profile Edit)
+// ==========================================
+
+function tmEscapeHtml(str = '') {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function tmEscapeAttr(str = '') {
+    // Same as escapeHtml, kept separate for readability
+    return tmEscapeHtml(str);
+}
+
+function tmSplitPipes(str) {
+    if (!str) return [];
+    return String(str).split('|').map(s => s.trim()).filter(Boolean);
+}
+
+function tmGetPacked(packed, label) {
+    if (!packed || !label) return '';
+    const want = String(label).trim().toLowerCase();
+    for (const seg of tmSplitPipes(packed)) {
+        const idx = seg.indexOf(':');
+        if (idx === -1) continue;
+        const key = seg.slice(0, idx).trim().toLowerCase();
+        if (key === want) return seg.slice(idx + 1).trim();
+    }
+    return '';
+}
+
+function tmSetPacked(packed, label, value) {
+    const want = String(label || '').trim().toLowerCase();
+    const v = (value === null || value === undefined) ? '' : String(value);
+    const segs = tmSplitPipes(packed);
+    let found = false;
+    const out = segs.map(seg => {
+        const idx = seg.indexOf(':');
+        if (idx === -1) return seg;
+        const key = seg.slice(0, idx).trim().toLowerCase();
+        if (key !== want) return seg;
+        found = true;
+        return `${label}: ${v}`.trim();
+    }).filter(Boolean);
+
+    if (!found) out.push(`${label}: ${v}`.trim());
+
+    // Remove empty values
+    const cleaned = out.filter(s => {
+        const idx = s.indexOf(':');
+        if (idx === -1) return true;
+        const val = s.slice(idx + 1).trim();
+        return val.length > 0;
+    });
+
+    return cleaned.join(' | ');
+}
+
+async function tmGetMeSafe() {
+    try {
+        if (window.__tmMe) return window.__tmMe;
+    } catch (_) {}
+
+    try {
+        const res = await fetch('/api/me', { method: 'GET', credentials: 'include' });
+        const data = await res.json().catch(() => null);
+        if (data && data.ok && data.user) {
+            try { window.__tmMe = data.user; } catch (_) {}
+            return data.user;
+        }
+    } catch (_) {}
+
+    // Fallback: minimal local
+    try {
+        return JSON.parse(localStorage.getItem('tm_user') || 'null');
+    } catch (_) {
+        return null;
+    }
+}
+
+function tmLocalPackedKey(email) {
+    const e = String(email || '').toLowerCase().trim();
+    return e ? `tm_creator_packed_${e}` : 'tm_creator_packed';
+}
+
+function tmReadLocalPacked(email) {
+    try {
+        return localStorage.getItem(tmLocalPackedKey(email)) || '';
+    } catch (_) {
+        return '';
+    }
+}
+
+function tmWriteLocalPacked(email, packed) {
+    try {
+        localStorage.setItem(tmLocalPackedKey(email), String(packed || ''));
+    } catch (_) {}
+}
+
+async function tmSaveCreatorProfilePacked(packed) {
+    const res = await fetch('/api/me/creator/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ contentStyle: String(packed || '') })
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data || !data.ok) {
+        const msg = (data && data.message) ? data.message : 'Unable to save profile';
+        throw new Error(msg);
+    }
+
+    // Some backends echo saved contentStyle
+    return String(data.contentStyle || packed || '');
+}
+
+function tmApplyProfileName(name) {
+    const n = String(name || '').trim();
+    if (!n) return;
+    const els = [
+        document.getElementById('creatorHeaderName'),
+        document.getElementById('creatorProfileName'),
+        document.getElementById('creatorPopoverName')
+    ].filter(Boolean);
+    els.forEach(el => { el.textContent = n; });
+}
+
+function tmApplyProfileBio(bio) {
+    const el = document.querySelector('#view-my-profile .profile-bio-text');
+    if (!el) return;
+    const b = String(bio || '').trim();
+    el.textContent = b ? b : 'No bio yet. Tap "Edit Profile" to add one.';
+}
+
+function tmToastOk(title) {
+    try {
+        Swal.fire({
+            toast: true,
+            position: 'top',
+            icon: 'success',
+            title: String(title || 'Done'),
+            showConfirmButton: false,
+            timer: 1800,
+            timerProgressBar: true
+        });
+    } catch (_) {}
+}
+
+function tmToastErr(title) {
+    try {
+        Swal.fire({
+            toast: true,
+            position: 'top',
+            icon: 'error',
+            title: String(title || 'Error'),
+            showConfirmButton: false,
+            timer: 2400,
+            timerProgressBar: true
+        });
+    } catch (_) {}
 }
