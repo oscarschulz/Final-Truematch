@@ -305,6 +305,8 @@ app.get('/assets/js/creators/tm-api.js', (req, res, next) => {
   return next();
 });
 
+app.use(express.static(PUBLIC_DIR));
+app.use('/public', express.static(PUBLIC_DIR));
 
 
 // static files
@@ -780,6 +782,7 @@ app.use(async (req, res, next) => {
 
   // hydrate from cache (per-email); never carry plan/prefs from previous user
   DB.user = { ...user };
+  normalizeDBUser();
 
   // load per-email prefs map (not the global DB.prefs)
   if (Object.prototype.hasOwnProperty.call(DB.prefsByEmail, email)) {
@@ -794,45 +797,6 @@ app.use(async (req, res, next) => {
   return next();
 });
 
-
-
-
-// ------------------------------------------------------------
-// Onboarding gate (first login): require profile photo + preferences
-// If account has no avatar or no saved prefs, force user to complete preferences.html first.
-app.use((req, res, next) => {
-  try {
-    if (req.method !== 'GET') return next();
-
-    const p = req.path;
-
-    // Let users reach preferences page to complete setup
-    if (!PROTECTED_HTML.has(p) || p === '/preferences.html') return next();
-
-    const email = getSessionEmail(req);
-    if (!email) return next(); // protected-html gate handles auth
-
-    const user = DB.user || DB.users[email] || null;
-    const prefs = DB.prefs;
-
-    const hasAvatar = !!(user && (user.avatarUrl || user.avatarPath));
-    const prefsSaved = !!(user && user.prefsSaved);
-    const hasPrefs = !!prefs;
-
-    if (!hasAvatar || !prefsSaved || !hasPrefs) {
-      const from = encodeURIComponent(req.originalUrl || p);
-      return res.redirect(`/preferences.html?onboarding=1&from=${from}`);
-    }
-
-    return next();
-  } catch (e) {
-    return next();
-  }
-});
-
-// Serve static files AFTER session + onboarding gates
-app.use(express.static(PUBLIC_DIR));
-app.use('/public', express.static(PUBLIC_DIR));
 
 // ============================================================
 // Auth middleware (cookie-based)
@@ -854,6 +818,7 @@ function authMiddleware(req, res, next) {
     if (!DB.user || String(DB.user.email || '').trim().toLowerCase() !== email) {
       const cached = (DB.users && DB.users[email]) ? DB.users[email] : null;
       if (cached) DB.user = { ...cached };
+      normalizeDBUser();
     }
 
     req.user = DB.user ? { ...DB.user } : { email };
@@ -1751,6 +1716,8 @@ function publicUser(doc) {
     phone: doc.phone || doc.phoneNumber || doc.phone_number || '',
     linkedAccounts: doc.linkedAccounts || doc.linked_accounts || null,
     city: doc.city || doc.location || '',
+    age: doc.age ?? null,
+    creatorApplication: doc.creatorApplication ?? doc.creator_application ?? null,
     avatarUrl: doc.avatarUrl || doc.avatar || '',
     creatorStatus: doc.creatorStatus ?? doc.creator_status ?? null,
     hasCreatorAccess: Boolean(doc.hasCreatorAccess ?? doc.creatorApproved ?? false),
@@ -1768,6 +1735,14 @@ verified: Boolean(doc.verified),
     lastSeenAt: doc.lastSeenAt ?? doc.last_seen_at ?? null,
   };
 }
+
+function normalizeDBUser() {
+  if (!DB.user || typeof DB.user !== 'object') return;
+  // Never keep auth secrets in DB.user (frontend-safe object)
+  if ('passwordHash' in DB.user) delete DB.user.passwordHash;
+  if ('_pwHash' in DB.user) delete DB.user._pwHash;
+}
+
 
 async function findUserByEmail(email) {
   const emailNorm = String(email || '').trim().toLowerCase();
@@ -2446,6 +2421,7 @@ app.post('/api/auth/login', async (req, res) => {
       // hydrate clean per-user state (do NOT inherit previous DB.user)
       if (stored) {
         DB.user = { ...stored };
+  normalizeDBUser();
       } else {
         DB.user = {
           id: 'demo-1',
@@ -3015,6 +2991,7 @@ app.get('/api/me', async (req, res) => {
 
     // Keep central DB pointers in sync
     DB.user = { ...user, prefsSaved };
+  normalizeDBUser();
     DB.prefs = prefs || null;
     DB.users[email] = { ...DB.user };
     if (prefs) {
@@ -3661,31 +3638,6 @@ app.post('/api/me/preferences', async (req, res) => {
   try {
     const body = req.body || {};
 
-    const sessionEmail = (DB.user && DB.user.email) ? DB.user.email : getSessionEmail(req);
-    if (!sessionEmail) {
-      return res.status(401).json({ ok: false, message: 'Not signed in' });
-    }
-
-    // Enforce profile picture requirement before saving preferences (onboarding hard requirement).
-    let _user = null;
-    try {
-      if (hasFirebase) {
-        _user = await findUserByEmail(sessionEmail);
-      }
-    } catch (_) {
-      _user = null;
-    }
-    if (!_user) _user = DB.users[sessionEmail] || DB.user || null;
-
-    if (!_user) {
-      return res.status(401).json({ ok: false, message: 'Not signed in' });
-    }
-    const _hasAvatar = !!(_user.avatarUrl || _user.avatarPath);
-    if (!_hasAvatar) {
-      return res.status(400).json({ ok: false, message: 'profile picture required' });
-    }
-
-
     const cityRaw = body.city;
     const ageMinRaw = (typeof body.ageMin !== 'undefined') ? body.ageMin : body.minAge;
     const ageMaxRaw = (typeof body.ageMax !== 'undefined') ? body.ageMax : body.maxAge;
@@ -4175,6 +4127,7 @@ app.post('/api/me/linked-accounts/connect', authMiddleware, async (req, res) => 
       if (!DB.users) DB.users = {};
       DB.users[email] = u;
       if (DB.user && String(DB.user.email || '').toLowerCase() === email) DB.user = u;
+    normalizeDBUser();
       try { saveUsersStore(); } catch {}
       nextUser = u;
     }
@@ -4233,6 +4186,7 @@ app.post('/api/me/linked-accounts/disconnect', authMiddleware, async (req, res) 
       u.linkedAccountsUpdatedAt = new Date().toISOString();
       if (DB.users) DB.users[email] = u;
       if (DB.user && String(DB.user.email || '').toLowerCase() === email) DB.user = u;
+    normalizeDBUser();
       try { saveUsersStore(); } catch {}
     }
 
@@ -6982,6 +6936,7 @@ const currentStatus = String(userDoc.premiumStatus || '').toLowerCase();
         DB.users[email].premiumApplication = fresh.premiumApplication ?? null;
         if (DB.user && String(DB.user.email || '').toLowerCase() === email) {
           DB.user = { ...DB.users[email] };
+  normalizeDBUser();
         }
       }
     } else {
@@ -7330,6 +7285,7 @@ app.post('/api/admin/premium/decision', requireAdmin, async (req, res) => {
         DB.users[e] = { ...publicUser({ id: fresh.id, ...fresh }) };
         if (DB.user && String(DB.user.email || '').toLowerCase() === e) {
           DB.user = { ...DB.users[e] };
+  normalizeDBUser();
         }
       }
     } else {
@@ -7824,7 +7780,7 @@ app.get('/api/premium-society/candidates', authMiddleware, async (req, res) => {
           name: pu.name,
           age: pu.age,
           city: pu.location || pu.city || '',
-          photoUrl: pu.photoUrl || pu.profilePhotoUrl || ''
+          photoUrl: pu.avatarUrl || pu.photoUrl || pu.profilePhotoUrl || ''
         });
       });
     } else {
@@ -7843,7 +7799,7 @@ app.get('/api/premium-society/candidates', authMiddleware, async (req, res) => {
           name: pu.name,
           age: pu.age,
           city: pu.location || pu.city || '',
-          photoUrl: pu.photoUrl || pu.profilePhotoUrl || ''
+          photoUrl: pu.avatarUrl || pu.photoUrl || pu.profilePhotoUrl || ''
         });
       }
     }
@@ -8414,6 +8370,343 @@ if (email) {
 });
 
 
+
+
+
+// ---------------- Collections (Lists) API (backend-first) ----------------
+// Purpose: power Collections > LISTS with real persistence (Firestore when available).
+// Notes:
+// - Vault/media is intentionally not implemented here yet (separate endpoints later).
+// - In demo mode (no Firebase), we persist in memory under DB.collections.
+// Endpoints:
+//   GET  /api/collections?includeItems=1
+//   POST /api/collections/create   { name }
+//   POST /api/collections/rename   { id, name }
+//   POST /api/collections/delete   { id }
+//   POST /api/collections/add      { id, item: { email?, handle?, name?, avatarUrl?, verified? } }
+//   POST /api/collections/remove   { id, key }   // key is auto-derived: e:<email> | h:<handle> | n:<name>
+
+const USER_COLLECTIONS_COLLECTION = process.env.USER_COLLECTIONS_COLLECTION || 'iTrueMatchCollections';
+
+function _colNowIso() {
+  return new Date().toISOString();
+}
+
+function _colTsToIso(v) {
+  try {
+    if (!v) return null;
+    if (typeof v.toDate === 'function') return v.toDate().toISOString();
+    if (typeof v === 'number') return new Date(v).toISOString();
+    if (typeof v._seconds === 'number') return new Date(v._seconds * 1000).toISOString();
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function _mkCollectionId() {
+  try {
+    return `col_${crypto.randomUUID()}`;
+  } catch {
+    try {
+      return `col_${crypto.randomBytes(12).toString('hex')}`;
+    } catch {
+      return `col_${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`;
+    }
+  }
+}
+
+function _colItemKey(item) {
+  const email = safeStr(item?.email || '').trim().toLowerCase();
+  if (email) return `e:${email}`;
+  const handle = safeStr(item?.handle || item?.username || '').trim().replace(/^@/, '').toLowerCase();
+  if (handle) return `h:${handle}`;
+  const name = safeStr(item?.name || '').trim().toLowerCase();
+  if (name) return `n:${name}`;
+  return '';
+}
+
+function _colSanitizeItem(raw) {
+  const email = safeStr(raw?.email || raw?.userEmail || '').trim().toLowerCase();
+  const handle = safeStr(raw?.handle || raw?.username || '').trim().replace(/^@/, '');
+  const name = safeStr(raw?.name || '').trim();
+  const avatarUrl = safeStr(raw?.avatarUrl || raw?.avatar || '').trim();
+  const verified = !!raw?.verified;
+
+  const key = _colItemKey({ email, handle, name });
+  if (!key) return null;
+
+  return pruneUndefinedDeep({
+    key,
+    email: email || undefined,
+    handle: handle || undefined,
+    name: name || undefined,
+    avatarUrl: avatarUrl || undefined,
+    verified: verified || undefined,
+    addedAt: _colNowIso(),
+  });
+}
+
+function _demoCollectionsFor(email) {
+  DB.collections = DB.collections || {};
+  DB.collections[email] = DB.collections[email] || {};
+  return DB.collections[email];
+}
+
+function _demoListToClient(id, doc) {
+  const items = Array.isArray(doc?.items) ? doc.items : [];
+  return pruneUndefinedDeep({
+    id,
+    name: safeStr(doc?.name || '').trim(),
+    count: items.length,
+    items,
+    createdAt: doc?.createdAt || null,
+    updatedAt: doc?.updatedAt || null,
+  });
+}
+
+app.get('/api/collections', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req));
+    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+
+    const includeItems = String(req.query?.includeItems || '1') !== '0';
+
+    if (!hasFirebase || !firestore) {
+      const store = _demoCollectionsFor(me);
+      const lists = Object.entries(store)
+        .map(([id, doc]) => _demoListToClient(id, includeItems ? doc : { ...doc, items: undefined }))
+        .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+      return res.json({ ok: true, items: lists });
+    }
+
+    const snap = await firestore
+      .collection(USER_COLLECTIONS_COLLECTION)
+      .where('ownerEmail', '==', me)
+      .limit(250)
+      .get();
+
+    const items = snap.docs.map((d) => {
+      const data = d.data() || {};
+      const arr = Array.isArray(data.items) ? data.items : [];
+      return pruneUndefinedDeep({
+        id: d.id,
+        name: safeStr(data.name || '').trim(),
+        count: arr.length,
+        items: includeItems ? arr : undefined,
+        createdAt: _colTsToIso(data.createdAt),
+        updatedAt: _colTsToIso(data.updatedAt),
+      });
+    });
+
+    // Sort in-memory to avoid requiring composite indexes.
+    items.sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
+
+    return res.json({ ok: true, items });
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+app.post('/api/collections/create', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req));
+    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+
+    const name = safeStr(req.body?.name || '').trim().slice(0, 60);
+    if (!name) return res.status(400).json({ ok: false, error: 'Missing list name.' });
+
+    if (!hasFirebase || !firestore) {
+      const store = _demoCollectionsFor(me);
+      const id = _mkCollectionId();
+      store[id] = { name, items: [], createdAt: _colNowIso(), updatedAt: _colNowIso() };
+      return res.json({ ok: true, id });
+    }
+
+    const ref = await firestore.collection(USER_COLLECTIONS_COLLECTION).add({
+      ownerEmail: me,
+      name,
+      items: [],
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return res.json({ ok: true, id: ref.id });
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+app.post('/api/collections/rename', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req));
+    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+
+    const id = safeStr(req.body?.id || '').trim();
+    const name = safeStr(req.body?.name || '').trim().slice(0, 60);
+    if (!id) return res.status(400).json({ ok: false, error: 'Missing list id.' });
+    if (!name) return res.status(400).json({ ok: false, error: 'Missing list name.' });
+
+    if (!hasFirebase || !firestore) {
+      const store = _demoCollectionsFor(me);
+      if (!store[id]) return res.status(404).json({ ok: false, error: 'Not found.' });
+      store[id].name = name;
+      store[id].updatedAt = _colNowIso();
+      return res.json({ ok: true });
+    }
+
+    const ref = firestore.collection(USER_COLLECTIONS_COLLECTION).doc(id);
+    await firestore.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw new Error('not_found');
+      const data = snap.data() || {};
+      if (_normalizeEmail(data.ownerEmail) !== me) throw new Error('forbidden');
+      tx.update(ref, { name, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    });
+
+    return res.json({ ok: true });
+  } catch (e) {
+    const msg = String(e?.message || e);
+    if (msg === 'not_found') return res.status(404).json({ ok: false, error: 'Not found.' });
+    if (msg === 'forbidden') return res.status(403).json({ ok: false, error: 'Forbidden.' });
+    return res.status(400).json({ ok: false, error: msg });
+  }
+});
+
+app.post('/api/collections/delete', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req));
+    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+
+    const id = safeStr(req.body?.id || '').trim();
+    if (!id) return res.status(400).json({ ok: false, error: 'Missing list id.' });
+
+    if (!hasFirebase || !firestore) {
+      const store = _demoCollectionsFor(me);
+      if (!store[id]) return res.status(404).json({ ok: false, error: 'Not found.' });
+      delete store[id];
+      return res.json({ ok: true });
+    }
+
+    const ref = firestore.collection(USER_COLLECTIONS_COLLECTION).doc(id);
+    await firestore.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw new Error('not_found');
+      const data = snap.data() || {};
+      if (_normalizeEmail(data.ownerEmail) !== me) throw new Error('forbidden');
+      tx.delete(ref);
+    });
+
+    return res.json({ ok: true });
+  } catch (e) {
+    const msg = String(e?.message || e);
+    if (msg === 'not_found') return res.status(404).json({ ok: false, error: 'Not found.' });
+    if (msg === 'forbidden') return res.status(403).json({ ok: false, error: 'Forbidden.' });
+    return res.status(400).json({ ok: false, error: msg });
+  }
+});
+
+app.post('/api/collections/add', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req));
+    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+
+    const id = safeStr(req.body?.id || '').trim();
+    const item = _colSanitizeItem(req.body?.item || req.body?.user || req.body?.payload || {});
+    if (!id) return res.status(400).json({ ok: false, error: 'Missing list id.' });
+    if (!item) return res.status(400).json({ ok: false, error: 'Missing/invalid item.' });
+
+    if (!hasFirebase || !firestore) {
+      const store = _demoCollectionsFor(me);
+      if (!store[id]) return res.status(404).json({ ok: false, error: 'Not found.' });
+      const arr = Array.isArray(store[id].items) ? store[id].items : [];
+      const exists = arr.some(x => String(x?.key || '') === item.key);
+      if (!exists) arr.push(item);
+      store[id].items = arr;
+      store[id].updatedAt = _colNowIso();
+      return res.json({ ok: true, added: !exists, key: item.key });
+    }
+
+    const ref = firestore.collection(USER_COLLECTIONS_COLLECTION).doc(id);
+    let added = false;
+
+    await firestore.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw new Error('not_found');
+      const data = snap.data() || {};
+      if (_normalizeEmail(data.ownerEmail) !== me) throw new Error('forbidden');
+
+      const arr = Array.isArray(data.items) ? data.items : [];
+      const exists = arr.some(x => String(x?.key || '') === item.key);
+      if (!exists) {
+        arr.push(item);
+        added = true;
+      }
+
+      tx.update(ref, {
+        items: pruneUndefinedDeep(arr),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+
+    return res.json({ ok: true, added, key: item.key });
+  } catch (e) {
+    const msg = String(e?.message || e);
+    if (msg === 'not_found') return res.status(404).json({ ok: false, error: 'Not found.' });
+    if (msg === 'forbidden') return res.status(403).json({ ok: false, error: 'Forbidden.' });
+    return res.status(400).json({ ok: false, error: msg });
+  }
+});
+
+app.post('/api/collections/remove', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req));
+    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+
+    const id = safeStr(req.body?.id || '').trim();
+    const key = safeStr(req.body?.key || '').trim();
+    if (!id) return res.status(400).json({ ok: false, error: 'Missing list id.' });
+    if (!key) return res.status(400).json({ ok: false, error: 'Missing item key.' });
+
+    if (!hasFirebase || !firestore) {
+      const store = _demoCollectionsFor(me);
+      if (!store[id]) return res.status(404).json({ ok: false, error: 'Not found.' });
+      const arr = Array.isArray(store[id].items) ? store[id].items : [];
+      const before = arr.length;
+      store[id].items = arr.filter(x => String(x?.key || '') !== key);
+      store[id].updatedAt = _colNowIso();
+      return res.json({ ok: true, removed: before !== store[id].items.length });
+    }
+
+    const ref = firestore.collection(USER_COLLECTIONS_COLLECTION).doc(id);
+    let removed = false;
+
+    await firestore.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw new Error('not_found');
+      const data = snap.data() || {};
+      if (_normalizeEmail(data.ownerEmail) !== me) throw new Error('forbidden');
+
+      const arr = Array.isArray(data.items) ? data.items : [];
+      const next = arr.filter(x => String(x?.key || '') !== key);
+      removed = next.length !== arr.length;
+
+      tx.update(ref, {
+        items: pruneUndefinedDeep(next),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+
+    return res.json({ ok: true, removed });
+  } catch (e) {
+    const msg = String(e?.message || e);
+    if (msg === 'not_found') return res.status(404).json({ ok: false, error: 'Not found.' });
+    if (msg === 'forbidden') return res.status(403).json({ ok: false, error: 'Forbidden.' });
+    return res.status(400).json({ ok: false, error: msg });
+  }
+});
+
+// ---------------- End Collections (Lists) API ----------------
 
 // =============== NEW HELPERS + IMAGE/AVATAR ENDPOINTS (non-breaking) ===============
 
