@@ -12,6 +12,18 @@
 export const PREFS_KEY = 'tm_prefs';
 export const PREFS_MAP_KEY = 'tm_prefs_by_user';
 
+function isDevHost() {
+  try {
+    const h = String(location.hostname || '').toLowerCase();
+    // file:// => hostname is "" (treat as dev)
+    if (!h) return true;
+    return h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0';
+  } catch {
+    return false;
+  }
+}
+
+
 // -------- User helpers --------
 
 export function getCurrentUser() {
@@ -48,8 +60,10 @@ export function saveLocalUser(u) {
   if (u && u.plan) minimal.plan = u.plan;
 
   try {
+    const dev = isDevHost();
     localStorage.setItem('tm_user', JSON.stringify(minimal));
-    if (u && u.plan) localStorage.setItem('tm_plan_override', u.plan);
+    if (dev && u && u.plan) localStorage.setItem('tm_plan_override', u.plan);
+    if (!dev) localStorage.removeItem('tm_plan_override');
   } catch {
     // ignore storage errors
   }
@@ -61,10 +75,13 @@ export function saveLocalUser(u) {
 
 export function getLocalPlan() {
   try {
-    return (
-      localStorage.getItem('tm_plan_override') ||
-      (JSON.parse(localStorage.getItem('tm_user') || '{}').plan || null)
-    );
+    if (isDevHost()) {
+      return (
+        localStorage.getItem('tm_plan_override') ||
+        (JSON.parse(localStorage.getItem('tm_user') || '{}').plan || null)
+      );
+    }
+    return (JSON.parse(localStorage.getItem('tm_user') || '{}').plan || null);
   } catch {
     return null;
   }
@@ -72,6 +89,7 @@ export function getLocalPlan() {
 
 export function setLocalPlan(plan) {
   if (!plan) return;
+  if (!isDevHost()) return;
   try {
     localStorage.setItem('tm_plan_override', plan);
     const raw = JSON.parse(localStorage.getItem('tm_user') || '{}');

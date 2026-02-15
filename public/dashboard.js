@@ -814,9 +814,27 @@ function setupEventListeners() {
   // 6. Logout
   const handleLogout = (e) => {
       e.preventDefault();
+
+      // Best-effort server logout (cookie/session). Do not block UI.
+      try {
+        const url = '/api/auth/logout';
+        if (navigator && typeof navigator.sendBeacon === 'function') {
+          const blob = new Blob([JSON.stringify({})], { type: 'application/json' });
+          navigator.sendBeacon(url, blob);
+        } else {
+          fetch(url, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-TM-Request': '1' },
+            body: JSON.stringify({}),
+            keepalive: true,
+          }).catch(() => {});
+        }
+      } catch (_) {}
+
       clearSession();
       sessionStorage.clear();
-      window.location.href = 'index.html'; 
+      window.location.href = '/index.html';
   };
   if (DOM.btnLogout) DOM.btnLogout.addEventListener('click', handleLogout);
   if (DOM.btnMobileLogout) DOM.btnMobileLogout.addEventListener('click', handleLogout);
