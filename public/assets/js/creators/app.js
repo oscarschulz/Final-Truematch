@@ -2155,29 +2155,328 @@ function tmInitGlobalSearch() {
 
 // =============================================================
 // SUBSCRIPTIONS (Data #1)
-// - Fetch /api/me/subscriptions
-// - Render list of creators you subscribed to
-// - Active/Expired pill counts + filtering
-// - Cards include .subscription-card so search overlay works
+// - Fetch /api/me/subscriptions (both directions)
+// - Render "Subscribed" + "Subscribers" tabs
+// - Active/Expired/All pill counts + filtering + inline search
+// - Cards include .subscription-card so global overlay search can filter them too
 // =============================================================
 const tmSubsState = {
     uiReady: false,
     loading: false,
-    filter: (localStorage.getItem('tm_subs_filter') || 'active'),
+    // Direction: 'subscribed' (you subscribed to creators) | 'subscribers' (your subscribers)
+    dir: (localStorage.getItem('tm_subs_dir') || 'subscribed'),
+    // Filter: 'all' | 'active' | 'expired'
+    filter: (localStorage.getItem('tm_subs_filter') || 'all'),
+    // Inline search query for subscriptions view only
+    q: (localStorage.getItem('tm_subs_query') || ''),
     data: null,
-    fetchedAt: 0
+    fetchedAt: 0,
+    mode: 'auto' // 'v2' (current creators.html) | 'v1' (legacy) | 'auto'
 };
 
 let tmSubsUI = {
     view: null,
-    pills: [],
+
+    // v2 (current markup)
+    tabTo: null,
+    tabFrom: null,
+    countTo: null,
+    countFrom: null,
+
+    pillAll: null,
     pillActive: null,
     pillExpired: null,
+    countAll: null,
+    countActive: null,
+    countExpired: null,
+
+    input: null,
+    btnClear: null,
+    list: null,
+    empty: null,
+    emptyText: null,
+    loading: null,
+
+    // v1 (legacy fallbacks)
+    pills: [],
     pillsBar: null,
     listWrap: null,
     emptyWrap: null,
-    emptyText: null
+    legacyEmptyText: null
 };
+
+function tmSubsNormalizeDir(dir) {
+    const d = String(dir || '').toLowerCase();
+    if (d === 'subscribers' || d === 'fans' || d === 'from') return 'subscribers';
+    return 'subscribed';
+}
+
+function tmSubsNormalizeFilter(filter) {
+    const f = String(filter || '').toLowerCase();
+    if (f === 'active' || f === 'expired') return f;
+    return 'all';
+}
+
+function tmSubsSetMode(mode) {
+    tmSubsState.mode = mode || 'auto';
+}
+
+function tmSubsShow(el, show) {
+    if (!el) return;
+    // v2 uses .show, legacy uses display
+    if (el.classList && (el.classList.contains('subs-loading') || el.classList.contains('subs-empty'))) {
+        el.classList.toggle('show', !!show);
+    } else {
+        el.style.display = show ? '' : 'none';
+    }
+}
+
+function tmEnsureSubscriptionsUI() {
+    const view = document.getElementById('view-subscriptions');
+    if (!view) return false;
+
+    // Detect current markup (v2) by the presence of #subs-list
+    const hasV2 = !!view.querySelector('#subs-list');
+    const force = tmSubsState.mode !== 'auto' ? tmSubsState.mode : (hasV2 ? 'v2' : 'v1');
+    tmSubsSetMode(force);
+
+    // ---------- v2 wiring ----------
+    if (force === 'v2') {
+        const tabTo = view.querySelector('#subs-tab-to');
+        const tabFrom = view.querySelector('#subs-tab-from');
+        const countTo = view.querySelector('#subs-count-to');
+        const countFrom = view.querySelector('#subs-count-from');
+
+        const pillAll = view.querySelector('.subs-pill[data-subs-filter="all"]');
+        const pillActive = view.querySelector('.subs-pill[data-subs-filter="active"]');
+        const pillExpired = view.querySelector('.subs-pill[data-subs-filter="expired"]');
+
+        const countAll = view.querySelector('#subs-count-all');
+        const countActive = view.querySelector('#subs-count-active');
+        const countExpired = view.querySelector('#subs-count-expired');
+
+        const input = view.querySelector('#subs-search');
+        const btnClear = view.querySelector('#subs-btn-clear');
+        const list = view.querySelector('#subs-list');
+        const empty = view.querySelector('#subs-empty');
+        const emptyText = view.querySelector('.subs-empty-text');
+        const loading = view.querySelector('#subs-loading');
+
+        tmSubsUI = {
+            view,
+            tabTo, tabFrom, countTo, countFrom,
+            pillAll, pillActive, pillExpired,
+            countAll, countActive, countExpired,
+            input, btnClear, list, empty, emptyText, loading,
+            pills: [], pillsBar: null, listWrap: null, emptyWrap: null, legacyEmptyText: null
+        };
+
+        // Normalize persisted state
+        tmSubsState.dir = tmSubsNormalizeDir(tmSubsState.dir);
+        tmSubsState.filter = tmSubsNormalizeFilter(tmSubsState.filter);
+
+        // Bind direction tabs once
+        if (tabTo && tabTo.dataset.bound !== '1') {
+            tabTo.dataset.bound = '1';
+            tabTo.addEventListener('click', () => tmSetSubsDir('subscribed'));
+        }
+        if (tabFrom && tabFrom.dataset.bound !== '1') {
+            tabFrom.dataset.bound = '1';
+            tabFrom.addEventListener('click', () => tmSetSubsDir('subscribers'));
+        }
+
+        // Bind pills once
+        if (pillAll && pillAll.dataset.bound !== '1') {
+            pillAll.dataset.bound = '1';
+            pillAll.addEventListener('click', () => tmSetSubsFilter('all'));
+        }
+        if (pillActive && pillActive.dataset.bound !== '1') {
+            pillActive.dataset.bound = '1';
+            pillActive.addEventListener('click', () => tmSetSubsFilter('active'));
+        }
+        if (pillExpired && pillExpired.dataset.bound !== '1') {
+            pillExpired.dataset.bound = '1';
+            pillExpired.addEventListener('click', () => tmSetSubsFilter('expired'));
+        }
+
+        // Inline search
+        if (input && input.dataset.bound !== '1') {
+            input.dataset.bound = '1';
+            // Hydrate saved query
+            if (tmSubsState.q && input.value !== tmSubsState.q) input.value = tmSubsState.q;
+
+            input.addEventListener('input', () => {
+                tmSubsState.q = input.value || '';
+                localStorage.setItem('tm_subs_query', tmSubsState.q);
+                tmRenderSubscriptionsList();
+                tmUpdateSubsClearBtn();
+            });
+        }
+
+        if (btnClear && btnClear.dataset.bound !== '1') {
+            btnClear.dataset.bound = '1';
+            btnClear.addEventListener('click', (e) => {
+                e.preventDefault();
+                tmSubsState.q = '';
+                localStorage.setItem('tm_subs_query', '');
+                if (input) input.value = '';
+                tmRenderSubscriptionsList();
+                tmUpdateSubsClearBtn();
+                try { input && input.focus(); } catch (_) {}
+            });
+        }
+
+        tmSubsState.uiReady = true;
+        tmApplySubsTabActive();
+        tmApplySubsPillActive();
+        tmUpdateSubsClearBtn();
+
+        return true;
+    }
+
+    // ---------- v1 (legacy) fallback wiring ----------
+    const pills = Array.from(view.querySelectorAll('button.n-pill'));
+    const pillActive = pills[0] || null;
+    const pillExpired = pills[1] || null;
+    const pillsBar = pillActive ? pillActive.closest('div') : null;
+
+    const icon = view.querySelector('.empty-icon-wrap');
+    const emptyWrap = icon ? icon.parentElement : null;
+    const legacyEmptyText = emptyWrap ? emptyWrap.querySelector('p') : null;
+
+    let listWrap = view.querySelector('#subs-list-wrap');
+    if (!listWrap && pillsBar) {
+        listWrap = document.createElement('div');
+        listWrap.id = 'subs-list-wrap';
+        listWrap.style.padding = '12px 15px 20px';
+        listWrap.style.display = 'none';
+        pillsBar.insertAdjacentElement('afterend', listWrap);
+    }
+
+    tmSubsUI = {
+        view,
+        pills,
+        pillsBar,
+        pillActive,
+        pillExpired,
+        listWrap,
+        emptyWrap,
+        legacyEmptyText,
+        tabTo: null, tabFrom: null, countTo: null, countFrom: null,
+        pillAll: null, countAll: null, countActive: null, countExpired: null,
+        input: null, btnClear: null, list: null, empty: null, emptyText: null, loading: null
+    };
+
+    // legacy filter only supports active/expired; map 'all' to active in v1
+    tmSubsState.filter = (tmSubsState.filter === 'expired') ? 'expired' : 'active';
+
+    if (pillActive && pillActive.dataset.bound !== '1') {
+        pillActive.dataset.bound = '1';
+        pillActive.addEventListener('click', () => tmSetSubsFilter('active'));
+    }
+    if (pillExpired && pillExpired.dataset.bound !== '1') {
+        pillExpired.dataset.bound = '1';
+        pillExpired.addEventListener('click', () => tmSetSubsFilter('expired'));
+    }
+
+    tmSubsState.uiReady = true;
+    tmApplySubsPillActive();
+    return true;
+}
+
+function tmApplySubsTabActive() {
+    if (tmSubsState.mode !== 'v2') return;
+    const { tabTo, tabFrom } = tmSubsUI;
+    if (tabTo) tabTo.classList.toggle('active', tmSubsState.dir === 'subscribed');
+    if (tabFrom) tabFrom.classList.toggle('active', tmSubsState.dir === 'subscribers');
+}
+
+function tmApplySubsPillActive() {
+    if (tmSubsState.mode === 'v2') {
+        const { pillAll, pillActive, pillExpired } = tmSubsUI;
+        if (pillAll) pillAll.classList.toggle('active', tmSubsState.filter === 'all');
+        if (pillActive) pillActive.classList.toggle('active', tmSubsState.filter === 'active');
+        if (pillExpired) pillExpired.classList.toggle('active', tmSubsState.filter === 'expired');
+        return;
+    }
+
+    // legacy
+    const { pillActive, pillExpired } = tmSubsUI;
+    if (pillActive) pillActive.classList.toggle('active', tmSubsState.filter === 'active');
+    if (pillExpired) pillExpired.classList.toggle('active', tmSubsState.filter === 'expired');
+}
+
+function tmUpdateSubsClearBtn() {
+    if (tmSubsState.mode !== 'v2') return;
+    const { btnClear } = tmSubsUI;
+    if (!btnClear) return;
+    const show = !!(tmSubsState.q && String(tmSubsState.q).trim());
+    btnClear.style.display = show ? '' : 'none';
+}
+
+function tmUpdateSubsCountsTop(payload) {
+    if (tmSubsState.mode !== 'v2') return;
+    const toAll = Number(payload?.subscribed?.counts?.all || 0);
+    const fromAll = Number(payload?.subscribers?.counts?.all || 0);
+    if (tmSubsUI.countTo) tmSubsUI.countTo.textContent = String(toAll);
+    if (tmSubsUI.countFrom) tmSubsUI.countFrom.textContent = String(fromAll);
+}
+
+function tmUpdateSubsPillsCounts(counts) {
+    const all = Number(counts?.all || 0);
+    const active = Number(counts?.active || 0);
+    const expired = Number(counts?.expired || 0);
+
+    if (tmSubsState.mode === 'v2') {
+        if (tmSubsUI.countAll) tmSubsUI.countAll.textContent = String(all);
+        if (tmSubsUI.countActive) tmSubsUI.countActive.textContent = String(active);
+        if (tmSubsUI.countExpired) tmSubsUI.countExpired.textContent = String(expired);
+        return;
+    }
+
+    // legacy: rewrite button labels
+    if (tmSubsUI.pillActive) {
+        tmSubsUI.pillActive.innerHTML = `<i class="fa-solid fa-check"></i> Active ${active}`;
+    }
+    if (tmSubsUI.pillExpired) {
+        tmSubsUI.pillExpired.innerHTML = `<i class="fa-regular fa-hourglass-half"></i> Expired ${expired}`;
+    }
+}
+
+function tmSetSubsEmpty(text) {
+    const msg = text || 'No subscriptions yet.';
+
+    if (tmSubsState.mode === 'v2') {
+        if (tmSubsUI.emptyText) tmSubsUI.emptyText.textContent = msg;
+        tmSubsShow(tmSubsUI.loading, false);
+        tmSubsShow(tmSubsUI.empty, true);
+        if (tmSubsUI.list) tmSubsUI.list.style.display = 'none';
+        return;
+    }
+
+    if (tmSubsUI.legacyEmptyText) tmSubsUI.legacyEmptyText.textContent = msg;
+    if (tmSubsUI.emptyWrap) tmSubsUI.emptyWrap.style.display = 'flex';
+    if (tmSubsUI.listWrap) tmSubsUI.listWrap.style.display = 'none';
+}
+
+function tmSetSubsLoading() {
+    if (tmSubsState.mode === 'v2') {
+        tmSubsShow(tmSubsUI.empty, false);
+        tmSubsShow(tmSubsUI.loading, true);
+        if (tmSubsUI.list) tmSubsUI.list.style.display = 'none';
+        return;
+    }
+
+    if (!tmSubsUI.listWrap) return;
+    if (tmSubsUI.emptyWrap) tmSubsUI.emptyWrap.style.display = 'none';
+    tmSubsUI.listWrap.style.display = 'block';
+    tmSubsUI.listWrap.innerHTML = `
+        <div style="color:var(--muted); text-align:center; padding:28px 0; font-weight:700;">
+            Loading subscriptions...
+        </div>
+    `;
+}
+
 
 function tmTsToMs(t) {
     if (!t) return 0;
@@ -2205,83 +2504,6 @@ function tmFmtDate(ms) {
     } catch (_) {
         return '';
     }
-}
-
-function tmEnsureSubscriptionsUI() {
-    const view = document.getElementById('view-subscriptions');
-    if (!view) return false;
-
-    // Pills
-    const pills = Array.from(view.querySelectorAll('button.n-pill'));
-    const pillActive = pills[0] || null;
-    const pillExpired = pills[1] || null;
-    const pillsBar = pillActive ? pillActive.closest('div') : null;
-
-    // Existing empty state (the big centered block)
-    const icon = view.querySelector('.empty-icon-wrap');
-    const emptyWrap = icon ? icon.parentElement : null;
-    const emptyText = emptyWrap ? emptyWrap.querySelector('p') : null;
-
-    // List wrapper (inject once, UI stays the same when empty)
-    let listWrap = view.querySelector('#subs-list-wrap');
-    if (!listWrap && pillsBar) {
-        listWrap = document.createElement('div');
-        listWrap.id = 'subs-list-wrap';
-        listWrap.style.padding = '12px 15px 20px';
-        listWrap.style.display = 'none';
-        pillsBar.insertAdjacentElement('afterend', listWrap);
-    }
-
-    tmSubsUI = { view, pills, pillActive, pillExpired, pillsBar, listWrap, emptyWrap, emptyText };
-
-    // Bind pill events once
-    if (pillActive && pillActive.dataset.bound !== '1') {
-        pillActive.dataset.bound = '1';
-        pillActive.addEventListener('click', () => tmSetSubsFilter('active'));
-    }
-    if (pillExpired && pillExpired.dataset.bound !== '1') {
-        pillExpired.dataset.bound = '1';
-        pillExpired.addEventListener('click', () => tmSetSubsFilter('expired'));
-    }
-
-    tmSubsState.uiReady = true;
-    tmApplySubsPillActive();
-    return true;
-}
-
-function tmApplySubsPillActive() {
-    const { pillActive, pillExpired } = tmSubsUI;
-    if (pillActive) pillActive.classList.toggle('active', tmSubsState.filter === 'active');
-    if (pillExpired) pillExpired.classList.toggle('active', tmSubsState.filter === 'expired');
-}
-
-function tmUpdateSubsPillsCounts(counts) {
-    const active = Number(counts?.active || 0);
-    const expired = Number(counts?.expired || 0);
-
-    if (tmSubsUI.pillActive) {
-        tmSubsUI.pillActive.innerHTML = `<i class="fa-solid fa-check"></i> Active ${active}`;
-    }
-    if (tmSubsUI.pillExpired) {
-        tmSubsUI.pillExpired.innerHTML = `<i class="fa-regular fa-hourglass-half"></i> Expired ${expired}`;
-    }
-}
-
-function tmSetSubsEmpty(text) {
-    if (tmSubsUI.emptyText) tmSubsUI.emptyText.textContent = text || 'No subscriptions yet.';
-    if (tmSubsUI.emptyWrap) tmSubsUI.emptyWrap.style.display = 'flex';
-    if (tmSubsUI.listWrap) tmSubsUI.listWrap.style.display = 'none';
-}
-
-function tmSetSubsLoading() {
-    if (!tmSubsUI.listWrap) return;
-    if (tmSubsUI.emptyWrap) tmSubsUI.emptyWrap.style.display = 'none';
-    tmSubsUI.listWrap.style.display = 'block';
-    tmSubsUI.listWrap.innerHTML = `
-        <div style="color:var(--muted); text-align:center; padding:28px 0; font-weight:700;">
-            Loading subscriptions...
-        </div>
-    `;
 }
 
 function tmBuildSubCard(it) {
@@ -2371,35 +2593,162 @@ function tmBuildSubCard(it) {
     return card;
 }
 
+function tmSubsIsActive(it) {
+    if (typeof it?.isActive === 'boolean') return it.isActive;
+    const endMs = tmTsToMs(it?.endAt);
+    if (endMs) return endMs > Date.now();
+    return false;
+}
+
+function tmBuildSubsUserRow(it) {
+    const other = it?.otherUser || {};
+    const otherEmail = String(it?.otherEmail || '').trim().toLowerCase();
+
+    const handleRaw = (other.handle || '').trim().replace(/^@/, '');
+    const handle = handleRaw ? `@${handleRaw}` : (otherEmail || '');
+    const name = (other.name || '').trim() || handle || otherEmail || 'User';
+    const avatar = other.avatarUrl || DEFAULT_AVATAR;
+    const verified = !!other.verified;
+
+    const isActive = tmSubsIsActive(it);
+    const endMs = tmTsToMs(it?.endAt);
+    const startMs = tmTsToMs(it?.startAt);
+    const endLabel = endMs ? tmFmtDate(endMs) : '';
+    const startLabel = startMs ? tmFmtDate(startMs) : '';
+
+    const row = document.createElement('div');
+    row.className = 'subs-user subscription-card';
+    row.dataset.subStatus = isActive ? 'active' : 'expired';
+
+    row.innerHTML = `
+        <div class="left">
+            <img src="${avatar}" alt="${tmEscHtml(name)}" loading="lazy">
+            <div class="meta">
+                <div class="name">${tmEscHtml(name)} ${verified ? '<i class="fa-solid fa-circle-check" style="color:var(--primary-cyan); font-size:0.85rem; margin-left:6px;"></i>' : ''}</div>
+                <div class="handle">${tmEscHtml(handle)}</div>
+            </div>
+        </div>
+        <div class="right">
+            <div class="subs-badge ${isActive ? 'active' : 'expired'}">${isActive ? 'ACTIVE' : 'EXPIRED'}</div>
+            <div class="subs-mini">
+                ${isActive
+                    ? (endLabel ? `Expires: ${tmEscHtml(endLabel)}` : 'Active')
+                    : (endLabel ? `Expired: ${tmEscHtml(endLabel)}` : 'Expired')
+                }
+            </div>
+        </div>
+    `;
+
+    // Click → Messages (start / continue chat with this user)
+    if (otherEmail) {
+        row.addEventListener('click', () => {
+            try {
+                localStorage.setItem('tm_open_chat_peer', otherEmail);
+            } catch (_) {}
+
+            try { switchView('messages'); } catch (_) {}
+
+            // Prefer direct open (if messages module exposes it); else messages init will pick localStorage
+            try {
+                const fn = window.__tmMessagesOpenPeer;
+                if (typeof fn === 'function') {
+                    // Small delay ensures layout switch happened
+                    setTimeout(() => { try { fn(otherEmail); } catch (_) {} }, 80);
+                }
+            } catch (_) {}
+        });
+    }
+
+    // Tooltip style meta (optional)
+    row.title = tmSubsState.dir === 'subscribers'
+        ? (startLabel ? `Subscriber since ${startLabel}` : 'Subscriber')
+        : (startLabel ? `Subscribed since ${startLabel}` : 'Subscription');
+
+    return row;
+}
+
+function tmGetCurrentSubsPack() {
+    if (!tmSubsState.data || tmSubsState.data?.ok !== true) return { items: [], counts: { all: 0, active: 0, expired: 0 } };
+    if (tmSubsState.dir === 'subscribers') return tmSubsState.data.subscribers || { items: [], counts: { all: 0, active: 0, expired: 0 } };
+    return tmSubsState.data.subscribed || { items: [], counts: { all: 0, active: 0, expired: 0 } };
+}
+
 function tmRenderSubscriptionsList() {
-    if (!tmSubsState.data || !tmSubsUI.view) {
+    if (!tmSubsState.uiReady) return;
+
+    // v1 legacy uses injected listWrap; v2 uses #subs-list.
+    if (!tmSubsState.data || tmSubsState.data?.ok !== true) {
         tmSetSubsEmpty('No subscriptions yet.');
         return;
     }
 
-    const pack = tmSubsState.data?.subscribed || { items: [], counts: { active: 0, expired: 0 } };
-    const itemsAll = Array.isArray(pack.items) ? pack.items : [];
-    const counts = pack.counts || { active: 0, expired: 0 };
+    // Update top tab counts (v2)
+    tmUpdateSubsCountsTop(tmSubsState.data);
 
-    tmUpdateSubsPillsCounts(counts);
+    const pack = tmGetCurrentSubsPack();
+    const itemsAll = Array.isArray(pack.items) ? pack.items : [];
+    const counts = pack.counts || { all: itemsAll.length, active: 0, expired: 0 };
+
+    // Counts for pills (v2) / legacy pills
+    tmUpdateSubsPillsCounts({
+        all: Number(counts.all || itemsAll.length),
+        active: Number(counts.active || itemsAll.filter(tmSubsIsActive).length),
+        expired: Number(counts.expired || (itemsAll.length - itemsAll.filter(tmSubsIsActive).length))
+    });
+
+    tmApplySubsTabActive();
     tmApplySubsPillActive();
 
-    // Filter
-    const items = itemsAll.filter(it => (tmSubsState.filter === 'active' ? !!it.isActive : !it.isActive));
+    // Filter by status
+    let items = itemsAll.slice();
+    if (tmSubsState.filter === 'active') items = items.filter(it => tmSubsIsActive(it));
+    else if (tmSubsState.filter === 'expired') items = items.filter(it => !tmSubsIsActive(it));
 
+    // Filter by inline query
+    const q = (tmSubsState.q || '').trim().toLowerCase();
+    if (q) {
+        items = items.filter(it => {
+            const other = it?.otherUser || {};
+            const otherEmail = String(it?.otherEmail || '').toLowerCase();
+            const name = String(other.name || '').toLowerCase();
+            const handle = String(other.handle || '').toLowerCase().replace(/^@/, '');
+            return name.includes(q) || handle.includes(q) || otherEmail.includes(q);
+        });
+    }
+
+    // Empty states
     if (!itemsAll.length) {
-        tmSetSubsEmpty('No subscriptions yet.');
+        tmSetSubsEmpty(tmSubsState.dir === 'subscribers' ? 'No subscribers yet.' : 'No subscriptions yet.');
         return;
     }
-
     if (!items.length) {
-        tmSetSubsEmpty(tmSubsState.filter === 'active' ? 'No active subscriptions.' : 'No expired subscriptions.');
+        if (q) {
+            tmSetSubsEmpty('No matching results.');
+        } else {
+            tmSetSubsEmpty(
+                tmSubsState.filter === 'active'
+                    ? 'No active subscriptions.'
+                    : (tmSubsState.filter === 'expired' ? 'No expired subscriptions.' : 'Nothing to show.')
+            );
+        }
         return;
     }
 
+    // Render list
+    if (tmSubsState.mode === 'v2') {
+        tmSubsShow(tmSubsUI.loading, false);
+        tmSubsShow(tmSubsUI.empty, false);
+        if (tmSubsUI.list) {
+            tmSubsUI.list.style.display = 'flex';
+            tmSubsUI.list.innerHTML = '';
+            items.forEach(it => tmSubsUI.list.appendChild(tmBuildSubsUserRow(it)));
+        }
+        return;
+    }
+
+    // legacy listWrap
     if (tmSubsUI.emptyWrap) tmSubsUI.emptyWrap.style.display = 'none';
     if (!tmSubsUI.listWrap) return;
-
     tmSubsUI.listWrap.style.display = 'block';
     tmSubsUI.listWrap.innerHTML = '';
     items.forEach(it => tmSubsUI.listWrap.appendChild(tmBuildSubCard(it)));
@@ -2411,6 +2760,7 @@ async function tmLoadSubscriptions(force = false) {
 
     const now = Date.now();
     const fresh = tmSubsState.data && (now - (tmSubsState.fetchedAt || 0) < 15000);
+
     if (!force && fresh) {
         tmRenderSubscriptionsList();
         return;
@@ -2420,9 +2770,10 @@ async function tmLoadSubscriptions(force = false) {
     tmSetSubsLoading();
 
     try {
+        // Fetch both directions in one call (server returns {subscribed, subscribers})
         const payload = await getMySubscriptions();
         if (!payload || payload.ok !== true) {
-            tmSubsState.data = { ok: false, subscribed: { items: [], counts: { all: 0, active: 0, expired: 0 } } };
+            tmSubsState.data = { ok: false, subscribed: { items: [], counts: { all: 0, active: 0, expired: 0 } }, subscribers: { items: [], counts: { all: 0, active: 0, expired: 0 } } };
             tmSubsState.fetchedAt = Date.now();
             tmSetSubsEmpty(payload?.message || 'No subscriptions yet.');
             return;
@@ -2441,23 +2792,38 @@ async function tmLoadSubscriptions(force = false) {
 }
 
 function tmSetSubsFilter(next) {
-    const f = (next === 'expired') ? 'expired' : 'active';
+    const f = tmSubsNormalizeFilter(next);
     tmSubsState.filter = f;
     localStorage.setItem('tm_subs_filter', f);
     tmApplySubsPillActive();
     tmRenderSubscriptionsList();
 }
 
+function tmSetSubsDir(next) {
+    const d = tmSubsNormalizeDir(next);
+    if (tmSubsState.dir === d) return;
+    tmSubsState.dir = d;
+    localStorage.setItem('tm_subs_dir', d);
+    tmApplySubsTabActive();
+    tmRenderSubscriptionsList();
+}
+
 function tmEnterSubscriptionsView() {
     if (!tmEnsureSubscriptionsUI()) return;
 
-    // Ensure counts reset while loading (prevents stale UI)
-    tmUpdateSubsPillsCounts(tmSubsState.data?.subscribed?.counts || { active: 0, expired: 0 });
+    // Reset pills while loading (prevents stale UI)
+    if (tmSubsState.mode === 'v2') {
+        tmUpdateSubsCountsTop(tmSubsState.data || {});
+        tmUpdateSubsPillsCounts(tmGetCurrentSubsPack()?.counts || { all: 0, active: 0, expired: 0 });
+        tmUpdateSubsClearBtn();
+    } else {
+        // legacy
+        tmUpdateSubsPillsCounts(tmSubsState.data?.subscribed?.counts || { active: 0, expired: 0 });
+    }
 
     // Load/refresh
     tmLoadSubscriptions(false);
 }
-
 
 // =============================================================
 // MOBILE BACK BUTTON (Profile) + POP-OVER COLLECTIONS FIX

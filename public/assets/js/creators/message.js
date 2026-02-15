@@ -990,7 +990,34 @@ export function initMessages(TopToast) {
     initMobileChatObservers();
 
     // Initial load
-    refreshThreads({ silent: false });
+    const __tmAfterInitialLoad = async () => {
+        try {
+            const pending = localStorage.getItem('tm_open_chat_peer');
+            if (pending) {
+                localStorage.removeItem('tm_open_chat_peer');
+                await openChatWithUser(pending);
+            }
+        } catch (_) { /* ignore */ }
+    };
+
+    refreshThreads({ silent: false })
+        .then(() => __tmAfterInitialLoad())
+        .catch(() => { /* ignore */ });
+
+    // Bridge: allow other views to open a chat safely.
+    // Example: Subscriptions list → Messages view → open peer thread.
+    window.__tmMessagesOpenPeer = async (peerEmail) => {
+        try {
+            const peer = normalizeEmail(peerEmail);
+            if (!peer) return false;
+            await refreshThreads({ silent: true });
+            await openChatWithUser(peer);
+            return true;
+        } catch (e) {
+            toastInstance?.fire?.({ icon: 'error', title: e?.message || 'Unable to open chat' });
+            return false;
+        }
+    };
 
     // Poll threads in background
     startThreadsPolling();
