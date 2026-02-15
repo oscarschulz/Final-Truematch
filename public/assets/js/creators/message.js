@@ -35,12 +35,49 @@ const TM_TAGS_KEY = 'tm_chat_tags';
 const TM_HIDDEN_KEY = 'tm_hidden_chats';
 const TM_NOTES_KEY = 'tm_user_notes';
 const TM_LAST_SEEN_KEY = 'tm_msg_last_seen_v1';
+const TM_STARRED_KEY = 'tm_starred_chats';
 
 // -------------------------------
 // Local-only UX helpers (tags, delete, notes)
 // -------------------------------
 function getUserTags() {
     return JSON.parse(localStorage.getItem(TM_TAGS_KEY) || '{}');
+}
+
+function getStarredMap() {
+    try {
+        const raw = localStorage.getItem(TM_STARRED_KEY);
+        const v = raw ? JSON.parse(raw) : {};
+        return (v && typeof v === 'object') ? v : {};
+    } catch {
+        return {};
+    }
+}
+
+function isStarred(peerEmail) {
+    const peer = normalizeEmail(peerEmail);
+    if (!peer) return false;
+    const map = getStarredMap();
+    return !!map[peer];
+}
+
+function setStarred(peerEmail, starred) {
+    const peer = normalizeEmail(peerEmail);
+    if (!peer) return;
+    const map = getStarredMap();
+    if (starred) map[peer] = true;
+    else delete map[peer];
+    localStorage.setItem(TM_STARRED_KEY, JSON.stringify(map));
+}
+
+function syncStarIcon(peerEmail) {
+    if (!DOM.btnChatStar) return;
+    const starred = !!peerEmail && isStarred(peerEmail);
+
+    DOM.btnChatStar.classList.remove('fa-solid', 'fa-regular');
+    DOM.btnChatStar.classList.add(starred ? 'fa-solid' : 'fa-regular');
+    DOM.btnChatStar.classList.add('fa-star');
+    DOM.btnChatStar.title = starred ? 'Starred' : 'Star';
 }
 
 function setUserTag(userId, tag) {
@@ -428,6 +465,11 @@ async function openChatWithUser(peerEmail) {
     loadUserNote(peer);
     unlockChatInputs();
 
+    // Mobile UX: reveal chat panel
+    try {
+        if (window.innerWidth <= 768) document.body.classList.add('chat-open');
+    } catch {}
+
     await loadChat(peer);
 
     // Poll active thread for new messages while messages view is open.
@@ -507,16 +549,47 @@ function updateHeaderInfo(peerEmail) {
     // Joined / spent placeholders (backend not wired here yet)
     if (DOM.infoJoined) DOM.infoJoined.textContent = DOM.infoJoined.textContent || '—';
     if (DOM.infoSpent) DOM.infoSpent.textContent = DOM.infoSpent.textContent || '—';
+
+    syncStarIcon(peer);
+}
+
+
+function setHeaderActionsEnabled(enabled) {
+    const view = DOM.viewMessages || document.getElementById('view-messages');
+    const actions = view ? view.querySelector('.ch-actions') : document.querySelector('#view-messages .ch-actions');
+
+    if (actions) {
+        actions.style.opacity = enabled ? '1' : '0.3';
+        actions.style.pointerEvents = enabled ? 'auto' : 'none';
+        actions.querySelectorAll('i').forEach(icon => {
+            icon.style.cursor = enabled ? 'pointer' : 'default';
+            icon.style.pointerEvents = enabled ? 'auto' : 'none';
+        });
+    }
+
+    if (DOM.activeChatAvatar) DOM.activeChatAvatar.style.opacity = enabled ? '1' : '0.5';
+    if (DOM.activeChatName) DOM.activeChatName.style.color = enabled ? 'var(--text)' : 'var(--muted)';
+
+    // Bottom controls (mobile + desktop)
+    ['btn-chat-media-bottom', 'btn-emoji-trigger', 'btn-ppv-trigger', 'btn-send-message'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.style.opacity = enabled ? '1' : '0.3';
+        el.style.pointerEvents = enabled ? 'auto' : 'none';
+        el.style.cursor = enabled ? 'pointer' : 'default';
+    });
 }
 
 function lockChatInputs() {
     if (DOM.chatInput) DOM.chatInput.disabled = true;
     if (DOM.btnSendMsg) DOM.btnSendMsg.disabled = true;
+    setHeaderActionsEnabled(false);
 }
 
 function unlockChatInputs() {
     if (DOM.chatInput) DOM.chatInput.disabled = false;
     if (DOM.btnSendMsg) DOM.btnSendMsg.disabled = false;
+    setHeaderActionsEnabled(true);
 }
 
 // -------------------------------
@@ -526,15 +599,16 @@ function loadUserNote(userId) {
     const notes = JSON.parse(localStorage.getItem(TM_NOTES_KEY) || '{}');
     const note = notes[userId] || '';
 
-    const noteInput = document.getElementById('user-note-input');
-    if (noteInput) {
-        noteInput.value = note;
-        noteInput.oninput = () => {
-            const updated = JSON.parse(localStorage.getItem(TM_NOTES_KEY) || '{}');
-            updated[userId] = noteInput.value;
-            localStorage.setItem(TM_NOTES_KEY, JSON.stringify(updated));
-        };
-    }
+    const noteInput = document.getElementById('chat-user-note') || document.getElementById('user-note-input');
+    if (!noteInput) return;
+
+    noteInput.value = note;
+
+    noteInput.oninput = () => {
+        const updated = JSON.parse(localStorage.getItem(TM_NOTES_KEY) || '{}');
+        updated[userId] = noteInput.value;
+        localStorage.setItem(TM_NOTES_KEY, JSON.stringify(updated));
+    };
 }
 
 // -------------------------------
@@ -564,11 +638,41 @@ function initSearchUI() {
         });
     }
 
-    // Inner chat search bar (search within rendered bubbles)
-    if (DOM.btnChatSearch && DOM.chatSearchBar && DOM.chatSearchInput) {
-        DOM.btnChatSearch.addEventListener('click', () => {
-            DOM.chatSearchBar.classList.toggle('hidden');
-            if (!DOM.chatSearchBar.classList.contains('hidden')) DOM.chatSearchInput.focus();
+
+    // Inner chat search (search within rendered bubbles)
+    if (DOM.btnChatSearch) {
+        DOM.btnChatSearch.addEventListener('click', async () => {
+            if (!activePeerEmail) {
+                toastInstance?.fire?.({ icon: 'info', title: 'Select a conversation' });
+                return;
+            }
+
+            // If the HTML provides an inline search bar, use it.
+            if (DOM.chatSearchBar && DOM.chatSearchInput) {
+                DOM.chatSearchBar.classList.toggle('hidden');
+                if (!DOM.chatSearchBar.classList.contains('hidden')) DOM.chatSearchInput.focus();
+                return;
+            }
+
+            // Fallback: prompt search query.
+            let q = '';
+            if (typeof Swal !== 'undefined' && Swal?.fire) {
+                const r = await Swal.fire({
+                    title: 'Search in chat',
+                    input: 'text',
+                    inputPlaceholder: 'Type a keyword…',
+                    showCancelButton: true,
+                    confirmButtonText: 'Search',
+                    background: '#0b1220',
+                    color: '#fff'
+                });
+                if (!r.isConfirmed) return;
+                q = String(r.value || '').trim().toLowerCase();
+            } else {
+                q = String(window.prompt('Search in chat:') || '').trim().toLowerCase();
+            }
+
+            highlightChatSearch(q);
         });
     }
 
@@ -842,9 +946,62 @@ function initPPV() {
 // -------------------------------
 function initStar() {
     if (!DOM.btnChatStar) return;
+
+    // Keep icon correct on load
+    syncStarIcon(activePeerEmail);
+
     DOM.btnChatStar.addEventListener('click', () => {
-        toastInstance?.fire?.({ icon: 'info', title: 'Star saved (UI only)' });
+        if (!activePeerEmail) {
+            toastInstance?.fire?.({ icon: 'info', title: 'Select a conversation' });
+            return;
+        }
+
+        const now = !isStarred(activePeerEmail);
+        setStarred(activePeerEmail, now);
+        syncStarIcon(activePeerEmail);
+
+        toastInstance?.fire?.({ icon: 'success', title: now ? 'Starred' : 'Unstarred' });
     });
+}
+
+function initMediaGallery() {
+    const btnTop = document.getElementById('btn-chat-media-top');
+    const btnBottom = document.getElementById('btn-chat-media-bottom');
+
+    const open = async () => {
+        if (!activePeerEmail) {
+            toastInstance?.fire?.({ icon: 'info', title: 'Select a conversation' });
+            return;
+        }
+
+        const title = (activeChatUser?.name ? `${activeChatUser.name} • Media` : 'Chat media');
+
+        // Backend media threads not implemented yet.
+        const html = `
+            <div style="text-align:left; line-height:1.4;">
+                <div style="font-weight:600; margin-bottom:6px;">No shared media yet</div>
+                <div style="color:rgba(255,255,255,0.75); font-size:13px;">
+                    When you start sending images, they’ll show up here.
+                </div>
+            </div>
+        `;
+
+        if (typeof Swal !== 'undefined' && Swal?.fire) {
+            await Swal.fire({
+                title,
+                html,
+                showCancelButton: false,
+                confirmButtonText: 'Close',
+                background: '#0b1220',
+                color: '#fff'
+            });
+        } else {
+            window.alert('No shared media yet.');
+        }
+    };
+
+    if (btnTop) btnTop.addEventListener('click', open);
+    if (btnBottom) btnBottom.addEventListener('click', open);
 }
 
 // -------------------------------
@@ -986,6 +1143,7 @@ export function initMessages(TopToast) {
     initEmojiPicker();
     initPPV();
     initStar();
+    initMediaGallery();
     initMobileBackBtn();
     initMobileChatObservers();
 
