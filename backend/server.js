@@ -5999,6 +5999,333 @@ app.post('/api/creator/unsubscribe', async (req, res) => {
   }
 });
 
+
+// ---------------- Creator Posts (Feed) ----------------
+const CREATOR_POSTS_COLLECTION = process.env.CREATOR_POSTS_COLLECTION || 'iTrueMatchCreatorPosts';
+
+function _splitPipesSafe(str) {
+  return String(str || '')
+    .split('|')
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+function _getPackedValue(packed, label) {
+  const wanted = String(label || '').toLowerCase();
+  for (const part of _splitPipesSafe(packed)) {
+    const idx = part.indexOf(':');
+    if (idx === -1) continue;
+    const k = part.slice(0, idx).trim().toLowerCase();
+    if (k === wanted) return part.slice(idx + 1).trim();
+  }
+  return '';
+}
+
+function _creatorMetaFromUserDoc(u) {
+  const app = (u && typeof u.creatorApplication === 'object' && u.creatorApplication) ? u.creatorApplication : {};
+  const packed = app.contentStyle || '';
+  const displayName =
+    _getPackedValue(packed, 'Display name') ||
+    _getPackedValue(packed, 'Name') ||
+    (u && u.name) ||
+    'Creator';
+
+  const rawHandle = String(app.handle || u?.handle || u?.username || '').trim().replace(/^@/, '');
+  const creatorHandle = rawHandle ? `@${rawHandle}` : '';
+
+  const creatorAvatarUrl = String(u?.avatarUrl || u?.photoUrl || u?.photoURL || '').trim();
+  const creatorVerified = !!u?.verified;
+
+  return { creatorName: displayName, creatorHandle, creatorAvatarUrl, creatorVerified };
+}
+
+function _newPostId() {
+  try { return crypto.randomUUID(); } catch (e) {
+    return `p_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  }
+}
+
+function _sanitizeCreatorPostPayload(body) {
+  const b = body && typeof body === 'object' ? body : {};
+  const typeRaw = String(b.type || 'text').toLowerCase().trim();
+  const type = (typeRaw === 'poll' || typeRaw === 'quiz') ? typeRaw : 'text';
+
+  const text = safeStr(String(b.text || '')).trim().slice(0, 2400);
+
+  let poll = null;
+  let pollVotes = null;
+
+  if (type === 'poll') {
+    const options = Array.isArray(b.poll?.options) ? b.poll.options : [];
+    const clean = options
+      .map(o => safeStr(String(o || '')).trim())
+      .filter(Boolean)
+      .slice(0, 6);
+
+    if (clean.length < 2) {
+      throw new Error('Poll needs at least 2 options.');
+    }
+    poll = { options: clean };
+    pollVotes = new Array(clean.length).fill(0);
+  }
+
+  let quiz = null;
+  let quizVotes = null;
+
+  if (type === 'quiz') {
+    const q = b.quiz && typeof b.quiz === 'object' ? b.quiz : {};
+    const question = safeStr(String(q.question || text || '')).trim().slice(0, 2400);
+
+    const options = Array.isArray(q.options) ? q.options : [];
+    const clean = options
+      .map(o => safeStr(String(o || '')).trim())
+      .filter(Boolean)
+      .slice(0, 6);
+
+    const correctIndex = Number.isFinite(+q.correctIndex) ? Math.max(0, Math.min(clean.length - 1, +q.correctIndex)) : 0;
+    const explanation = safeStr(String(q.explanation || '')).trim().slice(0, 1200);
+
+    if (!question || clean.length < 2) {
+      throw new Error('Quiz needs a question and at least 2 options.');
+    }
+
+    quiz = { question, options: clean, correctIndex, explanation };
+    quizVotes = new Array(clean.length).fill(0);
+  }
+
+  if (type === 'text' && !text) {
+    throw new Error('Post text is required.');
+  }
+
+  return { type, text, poll, pollVotes, quiz, quizVotes };
+}
+
+function _creatorPostToClient(id, d) {
+  const createdAtMs = _tsToMs(d?.createdAt) || _tsToMs(d?.timestamp) || _tsToMs(d?.createdAtMs) || null;
+  const updatedAtMs = _tsToMs(d?.updatedAt) || null;
+
+  return {
+    id: id || d?.id || '',
+    creatorEmail: safeStr(d?.creatorEmail || ''),
+    creatorName: safeStr(d?.creatorName || ''),
+    creatorHandle: safeStr(d?.creatorHandle || ''),
+    creatorAvatarUrl: safeStr(d?.creatorAvatarUrl || ''),
+    creatorVerified: !!d?.creatorVerified,
+    type: safeStr(d?.type || 'text') || 'text',
+    text: safeStr(d?.text || ''),
+    poll: d?.poll || null,
+    pollVotes: Array.isArray(d?.pollVotes) ? d.pollVotes : null,
+    quiz: d?.quiz || null,
+    quizVotes: Array.isArray(d?.quizVotes) ? d.quizVotes : null,
+    timestamp: createdAtMs || Date.now(),
+    updatedAt: updatedAtMs || null,
+  };
+}
+
+function _mixPriority(subs, others, limit) {
+  const out = [];
+  let i = 0, j = 0;
+
+  while (out.length < limit && (i < subs.length || j < others.length)) {
+    // 2 subscribed posts, then 1 non-subscribed post (classic "mixed but prioritized" feed)
+    for (let k = 0; k < 2 && out.length < limit && i < subs.length; k++) out.push(subs[i++]);
+    if (out.length < limit && j < others.length) out.push(others[j++]);
+
+    if (i >= subs.length && j < others.length) {
+      while (out.length < limit && j < others.length) out.push(others[j++]);
+      break;
+    }
+    if (j >= others.length && i < subs.length) {
+      while (out.length < limit && i < subs.length) out.push(subs[i++]);
+      break;
+    }
+  }
+
+  return out;
+}
+
+// Create a creator post (stored in Firestore)
+app.post('/api/creator/posts', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req));
+    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+
+    const payload = _sanitizeCreatorPostPayload(req.body);
+
+    // Creator meta (best-effort)
+    let userDoc = null;
+    try { userDoc = await findUserByEmail(me); } catch (e) { userDoc = null; }
+    const meta = _creatorMetaFromUserDoc(userDoc || { name: me });
+
+    const nowMs = Date.now();
+    const id = _newPostId();
+
+    const doc = {
+      id,
+      creatorEmail: me,
+      ...meta,
+      type: payload.type,
+      text: payload.text,
+      poll: payload.poll,
+      pollVotes: payload.pollVotes,
+      quiz: payload.quiz,
+      quizVotes: payload.quizVotes,
+      createdAt: new Date(nowMs),
+      updatedAt: new Date(nowMs),
+    };
+
+    if (!hasFirebase || !firestore) {
+      DB.creatorPosts = DB.creatorPosts || {};
+      DB.creatorPosts[id] = { ...doc, createdAt: nowMs, updatedAt: nowMs };
+      return res.json({ ok: true, post: _creatorPostToClient(id, DB.creatorPosts[id]) });
+    }
+
+    await firestore.collection(CREATOR_POSTS_COLLECTION).doc(id).set(doc);
+    return res.json({ ok: true, post: _creatorPostToClient(id, doc) });
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// Delete a creator post (creator only)
+app.post('/api/creator/posts/delete', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req));
+    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+
+    const id = safeStr(String(req.body?.id || '')).trim();
+    if (!id) return res.status(400).json({ ok: false, error: 'Missing post id.' });
+
+    if (!hasFirebase || !firestore) {
+      const p = DB.creatorPosts?.[id];
+      if (!p) return res.status(404).json({ ok: false, error: 'Not found.' });
+      if (_normalizeEmail(p.creatorEmail) !== me) return res.status(403).json({ ok: false, error: 'Forbidden.' });
+      delete DB.creatorPosts[id];
+      return res.json({ ok: true });
+    }
+
+    const ref = firestore.collection(CREATOR_POSTS_COLLECTION).doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ ok: false, error: 'Not found.' });
+
+    const data = snap.data() || {};
+    if (_normalizeEmail(data.creatorEmail) !== me) return res.status(403).json({ ok: false, error: 'Forbidden.' });
+
+    await ref.delete();
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// Creator posts (single creator)
+app.get('/api/creator/posts', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req));
+    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+
+    const creatorEmail = _normalizeEmail(req.query?.creatorEmail || me);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query?.limit || '50', 10) || 50));
+
+    if (!hasFirebase || !firestore) {
+      const all = Object.values(DB.creatorPosts || {})
+        .filter(p => _normalizeEmail(p.creatorEmail) === creatorEmail)
+        .sort((a, b) => (_tsToMs(b.createdAt) || b.timestamp || 0) - (_tsToMs(a.createdAt) || a.timestamp || 0))
+        .slice(0, limit)
+        .map(p => _creatorPostToClient(p.id, p));
+      return res.json({ ok: true, items: all });
+    }
+
+    const snap = await firestore
+      .collection(CREATOR_POSTS_COLLECTION)
+      .where('creatorEmail', '==', creatorEmail)
+      .orderBy('createdAt', 'desc')
+      .limit(limit)
+      .get();
+
+    const items = snap.docs.map(d => _creatorPostToClient(d.id, d.data() || {}));
+    return res.json({ ok: true, items });
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// Mixed feed: prioritize subscribed creators (2:1 mix)
+app.get('/api/creators/feed', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req));
+    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+
+    const limit = Math.max(1, Math.min(100, parseInt(req.query?.limit || '40', 10) || 40));
+    const nowMs = Date.now();
+
+    // Active subscribed creator emails
+    const subscribedSet = new Set();
+
+    if (!hasFirebase || !firestore) {
+      const subs = Object.values(DB.creatorSubs || {}).filter(s => _normalizeEmail(s.subscriberEmail) === me);
+      for (const s of subs) {
+        const flags = _computeSubFlagsFromDoc(s, nowMs);
+        const c = _normalizeEmail(s.creatorEmail || '');
+        if (flags.isActive && c) subscribedSet.add(c);
+      }
+
+      const all = Object.values(DB.creatorPosts || {})
+        .map(p => _creatorPostToClient(p.id, p))
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        .slice(0, Math.min(300, Math.max(60, limit * 5)));
+
+      const subsPosts = [];
+      const otherPosts = [];
+      for (const p of all) {
+        p.isSubscribed = subscribedSet.has(_normalizeEmail(p.creatorEmail));
+        (p.isSubscribed ? subsPosts : otherPosts).push(p);
+      }
+
+      return res.json({ ok: true, items: _mixPriority(subsPosts, otherPosts, limit), subscribedCreators: Array.from(subscribedSet) });
+    }
+
+    const subsSnap = await firestore
+      .collection(CREATOR_SUBS_COLLECTION)
+      .where('subscriberEmail', '==', me)
+      .limit(250)
+      .get();
+
+    subsSnap.docs.forEach(d => {
+      const sub = d.data() || {};
+      const flags = _computeSubFlagsFromDoc(sub, nowMs);
+      const c = _normalizeEmail(sub.creatorEmail || '');
+      if (flags.isActive && c) subscribedSet.add(c);
+    });
+
+    const base = Math.min(300, Math.max(60, limit * 5));
+    const postsSnap = await firestore
+      .collection(CREATOR_POSTS_COLLECTION)
+      .orderBy('createdAt', 'desc')
+      .limit(base)
+      .get();
+
+    const all = postsSnap.docs.map(d => _creatorPostToClient(d.id, d.data() || {}));
+
+    const subsPosts = [];
+    const otherPosts = [];
+    for (const p of all) {
+      p.isSubscribed = subscribedSet.has(_normalizeEmail(p.creatorEmail));
+      (p.isSubscribed ? subsPosts : otherPosts).push(p);
+    }
+
+    return res.json({
+      ok: true,
+      items: _mixPriority(subsPosts, otherPosts, limit),
+      subscribedCreators: Array.from(subscribedSet),
+    });
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// ---------------- End Creator Posts (Feed) ----------------
+
 // ---------------- Premium Society Application ----------------
 app.post('/api/me/premium/apply', async (req, res) => {
   try {

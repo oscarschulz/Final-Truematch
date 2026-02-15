@@ -4,6 +4,10 @@ import { DOM } from './dom.js';
 const STORAGE_KEY = 'tm_user_posts';
 
 
+
+const FEED_ENDPOINT = '/api/creators/feed';
+const CREATE_POST_ENDPOINT = '/api/creator/posts';
+const DELETE_POST_ENDPOINT = '/api/creator/posts/delete';
 // ------------------------------
 // Helpers (safe HTML + identity)
 // ------------------------------
@@ -38,6 +42,53 @@ function tmNowId() {
     return String(Date.now()) + '-' + Math.random().toString(16).slice(2);
 }
 
+function tmGetMeEmail() {
+    try {
+        return String(window.__tmMe?.email || '').toLowerCase();
+    } catch (e) {
+        return '';
+    }
+}
+
+function tmGetPostIdentity(post) {
+    const fallback = tmGetCreatorIdentity();
+    const name = post?.creatorName || fallback.name;
+    const handle = post?.creatorHandle || fallback.handle;
+    const avatarUrl = post?.creatorAvatarUrl || fallback.avatarUrl;
+    const verified = !!(post?.creatorVerified);
+    return { name, handle, avatarUrl, verified };
+}
+
+async function tmCreateCreatorPost(draft) {
+    try {
+        const res = await fetch(CREATE_POST_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(draft || {}),
+        });
+
+        const data = await res.json().catch(() => null);
+        if (data?.ok && data?.post) return data.post;
+    } catch (e) {
+        // ignore
+    }
+    return null;
+}
+
+async function tmFetchCreatorsFeed(limit = 40) {
+    try {
+        const url = `${FEED_ENDPOINT}?limit=${encodeURIComponent(limit)}`;
+        const res = await fetch(url, { credentials: 'include' });
+        const data = await res.json().catch(() => null);
+        if (data?.ok && Array.isArray(data?.items)) return data.items;
+    } catch (e) {
+        // ignore
+    }
+    return null;
+}
+
+
 export function initHome(TopToast) {
     
     // 0. LOAD POSTS FROM STORAGE (With 24h Check)
@@ -59,7 +110,7 @@ export function initHome(TopToast) {
         });
 
         // 2. POST SUBMIT LOGIC
-        DOM.btnPostSubmit.addEventListener('click', () => {
+        DOM.btnPostSubmit.addEventListener('click', async () => {
             const text = DOM.composeInput.value.trim();
             if (!text) return;
 
@@ -76,22 +127,55 @@ export function initHome(TopToast) {
                 return;
             }
 
-            const newPost = {
-                id: tmNowId(),
-                type: isPollPost ? 'poll' : 'text',
-                text: text,
-                timestamp: Date.now(),
-                comments: [],
-            };
+            // Create post via backend (single-source-of-truth). Fallback to local-only if backend is unavailable.
+const draft = {
+    type: isPollPost ? 'poll' : 'text',
+    text: text,
+};
 
-            if (isPollPost) {
-                newPost.poll = { options: pollOptions.slice(0, 6) };
-                newPost.pollVotes = new Array(newPost.poll.options.length).fill(0);
-                newPost.pollMyVote = null;
-            }
+if (isPollPost) {
+    draft.poll = { options: pollOptions.slice(0, 6) };
+}
 
-            savePost(newPost);
-            renderPost(newPost, true);
+let createdPost = await tmCreateCreatorPost(draft);
+
+if (!createdPost) {
+    const meEmail = tmGetMeEmail();
+    const myIdentity = tmGetCreatorIdentity();
+    createdPost = {
+        id: tmNowId(),
+        creatorEmail: meEmail || null,
+        creatorName: myIdentity.name,
+        creatorHandle: myIdentity.handle,
+        creatorAvatarUrl: myIdentity.avatarUrl,
+        creatorVerified: true,
+        type: draft.type,
+        text: text,
+        timestamp: Date.now(),
+        comments: [],
+    };
+
+    if (isPollPost) {
+        createdPost.poll = { options: pollOptions.slice(0, 6) };
+        createdPost.pollVotes = new Array(createdPost.poll.options.length).fill(0);
+        createdPost.pollMyVote = null;
+    }
+} else {
+    // Ensure client-side fields exist (prototype interactions)
+    createdPost.comments = Array.isArray(createdPost.comments) ? createdPost.comments : [];
+    if (createdPost.type === 'poll' && createdPost.poll && Array.isArray(createdPost.poll.options)) {
+        createdPost.pollVotes = Array.isArray(createdPost.pollVotes)
+            ? createdPost.pollVotes
+            : new Array(createdPost.poll.options.length).fill(0);
+        createdPost.pollMyVote = null;
+    }
+}
+
+savePost(createdPost);
+renderPost(createdPost, true);
+if (DOM.feedEmptyState) DOM.feedEmptyState.style.display = 'none';
+
+
 
             // Reset composer
             DOM.composeInput.value = '';
@@ -508,10 +592,22 @@ function savePost(post) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(posts));
 }
 
-function deletePost(id) {
+async function deletePost(id) {
     let posts = getPosts();
     posts = posts.filter(p => p.id != id);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(posts));
+
+    // Best-effort backend delete (ignore errors to avoid breaking UX)
+    try {
+        await fetch(DELETE_POST_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ id }),
+        });
+    } catch (e) {
+        // ignore
+    }
 }
 
 
@@ -713,47 +809,108 @@ function tmOpenQuizComposer(TopToast) {
 
             return { question: q, options, correctIndex, explanation: exp };
         }
-    }).then((res) => {
+    }).then(async (res) => {
         if (!res.isConfirmed || !res.value) return;
         const v = res.value;
-        const newPost = {
-            id: tmNowId(),
-            type: 'quiz',
-            text: v.question,
-            timestamp: Date.now(),
-            comments: [],
-            quiz: {
-                question: v.question,
-                options: v.options,
-                correctIndex: v.correctIndex,
-                explanation: v.explanation || ''
-            },
-            quizVotes: new Array(v.options.length).fill(0),
-            quizMyAnswer: null
-        };
+        const draft = {
+    type: 'quiz',
+    text: v.question,
+    quiz: {
+        question: v.question,
+        options: v.options,
+        correctIndex: v.correctIndex,
+        explanation: v.explanation,
+    },
+};
 
-        savePost(newPost);
-        renderPost(newPost, true);
-        if (DOM.feedEmptyState) DOM.feedEmptyState.style.display = 'none';
-        tmToast(TopToast, 'success', 'Quiz posted');
+let createdPost = await tmCreateCreatorPost(draft);
+
+if (!createdPost) {
+    const meEmail = tmGetMeEmail();
+    const myIdentity = tmGetCreatorIdentity();
+    createdPost = {
+        id: tmNowId(),
+        creatorEmail: meEmail || null,
+        creatorName: myIdentity.name,
+        creatorHandle: myIdentity.handle,
+        creatorAvatarUrl: myIdentity.avatarUrl,
+        creatorVerified: true,
+        type: 'quiz',
+        text: v.question,
+        timestamp: Date.now(),
+        comments: [],
+        quiz: { ...draft.quiz },
+        quizVotes: new Array((v.options || []).length).fill(0),
+        quizMyAnswer: null,
+    };
+} else {
+    createdPost.comments = Array.isArray(createdPost.comments) ? createdPost.comments : [];
+    if (createdPost.type === 'quiz' && createdPost.quiz && Array.isArray(createdPost.quiz.options)) {
+        createdPost.quizVotes = Array.isArray(createdPost.quizVotes)
+            ? createdPost.quizVotes
+            : new Array(createdPost.quiz.options.length).fill(0);
+        createdPost.quizMyAnswer = null;
+    }
+}
+
+savePost(createdPost);
+renderPost(createdPost, true);
+if (DOM.feedEmptyState) DOM.feedEmptyState.style.display = 'none';
+tmToast(TopToast, 'success', 'Quiz posted');
     });
 }
 
-function loadPosts() {
+async function loadPosts() {
     if (!DOM.creatorFeed) return;
 
-    const posts = getPosts();
+    // Clear rendered cards, but keep the empty-state element intact
+    try {
+        DOM.creatorFeed.querySelectorAll('.post-card').forEach(el => el.remove());
+    } catch (e) {
+        // ignore
+    }
 
-    if (posts.length > 0 && DOM.feedEmptyState) {
+    const remote = await tmFetchCreatorsFeed(50);
+
+    let posts;
+    if (Array.isArray(remote) && remote.length) {
+        // Merge remote posts with local cached client-only interaction fields
+        const local = getPosts();
+        const localMap = new Map(local.map(p => [String(p.id), p]));
+        posts = remote.map(p => {
+            const lp = localMap.get(String(p.id));
+            if (!lp) return p;
+
+            const merged = { ...p };
+            const clientFields = [
+                'comments',
+                'reaction',
+                'reactionCount',
+                'pollVotes',
+                'pollMyVote',
+                'quizVotes',
+                'quizMyAnswer',
+                'pinned',
+            ];
+
+            for (const f of clientFields) {
+                if (lp[f] !== undefined) merged[f] = lp[f];
+            }
+
+            if (Array.isArray(lp.comments)) merged.comments = lp.comments;
+            return merged;
+        });
+
+        setPosts(posts);
+    } else {
+        posts = getPosts();
+    }
+
+    if (posts.length && DOM.feedEmptyState) {
         DOM.feedEmptyState.style.display = 'none';
     }
 
-    posts
-        .slice()
-        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
-        .forEach(post => {
-            renderPost(post, false);
-        });
+    posts.forEach(post => renderPost(post, false));
 }
 
 // ==========================================
@@ -765,9 +922,12 @@ function renderPost(post, animate) {
     const timeAgo = getTimeAgo(post.timestamp || Date.now());
     const animationStyle = animate ? 'animation: fadeIn 0.3s ease;' : '';
 
-    const { name, handle, avatarUrl } = tmGetCreatorIdentity();
+    const { name, handle, avatarUrl } = tmGetPostIdentity(post);
 
     const safeText = tmEscapeHtml(post.text || '').replace(/\n/g, '<br>');
+    const meEmail = tmGetMeEmail();
+    const canDelete = !!(meEmail && post.creatorEmail && meEmail === String(post.creatorEmail).toLowerCase());
+
 
     const comments = Array.isArray(post.comments) ? post.comments : [];
     const commentsHTML = comments.map(c => generateCommentHTML(c.text, c.timestamp)).join('');
@@ -783,7 +943,7 @@ function renderPost(post, animate) {
                 <div style="display: flex; gap: 12px;">
                     <img src="${tmEscapeHtml(avatarUrl)}" style="width: 45px; height: 45px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary-cyan);">
                     <div style="display: flex; flex-direction: column;">
-                        <span style="font-weight: 700; font-size: 1rem;">${tmEscapeHtml(name)} <i class="fa-solid fa-circle-check" style="color:var(--primary-cyan); font-size:0.8rem;"></i></span>
+                        <span style="font-weight: 700; font-size: 1rem;">${tmEscapeHtml(name)} ${verified ? '<i class="fa-solid fa-circle-check" style="color:var(--primary-cyan); font-size:0.8rem;"></i>' : ''}</span>
                         <span style="font-size: 0.85rem; color: var(--muted);">${tmEscapeHtml(handle)} &bull; ${timeAgo}</span>
                     </div>
                 </div>
@@ -793,7 +953,7 @@ function renderPost(post, animate) {
                     <div class="post-menu-dropdown hidden">
                         <div class="menu-item"><i class="fa-regular fa-copy"></i> Copy Link</div>
                         <div class="menu-item"><i class="fa-solid fa-thumbtack"></i> Pin to Profile</div>
-                        <div class="menu-item danger action-delete"><i class="fa-regular fa-trash-can"></i> Delete Post</div>
+                        ${canDelete ? `<div class=\"menu-item danger action-delete\"><i class=\"fa-regular fa-trash-can\"></i> Delete Post</div>` : ''}
                     </div>
                 </div>
             </div>
