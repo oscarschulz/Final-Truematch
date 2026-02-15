@@ -485,10 +485,11 @@ export function initHome(TopToast) {
                 const postId = postCard?.dataset?.postId;
                 const url = postId ? `${location.origin}${location.pathname}#post-${postId}` : location.href;
 
-                try {
-                    navigator.clipboard.writeText(url);
-                    tmToast(TopToast, 'success', 'Link copied');
-                } catch {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(url)
+                        .then(() => tmToast(TopToast, 'success', 'Link copied'))
+                        .catch(() => tmToast(TopToast, 'info', 'Copy not supported'));
+                } else {
                     tmToast(TopToast, 'info', 'Copy not supported');
                 }
 
@@ -511,7 +512,7 @@ export function initHome(TopToast) {
                 updatePost(postId, { pinned: nextPinned });
 
                 // Re-render at top (keeps UX simple)
-                const el = document.querySelector(`[data-post-id="${String(postId)}"]`);
+                const el = document.getElementById(`post-${postId}`);
                 if (el && el.parentNode) el.parentNode.removeChild(el);
 
                 const updated = getPosts().find(x => String(x.id) === String(postId));
@@ -874,8 +875,21 @@ function updatePost(postId, updater) {
     const posts = getPosts();
     const idx = posts.findIndex(p => String(p.id) === String(postId));
     if (idx === -1) return null;
-    const updated = updater({ ...posts[idx] });
+
+    const current = { ...posts[idx] };
+
+    let updated = null;
+
+    if (typeof updater === 'function') {
+        updated = updater(current);
+    } else if (updater && typeof updater === 'object') {
+        updated = { ...current, ...updater };
+    } else {
+        return null;
+    }
+
     if (!updated) return null;
+
     posts[idx] = updated;
     setPosts(posts);
     return updated;
@@ -1197,7 +1211,7 @@ function renderPost(post, animate) {
                     : '';
 
     const postHTML = `
-        <div class="post-card" id="post-${post.id}" style="padding: 20px; border-bottom: var(--border); ${animationStyle}">
+        <div class="post-card" id="post-${post.id}" data-post-id="${tmEscapeHtml(post.id)}" style="padding: 20px; border-bottom: var(--border); ${animationStyle}">
             <div class="post-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
                 <div style="display: flex; gap: 12px;">
                     <img src="${tmEscapeHtml(avatarUrl)}" style="width: 45px; height: 45px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary-cyan);">
