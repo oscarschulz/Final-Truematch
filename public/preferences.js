@@ -14,6 +14,8 @@
   let PREFS_ONBOARDING_MODE = null;
   let PREFS_FROM_PARAM = null;
 
+  let IS_ONBOARDING = false;
+
   // ---- Profile (age, city, avatar) helpers ----
   let AVATAR_DATA_URL_FOR_UPLOAD = '';
   let EXISTING_AVATAR_URL = '';
@@ -125,23 +127,110 @@
     const hasExisting = !!EXISTING_AVATAR_URL;
 
     if (requireAll && !hasNewFile && !hasExisting) {
+      showAvatarRequiredNotice();
       toast('Please upload a profile picture.', 'error');
+      scrollToAvatarSection();
       return false;
     }
 
     return true;
   }
 
+
+// ---- Avatar required notice (prevents hidden required-file native validation issues) ----
+const AVATAR_NOTICE_ID = 'tmAvatarRequiredNotice';
+
+function ensureAvatarNoticeEl() {
+  let el = document.getElementById(AVATAR_NOTICE_ID);
+  if (el) return el;
+
+  const fileInput = qs('#avatarFile');
+  if (!fileInput) return null;
+
+  // Try to attach the notice near the avatar upload UI
+  const host =
+    fileInput.closest('.avatar-upload') ||
+    fileInput.closest('.form-group') ||
+    fileInput.parentElement ||
+    fileInput;
+
+  el = document.createElement('div');
+  el.id = AVATAR_NOTICE_ID;
+  el.setAttribute('role', 'alert');
+
+  // Inline styles so we don't need CSS changes
+  el.style.marginTop = '10px';
+  el.style.padding = '10px 12px';
+  el.style.borderRadius = '12px';
+  el.style.border = '1px solid rgba(255, 77, 79, 0.55)';
+  el.style.background = 'rgba(255, 77, 79, 0.08)';
+  el.style.color = 'rgba(255, 255, 255, 0.92)';
+  el.style.fontSize = '12px';
+  el.style.lineHeight = '1.35';
+  el.style.display = 'none';
+
+  el.innerHTML =
+    '<strong style="color:#ff4d4f">Required:</strong> Upload a profile picture to continue. ' +
+    '<span style="opacity:.9">JPG/PNG recommended.</span>';
+
+  try { host.appendChild(el); } catch { return null; }
+  return el;
+}
+
+function showAvatarRequiredNotice() {
+  const el = ensureAvatarNoticeEl();
+  if (!el) return;
+  el.style.display = 'block';
+}
+
+function clearAvatarRequiredNotice() {
+  const el = document.getElementById(AVATAR_NOTICE_ID);
+  if (!el) return;
+  el.style.display = 'none';
+}
+
+function scrollToAvatarSection() {
+  const fileInput = qs('#avatarFile');
+  const host =
+    fileInput?.closest('.avatar-upload') ||
+    fileInput?.closest('.form-group') ||
+    fileInput?.parentElement ||
+    fileInput;
+
+  if (host && typeof host.scrollIntoView === 'function') {
+    try { host.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch {}
+  }
+
+  // Add a temporary highlight pulse
+  try {
+    if (host && host.style) {
+      const prev = host.style.boxShadow;
+      host.style.boxShadow = '0 0 0 2px rgba(255,77,79,.55), 0 0 20px rgba(255,77,79,.25)';
+      setTimeout(() => {
+        try { host.style.boxShadow = prev || ''; } catch {}
+      }, 1400);
+    }
+  } catch {}
+}
+
+function updateAvatarRequiredNotice() {
+  const hasNew = !!AVATAR_DATA_URL_FOR_UPLOAD;
+  const hasExisting = !!EXISTING_AVATAR_URL;
+  const missing = !(hasNew || hasExisting);
+
+  if (missing) showAvatarRequiredNotice();
+  else clearAvatarRequiredNotice();
+}
   function attachAvatarHandlers() {
     if (AVATAR_HANDLERS_ATTACHED) return;
     const fileInput = qs('#avatarFile');
     if (!fileInput) return;
     AVATAR_HANDLERS_ATTACHED = true;
+    // Don't rely on native HTML 'required' on hidden file inputs (causes 'not focusable' errors).
+    // We'll enforce required photo in JS instead.
+    try { fileInput.removeAttribute('required'); } catch {}
+    try { fileInput.setAttribute('aria-required', 'true'); } catch {}
 
-    // If user already has avatar, the file is not strictly required on re-visit
-    if (EXISTING_AVATAR_URL) {
-      try { fileInput.removeAttribute('required'); } catch {}
-    }
 
     fileInput.addEventListener('change', async () => {
       const f = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
@@ -149,6 +238,7 @@
         AVATAR_DATA_URL_FOR_UPLOAD = '';
         setAvatarPreview(EXISTING_AVATAR_URL || '');
         setAvatarFileName('');
+        updateAvatarRequiredNotice();
         return;
       }
 
@@ -160,11 +250,13 @@
           quality: 0.82
         });
         setAvatarPreview(AVATAR_DATA_URL_FOR_UPLOAD);
+        updateAvatarRequiredNotice();
       } catch (err) {
         AVATAR_DATA_URL_FOR_UPLOAD = '';
         setAvatarPreview(EXISTING_AVATAR_URL || '');
         setAvatarFileName('');
         toast(err.message || 'Could not process image.', 'error');
+        updateAvatarRequiredNotice();
         // Reset input to force re-pick
         try { fileInput.value = ''; } catch {}
       }
@@ -721,6 +813,7 @@ if (prefs.intent && qs('select[name="intent"]')) {
       .toString()
       .toLowerCase();
     const onboarding = onboardingParam === '1';
+    IS_ONBOARDING = onboarding;
     PREFS_ONBOARDING_MODE = onboardingParam;
     PREFS_FROM_PARAM = (params.get('from') || '').toString().toLowerCase();
 
@@ -781,6 +874,7 @@ if (prefs.intent && qs('select[name="intent"]')) {
           setAvatarPreview(EXISTING_AVATAR_URL);
           setAvatarFileName('');
           attachAvatarHandlers();
+      updateAvatarRequiredNotice();
         } catch (e) {
           console.warn('[prefs] local prefill failed', e);
         }
@@ -922,6 +1016,8 @@ if (prefs.intent && qs('select[name="intent"]')) {
       attachAvatarHandlers();
     } catch {}
 
+    try { updateAvatarRequiredNotice(); } catch {}
+
     attachFormHandler({
       api,
       localUser,
@@ -933,6 +1029,9 @@ if (prefs.intent && qs('select[name="intent"]')) {
     const form = qs('#preferencesForm');
     if (!form) return;
 
+    // Disable native HTML validation to avoid hidden required-file errors.
+    try { form.setAttribute('novalidate', 'novalidate'); } catch {}
+
     const { api, localUser, mode } = ctx || {};
     const isLiveMode =
       mode === 'live' &&
@@ -941,6 +1040,7 @@ if (prefs.intent && qs('select[name="intent"]')) {
 
     form.addEventListener('submit', async (evt) => {
       evt.preventDefault();
+      clearAvatarRequiredNotice();
 
       const prefs = getFormValues();
       if (!validateFormValues(prefs)) return;
@@ -957,6 +1057,7 @@ if (prefs.intent && qs('select[name="intent"]')) {
             quality: 0.82
           });
           setAvatarPreview(AVATAR_DATA_URL_FOR_UPLOAD);
+        updateAvatarRequiredNotice();
         } catch (err) {
           toast(err.message || 'Could not process image.', 'error');
           return;
