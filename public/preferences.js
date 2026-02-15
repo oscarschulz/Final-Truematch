@@ -55,10 +55,8 @@
 
     if (!file) throw new Error('No file selected');
 
-    const maxBytes = 12 * 1024 * 1024; // 12MB (raw file)
-    if (file.size > maxBytes) {
-      throw new Error('Please choose an image under 3MB.');
-    }
+    // No hard file-size cap here: we downscale + compress for upload.
+    // (Very large photos may still fail on low-memory devices.)
 
     const dataUrl = await new Promise((resolve, reject) => {
       const r = new FileReader();
@@ -145,11 +143,7 @@
       try { fileInput.removeAttribute('required'); } catch {}
     }
 
-    
-    else {
-      try { fileInput.setAttribute('required', 'required'); } catch {}
-    }
-fileInput.addEventListener('change', async () => {
+    fileInput.addEventListener('change', async () => {
       const f = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
       if (!f) {
         AVATAR_DATA_URL_FOR_UPLOAD = '';
@@ -952,7 +946,7 @@ if (prefs.intent && qs('select[name="intent"]')) {
       if (!validateFormValues(prefs)) return;
 
       const profile = getProfileValues();
-      const requireAll = (PREFS_ONBOARDING_MODE === '1') || !EXISTING_AVATAR_URL;
+      const requireAll = true; // Profile photo (existing or new) is required when saving preferences
       if (!validateProfileValues(profile, { requireAll })) return;
 
       // If the user picked a file but it has not been processed yet, process now.

@@ -2004,6 +2004,15 @@ function renderHomeEmptyStates() {
 // BACKEND SYNC
 // ---------------------------------------------------------------------
 
+
+function isProfileCompleteForOnboarding(user) {
+  if (!user) return false;
+  const ageOk = Number(user.age) >= 18;
+  const cityOk = (user.city || '').toString().trim().length > 1;
+  const avatarOk = !!(user.avatarUrl || user.avatar || user.photoUrl || user.photo);
+  return ageOk && cityOk && avatarOk;
+}
+
 async function loadMe() {
   try {
     const data = await apiGet('/api/me');
@@ -2028,6 +2037,22 @@ async function loadMe() {
       if (local) {
         if (!user.name && local.name) user.name = local.name;
         if (!user.email && local.email) user.email = local.email;
+      }
+    }
+
+    // Onboarding enforcement: require preferences + profile photo before showing dashboard
+    // (Skip this for demo accounts.)
+    if (data && data.ok && data.user && !data.demo) {
+      const prefsSaved =
+        Boolean(user && user.prefsSaved) ||
+        (prefs && typeof prefs === 'object' && Object.keys(prefs).length > 0);
+
+      const profileOk = isProfileCompleteForOnboarding(user);
+
+      if (!prefsSaved || !profileOk) {
+        // Force user through Preferences onboarding (profile photo is required there)
+        window.location.replace('preferences.html?onboarding=1');
+        return;
       }
     }
 
