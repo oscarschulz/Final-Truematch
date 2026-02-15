@@ -115,6 +115,11 @@ async function ensureMe(force = false) {
   if (!force && __meCache) return __meCache;
   const me = await apiMe().catch(() => null);
   __meCache = me;
+
+  // Keep app-wide caches in sync (app.js reads window.__tmMe)
+  try { if (me && me.user) window.__tmMe = me.user; } catch (_) {}
+  try { if (me && me.user) window.tmMeCache = me.user; } catch (_) {}
+
   return me;
 }
 
@@ -139,6 +144,12 @@ function tmToast(title, icon = 'info') {
   } catch (_) {}
   // Fallback
   console.log(title);
+}
+
+function tmDispatchMeUpdated(detail = {}) {
+  try {
+    window.dispatchEvent(new CustomEvent('tm:me-updated', { detail }));
+  } catch (_) {}
 }
 
 // ---------------- Profile photos (Avatar + Cover) ----------------
@@ -286,6 +297,7 @@ async function tmUploadProfilePhoto(kind, dataUrl) {
   // Force-refresh cached me
   __meCache = null;
   await ensureMe(true);
+  tmDispatchMeUpdated({ source: 'settings', reason: 'photo', kind });
 
   return out;
 }
@@ -1013,8 +1025,8 @@ function hydrateCreatorProfileForm(container, me) {
       btn.classList.add('loading');
       try {
         await saveCreatorProfile(container);
-        // Keep everything consistent (profile card, popovers, etc.)
-        window.location.reload();
+        tmToast('Profile saved.', 'success');
+        tmDispatchMeUpdated({ source: 'settings', reason: 'creator_profile' });
       } catch (e) {
         console.error(e);
         alert(e?.message || 'Failed to save. Please try again.');
@@ -1198,6 +1210,7 @@ function bindAccountControls(container, me) {
         if (u) u.textContent = `@${(handle || 'username').replace(/^@/, '')}`;
 
         tmToast('Account updated.', 'success');
+        tmDispatchMeUpdated({ source: 'settings', reason: 'account' });
       } catch (e) {
         console.error(e);
         tmToast('Failed to update account. Please try again.', 'error');
