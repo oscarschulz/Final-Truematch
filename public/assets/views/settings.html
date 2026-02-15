@@ -125,14 +125,17 @@
         </div>
         
         <div style="position:relative; margin-bottom:60px;">
-            <div style="height:200px; background: linear-gradient(135deg, #1e1e1e 0%, #333 100%); border-radius:8px; position:relative; overflow:hidden;">
-                <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#fff; font-size:1.5rem; cursor:pointer; opacity:0.8;"><i class="fa-solid fa-camera"></i></div>
+            <div data-role="profile-cover-preview" style="height:200px; background: linear-gradient(135deg, #1e1e1e 0%, #333 100%); border-radius:8px; position:relative; overflow:hidden;">
+                <div data-action="pick-cover" title="Change cover photo" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#fff; font-size:1.5rem; cursor:pointer; opacity:0.8;"><i class="fa-solid fa-camera"></i></div>
             </div>
             <div style="position:absolute; bottom:-40px; left:20px; width:80px; height:80px;">
-                <img src="assets/images/truematch-mark.png" style="width:100%; height:100%; border-radius:50%; border:3px solid var(--bg); object-fit:cover; background:#000;">
-                <div style="position:absolute; bottom:0; right:0; background:rgba(0,0,0,0.5); border-radius:50%; width:24px; height:24px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:0.8rem; cursor:pointer;"><i class="fa-solid fa-camera"></i></div>
+                <img data-role="profile-avatar-preview" src="assets/images/truematch-mark.png" style="width:100%; height:100%; border-radius:50%; border:3px solid var(--bg); object-fit:cover; background:#000;">
+                <div data-action="pick-avatar" title="Change profile photo" style="position:absolute; bottom:0; right:0; background:rgba(0,0,0,0.5); border-radius:50%; width:24px; height:24px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:0.8rem; cursor:pointer;"><i class="fa-solid fa-camera"></i></div>
             </div>
         </div>
+
+        <input type="file" accept="image/*" data-role="profile-cover-input" style="display:none" />
+        <input type="file" accept="image/*" data-role="profile-avatar-input" style="display:none" />
 
         <div class="ac-section" style="max-width: 700px; margin: 0 auto;">
             <div class="ac-group">

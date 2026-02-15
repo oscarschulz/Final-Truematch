@@ -141,6 +141,269 @@ function tmToast(title, icon = 'info') {
   console.log(title);
 }
 
+// ---------------- Profile photos (Avatar + Cover) ----------------
+// Goal: allow selecting ANY image size/file-size, then auto-compress + crop client-side
+// so we can safely store it in the backend (Firestore/Storage) without hitting limits.
+
+function tmEstimateDataUrlBytes(dataUrl) {
+  const s = String(dataUrl || '');
+  const idx = s.indexOf(',');
+  if (idx === -1) return 0;
+  const b64 = s.slice(idx + 1);
+  // base64 -> bytes (approx)
+  return Math.floor((b64.length * 3) / 4);
+}
+
+function tmSetBg(el, dataUrl) {
+  if (!el) return;
+  const url = String(dataUrl || '').trim();
+  if (!url) return;
+  el.style.backgroundImage = `url("${url.replace(/"/g, '\"')}")`;
+  el.style.backgroundSize = 'cover';
+  el.style.backgroundPosition = 'center';
+  el.style.backgroundRepeat = 'no-repeat';
+}
+
+function tmLoadImageFromFile(file) {
+  return new Promise((resolve, reject) => {
+    try {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        try { URL.revokeObjectURL(url); } catch {}
+        resolve(img);
+      };
+      img.onerror = () => {
+        try { URL.revokeObjectURL(url); } catch {}
+        reject(new Error('Invalid image file'));
+      };
+      img.src = url;
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+function tmCropRectToAspect(w, h, aspect) {
+  // Center-crop to requested aspect ratio.
+  const cur = w / h;
+  if (!aspect || aspect <= 0) return { sx: 0, sy: 0, sw: w, sh: h };
+
+  if (cur > aspect) {
+    // too wide
+    const sh = h;
+    const sw = Math.round(h * aspect);
+    const sx = Math.round((w - sw) / 2);
+    const sy = 0;
+    return { sx, sy, sw, sh };
+  }
+  // too tall
+  const sw = w;
+  const sh = Math.round(w / aspect);
+  const sx = 0;
+  const sy = Math.round((h - sh) / 2);
+  return { sx, sy, sw, sh };
+}
+
+function tmDataUrlFromCanvas(canvas, quality = 0.82) {
+  try {
+    return canvas.toDataURL('image/jpeg', quality);
+  } catch {
+    // Safari quirks fallback
+    return canvas.toDataURL();
+  }
+}
+
+async function tmCompressCropImageFile(file, opts = {}) {
+  const {
+    aspect = 1,
+    maxW = 512,
+    maxH = 512,
+    maxBytes = 450 * 1024,
+    qualityStart = 0.86
+  } = opts;
+
+  if (!file || !String(file.type || '').startsWith('image/')) {
+    throw new Error('Please select an image file.');
+  }
+
+  const img = await tmLoadImageFromFile(file);
+  const w0 = img.naturalWidth || img.width || 0;
+  const h0 = img.naturalHeight || img.height || 0;
+  if (!w0 || !h0) throw new Error('Invalid image file');
+
+  const crop = tmCropRectToAspect(w0, h0, aspect);
+
+  // Fit crop region into maxW/maxH
+  const scale = Math.min(1, maxW / crop.sw, maxH / crop.sh);
+  let outW = Math.max(1, Math.round(crop.sw * scale));
+  let outH = Math.max(1, Math.round(crop.sh * scale));
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  // Try iterative quality + (if needed) dimensional downscale
+  let q = qualityStart;
+  let tries = 0;
+
+  while (tries < 10) {
+    canvas.width = outW;
+    canvas.height = outH;
+    ctx.clearRect(0, 0, outW, outH);
+    ctx.drawImage(img, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, outW, outH);
+
+    const dataUrl = tmDataUrlFromCanvas(canvas, q);
+    const bytes = tmEstimateDataUrlBytes(dataUrl);
+
+    if (bytes && bytes <= maxBytes) return dataUrl;
+
+    // First reduce quality, then reduce dimensions
+    if (q > 0.58) q = Math.max(0.58, q - 0.08);
+    else {
+      outW = Math.max(320, Math.round(outW * 0.85));
+      outH = Math.max(320, Math.round(outH * 0.85));
+    }
+
+    tries += 1;
+  }
+
+  // Final best-effort output
+  canvas.width = outW;
+  canvas.height = outH;
+  ctx.clearRect(0, 0, outW, outH);
+  ctx.drawImage(img, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, outW, outH);
+  return tmDataUrlFromCanvas(canvas, q);
+}
+
+async function tmUploadProfilePhoto(kind, dataUrl) {
+  const payload = kind === 'cover'
+    ? { headerDataUrl: dataUrl }
+    : { avatarDataUrl: dataUrl };
+
+  const out = await apiPost('/api/me/profile', payload).catch(() => null);
+  if (!out?.ok) throw new Error(out?.message || out?.error || 'Upload failed');
+
+  // Force-refresh cached me
+  __meCache = null;
+  await ensureMe(true);
+
+  return out;
+}
+
+function bindCreatorProfilePhotos(container, me) {
+  if (!container || container.__tmPhotosBound) return;
+  container.__tmPhotosBound = true;
+
+  const coverPreview = container.querySelector('[data-role="profile-cover-preview"]');
+  const avatarPreview = container.querySelector('[data-role="profile-avatar-preview"]');
+
+  const coverPick = container.querySelector('[data-action="pick-cover"]');
+  const avatarPick = container.querySelector('[data-action="pick-avatar"]');
+
+  const coverInput = container.querySelector('input[type="file"][data-role="profile-cover-input"]');
+  const avatarInput = container.querySelector('input[type="file"][data-role="profile-avatar-input"]');
+
+  // Hydrate existing images
+  const u = me?.user || {};
+  if (avatarPreview && u.avatarUrl) avatarPreview.src = u.avatarUrl;
+  if (coverPreview && u.headerUrl) tmSetBg(coverPreview, u.headerUrl);
+
+  const setBusy = (on) => {
+    if (coverPick) coverPick.style.opacity = on ? '0.55' : '0.8';
+    if (avatarPick) avatarPick.style.opacity = on ? '0.55' : '1';
+    if (coverPick) coverPick.style.pointerEvents = on ? 'none' : 'auto';
+    if (avatarPick) avatarPick.style.pointerEvents = on ? 'none' : 'auto';
+  };
+
+  const openCover = () => coverInput && coverInput.click();
+  const openAvatar = () => avatarInput && avatarInput.click();
+
+  if (coverPick) coverPick.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openCover(); });
+  if (avatarPick) avatarPick.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openAvatar(); });
+
+  if (coverInput) {
+    coverInput.addEventListener('change', async () => {
+      const f = coverInput.files && coverInput.files[0];
+      coverInput.value = '';
+      if (!f) return;
+
+      try {
+        setBusy(true);
+        tmToast('Uploading cover...', 'info');
+
+        const dataUrl = await tmCompressCropImageFile(f, {
+          aspect: 3,        // 3:1 cover
+          maxW: 1500,
+          maxH: 500,
+          maxBytes: 650 * 1024,
+          qualityStart: 0.86
+        });
+
+        // Instant preview
+        if (coverPreview) tmSetBg(coverPreview, dataUrl);
+
+        await tmUploadProfilePhoto('cover', dataUrl);
+
+        // Update shared UI (sidebar + profile header if visible)
+        try {
+          const me2 = await ensureMe(true);
+          const hdr = me2?.user?.headerUrl || dataUrl;
+          tmSetBg(document.querySelector('#view-my-profile .profile-header-bg'), hdr);
+        } catch {}
+
+        tmToast('Cover photo saved', 'success');
+      } catch (e) {
+        console.error(e);
+        tmToast(e?.message || 'Unable to upload cover photo', 'error');
+      } finally {
+        setBusy(false);
+      }
+    });
+  }
+
+  if (avatarInput) {
+    avatarInput.addEventListener('change', async () => {
+      const f = avatarInput.files && avatarInput.files[0];
+      avatarInput.value = '';
+      if (!f) return;
+
+      try {
+        setBusy(true);
+        tmToast('Uploading photo...', 'info');
+
+        const dataUrl = await tmCompressCropImageFile(f, {
+          aspect: 1,
+          maxW: 512,
+          maxH: 512,
+          maxBytes: 450 * 1024,
+          qualityStart: 0.86
+        });
+
+        if (avatarPreview) avatarPreview.src = dataUrl;
+
+        await tmUploadProfilePhoto('avatar', dataUrl);
+
+        // Update shared UI (sidebar + profile header if visible)
+        try {
+          const me2 = await ensureMe(true);
+          const av = me2?.user?.avatarUrl || dataUrl;
+          const side = document.getElementById('creatorProfileAvatar');
+          if (side) side.src = av;
+          const big = document.querySelector('#view-my-profile .profile-avatar-main');
+          if (big) big.src = av;
+        } catch {}
+
+        tmToast('Profile photo saved', 'success');
+      } catch (e) {
+        console.error(e);
+        tmToast(e?.message || 'Unable to upload profile photo', 'error');
+      } finally {
+        setBusy(false);
+      }
+    });
+  }
+}
+
 function tmTimeAgo(ts) {
   const t = parseInt(String(ts || '0'), 10);
   if (!t || !isFinite(t)) return 'just now';
@@ -727,177 +990,6 @@ function bindMetaCounter(fieldEl) {
   update();
 }
 
-
-function tmCssUrlSafe(u) {
-  // Minimal escaping for use inside CSS url("...")
-  return String(u || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-}
-
-async function tmImageFileToDataUrl(file, opts = {}) {
-  const maxDim = opts.maxDim || 2400;
-  const quality = (typeof opts.quality === 'number') ? opts.quality : 0.9;
-  const mime = opts.mime || 'image/jpeg';
-
-  if (!file) throw new Error('No file selected');
-  if (!/^image\//i.test(file.type || '')) throw new Error('Please select an image file');
-
-  // Use createImageBitmap when available (faster, handles large images better)
-  const bitmap = await (async () => {
-    if (window.createImageBitmap) {
-      try { return await window.createImageBitmap(file); } catch {}
-    }
-    return await new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = reject;
-      const url = URL.createObjectURL(file);
-      img.src = url;
-      img.__tmObjectUrl = url;
-    });
-  })();
-
-  const srcW = bitmap.width || bitmap.naturalWidth || 0;
-  const srcH = bitmap.height || bitmap.naturalHeight || 0;
-  if (!srcW || !srcH) throw new Error('Invalid image');
-
-  const scale = Math.min(1, maxDim / Math.max(srcW, srcH));
-  const dstW = Math.max(1, Math.round(srcW * scale));
-  const dstH = Math.max(1, Math.round(srcH * scale));
-
-  const canvas = document.createElement('canvas');
-  canvas.width = dstW;
-  canvas.height = dstH;
-
-  const ctx = canvas.getContext('2d', { alpha: false });
-  ctx.drawImage(bitmap, 0, 0, dstW, dstH);
-
-  // Cleanup objectURL when we used Image() fallback
-  try {
-    if (bitmap.__tmObjectUrl) URL.revokeObjectURL(bitmap.__tmObjectUrl);
-  } catch {}
-
-  // Export
-  let dataUrl = '';
-  try {
-    dataUrl = canvas.toDataURL(mime, quality);
-  } catch {
-    // Fallback to PNG when browser rejects mime/quality combo
-    dataUrl = canvas.toDataURL('image/png');
-  }
-
-  // Best-effort free
-  try { canvas.width = canvas.height = 1; } catch {}
-  try { if (bitmap.close) bitmap.close(); } catch {}
-
-  return dataUrl;
-}
-
-function bindProfilePhotoControls(container, me) {
-  const cover = container.querySelector('#tm-set-cover');
-  const btnCover = container.querySelector('#tm-btn-cover');
-  const inputCover = container.querySelector('#tm-input-cover');
-
-  const avatarImg = container.querySelector('#tm-set-avatar-img');
-  const btnAvatar = container.querySelector('#tm-btn-avatar');
-  const inputAvatar = container.querySelector('#tm-input-avatar');
-
-  if (!cover || !btnCover || !inputCover || !avatarImg || !btnAvatar || !inputAvatar) return;
-
-  if (container.__tmMediaBound) return;
-  container.__tmMediaBound = true;
-
-  // Initial paint
-  const user = me?.user || {};
-  const email = String(user.email || '').trim().toLowerCase();
-
-  let headerUrl = String(user.headerUrl || '').trim();
-  if (!headerUrl && email) {
-    try {
-      const k = `tm_creator_header_${email}`;
-      const localHdr = window.localStorage ? (window.localStorage.getItem(k) || '') : '';
-      if (localHdr) headerUrl = localHdr;
-    } catch {}
-  }
-  if (headerUrl) {
-    cover.style.backgroundImage = `url("${tmCssUrlSafe(headerUrl)}")`;
-  }
-
-  if (user.avatarUrl) {
-    avatarImg.src = user.avatarUrl;
-  }
-
-  const pickCover = () => inputCover.click();
-  const pickAvatar = () => inputAvatar.click();
-
-  btnCover.addEventListener('click', pickCover);
-  cover.addEventListener('dblclick', pickCover); // quick shortcut
-  btnAvatar.addEventListener('click', pickAvatar);
-
-  inputCover.addEventListener('change', async () => {
-    const file = inputCover.files && inputCover.files[0];
-    if (!file) return;
-    try {
-      // Allow ANY input size; we auto-optimize so it always saves reliably
-      const dataUrl = await tmImageFileToDataUrl(file, { maxDim: 2400, quality: 0.88, mime: 'image/jpeg' });
-      cover.style.backgroundImage = `url("${tmCssUrlSafe(dataUrl)}")`;
-      container.__tmPendingHeaderDataUrl = dataUrl;
-    } catch (e) {
-      console.error(e);
-      alert(e?.message || 'Failed to read cover image.');
-    } finally {
-      // Reset so same file can be picked again
-      inputCover.value = '';
-    }
-  });
-
-  inputAvatar.addEventListener('change', async () => {
-    const file = inputAvatar.files && inputAvatar.files[0];
-    if (!file) return;
-    try {
-      const dataUrl = await tmImageFileToDataUrl(file, { maxDim: 900, quality: 0.9, mime: 'image/jpeg' });
-      avatarImg.src = dataUrl;
-      container.__tmPendingAvatarDataUrl = dataUrl;
-    } catch (e) {
-      console.error(e);
-      alert(e?.message || 'Failed to read avatar image.');
-    } finally {
-      inputAvatar.value = '';
-    }
-  });
-}
-
-async function saveProfilePhotos(container) {
-  const avatarDataUrl = String(container.__tmPendingAvatarDataUrl || '').trim();
-  const headerDataUrl = String(container.__tmPendingHeaderDataUrl || '').trim();
-  if (!avatarDataUrl && !headerDataUrl) return null;
-
-  const payload = {};
-  if (avatarDataUrl) payload.avatarDataUrl = avatarDataUrl;
-  if (headerDataUrl) payload.headerDataUrl = headerDataUrl;
-
-  const resp = await apiPost('/api/me/profile', payload).catch(() => null);
-  if (!resp?.ok) {
-    throw new Error(resp?.message || 'Failed to upload profile images.');
-  }
-
-  // Keep legacy header fallback key in sync
-  try {
-    const email = String(resp?.user?.email || '').trim().toLowerCase();
-    const hdr = String(resp?.user?.headerUrl || '').trim();
-    if (email && hdr && window.localStorage) {
-      window.localStorage.setItem(`tm_creator_header_${email}`, hdr);
-    }
-  } catch {}
-
-  // Clear pending
-  container.__tmPendingAvatarDataUrl = '';
-  container.__tmPendingHeaderDataUrl = '';
-  __meCache = resp;
-
-  return resp;
-}
-
-
 function hydrateCreatorProfileForm(container, me) {
   const packed = me?.user?.creatorApplication?.contentStyle || '';
   const map = parsePacked(packed);
@@ -922,9 +1014,7 @@ function hydrateCreatorProfileForm(container, me) {
       try {
         await saveCreatorProfile(container);
         // Keep everything consistent (profile card, popovers, etc.)
-        if (opts && opts.reload) {
-      window.location.reload();
-    }
+        window.location.reload();
       } catch (e) {
         console.error(e);
         alert(e?.message || 'Failed to save. Please try again.');
@@ -934,9 +1024,11 @@ function hydrateCreatorProfileForm(container, me) {
       }
     });
   }
+
+  try { bindCreatorProfilePhotos(container, me); } catch (e) { console.warn('Photo bind error:', e); }
 }
 
-async function saveCreatorProfile(container, opts = {}) {
+async function saveCreatorProfile(container) {
   const me = await ensureMe(true);
   if (!me?.ok) throw new Error('Not logged in');
 

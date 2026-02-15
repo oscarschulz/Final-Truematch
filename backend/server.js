@@ -132,7 +132,7 @@ app.use(cors(corsOptions));
 app.use(express.json({
   // Increased to support small photo/video "Recent Moments" uploads (base64 payload)
   // Note: client & server still enforce stricter per-upload limits.
-  limit: '35mb',
+  limit: '15mb',
   verify: (req, res, buf) => {
     // Keep raw body for Coinbase Commerce webhook signature verification
     if (req.originalUrl && req.originalUrl.startsWith('/api/coinbase/webhook')) {
@@ -140,7 +140,7 @@ app.use(express.json({
     }
   }
 }));
-app.use(express.urlencoded({ extended: true, limit: '35mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 
 app.use(cookieParser());
@@ -1715,7 +1715,6 @@ function publicUser(doc) {
     linkedAccounts: doc.linkedAccounts || doc.linked_accounts || null,
     city: doc.city || doc.location || '',
     avatarUrl: doc.avatarUrl || doc.avatar || '',
-    headerUrl: doc.headerUrl || doc.coverUrl || doc.header || '',
     creatorStatus: doc.creatorStatus ?? doc.creator_status ?? null,
     hasCreatorAccess: Boolean(doc.hasCreatorAccess ?? doc.creatorApproved ?? false),
     premiumStatus: doc.premiumStatus ?? doc.premium_status ?? null,
@@ -1860,7 +1859,6 @@ async function uploadAvatarDataUrlToStorage(email, avatarDataUrl, prevAvatarPath
 }
 
 
-
 async function uploadHeaderDataUrlToStorage(email, headerDataUrl, prevHeaderPath) {
   if (!hasFirebase || !admin) {
     throw new Error('firebase not configured');
@@ -1879,8 +1877,8 @@ async function uploadHeaderDataUrlToStorage(email, headerDataUrl, prevHeaderPath
   const b64 = m[2];
   const buf = Buffer.from(b64, 'base64');
 
-  // Safety: ~12MB decoded max (JSON limit is higher but we still cap it)
-  const maxBytes = 12 * 1024 * 1024;
+  // Safety: ~4MB decoded max (since request limit is 5mb)
+  const maxBytes = 4 * 1024 * 1024;
   if (buf.length > maxBytes) {
     throw new Error('header too large');
   }
@@ -1907,20 +1905,19 @@ async function uploadHeaderDataUrlToStorage(email, headerDataUrl, prevHeaderPath
 
   await file.save(buf, {
     resumable: false,
-    contentType: mime,
     metadata: {
-      metadata: {
-        firebaseStorageDownloadTokens: token
-      }
+      contentType: mime,
+      metadata: { firebaseStorageDownloadTokens: token }
     }
   });
 
-  const encoded = encodeURIComponent(filePath);
-  const url = `https://firebasestorage.googleapis.com/v0/b/${storageBucket.name}/o/${encoded}?alt=media&token=${token}`;
+  // Public download URL
+  const bucketName = storageBucket.name;
+  const publicUrl =
+    `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(filePath)}?alt=media&token=${token}`;
 
-  return { url, path: filePath };
+  return { url: publicUrl, path: filePath };
 }
-
 
 
 // ---------- Shortlist & dates helpers (plan-based serving) ----------
@@ -3829,12 +3826,6 @@ app.post('/api/me/profile', async (req, res) => {
       (DB.user && DB.user.avatarPath) ||
       '';
 
-    const existingHeaderUrl =
-      (existingDoc && existingDoc.headerUrl) ||
-      (DB.users && DB.users[oldEmail] && DB.users[oldEmail].headerUrl) ||
-      (DB.user && DB.user.headerUrl) ||
-      '';
-
     const existingHeaderPath =
       (existingDoc && existingDoc.headerPath) ||
       (DB.users && DB.users[oldEmail] && DB.users[oldEmail].headerPath) ||
@@ -3907,8 +3898,7 @@ app.post('/api/me/profile', async (req, res) => {
       fields.avatarUrl = avatarUrl;
     }
 
-
-    // 4b) Header/Cover upload: prefer Firebase Storage, fallback to inline dataURL
+    // 4b) Cover/Header upload: prefer Firebase Storage, fallback to inline dataURL
     if (headerDataUrl) {
       const hd = String(headerDataUrl || '');
       const m = hd.match(/^data:(image\/[^;]+);base64,(.+)$/);
@@ -3916,8 +3906,8 @@ app.post('/api/me/profile', async (req, res) => {
         return res.status(400).json({ ok: false, message: 'invalid_header_data' });
       }
 
-      // Firestore doc max is ~1MB; only allow inline as a small fallback.
-      const inlineMaxBytes = 900 * 1024; // ~900KB decoded
+      // Firestore doc max is ~1MB; keep header payload comfortably below that.
+      const inlineMaxBytes = 650 * 1024; // ~650KB decoded
       let inlineBufSize = 0;
       try { inlineBufSize = Buffer.from(m[2], 'base64').length; } catch {}
       const canInline = inlineBufSize > 0 && inlineBufSize <= inlineMaxBytes;
