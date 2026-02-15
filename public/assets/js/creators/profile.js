@@ -7,6 +7,40 @@ const STORAGE_KEY = 'tm_user_posts';
 // Emojis for the input tray
 const QUICK_EMOJIS = ["😀", "😂", "😍", "🔥", "😭", "🥰", "👍", "🙏", "👀", "💯", "🍑", "🍆", "💸", "😡", "🤡", "🎉"];
 
+// ------------------------------
+// Helpers (identity for profile posts)
+// ------------------------------
+function tmNormalizeHandle(h) {
+    const s = String(h || '').trim();
+    if (!s) return '@username';
+    return s.startsWith('@') ? s : '@' + s;
+}
+
+function tmGetProfileIdentityFromDOM() {
+    const nameEl = document.getElementById('creatorHeaderName') || document.getElementById('creatorProfileName') || document.getElementById('creatorPopoverName');
+    const handleEl = document.getElementById('creatorHeaderHandle') || document.getElementById('creatorProfileHandle') || document.getElementById('creatorPopoverHandle');
+    const avatarEl = document.querySelector('#view-my-profile .profile-avatar-main') || document.getElementById('creatorProfileAvatar');
+
+    const name = (nameEl?.textContent || '').trim() || 'Your Name';
+    const handle = tmNormalizeHandle((handleEl?.textContent || '').trim() || '@username');
+    const avatarUrl = (avatarEl?.getAttribute?.('src') || '').trim() || DEFAULT_AVATAR;
+
+    // For now, keep verified aligned with the UI badge (existing design shows check icon)
+    return { name, handle, avatarUrl, verified: true };
+}
+
+function tmGetProfilePostIdentity(post, fallback) {
+    const fb = fallback || tmGetProfileIdentityFromDOM();
+
+    const name = String(post?.creatorName || post?.authorName || post?.name || '').trim() || fb.name || 'Your Name';
+    const handleRaw = String(post?.creatorHandle || post?.authorHandle || post?.handle || '').trim() || fb.handle || '@username';
+    const handle = tmNormalizeHandle(handleRaw);
+    const avatarUrl = String(post?.creatorAvatarUrl || post?.authorAvatarUrl || post?.avatarUrl || post?.avatar || '').trim() || fb.avatarUrl || DEFAULT_AVATAR;
+    const verified = (post?.creatorVerified === undefined || post?.creatorVerified === null) ? (fb.verified !== false) : !!post.creatorVerified;
+
+    return { name, handle, avatarUrl, verified };
+}
+
 export function initProfilePage() {
     // 1. Setup Listeners
     setupProfileFeedInteractions();
@@ -190,10 +224,18 @@ function renderProfilePosts() {
         return;
     }
 
-    container.innerHTML = ''; 
+    container.innerHTML = '';
+
+    const fallbackIdentity = tmGetProfileIdentityFromDOM();
 
     posts.sort((a, b) => b.timestamp - a.timestamp).forEach(post => {
         const timeAgo = getTimeAgo(post.timestamp);
+        const identity = tmGetProfilePostIdentity(post, fallbackIdentity);
+        const displayName = tmEscapeHtml(identity.name || 'Your Name');
+        const displayHandle = tmEscapeHtml(identity.handle || '@username');
+        const avatarUrl = tmEscapeAttr(identity.avatarUrl || DEFAULT_AVATAR);
+        const verifiedIcon = identity.verified ? `<i class="fa-solid fa-circle-check" style="color:var(--primary-cyan); font-size:0.8rem; margin-left: 5px;"></i>` : '';
+        const safePostText = tmEscapeHtml(post.text || '');
         
         let commentsHTML = '';
         if (post.comments && post.comments.length > 0) {
@@ -209,12 +251,12 @@ function renderProfilePosts() {
                 
                 <div class="post-header" style="padding: 15px 20px; display: flex; justify-content: space-between; align-items: flex-start;">
                     <div class="ph-left" style="display: flex; gap: 12px;">
-                        <img src="${DEFAULT_AVATAR}" class="ph-avatar" style="width: 45px; height: 45px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary-cyan);">
+                        <img src="${avatarUrl}" class="ph-avatar" style="width: 45px; height: 45px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary-cyan);">
                         <div class="ph-info" style="display: flex; flex-direction: column; justify-content: center;">
                             <div class="ph-name" style="font-weight: 700; font-size: 1rem; color: var(--text);">
-                                Your Name <i class="fa-solid fa-circle-check" style="color:var(--primary-cyan); font-size:0.8rem; margin-left: 5px;"></i>
+                                ${displayName} ${verifiedIcon}
                             </div>
-                            <span style="font-size: 0.85rem; color: var(--muted);">@username &bull; ${timeAgo}</span>
+                            <span style="font-size: 0.85rem; color: var(--muted);">${displayHandle} &bull; ${timeAgo}</span>
                         </div>
                     </div>
                     
@@ -230,7 +272,7 @@ function renderProfilePosts() {
                     </div>
                 </div>
 
-                <div class="post-body" style="padding: 0 20px 15px 20px; font-size: 1rem; line-height: 1.5; color: var(--text); white-space: pre-wrap;">${post.text}</div>
+                <div class="post-body" style="padding: 0 20px 15px 20px; font-size: 1rem; line-height: 1.5; color: var(--text); white-space: pre-wrap;">${safePostText}</div>
 
                 <div class="post-actions" style="padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.05); color: var(--muted); font-size: 1.3rem;">
                     <div style="display: flex; gap: 25px; align-items: center;">
