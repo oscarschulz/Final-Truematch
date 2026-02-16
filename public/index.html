@@ -33,6 +33,69 @@
     .footer-newsletter-card .inner-circle-msg{ margin-top:10px; }
     .footer-newsletter-card .inner-circle-msg.success{ opacity:.95; }
     .footer-newsletter-card .inner-circle-msg.error{ opacity:.95; }
+  
+
+    /* Legal modals (Privacy / Terms / Cookies) */
+    .tm-modal { position: fixed; inset: 0; z-index: 9999; display: none; }
+    .tm-modal.is-open { display: block; }
+    .tm-modal__overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.65); backdrop-filter: blur(6px); }
+    .tm-modal__dialog {
+      position: relative;
+      width: min(920px, calc(100vw - 28px));
+      max-height: min(76vh, 740px);
+      margin: 7vh auto 0;
+      background: rgba(2,4,10,0.92);
+      border: 1px solid rgba(100,233,238,0.45);
+      border-radius: 18px;
+      box-shadow: 0 25px 80px rgba(0,0,0,0.55), 0 0 28px rgba(100,233,238,0.10);
+      overflow: hidden;
+    }
+    .tm-modal__header {
+      padding: 18px 18px 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+    }
+    .tm-modal__title { margin: 0; font-size: 1.25rem; font-weight: 850; color: var(--text); }
+    .tm-modal__meta { margin-top: 4px; opacity: .9; }
+    .tm-modal__close {
+      width: 38px; height: 38px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      line-height: 1;
+      transition: transform .15s ease, border-color .15s ease, background .15s ease;
+      flex: 0 0 auto;
+    }
+    .tm-modal__close:hover { transform: translateY(-1px); border-color: rgba(100,233,238,0.55); background: rgba(100,233,238,0.10); }
+    .tm-modal__body {
+      padding: 18px;
+      overflow: auto;
+      max-height: calc(min(76vh, 740px) - 68px);
+    }
+    .tm-modal__body h4 { margin: 18px 0 8px; font-size: 1.05rem; font-weight: 800; color: var(--text); }
+    .tm-modal__body p { margin: 0 0 10px; line-height: 1.7; color: var(--muted); }
+    .tm-modal__body ul { margin: 0 0 12px 18px; color: var(--muted); line-height: 1.7; }
+    .tm-modal__body li { margin: 6px 0; }
+    .tm-modal__body a { color: var(--primary); text-decoration: none; }
+    .tm-modal__body a:hover { text-decoration: underline; }
+
+    body.tm-modal-open { overflow: hidden; }
+
+    @media (max-width: 600px) {
+      .tm-modal__dialog { margin: 10vh auto 0; max-height: 78vh; border-radius: 16px; }
+      .tm-modal__header { padding: 16px 14px 12px; }
+      .tm-modal__body { padding: 14px; max-height: calc(78vh - 64px); }
+    }
+
   </style>
 
 
@@ -385,9 +448,9 @@
           </div>
 
           <div class="footer-legal">
-            <a href="#">Privacy Policy</a>
-            <a href="#">Terms of Service</a>
-            <a href="#">Cookie Policy</a>
+            <a href="#" data-legal="privacy">Privacy Policy</a>
+            <a href="#" data-legal="terms">Terms of Service</a>
+            <a href="#" data-legal="cookies">Cookie Policy</a>
           </div>
 
         </div>
@@ -659,6 +722,271 @@
           btn.disabled = false;
           btn.textContent = oldText;
         }
+      }
+    });
+  })();
+  </script>
+
+
+  <!-- Legal Modals (Privacy / Terms / Cookies) -->
+  <div class="tm-modal" id="legalModal" aria-hidden="true">
+    <div class="tm-modal__overlay" data-legal-close="1"></div>
+
+    <div class="tm-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="legalTitle">
+      <div class="tm-modal__header">
+        <div>
+          <h3 class="tm-modal__title" id="legalTitle">Privacy Policy</h3>
+          <div class="tm-modal__meta muted tiny" id="legalMeta">Last updated: February 16, 2026</div>
+        </div>
+
+        <button class="tm-modal__close" type="button" id="legalCloseBtn" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="tm-modal__body" id="legalBody"></div>
+    </div>
+  </div>
+
+  <template id="tpl-privacy">
+    <p>
+      This Privacy Policy explains how iTRUEMATCH (“we”, “us”, “our”) collects, uses, shares, and protects information when you use our website, products, and services (collectively, the “Service”).
+    </p>
+
+    <h4>Information we collect</h4>
+    <p><b>Information you provide.</b> When you create an account, complete your profile, contact us, or submit forms (including email opt-ins), you may provide information such as your name, email address, profile details, and preferences.</p>
+    <p><b>Verification and safety information.</b> If you choose to verify your account or participate in safety checks, we may collect verification-related information you submit (for example, identity or eligibility confirmations). We only use this to help keep the Service safe and trustworthy.</p>
+    <p><b>Usage and device information.</b> We may collect information about how you use the Service, including pages viewed, features used, device identifiers, browser type, IP address, and approximate location derived from IP.</p>
+    <p><b>Cookies and similar technologies.</b> We use cookies and similar technologies to keep the Service working, remember preferences, and measure performance. See the Cookie Policy below for details.</p>
+
+    <h4>How we use your information</h4>
+    <ul>
+      <li>Provide, operate, and improve the Service (including matchmaking/curation features).</li>
+      <li>Create and manage accounts, logins, sessions, and security checks.</li>
+      <li>Send service communications (e.g., confirmations, updates, support messages).</li>
+      <li>Send marketing or product communications when permitted (you can opt out anytime).</li>
+      <li>Detect, prevent, and investigate fraud, abuse, and policy violations.</li>
+      <li>Comply with legal obligations and enforce our Terms.</li>
+    </ul>
+
+    <h4>How we share your information</h4>
+    <p>We do not sell your personal information. We may share information in these limited cases:</p>
+    <ul>
+      <li><b>Service providers:</b> vendors who help us run the Service (hosting, analytics, customer support, payments, email delivery), under contractual obligations to protect your data.</li>
+      <li><b>Legal and safety:</b> when required by law, or to protect users, the public, or our rights, and to enforce our Terms.</li>
+      <li><b>Business transfers:</b> if we’re involved in a merger, acquisition, or asset sale (we’ll take steps to protect your information).</li>
+    </ul>
+
+    <h4>Data retention</h4>
+    <p>We retain information for as long as needed to provide the Service and for legitimate business needs (such as security, dispute resolution, and legal compliance). You may request deletion where applicable.</p>
+
+    <h4>Your choices</h4>
+    <ul>
+      <li><b>Access / update:</b> you can review and update certain account information through your profile and settings.</li>
+      <li><b>Opt out:</b> you can opt out of marketing emails using the unsubscribe link in those emails.</li>
+      <li><b>Cookies:</b> you can control cookies through browser settings (see Cookie Policy).</li>
+    </ul>
+
+    <h4>Security</h4>
+    <p>We use reasonable administrative, technical, and physical safeguards designed to protect information. No system is 100% secure, so please use strong passwords and protect your account.</p>
+
+    <h4>Children</h4>
+    <p>The Service is not intended for anyone under 18, and we do not knowingly collect personal information from minors.</p>
+
+    <h4>International use</h4>
+    <p>Your information may be processed in countries where our service providers operate. We take steps to protect information in accordance with this policy and applicable law.</p>
+
+    <h4>Contact</h4>
+    <p>
+      Questions or requests? Contact us at <a href="mailto:support@itruematch.com">support@itruematch.com</a>.
+    </p>
+  </template>
+
+  <template id="tpl-terms">
+    <p>
+      These Terms of Service (“Terms”) govern your access to and use of iTRUEMATCH (“we”, “us”, “our”) and the Service. By accessing or using the Service, you agree to these Terms.
+    </p>
+
+    <h4>Eligibility</h4>
+    <p>You must be at least 18 years old to use the Service. By using the Service, you represent that you meet this requirement.</p>
+
+    <h4>Your account</h4>
+    <ul>
+      <li>You are responsible for maintaining the confidentiality of your account credentials.</li>
+      <li>You agree to provide accurate information and keep it updated.</li>
+      <li>You must not share your account or use another person’s account without permission.</li>
+    </ul>
+
+    <h4>Service model and curation</h4>
+    <p>
+      iTRUEMATCH is designed for curated introductions and verified users. We may review, approve, limit, or remove profiles or content to maintain safety, quality, and community standards.
+    </p>
+
+    <h4>Subscriptions, fees, and billing</h4>
+    <p>
+      Some features may require a paid plan. If you purchase a subscription, you authorize us (and our payment processor) to charge the applicable fees. Plan details and pricing may change; changes apply prospectively as permitted by law.
+    </p>
+    <p>
+      Unless otherwise stated, subscriptions renew automatically until canceled. You can cancel according to the instructions in your account settings. Payments are generally non-refundable except where required by law or expressly stated.
+    </p>
+
+    <h4>Acceptable use</h4>
+    <p>You agree not to:</p>
+    <ul>
+      <li>Harass, threaten, impersonate, or stalk others.</li>
+      <li>Upload illegal, hateful, or exploitative content, or content that violates others’ rights.</li>
+      <li>Use the Service for spam, scams, or fraud.</li>
+      <li>Attempt to access accounts, data, or systems you are not authorized to access.</li>
+      <li>Reverse engineer, disrupt, or interfere with the Service’s security or operation.</li>
+    </ul>
+
+    <h4>User content and permissions</h4>
+    <p>
+      You retain ownership of the content you submit, but you grant us a worldwide, non-exclusive, royalty-free license to host, store, reproduce, and display your content as needed to operate and improve the Service (for example, to show your profile to other users according to your settings).
+    </p>
+
+    <h4>Intellectual property</h4>
+    <p>
+      The Service, including its design, text, graphics, logos, and software, is owned by iTRUEMATCH or its licensors and is protected by intellectual property laws.
+    </p>
+
+    <h4>Disclaimer</h4>
+    <p>
+      The Service is provided “as is” and “as available.” We do not guarantee that matches, curated introductions, or outcomes will meet your expectations. We disclaim warranties to the fullest extent permitted by law.
+    </p>
+
+    <h4>Limitation of liability</h4>
+    <p>
+      To the fullest extent permitted by law, iTRUEMATCH will not be liable for indirect, incidental, special, consequential, or punitive damages, or any loss of profits or data, arising from or related to your use of the Service.
+    </p>
+
+    <h4>Termination</h4>
+    <p>
+      We may suspend or terminate your access if you violate these Terms or if we believe your use poses a risk to the community or the Service. You may stop using the Service at any time.
+    </p>
+
+    <h4>Changes to these Terms</h4>
+    <p>
+      We may update these Terms from time to time. If changes are material, we will take reasonable steps to notify you. Continued use of the Service after changes means you accept the updated Terms.
+    </p>
+
+    <h4>Contact</h4>
+    <p>
+      Questions about these Terms? Contact <a href="mailto:support@itruematch.com">support@itruematch.com</a>.
+    </p>
+  </template>
+
+  <template id="tpl-cookies">
+    <p>
+      This Cookie Policy explains how iTRUEMATCH uses cookies and similar technologies to recognize you when you visit our website and use our Service.
+    </p>
+
+    <h4>What are cookies?</h4>
+    <p>
+      Cookies are small text files placed on your device by websites. They help websites function, remember settings, and understand how visitors use the site.
+    </p>
+
+    <h4>Types of cookies we use</h4>
+    <ul>
+      <li><b>Essential cookies:</b> required for core functionality such as security, session management, and page navigation.</li>
+      <li><b>Preference cookies:</b> help remember your choices (e.g., language, settings) to improve your experience.</li>
+      <li><b>Analytics cookies:</b> help us understand usage patterns and improve performance (e.g., which pages people visit most).</li>
+      <li><b>Marketing cookies:</b> may be used to measure the effectiveness of promotions and communications where applicable.</li>
+    </ul>
+
+    <h4>How to manage cookies</h4>
+    <p>
+      You can control cookies through your browser settings. You can delete existing cookies and block future cookies, but some features of the Service may not function properly if you disable essential cookies.
+    </p>
+
+    <h4>Do Not Track</h4>
+    <p>
+      Some browsers offer “Do Not Track” signals. There is no universal standard for interpreting these signals, so our response may vary depending on current practices and applicable law.
+    </p>
+
+    <h4>Updates to this policy</h4>
+    <p>
+      We may update this Cookie Policy from time to time. Updates will be posted here with a revised “Last updated” date.
+    </p>
+
+    <h4>Contact</h4>
+    <p>
+      Questions? Contact <a href="mailto:support@itruematch.com">support@itruematch.com</a>.
+    </p>
+  </template>
+
+  <script>
+  (() => {
+    const modal = document.getElementById('legalModal');
+    const body = document.getElementById('legalBody');
+    const title = document.getElementById('legalTitle');
+    const closeBtn = document.getElementById('legalCloseBtn');
+
+    if (!modal || !body || !title || !closeBtn) return;
+
+    const titleMap = {
+      privacy: 'Privacy Policy',
+      terms: 'Terms of Service',
+      cookies: 'Cookie Policy'
+    };
+
+    let lastActive = null;
+
+    function isOpen() { return modal.classList.contains('is-open'); }
+
+    function open(which) {
+      const tpl = document.getElementById('tpl-' + which);
+      if (!tpl) return;
+
+      lastActive = document.activeElement;
+
+      body.innerHTML = '';
+      body.appendChild(tpl.content.cloneNode(true));
+      title.textContent = titleMap[which] || 'Legal';
+
+      modal.classList.add('is-open');
+      modal.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('tm-modal-open');
+
+      // focus close for accessibility
+      closeBtn.focus({ preventScroll: true });
+    }
+
+    function close() {
+      modal.classList.remove('is-open');
+      modal.setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('tm-modal-open');
+
+      if (lastActive && typeof lastActive.focus === 'function') {
+        try { lastActive.focus({ preventScroll: true }); } catch (_) { lastActive.focus(); }
+      }
+      lastActive = null;
+    }
+
+    // Open handlers (footer links)
+    document.addEventListener('click', (e) => {
+      const a = e.target?.closest?.('a[data-legal]');
+      if (!a) return;
+      e.preventDefault();
+      const which = a.getAttribute('data-legal');
+      if (which) open(which);
+    });
+
+    // Close handlers
+    closeBtn.addEventListener('click', close);
+    modal.addEventListener('click', (e) => {
+      const overlayClose = e.target?.closest?.('[data-legal-close="1"]');
+      if (overlayClose) close();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && isOpen()) close();
+      // simple focus keep-in
+      if (e.key === 'Tab' && isOpen()) {
+        const focusables = modal.querySelectorAll('button, a[href], input, textarea, select, [tabindex]:not([tabindex="-1"])');
+        if (!focusables.length) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
       }
     });
   })();

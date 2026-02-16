@@ -383,6 +383,100 @@
     elements.forEach(el => observer.observe(el));
   }
 
+  
+
+  // ------------------------
+  // Legal modals (Privacy / Terms / Cookies) on landing page
+  // ------------------------
+  function initLegalModals() {
+    const links = document.querySelectorAll('[data-legal]');
+    const modal = document.getElementById('tmLegalModal');
+    const titleEl = document.getElementById('tmLegalTitle');
+    const metaEl = document.getElementById('tmLegalMeta');
+    const bodyEl = document.getElementById('tmLegalBody');
+
+    if (!links.length) return;
+
+    const TPL = {
+      privacy: document.getElementById('tmTplPrivacy'),
+      terms: document.getElementById('tmTplTerms'),
+      cookies: document.getElementById('tmTplCookies'),
+    };
+
+    const TITLE = {
+      privacy: 'Privacy Policy',
+      terms: 'Terms of Service',
+      cookies: 'Cookie Policy',
+    };
+
+    const LAST_UPDATED = 'Last updated: February 16, 2026';
+
+    function setNoScroll(on) {
+      document.documentElement.classList.toggle('tm-no-scroll', !!on);
+      document.body.classList.toggle('tm-no-scroll', !!on);
+    }
+
+    function openLegal(type) {
+      const tpl = TPL[type];
+      const title = TITLE[type] || 'Legal';
+      const html = tpl ? tpl.innerHTML : '<p>Content unavailable.</p>';
+
+      if (titleEl) titleEl.textContent = title;
+      if (metaEl) metaEl.textContent = LAST_UPDATED;
+      if (bodyEl) bodyEl.innerHTML = html;
+
+      // Prefer native <dialog>, fallback to SweetAlert2 if needed
+      if (modal && typeof modal.showModal === 'function') {
+        if (!modal.open) modal.showModal();
+        setNoScroll(true);
+      } else if (window.Swal) {
+        window.Swal.fire({
+          title,
+          html: '<div style="text-align:left;max-height:65vh;overflow:auto;">' + html + '</div>',
+          background: 'rgba(3, 7, 18, 0.98)',
+          color: '#fff',
+          width: 920,
+          showCloseButton: true,
+          showConfirmButton: false,
+        });
+      } else {
+        // Last-resort fallback
+        alert(title + '\n\n' + (tpl ? tpl.textContent : ''));
+      }
+    }
+
+    function closeLegal() {
+      if (modal && typeof modal.close === 'function' && modal.open) modal.close();
+      setNoScroll(false);
+    }
+
+    links.forEach((a) => {
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        const type = a.getAttribute('data-legal');
+        openLegal(type);
+      });
+    });
+
+    if (modal) {
+      const closeBtn = modal.querySelector('.tm-legal-modal__close');
+      if (closeBtn) closeBtn.addEventListener('click', closeLegal);
+
+      modal.addEventListener('close', () => setNoScroll(false));
+
+      // Click outside the card (native dialog backdrop click)
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeLegal();
+      });
+
+      // ESC behavior
+      modal.addEventListener('cancel', (e) => {
+        e.preventDefault();
+        closeLegal();
+      });
+    }
+  }
+
   // ------------------------
   // Init on DOM ready
   // ------------------------
@@ -393,6 +487,7 @@
     initCarousels();
     initFaqAccordion();
     initFooterYear();
+    initLegalModals();
     
     // Initialize Scroll Animations
     initScrollReveal();
