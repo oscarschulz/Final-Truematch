@@ -30,6 +30,91 @@ function setTextIfExists(id, value) {
 }
 
 
+
+
+// Basic escaping helpers (defensive; prevents accidental HTML injection)
+function escapeHtml(str) {
+  return String(str || '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+function escapeAttr(str) {
+  // Safe for double-quoted HTML attributes
+  return String(str || '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
+// Lightweight modal (no extra HTML/CSS required)
+let __ADMIN_MODAL = null;
+function ensureAdminModal() {
+  if (__ADMIN_MODAL) return __ADMIN_MODAL;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'tm-admin-modal';
+  overlay.style.position = 'fixed';
+  overlay.style.inset = '0';
+  overlay.style.background = 'rgba(0,0,0,0.58)';
+  overlay.style.display = 'none';
+  overlay.style.alignItems = 'center';
+  overlay.style.justifyContent = 'center';
+  overlay.style.zIndex = '9999';
+  overlay.style.padding = '16px';
+
+  const card = document.createElement('div');
+  card.style.width = 'min(760px, 100%)';
+  card.style.maxHeight = 'min(84vh, 900px)';
+  card.style.overflow = 'auto';
+  card.style.background = '#0b1020';
+  card.style.border = '1px solid rgba(255,255,255,.10)';
+  card.style.borderRadius = '14px';
+  card.style.boxShadow = '0 20px 80px rgba(0,0,0,.55)';
+  card.style.padding = '14px';
+
+  card.innerHTML = `
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:10px;">
+      <div>
+        <div id="tm-admin-modal-title" style="font-weight:700; color:#fff; font-size:16px; line-height:1.25;"></div>
+        <div id="tm-admin-modal-sub" class="tiny muted" style="margin-top:4px;"></div>
+      </div>
+      <button id="tm-admin-modal-close" class="btn btn--sm btn--ghost" type="button">Close</button>
+    </div>
+    <div id="tm-admin-modal-body"></div>
+  `;
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+  // Close on overlay click (outside card)
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) hideAdminModal();
+  });
+  card.querySelector('#tm-admin-modal-close')?.addEventListener('click', hideAdminModal);
+
+  __ADMIN_MODAL = overlay;
+  return __ADMIN_MODAL;
+}
+
+function showAdminModal({ title = '', sub = '', bodyHtml = '' } = {}) {
+  const overlay = ensureAdminModal();
+  const titleEl = overlay.querySelector('#tm-admin-modal-title');
+  const subEl = overlay.querySelector('#tm-admin-modal-sub');
+  const bodyEl = overlay.querySelector('#tm-admin-modal-body');
+
+  if (titleEl) titleEl.textContent = title;
+  if (subEl) subEl.textContent = sub;
+  if (bodyEl) bodyEl.innerHTML = bodyHtml;
+
+  overlay.style.display = 'flex';
+}
+
+function hideAdminModal() {
+  if (!__ADMIN_MODAL) return;
+  __ADMIN_MODAL.style.display = 'none';
+  const bodyEl = __ADMIN_MODAL.querySelector('#tm-admin-modal-body');
+  if (bodyEl) bodyEl.innerHTML = '';
+}
+
 /* =========================================
    1. NAVIGATION TABS
    ========================================= */
@@ -95,8 +180,8 @@ async function loadOverviewStats() {
   setTextIfExists('stat-premium-pending', pendingPremium);
 
 
-  // Confirmed dates (no endpoint yet)
-  setTextIfExists('stat-dates-active', 0);
+  // Confirmed dates: no aggregate endpoint yet (placeholder)
+  setTextIfExists('stat-dates-active', '—');
 }
 
 /* =========================================
@@ -341,15 +426,20 @@ function renderUsers() {
             : `<span class="badge">Unknown</span>`))
         : `<span class="badge">Free</span>`;
 
+        const emailSafe = escapeHtml(u.email || '');
+    const idSafe = escapeHtml(u.id || '');
+    const planSafe = escapeHtml(u.plan || 'free');
+    const emailAttr = escapeAttr(u.email || '');
+
     row.innerHTML = `
       <div>
-        <strong style="display:block; color:#fff;">${u.email || ''}</strong>
-        <span class="tiny muted">${u.id || ''}</span>
+        <strong style="display:block; color:#fff;">${emailSafe}</strong>
+        <span class="tiny muted">${idSafe}</span>
       </div>
 
       <div>
         <span class="tiny" style="border:1px solid #444; padding:2px 6px; border-radius:4px;">
-          ${(u.plan || 'free')}
+          ${planSafe}
         </span>
       </div>
 
@@ -358,12 +448,12 @@ function renderUsers() {
         ${badgeSub}
       </div>
 
-      <div style="text-align:right;">
-        <button class="btn btn--sm btn--ghost" onclick="alert('Manage user: ${u.email || ''}')">Edit</button>
+      <div style="text-align:right; display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap;">
+        <button class="btn btn--sm btn--ghost" type="button" data-action="state" data-email="${emailAttr}">View shortlist state</button>
       </div>
     `;
     usersBody.appendChild(row);
-  });
+});
 }
 
 async function loadUsers(forceFetch = false) {
@@ -411,6 +501,146 @@ if (btnClearUserFilters) {
     if (usersStatusFilter) usersStatusFilter.value = 'all';
     if (usersSearchFilter) usersSearchFilter.value = '';
     renderUsers();
+  });
+}
+
+
+
+// Quick action: View shortlist state (per-user)
+async function openUserShortlistState(email) {
+  const emailNorm = String(email || '').trim();
+  if (!emailNorm) return;
+
+  showAdminModal({
+    title: 'Shortlist state',
+    sub: emailNorm,
+    bodyHtml: '<p class="muted p-4">Loading…</p>'
+  });
+
+  const data = await apiCall(`/api/admin/state?email=${encodeURIComponent(emailNorm)}`);
+
+  if (!data || data.ok === false) {
+    const msg = (data && (data.message || data.error)) ? (data.message || data.error) : 'Unable to load state.';
+    showAdminModal({
+      title: 'Shortlist state',
+      sub: emailNorm,
+      bodyHtml: `<p class="muted p-4">Error: ${escapeHtml(String(msg))}</p>`
+    });
+    return;
+  }
+
+  const planRaw = String(data.plan || 'unknown').toLowerCase();
+  const planLabel =
+    planRaw === 'tier3' ? 'Concierge (Tier 3)' :
+    planRaw === 'tier2' ? 'Elite (Tier 2)' :
+    planRaw === 'tier1' ? 'Plus (Tier 1)' :
+    planRaw === 'free'  ? 'Free' : planRaw;
+
+  const dailyCap = (data.dailyCap ?? '—');
+  const lastDate = data.shortlistLastDate || '—';
+  const todayKey = data.today || '—';
+  const totalShortlist = Number(data.totalShortlist ?? 0);
+  const todayList = Array.isArray(data.todayShortlist) ? data.todayShortlist : [];
+  const todayCount = todayList.length;
+
+  const renderRow = (p, i) => {
+    const name = escapeHtml(p?.name || p?.candidateName || p?.fullName || `#${i + 1}`);
+    const city = escapeHtml(p?.city || p?.locationCity || '');
+    const ageRange = escapeHtml(p?.ageRange || p?.age || '');
+    const ig = escapeHtml(p?.igUrl || p?.ig || p?.instagram || '');
+    const status = escapeHtml(p?.status || '');
+    return `
+      <div style="display:grid; grid-template-columns: 1.2fr 0.9fr 1fr 1.2fr 0.8fr; gap:10px; padding:10px 12px; border-top:1px solid rgba(255,255,255,.08); font-size:12px;">
+        <div style="color:#fff; font-weight:600;">${name}</div>
+        <div class="muted">${city || '—'}</div>
+        <div class="muted">${ageRange || '—'}</div>
+        <div class="muted" style="word-break:break-all;">${ig || '—'}</div>
+        <div class="muted">${status || '—'}</div>
+      </div>
+    `;
+  };
+
+  const tableHtml = todayCount
+    ? `
+      <div style="border:1px solid rgba(255,255,255,.10); border-radius:12px; overflow:hidden;">
+        <div style="display:grid; grid-template-columns: 1.2fr 0.9fr 1fr 1.2fr 0.8fr; gap:10px; padding:10px 12px; background:rgba(255,255,255,.04); font-size:12px;">
+          <div>Name</div><div>City</div><div>Age</div><div>IG</div><div>Status</div>
+        </div>
+        ${todayList.map(renderRow).join('')}
+      </div>
+    `
+    : `<p class="muted" style="padding:12px; border:1px solid rgba(255,255,255,.10); border-radius:12px;">No “today shortlist” recorded for this user (either not served today, or empty).</p>`;
+
+  const bodyHtml = `
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+      <div style="flex:1; min-width:220px; border:1px solid rgba(255,255,255,.10); border-radius:12px; padding:12px;">
+        <div class="tiny muted">Plan</div>
+        <div style="color:#fff; font-weight:700; margin-top:4px;">${escapeHtml(planLabel)}</div>
+      </div>
+      <div style="flex:1; min-width:220px; border:1px solid rgba(255,255,255,.10); border-radius:12px; padding:12px;">
+        <div class="tiny muted">Daily cap</div>
+        <div style="color:#fff; font-weight:700; margin-top:4px;">${escapeHtml(dailyCap)}</div>
+      </div>
+      <div style="flex:1; min-width:220px; border:1px solid rgba(255,255,255,.10); border-radius:12px; padding:12px;">
+        <div class="tiny muted">Today / Served date</div>
+        <div style="color:#fff; font-weight:700; margin-top:4px;">${escapeHtml(todayKey)} / ${escapeHtml(lastDate)}</div>
+      </div>
+      <div style="flex:1; min-width:220px; border:1px solid rgba(255,255,255,.10); border-radius:12px; padding:12px;">
+        <div class="tiny muted">Shortlist count</div>
+        <div style="color:#fff; font-weight:700; margin-top:4px;">${todayCount} today • ${totalShortlist} total</div>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; margin-bottom:12px;">
+      <button class="btn btn--sm btn--ghost" type="button" id="tm-admin-copy-state">Copy JSON</button>
+      <button class="btn btn--sm btn--primary" type="button" id="tm-admin-go-matchmaking">Go to Matchmaking</button>
+    </div>
+
+    ${tableHtml}
+
+    <div class="tiny muted" style="margin-top:10px;">
+      Note: “today shortlist” only appears when <code>shortlistLastDate</code> equals today.
+    </div>
+  `;
+
+  showAdminModal({
+    title: 'Shortlist state',
+    sub: emailNorm,
+    bodyHtml
+  });
+
+  // Wire modal actions
+  const overlay = ensureAdminModal();
+  overlay.querySelector('#tm-admin-copy-state')?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+      const subEl = overlay.querySelector('#tm-admin-modal-sub');
+      if (subEl) subEl.textContent = `${emailNorm} • copied`;
+      setTimeout(() => { if (subEl) subEl.textContent = emailNorm; }, 900);
+    } catch {
+      // fallback
+      alert('Copy failed. Your browser may block clipboard access.');
+    }
+  }, { once: true });
+
+  overlay.querySelector('#tm-admin-go-matchmaking')?.addEventListener('click', () => {
+    // Auto-fill target email on Serve Shortlist form, then jump tabs
+    const emailInput = document.getElementById('admin-email');
+    if (emailInput) emailInput.value = emailNorm;
+    hideAdminModal();
+    try { switchTab('matchmaking'); } catch {}
+  }, { once: true });
+}
+
+// Delegate clicks from the Users list
+if (usersBody && !usersBody.dataset.actionsBound) {
+  usersBody.dataset.actionsBound = '1';
+  usersBody.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const action = btn.getAttribute('data-action');
+    const email = btn.getAttribute('data-email') || '';
+    if (action === 'state') openUserShortlistState(email);
   });
 }
 
@@ -671,16 +901,81 @@ document.getElementById('btn-serve').addEventListener('click', async () => {
 /* =========================================
    6. CONCIERGE (Confirmed Dates)
    ========================================= */
-document.getElementById('form-confirmed').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const email = document.getElementById('cd-email').value;
-  // In real implementation, gather all fields and POST to /api/admin/dates/create
-  
-  // For now, mock success
-  const statusEl = document.getElementById('cd-status');
-  statusEl.textContent = `Date saved for ${email} (Mock).`;
-  statusEl.style.color = '#7a9dff';
-});
+const cdForm = document.getElementById('form-confirmed');
+if (cdForm) {
+  cdForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const email = (document.getElementById('cd-email')?.value || '').trim();
+    const candidateName = (document.getElementById('cd-name')?.value || '').trim();
+    const whenRaw = (document.getElementById('cd-when')?.value || '').trim();
+    const location = (document.getElementById('cd-location')?.value || '').trim();
+    const notes = (document.getElementById('cd-notes')?.value || '').trim();
+
+    const statusEl = document.getElementById('cd-status');
+    const submitBtn = cdForm.querySelector('button[type="submit"]');
+
+    if (!email || !candidateName || !whenRaw) {
+      if (statusEl) {
+        statusEl.textContent = 'Please fill: User Email, Match Name, Date & Time.';
+        statusEl.style.color = '#ff7a7a';
+      }
+      return;
+    }
+
+    // Convert datetime-local -> ISO (UTC) for consistent storage
+    let scheduledAt = whenRaw;
+    try {
+      const d = new Date(whenRaw);
+      if (!isNaN(d.getTime())) scheduledAt = d.toISOString();
+    } catch (_) {}
+
+    const prevLabel = submitBtn ? submitBtn.textContent : '';
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Saving…';
+    }
+    if (statusEl) {
+      statusEl.textContent = 'Saving…';
+      statusEl.style.color = 'rgba(255,255,255,.75)';
+    }
+
+    const res = await apiCall('/api/admin/confirmed-date', 'POST', {
+      email,
+      candidateName,
+      scheduledAt,
+      location,
+      notes
+    });
+
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = prevLabel || 'Save Date';
+    }
+
+    if (!res || res.ok === false) {
+      const msg = (res && (res.message || res.error)) ? (res.message || res.error) : 'Unable to save date.';
+      if (statusEl) {
+        statusEl.textContent = `Error: ${msg}`;
+        statusEl.style.color = '#ff7a7a';
+      }
+      return;
+    }
+
+    if (statusEl) {
+      statusEl.textContent = `Saved confirmed date for ${email}.`;
+      statusEl.style.color = '#7a9dff';
+    }
+
+    // Keep email (for speed). Clear the rest.
+    try {
+      const elName = document.getElementById('cd-name'); if (elName) elName.value = '';
+      const elWhen = document.getElementById('cd-when'); if (elWhen) elWhen.value = '';
+      const elLoc = document.getElementById('cd-location'); if (elLoc) elLoc.value = '';
+      const elNotes = document.getElementById('cd-notes'); if (elNotes) elNotes.value = '';
+    } catch {}
+  });
+}
 
 /* =========================================
    INIT
