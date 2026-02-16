@@ -216,7 +216,11 @@ app.use((req, res, next) => {
 // Admin UI files (served from backend/admin)
 // =========================
 const ADMIN_DIR = path.join(__dirname, 'admin');
+const ADMIN_ROUTE_KEY = String(process.env.ADMIN_ROUTE_KEY || '').trim(); // ✅ set this to a 16+ random string in production
+const ADMIN_BASE = ADMIN_ROUTE_KEY ? `/a/${ADMIN_ROUTE_KEY}` : '/a';
+
 console.log('[admin] routes enabled. ADMIN_DIR =', ADMIN_DIR);
+console.log('[admin] base path =', ADMIN_BASE, ADMIN_ROUTE_KEY ? '(protected by secret path + admin auth)' : '(⚠️ set ADMIN_ROUTE_KEY for best protection)');
 
 function sendAdminFile(filename) {
   return (req, res) => {
@@ -229,16 +233,19 @@ function sendAdminFile(filename) {
       // Quick way to verify in DevTools > Network > Headers
       res.setHeader('X-TM-Admin-Source', 'backend/admin');
 
+      // Extra security for admin pages
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+      res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
+
       return res.sendFile(f);
     } catch (e) {
+      console.error('[admin] sendFile error', e);
       return res.status(500).send('Server error');
     }
   };
 }
 
-// Friendly admin shortcut
 // ---------------- Admin UI route guard ----------------
-// This prevents direct public access to admin pages/assets.
 // Users must login first so cookie tm_admin is set.
 function isAdminAuthed(req) {
   try {
@@ -251,29 +258,48 @@ function isAdminAuthed(req) {
 function adminGate(req, res, next) {
   if (isAdminAuthed(req)) return next();
 
-  // Allow the login page + its JS (public)
-  if (req.path === '/admin-login.html' || req.path === '/admin-login.js' || req.path === '/admin.css' || req.path === '/admin-landing.html') return next();
+  // Allow the login page + its JS + CSS (public)
+  if (req.path === '/admin-login.html' || req.path === '/admin-login.js' || req.path === '/admin.css') return next();
 
   // Redirect HTML requests to login; block other assets
-  if (req.path.endsWith('.html') || req.path === '/admin') {
-    const nextUrl = encodeURIComponent(req.originalUrl || '/admin.html');
-    return res.redirect(`/admin-login.html?next=${nextUrl}`);
+  if (req.path.endsWith('.html') || req.path === '/admin' || req.path === '/') {
+    const nextUrl = encodeURIComponent(req.originalUrl || `${req.baseUrl || ''}/admin.html`);
+    const loginUrl = `${req.baseUrl || ''}/admin-login.html?next=${nextUrl}`;
+    return res.redirect(loginUrl);
   }
 
   return res.status(403).send('Forbidden');
 }
 
-app.get('/admin', adminGate, (req, res) => res.redirect('/admin-landing.html'));
+// ✅ Legacy admin paths should NOT exist on the public site.
+// This blocks /admin.html (and related assets) even if someone guesses the URL.
+const LEGACY_ADMIN_PATHS = [
+  '/admin',
+  '/admin.html',
+  '/admin-landing.html',
+  '/admin-login.html',
+  '/admin.js',
+  '/admin-login.js',
+  '/admin.css',
+];
+const blockLegacyAdmin = (req, res) => res.status(404).send('Not found');
+app.get(LEGACY_ADMIN_PATHS, blockLegacyAdmin);
 
-// Admin pages
-app.get('/admin-landing.html', adminGate, sendAdminFile('admin-landing.html'));
-app.get('/admin-login.html', sendAdminFile('admin-login.html'));
-app.get('/admin.html', adminGate, sendAdminFile('admin.html'));
+// ✅ Serve admin UI ONLY under the secret base path (ADMIN_BASE)
+// Example: https://itruematch.com/a/<ADMIN_ROUTE_KEY>/admin-login.html
+app.use(ADMIN_BASE, adminGate);
 
-// Admin static (served from backend/admin)
-app.get('/admin.css', adminGate, sendAdminFile('admin.css'));
-app.get('/admin.js', adminGate, sendAdminFile('admin.js'));
-app.get('/admin-login.js', sendAdminFile('admin-login.js'));
+app.get(ADMIN_BASE, (req, res) => res.redirect(`${ADMIN_BASE}/admin.html`));
+
+// Admin pages (served from backend/admin under ADMIN_BASE)
+app.get(`${ADMIN_BASE}/admin-landing.html`, sendAdminFile('admin-landing.html'));
+app.get(`${ADMIN_BASE}/admin-login.html`, sendAdminFile('admin-login.html'));
+app.get(`${ADMIN_BASE}/admin.html`, sendAdminFile('admin.html'));
+
+// Admin static (served from backend/admin under ADMIN_BASE)
+app.get(`${ADMIN_BASE}/admin.css`, sendAdminFile('admin.css'));
+app.get(`${ADMIN_BASE}/admin.js`, sendAdminFile('admin.js'));
+app.get(`${ADMIN_BASE}/admin-login.js`, sendAdminFile('admin-login.js'));
 
 
 // =========================

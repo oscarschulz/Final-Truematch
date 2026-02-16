@@ -1,8 +1,7 @@
 /* admin.js - Unified Admin Logic */
 
 // Base API helpers (can also import from tm-api.js if preferred)
-const API_BASE = window.API_BASE || '';
-
+const API_BASE = (window.API_BASE || '').replace(/\/$/, '');
 async function apiCall(endpoint, method = 'GET', body = null) {
   try {
     const headers = { 'Content-Type': 'application/json' };
@@ -14,6 +13,11 @@ async function apiCall(endpoint, method = 'GET', body = null) {
 
     const ct = (res.headers.get('content-type') || '').toLowerCase();
     const data = ct.includes('application/json') ? await res.json() : { ok: res.ok, message: await res.text() };
+
+    if (data && typeof data === 'object') {
+      data.ok = res.ok;
+      data.status = res.status;
+    }
 
     if (!res.ok && (data && typeof data === 'object')) data.ok = false;
     return data;

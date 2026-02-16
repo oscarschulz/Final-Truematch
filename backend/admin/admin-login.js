@@ -58,5 +58,5 @@ form?.addEventListener('submit', async (e) => {
   // Go to admin space (or a specified next url)
   const params = new URLSearchParams(window.location.search);
   const next = params.get('next');
-  location.replace(next ? next : '/admin.html');
+  location.replace(next ? next : 'admin.html');
 });
