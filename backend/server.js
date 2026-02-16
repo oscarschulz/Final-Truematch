@@ -215,7 +215,29 @@ app.use((req, res, next) => {
 // =========================
 // Admin UI files (served from backend/admin)
 // =========================
-const ADMIN_DIR = path.join(__dirname, 'admin');
+
+// Resolve admin directory robustly (server.js may be in repo root OR /backend)
+function resolveAdminDir() {
+  const candidates = [
+    path.join(__dirname, 'admin'),
+    path.join(__dirname, 'backend', 'admin'),
+    path.join(__dirname, '..', 'admin'),
+    path.join(__dirname, '..', 'backend', 'admin'),
+    path.join(process.cwd(), 'admin'),
+    path.join(process.cwd(), 'backend', 'admin'),
+  ];
+  for (const dir of candidates) {
+    try {
+      const login = path.join(dir, 'admin-login.html');
+      const dash = path.join(dir, 'admin.html');
+      if (fs.existsSync(login) && fs.existsSync(dash)) return dir;
+    } catch (_) {}
+  }
+  // Fallback to the original assumption (does not crash)
+  return path.join(__dirname, 'admin');
+}
+
+const ADMIN_DIR = resolveAdminDir();
 const ADMIN_ROUTE_KEY = String(process.env.ADMIN_ROUTE_KEY || '').trim(); // ✅ set this to a 16+ random string in production
 const ADMIN_BASE = ADMIN_ROUTE_KEY ? `/a/${ADMIN_ROUTE_KEY}` : '/a';
 
