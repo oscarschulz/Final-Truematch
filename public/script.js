@@ -389,6 +389,11 @@
   // Legal modals (Privacy / Terms / Cookies) on landing page
   // ------------------------
   function initLegalModals() {
+    // If the page already has its own legal-modal system (#legalModal + tpl-*)
+    // skip binding here to avoid double-opening (and the SweetAlert fallback showing "Content unavailable").
+    const newModal = document.getElementById('legalModal');
+    const newTpl = document.getElementById('tpl-privacy') || document.getElementById('tpl-terms') || document.getElementById('tpl-cookies');
+    if (newModal && newTpl) return;
     const links = document.querySelectorAll('[data-legal]');
     const modal = document.getElementById('tmLegalModal');
     const titleEl = document.getElementById('tmLegalTitle');
@@ -402,6 +407,9 @@
       terms: document.getElementById('tmTplTerms'),
       cookies: document.getElementById('tmTplCookies'),
     };
+
+    const hasLegacyTemplates = !!(TPL.privacy || TPL.terms || TPL.cookies);
+    if (!hasLegacyTemplates) return;
 
     const TITLE = {
       privacy: 'Privacy Policy',
