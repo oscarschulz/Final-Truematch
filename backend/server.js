@@ -6524,6 +6524,152 @@ app.post('/api/support/email', async (req, res) => {
 
 // ---------------- End Wallet + Payments + Support ----------------
 
+// ---------------- Join the Inner Circle (Landing CTA) ----------------
+// Public endpoint used by landing page footer: collects email + sends 2-option email (Curated Service / Get Featured)
+
+const INNER_CIRCLE_LEADS_COLLECTION =
+  process.env.INNER_CIRCLE_LEADS_COLLECTION ||
+  process.env.INNER_CIRCLE_COLLECTION ||
+  'iTrueMatchInnerCircleLeads';
+
+function _isValidEmail(email) {
+  const s = String(email || '').trim();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+}
+
+function _innerCircleEmailContent(baseUrl) {
+  const base = String(baseUrl || '').replace(/\/+$/g, '');
+  const pricingUrl = base ? `${base}/#pricing` : '';
+  const signupUrl = base ? `${base}/auth.html?mode=signup` : '';
+  const featuredUrl = base ? `${base}/#features` : '';
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.55;color:#111">
+      <h2 style="margin:0 0 6px">Your iTRUEMATCH Inner Circle options</h2>
+      <p style="margin:0 0 14px;color:#444">You requested the 2 ways in. Pick the one that fits you:</p>
+
+      <div style="border:1px solid #e9e9e9;border-radius:12px;padding:14px 14px;margin:0 0 12px">
+        <h3 style="margin:0 0 6px">1) Curated Service</h3>
+        <p style="margin:0 0 10px;color:#444">
+          We hand-pick and coordinate your matches—less swiping, more real dates.
+        </p>
+        ${pricingUrl ? `<p style="margin:0 0 6px"><a href="${pricingUrl}" style="color:#0b74ff;text-decoration:none;font-weight:700">View plans & pricing →</a></p>` : ''}
+        ${signupUrl ? `<p style="margin:0"><a href="${signupUrl}" style="color:#0b74ff;text-decoration:none;font-weight:700">Sign up to request Curated Service →</a></p>` : ''}
+      </div>
+
+      <div style="border:1px solid #e9e9e9;border-radius:12px;padding:14px 14px;margin:0 0 12px">
+        <h3 style="margin:0 0 6px">2) Get Featured</h3>
+        <p style="margin:0 0 10px;color:#444">
+          Want to be featured on the website? We spotlight standout profiles and success stories.
+        </p>
+        ${featuredUrl ? `<p style="margin:0 0 6px"><a href="${featuredUrl}" style="color:#0b74ff;text-decoration:none;font-weight:700">See what we feature →</a></p>` : ''}
+        <p style="margin:0;color:#444">Reply to this email with your <b>name</b>, <b>city</b>, and a <b>short intro</b> so our team can review you.</p>
+      </div>
+
+      <p style="margin:14px 0 0;color:#666;font-size:12px">
+        If you didn’t request this, you can ignore this email.
+      </p>
+    </div>
+  `;
+
+  const text =
+`Your iTRUEMATCH Inner Circle options
+
+1) Curated Service
+We hand-pick and coordinate your matches—less swiping, more real dates.
+${pricingUrl ? `Plans & pricing: ${pricingUrl}\n` : ''}${signupUrl ? `Sign up: ${signupUrl}\n` : ''}
+
+2) Get Featured
+Want to be featured on the website? We spotlight standout profiles and success stories.
+${featuredUrl ? `See what we feature: ${featuredUrl}\n` : ''}
+Reply to this email with your name, city, and a short intro so our team can review you.
+
+If you didn’t request this, you can ignore this email.
+`;
+
+  return { html, text };
+}
+
+app.post('/api/inner-circle-signup', async (req, res) => {
+  try {
+    const email = safeStr((req.body && req.body.email) || '').trim().toLowerCase();
+    const source = safeStr((req.body && req.body.source) || 'landing');
+
+    if (!_isValidEmail(email)) return res.status(400).json({ ok: false, message: 'Invalid email' });
+
+    const ipRaw = safeStr(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '');
+    const ip = String(ipRaw).split(',')[0].trim();
+    const ua = safeStr(req.headers['user-agent'] || '');
+
+    // Simple anti-spam: throttle by (ip+email)
+    DB.innerCircleRL = DB.innerCircleRL || {};
+    const rlKey = `${ip}|${email}`;
+    const nowMs = Date.now();
+    const lastMs = Number(DB.innerCircleRL[rlKey] || 0);
+    if (lastMs && (nowMs - lastMs) < 30000) {
+      return res.status(429).json({ ok: false, message: 'Please wait a bit and try again.' });
+    }
+
+    const leadId = `ic_${crypto.createHash('sha256').update(email).digest('hex').slice(0, 24)}`;
+    const lead = {
+      id: leadId,
+      email,
+      source,
+      ua,
+      ip,
+      createdAt: new Date(nowMs),
+      updatedAt: new Date(nowMs),
+      lastSentAt: new Date(nowMs),
+      lastSentAtMs: nowMs
+    };
+
+    // Persist lead (Firestore primary if available)
+    if (hasFirebase && firestore) {
+      await firestore.collection(INNER_CIRCLE_LEADS_COLLECTION).doc(leadId).set(lead, { merge: true });
+    } else {
+      DB.innerCircleLeads = DB.innerCircleLeads || {};
+      DB.innerCircleLeads[leadId] = lead;
+    }
+
+    const base = String(process.env.PUBLIC_BASE_URL || '').replace(/\/+$/g, '');
+    const baseOk = Boolean(base) && (!IS_PROD || String(base).startsWith('https://'));
+
+    const { html, text } = _innerCircleEmailContent(baseOk ? base : '');
+    const subject = 'Your iTRUEMATCH Inner Circle options';
+
+    const sent = await sendMail(email, subject, html, text);
+    if (!sent) return res.status(500).json({ ok: false, message: 'Email delivery not configured.' });
+
+    // Notify admin (best-effort)
+    const adminTo = String(process.env.SUPPORT_EMAIL || process.env.ADMIN_EMAIL || process.env.MAIL_TO || '').trim();
+    if (adminTo) {
+      try {
+        await sendMail(adminTo, `[Inner Circle] New lead: ${email}`, `
+          <div style="font-family:Arial,sans-serif;line-height:1.5">
+            <h3>New Inner Circle lead</h3>
+            <p><b>Email:</b> ${email}</p>
+            <p><b>Source:</b> ${source}</p>
+            <p><b>IP:</b> ${ip}</p>
+            <p><b>User-Agent:</b> ${ua}</p>
+            <p style="color:#666;font-size:12px">Lead ID: ${leadId}</p>
+          </div>
+        `, `New Inner Circle lead\nEmail: ${email}\nSource: ${source}\nIP: ${ip}\nUA: ${ua}\nLead ID: ${leadId}`);
+      } catch (mailErr) {
+        console.warn('[inner-circle] admin notify failed:', mailErr?.message || mailErr);
+      }
+    }
+
+    DB.innerCircleRL[rlKey] = nowMs;
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('[inner-circle] error', e);
+    return res.status(500).json({ ok: false, message: 'Server error' });
+  }
+});
+
+// ---------------- End Join the Inner Circle ----------------
+
+
 
 // ---------------- Creator Posts (Feed) ----------------
 const CREATOR_POSTS_COLLECTION = process.env.CREATOR_POSTS_COLLECTION || 'iTrueMatchCreatorPosts';
@@ -7466,6 +7612,16 @@ async function sendWithResend({ to, subject, html, text }) {
 // Uses Resend when available, falls back to SMTP.
 async function sendMail(toEmail, subject, html, text) {
   try {
+    // Support both:
+    //   sendMail(to, subject, html, text)
+    //   sendMail({ to, subject, html, text })
+    if (toEmail && typeof toEmail === 'object' && !Array.isArray(toEmail)) {
+      const opt = toEmail;
+      toEmail = opt.to || opt.toEmail || opt.recipient || '';
+      subject = opt.subject;
+      html = opt.html;
+      text = opt.text || opt.plain || opt.bodyText || text;
+    }
     const to = String(toEmail || '').trim();
     if (!to) return false;
     const subj = String(subject || '').trim() || 'iTrueMatch';

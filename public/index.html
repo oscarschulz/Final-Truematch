@@ -14,6 +14,28 @@
   
   <link rel="stylesheet" href="fomo.css" />
 
+
+  <style>
+    /* Inner Circle: hint-only two options + email capture */
+    .footer-newsletter-card .inner-hint{
+      display:inline;
+      padding:0;
+      border:0;
+      border-radius:0;
+      background:transparent;
+      line-height:1.1;
+      margin:0;
+      font-weight:800;
+      letter-spacing:0.2px;
+      color: var(--text);
+    }
+    .footer-newsletter-card .sep{ opacity:.55; padding:0 6px; }
+    .footer-newsletter-card .inner-circle-msg{ margin-top:10px; }
+    .footer-newsletter-card .inner-circle-msg.success{ opacity:.95; }
+    .footer-newsletter-card .inner-circle-msg.error{ opacity:.95; }
+  </style>
+
+
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 
@@ -370,13 +392,19 @@
 
         </div>
 
-        <div class="footer-newsletter-card">
+                <div class="footer-newsletter-card">
           <h3>Join the Inner Circle</h3>
-          <p class="muted tiny">Get early access to exclusive events and drops.</p>
-          <form class="footer-form">
-            <input type="email" placeholder="Enter your email" />
-            <button type="button" class="btn primary small-btn">Join</button>
+          <p class="muted tiny">
+            Two ways in — <span class="inner-hint">Curated Service</span><span class="sep">•</span><span class="inner-hint">Get Featured</span>
+          </p>
+          <p class="muted tiny">Drop your email and we’ll send you both options.</p>
+
+          <form class="footer-form" id="innerCircleForm" autocomplete="on" novalidate>
+            <input type="email" placeholder="Enter your email" id="innerCircleEmail" name="email" required />
+            <button type="submit" class="btn primary small-btn" id="innerCircleBtn">Send options</button>
           </form>
+
+          <div class="muted tiny inner-circle-msg" id="innerCircleMsg" role="status" aria-live="polite" style="display:none;"></div>
         </div>
 
       </div>
@@ -567,5 +595,74 @@
   <script src="./tm-loader.js"></script>
   <script src="script.js"></script>
   <script src="fomo.js"></script>
+
+  <script>
+  (() => {
+    const form = document.getElementById('innerCircleForm');
+    if (!form) return;
+
+    const input = document.getElementById('innerCircleEmail');
+    const btn = document.getElementById('innerCircleBtn');
+    const msg = document.getElementById('innerCircleMsg');
+
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    function setMsg(text, type) {
+      if (!msg) return;
+      msg.textContent = text;
+      msg.classList.remove('success', 'error');
+      if (type) msg.classList.add(type);
+      msg.style.display = 'block';
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const email = (input?.value || '').trim();
+      if (!emailRe.test(email)) {
+        setMsg('Please enter a valid email.', 'error');
+        input?.focus();
+        return;
+      }
+
+      const oldText = btn?.textContent || 'Send options';
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Sending…';
+      }
+      setMsg('Sending the two options to your inbox…', 'success');
+
+      try {
+        const res = await fetch('/api/inner-circle-signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, source: 'landing' })
+        });
+
+        let data = null;
+        try { data = await res.json(); } catch (_) { data = null; }
+
+        if (!res.ok || (data && data.ok === false)) {
+          const errText =
+            (data && (data.error || data.message)) ?
+              (data.error || data.message) :
+              'Could not send the email. Please try again.';
+          throw new Error(errText);
+        }
+
+        setMsg('Done — check your inbox for the 2 options (Curated Service + Get Featured).', 'success');
+        form.reset();
+      } catch (err) {
+        setMsg(err?.message || 'Something went wrong. Please try again.', 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = oldText;
+        }
+      }
+    });
+  })();
+  </script>
+
 </body>
 </html>

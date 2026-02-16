@@ -112,3 +112,51 @@ export async function apiSubscribeToCreator(creatorEmail, durationDays = 30) {
 export async function apiUnsubscribeFromCreator(creatorEmail) {
   return apiPost('/api/creator/unsubscribe', { creatorEmail });
 }
+// ---- Collections (Lists) API (backend-first)
+export async function apiGetCollections(includeItems = false) {
+  const qs = includeItems ? '?includeItems=1' : '';
+  return apiGet(`/api/collections${qs}`);
+}
+
+export async function apiCreateCollection(name) {
+  return apiPost('/api/collections/create', { name });
+}
+
+export async function apiRenameCollection(id, name) {
+  return apiPost('/api/collections/rename', { id, name });
+}
+
+export async function apiDeleteCollection(id) {
+  return apiPost('/api/collections/delete', { id });
+}
+
+export async function apiAddToCollection(id, item) {
+  return apiPost('/api/collections/add', { id, item });
+}
+
+export async function apiRemoveFromCollection(id, key) {
+  return apiPost('/api/collections/remove', { id, key });
+}
+
+// ---- Creator Posts API (used by home/profile modules)
+export async function apiGetCreatorPosts(params = {}) {
+  const qs = new URLSearchParams();
+  Object.entries(params || {}).forEach(([k, v]) => {
+    if (v === undefined || v === null || v === '') return;
+    qs.set(k, String(v));
+  });
+  const q = qs.toString();
+  return apiGet(`/api/creator/posts${q ? `?${q}` : ''}`);
+}
+
+export async function apiCreateCreatorPost(payload) {
+  return apiPost('/api/creator/posts/create', payload || {});
+}
+
+export async function apiDeleteCreatorPost(postId) {
+  return apiPost('/api/creator/posts/delete', { postId });
+}
+
+export async function apiReactToPost(postId, emoji = 'like') {
+  return apiPost('/api/creator/posts/react', { postId, emoji });
+}
