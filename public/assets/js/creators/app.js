@@ -724,6 +724,11 @@ async function tmSaveBanking() {
     try { await tmHydrateCreatorsFromMe(); } catch {}
     tmLoadBankingFromCache();
 
+    // Let other modules (profile card, header, etc.) refresh if they listen
+    try {
+      window.dispatchEvent(new CustomEvent('tm:me-updated', { detail: { reason: 'creator_banking_saved' } }));
+    } catch (_) {}
+
     try { TopToast.fire({ icon: 'success', title: 'Saved' }); } catch {}
   } catch (err) {
     console.error('Bank details save error:', err);
@@ -1674,62 +1679,118 @@ function setupNavigation() {
     }
 
 
-    document.querySelectorAll('.pop-item').forEach(link => {
-        link.addEventListener('click', async (e) => {
-            const text = link.innerText.trim().toLowerCase();
+    // =============================================================
+    // Popover routing (robust): use explicit data-action instead of innerText
+    // - Prevents breaking when language changes
+    // - Prevents accidental popover-close on dark-mode toggle row
+    // =============================================================
+    const tmPopover = document.getElementById('settings-popover');
+
+    function tmResolvePopoverAction(el) {
+        if (!el) return '';
+        const existing = (el.dataset && el.dataset.action) ? String(el.dataset.action || '').trim() : '';
+        if (existing) return existing;
+
+        // Prefer [data-lang] keys (stable across translations)
+        const keyEl = el.querySelector ? el.querySelector('span[data-lang]') : null;
+        const key = keyEl ? String(keyEl.getAttribute('data-lang') || '') : '';
+
+        const map = {
+            pop_profile: 'profile',
+            pop_col: 'collections',
+            pop_set: 'settings',
+            pop_cards: 'your-cards',
+            pop_creator: 'become-creator',
+            pop_help: 'support',
+            pop_logout: 'logout'
+        };
+
+        if (key && map[key]) return map[key];
+
+        // Final fallback (legacy): innerText
+        try {
+            const text = String(el.innerText || '').trim().toLowerCase();
+            if (text.includes('log out') || text.includes('logout')) return 'logout';
+            if (text.includes('cards')) return 'your-cards';
+            if (text.includes('add card')) return 'add-card';
+            if (text.includes('settings')) return 'settings';
+            if (text.includes('collections')) return 'collections';
+            if (text.includes('profile')) return 'profile';
+            if (text.includes('creator') || text.includes('banking')) return 'become-creator';
+            if (text.includes('help')) return 'support';
+        } catch (_) {}
+
+        return '';
+    }
+
+    function tmTagPopoverActions() {
+        if (!tmPopover || tmPopover.dataset.tmActionsTagged === '1') return;
+        tmPopover.dataset.tmActionsTagged = '1';
+
+        // Tag only navigational anchors + logout; exclude toggle-row and language label.
+        tmPopover.querySelectorAll('.pop-item').forEach((node) => {
+            try {
+                if (node.id === 'popover-lang-label') return;
+                if (node.classList && node.classList.contains('toggle-row')) return;
+                const action = tmResolvePopoverAction(node);
+                if (action) node.dataset.action = action;
+            } catch (_) {}
+        });
+    }
+
+    function tmClosePopover() {
+        try {
             const popover = document.getElementById('settings-popover');
             if (popover) popover.classList.remove('is-open');
+        } catch (_) {}
+    }
 
-            // ✅ Logout should invalidate the session on the backend (not just redirect)
-            if (text.includes('log out') || text.includes('logout')) {
-                e.preventDefault();
-                try { await apiPost('/api/auth/logout', {}); } catch (err) { /* ignore */ }
-                window.location.href = 'index.html';
-                return;
-            }
+    async function tmHandlePopoverAction(action, e) {
+        if (e) {
+            try { e.preventDefault(); } catch (_) {}
+            try { e.stopPropagation(); } catch (_) {}
+        }
 
-            // Map popover items → views (Choice set by user)
-            if (text.includes('cards')) { 
-                e.preventDefault(); 
-                switchView('your-cards'); 
+        // Close popover for real actions (not for dark-mode toggle)
+        tmClosePopover();
+
+        if (action === 'logout') {
+            try { await apiPost('/api/auth/logout', {}); } catch (_) { /* ignore */ }
+            window.location.href = 'index.html';
+            return;
+        }
+
+        if (action === 'support') {
+            try { tmSupportOpenEmailModal({ subject: 'Support request' }); }
+            catch (err) {
+                console.error(err);
+                try { TopToast.fire({ icon: 'error', title: 'Support unavailable' }); } catch (_) {}
             }
-            else if (text.includes('add card')) { 
-                e.preventDefault(); 
-                switchView('add-card'); 
-            }
-            else if (text.includes('settings')) { 
-                e.preventDefault(); 
-                switchView('settings'); 
-            }
-            else if (text.includes('collections')) { 
-                e.preventDefault(); 
-                switchView('collections'); 
-            }
-            else if (text.includes('profile')) { 
-                e.preventDefault(); 
-                switchView('profile'); 
-            }
-            else if (text.includes('creator') || text.includes('banking')) { 
-                e.preventDefault(); 
-                switchView('become-creator'); 
-            }
-            else if (text.includes('help')) {
-                // Email-only support
-                e.preventDefault();
-                try {
-                    tmSupportOpenEmailModal({ subject: 'Support request' });
-                } catch (err) {
-                    console.error(err);
-                    try { TopToast.fire({ icon: 'error', title: 'Support unavailable' }); } catch(_) {}
-                }
-            }
-            else if (text.includes('language')) {
-                // Language picker
-                e.preventDefault();
-                try { tmOpenLangPicker(); } catch (err) { console.error(err); }
-            }
+            return;
+        }
+
+        // View routing
+        switchView(action);
+    }
+
+    // Delegate clicks from the popover container (prevents duplicate listeners)
+    if (tmPopover && tmPopover.dataset.tmBoundActions !== '1') {
+        tmPopover.dataset.tmBoundActions = '1';
+        tmTagPopoverActions();
+
+        tmPopover.addEventListener('click', async (e) => {
+            const item = e.target && e.target.closest ? e.target.closest('.pop-item') : null;
+            if (!item) return;
+            if (item.id === 'popover-lang-label') return; // handled by tmOpenLangPicker listener
+            if (item.classList && item.classList.contains('toggle-row')) return; // allow toggle without closing
+
+            // Route only if there is a known action
+            const action = tmResolvePopoverAction(item);
+            if (!action) return;
+            item.dataset.action = action;
+            await tmHandlePopoverAction(action, e);
         });
-    });
+    }
 
     const mobHome = document.getElementById('mob-nav-home');
     const mobAddCard = document.getElementById('mob-nav-add-card');
@@ -1758,7 +1819,7 @@ function switchView(viewName) {
     
   // Close transient overlays when changing views
   try { tmCloseStatusMenu(); } catch {}
-localStorage.setItem('tm_last_view', viewName);
+try { localStorage.setItem('tm_last_view', viewName); } catch (_) {}
 
     // Close mobile settings drill-down (if open)
     if (typeof window.__tmCloseSettingsMobileDetail === 'function') {
