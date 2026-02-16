@@ -5,7 +5,6 @@ import {
   tmCardsRemove,
   tmCardsSetPrimary,
   tmCardsMask,
-  tmWalletHydrate,
   tmWalletPrefsGet,
   tmWalletPrefsSet,
   tmTransactionsGet,
@@ -36,155 +35,6 @@ function tmUid(prefix = 'card') {
 
 function tmDigits(raw) {
   return String(raw || '').replace(/\D+/g, '');
-}
-
-function tmReadMe() {
-  try { return window.__tmMe || window.tmMeCache || null; } catch { return null; }
-}
-
-function tmSafeTrim(v) {
-  return String(v || '').trim();
-}
-
-function tmFormatCardNumberValue(raw) {
-  const digits = tmDigits(raw).slice(0, 19); // allow up to 19 digits
-  if (!digits) return '';
-
-  // AmEx formatting: 4-6-5
-  if (digits.startsWith('34') || digits.startsWith('37')) {
-    const a = digits.slice(0, 4);
-    const b = digits.slice(4, 10);
-    const c = digits.slice(10, 15);
-    return [a, b, c].filter(Boolean).join(' ');
-  }
-
-  // Default: groups of 4
-  return digits.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
-}
-
-function tmBindCardNumberAutoFormat(root) {
-  if (!root) return;
-  const { number } = tmGetFieldsFromCardForm(root);
-  if (!number) return;
-
-  if (number.dataset.tmCardNumBound === '1') return;
-  number.dataset.tmCardNumBound = '1';
-
-  try { number.setAttribute('inputmode', 'numeric'); } catch {}
-  try { number.setAttribute('autocomplete', 'cc-number'); } catch {}
-
-  const handler = () => {
-    const prev = number.value || '';
-    const prevPos = (typeof number.selectionStart === 'number') ? number.selectionStart : prev.length;
-    const digitsBefore = prev.slice(0, prevPos).replace(/\D+/g, '').length;
-
-    const formatted = tmFormatCardNumberValue(prev);
-    number.value = formatted;
-
-    if (document.activeElement === number && typeof number.setSelectionRange === 'function') {
-      let pos = 0;
-      let seen = 0;
-      while (pos < formatted.length && seen < digitsBefore) {
-        if (/\d/.test(formatted[pos])) seen += 1;
-        pos += 1;
-      }
-      try { number.setSelectionRange(pos, pos); } catch {}
-    }
-  };
-
-  number.addEventListener('input', handler, { passive: true });
-}
-
-function tmBindCvcAutoFormat(root) {
-  if (!root) return;
-  const { cvc, number } = tmGetFieldsFromCardForm(root);
-  if (!cvc) return;
-
-  if (cvc.dataset.tmCvcBound === '1') return;
-  cvc.dataset.tmCvcBound = '1';
-
-  try { cvc.setAttribute('inputmode', 'numeric'); } catch {}
-  try { cvc.setAttribute('autocomplete', 'cc-csc'); } catch {}
-  try { cvc.setAttribute('maxlength', '4'); } catch {}
-
-  const handler = () => {
-    const raw = tmDigits(cvc.value).slice(0, 4);
-    cvc.value = raw;
-
-    // If card brand is AMEX, allow 4 digits; else 3 digits feels standard.
-    const nd = tmDigits(number?.value);
-    const isAmex = nd.startsWith('34') || nd.startsWith('37');
-    if (!isAmex) {
-      cvc.value = raw.slice(0, 3);
-    }
-  };
-
-  cvc.addEventListener('input', handler, { passive: true });
-}
-
-function tmPrefillCardForm(root) {
-  if (!root) return;
-  const me = tmReadMe();
-  if (!me) return;
-
-  const fields = tmGetFieldsFromCardForm(root);
-
-  try {
-    if (fields.email && !tmSafeTrim(fields.email.value) && me.email) {
-      fields.email.value = tmSafeTrim(me.email).toLowerCase();
-      try { fields.email.setAttribute('autocomplete', 'email'); } catch {}
-    }
-    if (fields.name && !tmSafeTrim(fields.name.value) && me.name) {
-      fields.name.value = tmSafeTrim(me.name);
-      try { fields.name.setAttribute('autocomplete', 'cc-name'); } catch {}
-    }
-  } catch {}
-}
-
-function tmBindCardFormUX(root, toast) {
-  if (!root) return;
-
-  tmPrefillCardForm(root);
-  tmBindCardNumberAutoFormat(root);
-  tmBindExpAutoFormat(root);
-  tmBindCvcAutoFormat(root);
-
-  // "My card number is longer" hint
-  const hintLink = root.querySelector('.link-small, .ac-link');
-  if (hintLink && hintLink.dataset.tmHintBound !== '1') {
-    hintLink.dataset.tmHintBound = '1';
-    hintLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      try {
-        toast?.fire?.({
-          icon: 'info',
-          title: 'Tip',
-          text: 'Enter your full card number. We only save the last 4 digits (no CVC stored).'
-        });
-      } catch (_) {}
-    });
-  }
-}
-
-function tmBindVerifyButtons(toast) {
-  // One global handler, avoids per-view duplication
-  if (document.body && document.body.dataset.tmVerifyBound === '1') return;
-  if (document.body) document.body.dataset.tmVerifyBound = '1';
-
-  document.addEventListener('click', async (e) => {
-    const btn = e.target.closest('.btn-verify');
-    if (!btn) return;
-    e.preventDefault();
-    e.stopPropagation();
-    try {
-      toast?.fire?.({
-        icon: 'info',
-        title: 'Verification',
-        text: 'Verification is coming soon.'
-      });
-    } catch (_) {}
-  });
 }
 
 function tmCardBrand(digits) {
@@ -302,20 +152,12 @@ function tmValidateCardPayload(payload, needsAgeConfirm) {
   const last4 = String(payload.last4 || '').trim();
   const expMonth = String(payload.expMonth || '').trim();
   const expYear = String(payload.expYear || '').trim();
-  const numberLen = parseInt(payload.numberLen || '0', 10) || 0;
-  const cvc = String(payload.cvc || '').trim();
-  const brand = String(payload.brand || '').trim().toLowerCase();
 
   if (!email || !email.includes('@')) problems.push('Email');
   if (!name) problems.push('Name on the card');
-  if (!last4 || last4.length !== 4 || (numberLen && numberLen < 12)) problems.push('Card number');
+  if (!last4 || last4.length !== 4) problems.push('Card number');
   if (!expMonth || expMonth.length !== 2) problems.push('Expiration');
   if (!expYear || expYear.length !== 4) problems.push('Expiration');
-
-  // CVC checks (we never store it, but we validate input)
-  const cvcOk = (brand === 'amex') ? /^\d{4}$/.test(cvc) : /^\d{3,4}$/.test(cvc);
-  if (!cvcOk) problems.push('CVC');
-
   if (needsAgeConfirm) problems.push('Age confirmation');
 
   // Month range check
@@ -348,6 +190,273 @@ function tmBrandIconHtml(brand) {
   return '<i class="fa-regular fa-credit-card" aria-label="Card"></i>';
 }
 
+
+// =============================================================
+// Wallet Card Verification (Email OTP) - backend-first wiring
+// Endpoints (server):
+//   POST /api/me/wallet/cards/verify/start
+//   POST /api/me/wallet/cards/verify/confirm
+// We persist verification state client-side (per cardId) to keep UI consistent
+// even if cards are stored locally for now.
+// =============================================================
+
+const TM_CARD_VERIFY_KEY = 'tm_card_verify_v1';
+
+function tmSafeJsonParse(raw, fallback) {
+  try { return JSON.parse(raw); } catch { return fallback; }
+}
+
+function tmVerifyMapGet() {
+  try {
+    const raw = localStorage.getItem(TM_CARD_VERIFY_KEY);
+    const v = raw ? tmSafeJsonParse(raw, {}) : {};
+    return (v && typeof v === 'object') ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+function tmVerifyMapSet(map) {
+  try { localStorage.setItem(TM_CARD_VERIFY_KEY, JSON.stringify(map || {})); } catch { /* ignore */ }
+}
+
+function tmVerifyGet(cardId) {
+  const id = String(cardId || '').trim();
+  if (!id) return { verified: false, verifiedAtMs: 0 };
+  const map = tmVerifyMapGet();
+  const v = map[id];
+  if (!v || typeof v !== 'object') return { verified: false, verifiedAtMs: 0 };
+  return {
+    verified: !!v.verified,
+    verifiedAtMs: Number(v.verifiedAtMs || 0) || 0
+  };
+}
+
+function tmVerifySet(cardId, patch) {
+  const id = String(cardId || '').trim();
+  if (!id) return;
+  const map = tmVerifyMapGet();
+  const cur = (map[id] && typeof map[id] === 'object') ? map[id] : {};
+  const next = { ...cur, ...(patch || {}) };
+  next.verified = !!next.verified;
+  next.verifiedAtMs = Number(next.verifiedAtMs || 0) || 0;
+  map[id] = next;
+  tmVerifyMapSet(map);
+}
+
+function tmVerifyDelete(cardId) {
+  const id = String(cardId || '').trim();
+  if (!id) return;
+  const map = tmVerifyMapGet();
+  if (map && Object.prototype.hasOwnProperty.call(map, id)) {
+    delete map[id];
+    tmVerifyMapSet(map);
+  }
+}
+
+function tmCardsGetAllWithVerify() {
+  const cards = tmCardsGetAllWithVerify();
+  if (!cards.length) return [];
+  return cards.map((c) => {
+    const v = tmVerifyGet(c.id);
+    return { ...c, verified: !!v.verified, verifiedAtMs: v.verifiedAtMs };
+  });
+}
+
+function tmPrimaryCardId() {
+  const cards = tmCardsGetAllWithVerify();
+  if (!cards.length) return '';
+  const primary = cards.find(c => c && c.isPrimary);
+  return primary?.id || cards[0]?.id || '';
+}
+
+function tmEscapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+async function tmPostJson(path, body, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(path, {
+      method: 'POST',
+      credentials: 'include',
+      signal: controller.signal,
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'X-TM-Request': '1'
+      },
+      body: JSON.stringify(body || {})
+    });
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      const msg = data?.error || data?.message || `Request failed (${res.status})`;
+      return { ok: false, status: res.status, ...(data && typeof data === 'object' ? data : {}), error: msg };
+    }
+
+    if (!data || typeof data !== 'object') return { ok: true };
+    if (typeof data.ok !== 'boolean') return { ok: true, ...data };
+    return data;
+
+  } catch (err) {
+    const isAbort = err?.name === 'AbortError';
+    return { ok: false, error: isAbort ? 'Request timeout' : (err?.message || 'Network error') };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function tmStartCardVerify(cardId) {
+  const id = String(cardId || '').trim();
+  if (!id) return { ok: false, error: 'Missing card id' };
+  // send both keys for backward-compat with potential server payloads
+  return tmPostJson('/api/me/wallet/cards/verify/start', { cardId: id, id });
+}
+
+async function tmConfirmCardVerify(cardId, code) {
+  const id = String(cardId || '').trim();
+  const otp = String(code || '').trim();
+  if (!id) return { ok: false, error: 'Missing card id' };
+  if (!otp) return { ok: false, error: 'Missing code' };
+  return tmPostJson('/api/me/wallet/cards/verify/confirm', { cardId: id, id, code: otp, otp });
+}
+
+async function tmRunVerifyFlow(cardId, toast) {
+  const id = String(cardId || '').trim();
+  if (!id) {
+    try { toast.fire({ icon: 'error', title: 'Add a card first' }); } catch (_) {}
+    return;
+  }
+
+  try { toast.fire({ icon: 'info', title: 'Sending verification code…' }); } catch (_) {}
+
+  const start = await tmStartCardVerify(id);
+  if (!start || start.ok !== true) {
+    try { toast.fire({ icon: 'error', title: start?.error || 'Unable to send code' }); } catch (_) {}
+    return;
+  }
+
+  const sentTo = start.sentTo || start.email || start.to || 'your email';
+
+  const Swal = window.Swal;
+  if (Swal && typeof Swal.fire === 'function') {
+    const result = await Swal.fire({
+      title: 'Verify card',
+      html: `
+        <div style="text-align:left; font-size:13px; color: var(--muted); line-height:1.4; margin-bottom:10px;">
+          We sent a code to <b style="color: var(--text);">${tmEscapeHtml(sentTo)}</b>.
+          Enter the code below to verify this card.
+          <div style="margin-top:8px; font-size:12px;">
+            <a href="#" id="tm-resend-verify-code" style="color: var(--primary-cyan); text-decoration:none; font-weight:800;">Resend code</a>
+          </div>
+        </div>
+      `,
+      input: 'text',
+      inputPlaceholder: '6-digit code',
+      inputAttributes: {
+        inputmode: 'numeric',
+        autocomplete: 'one-time-code',
+        autocapitalize: 'off',
+        maxlength: 8
+      },
+      showCancelButton: true,
+      confirmButtonText: 'Confirm',
+      cancelButtonText: 'Cancel',
+      preConfirm: async (v) => {
+        const code = tmDigits(v).slice(0, 8);
+        if (!code) {
+          Swal.showValidationMessage('Enter the code');
+          return false;
+        }
+        const confirm = await tmConfirmCardVerify(id, code);
+        if (!confirm || confirm.ok !== true) {
+          Swal.showValidationMessage(confirm?.error || 'Invalid code');
+          return false;
+        }
+        return confirm;
+      },
+      didOpen: () => {
+        const a = document.getElementById('tm-resend-verify-code');
+        if (a) {
+          a.addEventListener('click', async (ev) => {
+            ev.preventDefault();
+            a.style.pointerEvents = 'none';
+            a.style.opacity = '0.6';
+            const again = await tmStartCardVerify(id);
+            if (again && again.ok === true) {
+              try { toast.fire({ icon: 'success', title: 'Code resent' }); } catch (_) {}
+            } else {
+              try { toast.fire({ icon: 'error', title: again?.error || 'Unable to resend code' }); } catch (_) {}
+            }
+            setTimeout(() => {
+              a.style.pointerEvents = '';
+              a.style.opacity = '';
+            }, 1200);
+          }, { passive: false });
+        }
+      }
+    });
+
+    if (!result.isConfirmed) return;
+
+    const confirm = result.value || {};
+    const verifiedAtMs = Number(confirm.verifiedAtMs || confirm.card?.verifiedAtMs || Date.now()) || Date.now();
+    tmVerifySet(id, { verified: true, verifiedAtMs });
+
+    // UI refresh
+    try { tmRenderCardsList(); } catch (_) {}
+    try { tmTransactionsAdd({ type: 'activity', title: 'Card verified', amount: 0 }); } catch (_) {}
+    try { tmRenderWalletTransactions(); } catch (_) {}
+    try { toast.fire({ icon: 'success', title: 'Card verified' }); } catch (_) {}
+
+    return;
+  }
+
+  // Fallback if Swal not present
+  const code = window.prompt(`Enter the code sent to ${sentTo}:`);
+  if (!code) return;
+
+  const confirm = await tmConfirmCardVerify(id, tmDigits(code).slice(0, 8));
+  if (!confirm || confirm.ok !== true) {
+    try { toast.fire({ icon: 'error', title: confirm?.error || 'Invalid code' }); } catch (_) {}
+    return;
+  }
+
+  const verifiedAtMs = Number(confirm.verifiedAtMs || confirm.card?.verifiedAtMs || Date.now()) || Date.now();
+  tmVerifySet(id, { verified: true, verifiedAtMs });
+
+  try { tmRenderCardsList(); } catch (_) {}
+  try { tmTransactionsAdd({ type: 'activity', title: 'Card verified', amount: 0 }); } catch (_) {}
+  try { tmRenderWalletTransactions(); } catch (_) {}
+  try { toast.fire({ icon: 'success', title: 'Card verified' }); } catch (_) {}
+}
+
+function tmBindVerifyButtons(toast) {
+  // Bind once
+  if (document.body && document.body.dataset.tmWalletVerifyBound === '1') return;
+  if (document.body) document.body.dataset.tmWalletVerifyBound = '1';
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-verify');
+    if (!btn) return;
+
+    e.preventDefault();
+
+    // Prefer explicit card id; else verify primary
+    const explicitId = btn.getAttribute('data-card-id') || btn.dataset.cardId;
+    const id = explicitId || tmPrimaryCardId();
+    tmRunVerifyFlow(id, toast);
+  });
+}
 function tmEnsureCardsListContainer() {
   const host = DOM.tabContentCards;
   if (!host) return null;
@@ -381,7 +490,7 @@ function tmUpdateCardsEmptyState(cards) {
 }
 
 function tmRenderCardsList() {
-  const cards = tmCardsGetAll();
+  const cards = tmCardsGetAllWithVerify();
   tmUpdateCardsEmptyState(cards);
 
   const list = tmEnsureCardsListContainer();
@@ -394,9 +503,16 @@ function tmRenderCardsList() {
 
   list.innerHTML = cards.map((c) => {
     const masked = tmCardsMask(c);
+
     const primaryPill = c.isPrimary
-      ? '<span style="margin-left:auto; font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; background: rgba(100,233,238,0.14); color: var(--primary-cyan); border: 1px solid rgba(100,233,238,0.25);">PRIMARY</span>'
+      ? '<span style="font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; background: rgba(100,233,238,0.14); color: var(--primary-cyan); border: 1px solid rgba(100,233,238,0.25);">PRIMARY</span>'
       : '';
+
+    const verifiedPill = c.verified
+      ? '<span style="font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; background: rgba(100,233,238,0.14); color: var(--primary-cyan); border: 1px solid rgba(100,233,238,0.25);">VERIFIED</span>'
+      : '<span style="font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; background: rgba(255,255,255,0.04); color: var(--muted); border: 1px solid rgba(255,255,255,0.10);">UNVERIFIED</span>';
+
+    const rightPills = `<div style="margin-left:auto; display:flex; gap:8px; align-items:center;">${verifiedPill}${rightPills}</div>`;
 
     const exp = (c.expMonth && c.expYear) ? `${c.expMonth}/${String(c.expYear).slice(-2)}` : '';
 
@@ -408,9 +524,10 @@ function tmRenderCardsList() {
             <div style="font-weight:800; color: var(--text); letter-spacing:0.2px;">${masked}</div>
             <div style="font-size:12px; color: var(--muted);">Exp: ${exp}${c.country ? ` · ${c.country}` : ''}</div>
           </div>
-          ${primaryPill}
+          ${rightPills}
         </div>
         <div style="display:flex; gap:10px; margin-top: 10px; flex-wrap:wrap;">
+          ${c.verified ? '' : `<button type="button" class="btn-verify" data-action="tm-card-verify" data-card-id="${c.id}" style="border: 1px solid rgba(100,233,238,0.28); background: rgba(100,233,238,0.06); color: var(--primary-cyan); padding: 8px 10px; border-radius: 12px; cursor:pointer; font-weight:800; font-size:12px;">VERIFY</button>`}
           ${c.isPrimary ? '' : `<button type="button" data-action="tm-card-primary" data-card-id="${c.id}" style="border: 1px solid rgba(100,233,238,0.28); background: rgba(100,233,238,0.08); color: var(--primary-cyan); padding: 8px 10px; border-radius: 12px; cursor:pointer; font-weight:800; font-size:12px;">MAKE PRIMARY</button>`}
           <button type="button" data-action="tm-card-remove" data-card-id="${c.id}" style="border: 1px solid rgba(255,255,255,0.12); background: transparent; color: var(--text); padding: 8px 10px; border-radius: 12px; cursor:pointer; font-weight:800; font-size:12px;">REMOVE</button>
         </div>
@@ -431,18 +548,15 @@ function tmNavigateToYourCards() {
 function tmBuildCardFromForm(root) {
   const fields = tmGetFieldsFromCardForm(root);
 
-  const numDigits = tmDigits(fields.number?.value);
-  const cvcDigits = tmDigits(fields.cvc?.value).slice(0, 4);
+  const digits = tmDigits(fields.number?.value);
   const { month, year } = tmParseExp(fields.exp?.value);
 
   const card = {
     id: tmUid('card'),
-    brand: tmCardBrand(numDigits),
-    last4: numDigits.slice(-4),
-    numberLen: numDigits.length,
+    brand: tmCardBrand(digits),
+    last4: digits.slice(-4),
     expMonth: month,
     expYear: year,
-    cvc: cvcDigits,
     nameOnCard: String(fields.name?.value || '').trim(),
     email: String(fields.email?.value || '').trim(),
     country: String(fields.country?.value || '').trim(),
@@ -473,7 +587,7 @@ function tmBindFormSubmit({
 }) {
   if (!root || !submitBtn) return;
 
-  submitBtn.addEventListener('click', async (e) => {
+  submitBtn.addEventListener('click', (e) => {
     e.preventDefault();
 
     const ageOk = !!(getAgeConfirmed ? getAgeConfirmed() : true);
@@ -491,15 +605,11 @@ function tmBindFormSubmit({
     }
 
     try {
-      try {
-        await tmCardsAdd(card);
-      } catch (e) {
-        toast.error(e?.message || 'Failed to add card');
-        return;
-      }
+      tmCardsAdd(card);
+      try { tmVerifySet(card.id, { verified: false, verifiedAtMs: 0 }); } catch (_) {}
       tmRenderCardsList();
       tmClearForm(fields);
-      if (typeof onSuccess === 'function') await onSuccess(card);
+      if (typeof onSuccess === 'function') onSuccess(card);
       try { toast.fire({ icon: 'success', title: 'Card saved' }); } catch (_) {}
     } catch (err) {
       console.error(err);
@@ -930,24 +1040,18 @@ function tmBindWalletRebillToggle(toast) {
   const prefs = tmWalletPrefsGet();
   toggle.checked = !!prefs.rebillPrimary;
 
-  toggle.addEventListener('change', async () => {
-    const desired = !!toggle.checked;
-    try {
-      const next = await tmWalletPrefsSet({ rebillPrimary: desired });
-      try {
-        toast.fire({ icon: 'success', title: next.rebillPrimary ? 'Wallet set as primary for rebills' : 'Wallet rebills disabled' });
-      } catch (_) {}
-    } catch (e) {
-      // revert if backend fails
-      toggle.checked = !desired;
-      try { toast.fire({ icon: 'error', title: 'Failed to save wallet setting' }); } catch(_) {}
-    }
-  });
+  toggle.addEventListener('change', () => {
+    const next = tmWalletPrefsSet({ rebillPrimary: !!toggle.checked });
+    try { toast.fire({ icon: 'success', title: next.rebillPrimary ? 'Wallet set as primary for rebills' : 'Wallet rebills disabled' }); } catch(_) {}
+  }, { passive: true });
 }
 
 
 export function initWallet(TopToast) {
   const toast = TopToast;
+
+  // Wire Wallet Card Verification (Email OTP)
+  tmBindVerifyButtons(toast);
 
   // -----------------------------
   // Add Card MODAL (Right sidebar)
@@ -980,15 +1084,15 @@ export function initWallet(TopToast) {
   }
 
   // Save from modal
-  tmBindCardFormUX(modal, toast);
+  tmBindExpAutoFormat(modal);
   if (modal && btnSubmitModal) {
     tmBindFormSubmit({
       root: modal,
       submitBtn: btnSubmitModal,
       getAgeConfirmed: () => !!document.getElementById('ageCheckModal')?.checked,
       toast,
-      onSuccess: async (card) => {
-        try { await tmTransactionsAdd({ type: 'activity', title: `Card added • ${tmCardsMask(card)}`, amount: 0 }); } catch(_) {}
+      onSuccess: (card) => {
+        try { tmTransactionsAdd({ type: 'activity', title: `Card added • ${tmCardsMask(card)}`, amount: 0 }); } catch(_) {}
         tmRenderWalletTransactions();
         closeModal();
         // Optional: take user to Your Cards view
@@ -1002,15 +1106,15 @@ export function initWallet(TopToast) {
   // -----------------------------
   const viewAddCard = DOM.viewAddCard;
   if (viewAddCard) {
-    tmBindCardFormUX(viewAddCard, toast);
+    tmBindExpAutoFormat(viewAddCard);
     const btnSubmitPage = viewAddCard.querySelector('.btn-submit-card');
     tmBindFormSubmit({
       root: viewAddCard,
       submitBtn: btnSubmitPage,
       getAgeConfirmed: () => !!document.getElementById('ageCheck')?.checked,
       toast,
-      onSuccess: async (card) => {
-        try { await tmTransactionsAdd({ type: 'activity', title: `Card added • ${tmCardsMask(card)}`, amount: 0 }); } catch(_) {}
+      onSuccess: (card) => {
+        try { tmTransactionsAdd({ type: 'activity', title: `Card added • ${tmCardsMask(card)}`, amount: 0 }); } catch(_) {}
         tmRenderWalletTransactions();
         // Navigate to Your Cards so they immediately see saved card(s)
         setTimeout(() => tmNavigateToYourCards(), 50);
@@ -1021,7 +1125,7 @@ export function initWallet(TopToast) {
   // -----------------------------
   // Actions: Remove / Primary
   // -----------------------------
-  document.addEventListener('click', async (e) => {
+  document.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-action="tm-card-remove"], [data-action="tm-card-primary"]');
     if (!btn) return;
     e.preventDefault();
@@ -1033,17 +1137,18 @@ export function initWallet(TopToast) {
     try {
       if (action === 'tm-card-remove') {
         const before = tmCardsGetAll().find(x => x.id === id);
-        await tmCardsRemove(id);
+        tmCardsRemove(id);
+        try { tmVerifyDelete(id); } catch (_) {}
         tmRenderCardsList();
-        try { await tmTransactionsAdd({ type: 'activity', title: `Card removed • ${before ? tmCardsMask(before) : '****'}`, amount: 0 }); } catch(_) {}
+        try { tmTransactionsAdd({ type: 'activity', title: `Card removed • ${before ? tmCardsMask(before) : '****'}`, amount: 0 }); } catch(_) {}
         tmRenderWalletTransactions();
         try { toast.fire({ icon: 'success', title: 'Card removed' }); } catch (_) {}
       }
       if (action === 'tm-card-primary') {
         const before = tmCardsGetAll().find(x => x.id === id);
-        await tmCardsSetPrimary(id);
+        tmCardsSetPrimary(id);
         tmRenderCardsList();
-        try { await tmTransactionsAdd({ type: 'activity', title: `Primary card set • ${before ? tmCardsMask(before) : '****'}`, amount: 0 }); } catch(_) {}
+        try { tmTransactionsAdd({ type: 'activity', title: `Primary card set • ${before ? tmCardsMask(before) : '****'}`, amount: 0 }); } catch(_) {}
         tmRenderWalletTransactions();
         try { toast.fire({ icon: 'success', title: 'Primary card updated' }); } catch (_) {}
       }
@@ -1052,9 +1157,6 @@ export function initWallet(TopToast) {
       try { toast.fire({ icon: 'error', title: 'Action failed' }); } catch (_) {}
     }
   });
-
-  // Wallet header: Verify button (no-op placeholder)
-  tmBindVerifyButtons(toast);
 
   // Auto-refresh list when Your Cards view opens
   tmInstallAutoRefresh();
