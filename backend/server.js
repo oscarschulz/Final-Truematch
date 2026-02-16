@@ -3273,6 +3273,10 @@ app.get('/api/me/active-nearby', authMiddleware, async (req, res) => {
       }
     }
 
+    // Attach current user's reaction (cross-device)
+    await _attachMyReactionsToPosts(meEmail, subsPosts);
+    await _attachMyReactionsToPosts(meEmail, otherPosts);
+
     return res.json({ ok: true, items: out.slice(0, limit) });
   } catch (e) {
     console.error('GET /api/me/active-nearby error:', e);
@@ -4484,33 +4488,67 @@ app.post('/api/me/password', async (req, res) => {
   }
 });
 
-// Update simple settings used by Premium Society settings UI
-app.post('/api/me/settings', async (req, res) => {
+// Update settings used by Settings UI (persisted cross-device)
+app.post('/api/me/settings', authMiddleware, async (req, res) => {
   try {
-    if (!DB.user || !DB.user.email) return res.status(401).json({ ok: false, message: 'not_logged_in' });
+    const meEmail = _normalizeEmail((req.user && req.user.email) || '');
+    if (!meEmail) return res.status(401).json({ ok: false, message: 'Not authenticated' });
 
-    const emailNorm = String(DB.user.email).trim().toLowerCase();
-    const distanceKm = Number(req.body && req.body.distanceKm);
-    const maxAge = Number(req.body && req.body.maxAge);
+    const body = (req.body && typeof req.body === 'object') ? req.body : {};
+    const incomingRoot = (body.settings && typeof body.settings === 'object') ? body.settings : {};
 
-    // Merge into existing prefs (prefsByEmail is the canonical store in demo/local mode)
-    const existing = (DB.prefsByEmail && DB.prefsByEmail[emailNorm]) ? DB.prefsByEmail[emailNorm] : (DB.prefs || {});
-    const next = { ...(existing || {}) };
+    // Backward-compatible keys used by older clients
+    const incoming = { ...incomingRoot };
+    if (body.distanceKm !== undefined) incoming.distanceKm = Number(body.distanceKm || 0);
+    if (body.maxAge !== undefined) incoming.maxAge = Number(body.maxAge || 0);
+    if (body.theme !== undefined) incoming.theme = safeStr(body.theme || '');
+    if (body.language !== undefined) incoming.language = safeStr(body.language || '');
+    if (body.privacy && typeof body.privacy === 'object') incoming.privacy = body.privacy;
+    if (body.notifications && typeof body.notifications === 'object') incoming.notifications = body.notifications;
 
-    if (Number.isFinite(distanceKm) && distanceKm > 0) next.distanceKm = Math.round(distanceKm);
-    if (Number.isFinite(maxAge) && maxAge > 17) next.ageMax = Math.round(maxAge);
+    // Normalize numeric settings
+    if (incoming.distanceKm !== undefined) {
+      const km = Number(incoming.distanceKm || 0);
+      if (!Number.isFinite(km) || km < 1 || km > 500) return res.status(400).json({ ok: false, message: 'distanceKm must be between 1 and 500' });
+      incoming.distanceKm = km;
+    }
+    if (incoming.maxAge !== undefined) {
+      const age = Number(incoming.maxAge || 0);
+      if (!Number.isFinite(age) || age < 18 || age > 99) return res.status(400).json({ ok: false, message: 'maxAge must be between 18 and 99' });
+      incoming.maxAge = age;
+    }
 
-    DB.prefs = next;
-    DB.prefsByEmail[emailNorm] = next;
-    savePrefsStore();
+    const meDoc = await findUserByEmail(meEmail);
+    if (!meDoc) return res.status(404).json({ ok: false, message: 'User not found' });
 
-    // Mirror onto the user record for convenience (optional)
-    await updateUserByEmail(emailNorm, { settings: { ...(DB.user.settings || {}), distanceKm: next.distanceKm, maxAge: next.ageMax } });
+    const prev = (meDoc.settings && typeof meDoc.settings === 'object') ? meDoc.settings : {};
+    const next = { ...prev, ...incoming };
 
-    return res.json({ ok: true, settings: { distanceKm: next.distanceKm, maxAge: next.ageMax } });
+    // Shallow + nested merges (so we don't overwrite whole objects)
+    if (incoming.privacy && typeof incoming.privacy === 'object') {
+      next.privacy = { ...(prev.privacy || {}), ...(incoming.privacy || {}) };
+    }
+    if (incoming.notifications && typeof incoming.notifications === 'object') {
+      next.notifications = { ...(prev.notifications || {}), ...(incoming.notifications || {}) };
+    }
+
+    const nowMs = Date.now();
+    await updateUserByEmail(meEmail, { settings: next, updatedAt: new Date(nowMs) });
+
+    // Best-effort local mirrors (for in-memory mode)
+    if (DB && DB.users && DB.users[meEmail]) {
+      DB.users[meEmail].settings = next;
+      DB.users[meEmail].updatedAt = nowMs;
+    }
+    if (DB && DB.user && _normalizeEmail(DB.user.email) === meEmail) {
+      DB.user.settings = next;
+      DB.user.updatedAt = nowMs;
+    }
+
+    return res.json({ ok: true, settings: next });
   } catch (e) {
-    console.error('POST /api/me/settings error:', e);
-    return res.status(500).json({ ok: false, message: 'server error' });
+    console.error('POST /api/me/settings error', e);
+    return res.status(500).json({ ok: false, message: 'Failed to update settings' });
   }
 });
 
@@ -5877,70 +5915,44 @@ app.post('/api/me/creator/apply', async (req, res) => {
 
 // Update creator profile details WITHOUT resetting status to pending.
 // Used by Settings > Edit Profile on creators page.
-app.post('/api/me/creator/profile', async (req, res) => {
+app.post('/api/me/creator/profile', authMiddleware, async (req, res) => {
   try {
-    if (!DB.user) {
-      return res.status(401).json({ ok: false, error: 'Not logged in' });
+    const meEmail = _normalizeEmail((req.user && req.user.email) || '');
+    if (!meEmail) return res.status(401).json({ ok: false, message: 'Not logged in' });
+
+    const body = (req.body && typeof req.body === 'object') ? req.body : {};
+    const packed = safeStr(body.packed || body.contentStyle || body.style || '');
+    if (!packed) return res.status(400).json({ ok: false, message: 'Missing packed style' });
+
+    const nowMs = Date.now();
+
+    const meDoc = await findUserByEmail(meEmail);
+    if (!meDoc) return res.status(404).json({ ok: false, message: 'User not found' });
+
+    const prevCA = (meDoc.creatorApplication && typeof meDoc.creatorApplication === 'object') ? meDoc.creatorApplication : {};
+
+    const nextCA = {
+      ...prevCA,
+      contentStyle: packed,
+      contentStyleUpdatedAt: new Date(nowMs)
+    };
+
+    await updateUserByEmail(meEmail, { creatorApplication: nextCA, updatedAt: new Date(nowMs) });
+
+    // Best-effort local mirrors (for in-memory mode)
+    if (DB && DB.users && DB.users[meEmail]) {
+      DB.users[meEmail].creatorApplication = nextCA;
+      DB.users[meEmail].updatedAt = nowMs;
+    }
+    if (DB && DB.user && _normalizeEmail(DB.user.email) === meEmail) {
+      DB.user.creatorApplication = nextCA;
+      DB.user.updatedAt = nowMs;
     }
 
-    const body = req.body || {};
-
-    const prev = (DB.user.creatorApplication && typeof DB.user.creatorApplication === 'object')
-      ? DB.user.creatorApplication
-      : {};
-
-    const next = { ...prev };
-
-    // Preserve status (do NOT force pending here)
-    const preservedStatus = safeStr(prev.status) || safeStr(DB.user.creatorStatus) || 'pending';
-    next.status = preservedStatus;
-
-    if (Object.prototype.hasOwnProperty.call(body, 'handle')) {
-      const h = safeStr(body.handle).replace(/^@/, '').trim();
-      if (h) next.handle = h;
-    }
-
-    if (Object.prototype.hasOwnProperty.call(body, 'contentStyle')) {
-      next.contentStyle = safeStr(body.contentStyle);
-    }
-
-    if (Object.prototype.hasOwnProperty.call(body, 'links')) {
-      next.links = safeStr(body.links);
-    }
-
-    if (Object.prototype.hasOwnProperty.call(body, 'gender')) {
-      next.gender = safeStr(body.gender);
-    }
-
-    if (Object.prototype.hasOwnProperty.call(body, 'price')) {
-      const p = Number(body.price);
-      if (!Number.isNaN(p)) next.price = p;
-    }
-
-    next.updatedAt = new Date().toISOString();
-
-    const cleaned = pruneUndefinedDeep(next);
-
-    DB.user.creatorApplication = cleaned;
-    DB.user.creatorStatus = preservedStatus;
-
-    if (DB.user.email && DB.users && DB.users[DB.user.email]) {
-      DB.users[DB.user.email].creatorApplication = cleaned;
-      DB.users[DB.user.email].creatorStatus = preservedStatus;
-    }
-
-    // Persist
-    if (DB.user.email) {
-      await updateUserByEmail(DB.user.email, {
-        creatorApplication: cleaned,
-        creatorStatus: preservedStatus,
-      });
-    }
-
-    return res.json({ ok: true, creatorApplication: cleaned });
+    return res.json({ ok: true, packed, creatorApplication: nextCA });
   } catch (e) {
-    console.error('creator/profile error', e);
-    return res.status(500).json({ ok: false, error: 'Server error' });
+    console.error('POST /api/me/creator/profile error', e);
+    return res.status(500).json({ ok: false, message: 'Server error' });
   }
 });
 
@@ -6236,6 +6248,7 @@ function _walletDefault(email) {
     prefs: { rebillPrimary: false },
     cards: [],
     tx: [],
+    verifications: {},
     updatedAt: new Date(),
     createdAt: new Date()
   };
@@ -6274,7 +6287,9 @@ function _sanitizeCardInput(raw) {
     nameOnCard,
     billing,
     isPrimary: !!c.isPrimary,
-    createdAtMs: Number(c.createdAtMs || Date.now())
+    createdAtMs: Number(c.createdAtMs || Date.now()),
+    verified: false,
+    verifiedAtMs: 0
   };
 }
 
@@ -6326,10 +6341,10 @@ async function _walletSave(email, wallet) {
   return next;
 }
 
-app.get('/api/me/wallet', async (req, res) => {
+app.get('/api/me/wallet', authMiddleware, async (req, res) => {
   try {
-    if (!DB.user) return res.status(401).json({ ok: false, message: 'Not signed in' });
-    const email = DB.user.email;
+    const email = _normalizeEmail((req.user && req.user.email) || '');
+    if (!email) return res.status(401).json({ ok: false, message: 'Not signed in' });
     const wallet = await _walletLoad(email);
     return res.json({ ok: true, wallet });
   } catch (e) {
@@ -6338,10 +6353,10 @@ app.get('/api/me/wallet', async (req, res) => {
   }
 });
 
-app.post('/api/me/wallet/cards/add', async (req, res) => {
+app.post('/api/me/wallet/cards/add', authMiddleware, async (req, res) => {
   try {
-    if (!DB.user) return res.status(401).json({ ok: false, message: 'Not signed in' });
-    const email = DB.user.email;
+    const email = _normalizeEmail((req.user && req.user.email) || '');
+    if (!email) return res.status(401).json({ ok: false, message: 'Not signed in' });
 
     const card = _sanitizeCardInput(req.body && req.body.card);
     if (!card.last4 || card.last4.length !== 4) {
@@ -6381,10 +6396,10 @@ app.post('/api/me/wallet/cards/add', async (req, res) => {
   }
 });
 
-app.post('/api/me/wallet/cards/remove', async (req, res) => {
+app.post('/api/me/wallet/cards/remove', authMiddleware, async (req, res) => {
   try {
-    if (!DB.user) return res.status(401).json({ ok: false, message: 'Not signed in' });
-    const email = DB.user.email;
+    const email = _normalizeEmail((req.user && req.user.email) || '');
+    if (!email) return res.status(401).json({ ok: false, message: 'Not signed in' });
 
     const cardId = safeStr(req.body && req.body.cardId);
     if (!cardId) return res.status(400).json({ ok: false, message: 'Missing cardId' });
@@ -6404,10 +6419,10 @@ app.post('/api/me/wallet/cards/remove', async (req, res) => {
   }
 });
 
-app.post('/api/me/wallet/cards/primary', async (req, res) => {
+app.post('/api/me/wallet/cards/primary', authMiddleware, async (req, res) => {
   try {
-    if (!DB.user) return res.status(401).json({ ok: false, message: 'Not signed in' });
-    const email = DB.user.email;
+    const email = _normalizeEmail((req.user && req.user.email) || '');
+    if (!email) return res.status(401).json({ ok: false, message: 'Not signed in' });
 
     const cardId = safeStr(req.body && req.body.cardId);
     if (!cardId) return res.status(400).json({ ok: false, message: 'Missing cardId' });
@@ -6426,10 +6441,145 @@ app.post('/api/me/wallet/cards/primary', async (req, res) => {
   }
 });
 
-app.post('/api/me/wallet/prefs', async (req, res) => {
+
+function _maskEmailForUI(email) {
+  const e = String(email || '');
+  const at = e.indexOf('@');
+  if (at <= 1) return e;
+  const name = e.slice(0, at);
+  const dom = e.slice(at + 1);
+  const masked = name[0] + '***' + name.slice(-1);
+  return masked + '@' + dom;
+}
+function _genWalletVerifyCode() {
+  const n = Math.floor(100000 + Math.random() * 900000);
+  return String(n);
+}
+function _hashWalletVerifyCode(code) {
+  return crypto.createHash('sha256').update(String(code || '')).digest('hex');
+}
+
+// Start wallet card verification (sends code to user's email)
+app.post('/api/me/wallet/cards/verify/start', authMiddleware, async (req, res) => {
   try {
-    if (!DB.user) return res.status(401).json({ ok: false, message: 'Not signed in' });
-    const email = DB.user.email;
+    const email = _normalizeEmail((req.user && req.user.email) || '');
+    if (!email) return res.status(401).json({ ok: false, message: 'Not signed in' });
+
+    const cardId = safeStr((req.body && req.body.cardId) || (req.body && req.body.id) || '');
+    if (!cardId) return res.status(400).json({ ok: false, message: 'cardId is required' });
+
+    const wallet = await _walletLoad(email);
+    const cards = Array.isArray(wallet.cards) ? wallet.cards : [];
+    const idx = cards.findIndex(c => String(c.id) === String(cardId));
+    if (idx < 0) return res.status(404).json({ ok: false, message: 'Card not found' });
+
+    const card = cards[idx];
+    if (card.verified) {
+      return res.json({ ok: true, alreadyVerified: true, card });
+    }
+
+    const code = _genWalletVerifyCode();
+    const nowMs = Date.now();
+    wallet.verifications = wallet.verifications && typeof wallet.verifications === 'object' ? wallet.verifications : {};
+    wallet.verifications[String(cardId)] = {
+      codeHash: _hashWalletVerifyCode(code),
+      expiresAtMs: nowMs + (10 * 60 * 1000),
+      attempts: 0,
+      createdAtMs: nowMs
+    };
+
+    await _walletSave(email, wallet);
+
+    // Best-effort email send
+    try {
+      await sendMail({
+        to: email,
+        subject: 'TrueMatch wallet verification code',
+        html: `
+          <div style="font-family:Arial,sans-serif;line-height:1.5">
+            <h3>Verify your wallet card</h3>
+            <p>Your verification code is:</p>
+            <div style="font-size:28px;font-weight:700;letter-spacing:2px;padding:12px 16px;background:#f6f6f6;border-radius:10px;display:inline-block">${code}</div>
+            <p style="margin-top:16px;color:#666">This code expires in 10 minutes.</p>
+          </div>
+        `
+      });
+    } catch (mailErr) {
+      console.warn('[wallet verify] email send failed:', mailErr && mailErr.message ? mailErr.message : mailErr);
+    }
+
+    const payload = {
+      ok: true,
+      sentTo: _maskEmailForUI(email),
+      expiresAtMs: wallet.verifications[String(cardId)].expiresAtMs
+    };
+    if (!IS_PROD) payload.debugCode = code;
+    return res.json(payload);
+  } catch (e) {
+    console.error('[wallet verify start] error', e);
+    return res.status(500).json({ ok: false, message: 'Failed to start verification' });
+  }
+});
+
+// Confirm wallet card verification
+app.post('/api/me/wallet/cards/verify/confirm', authMiddleware, async (req, res) => {
+  try {
+    const email = _normalizeEmail((req.user && req.user.email) || '');
+    if (!email) return res.status(401).json({ ok: false, message: 'Not signed in' });
+
+    const cardId = safeStr((req.body && req.body.cardId) || (req.body && req.body.id) || '');
+    const code = safeStr((req.body && req.body.code) || '');
+    if (!cardId || !code) return res.status(400).json({ ok: false, message: 'cardId and code are required' });
+
+    const wallet = await _walletLoad(email);
+    const v = wallet.verifications && wallet.verifications[String(cardId)];
+    if (!v) return res.status(400).json({ ok: false, message: 'No verification in progress' });
+
+    const nowMs = Date.now();
+    if (Number(v.expiresAtMs || 0) < nowMs) {
+      delete wallet.verifications[String(cardId)];
+      await _walletSave(email, wallet);
+      return res.status(400).json({ ok: false, message: 'Code expired. Please resend.' });
+    }
+
+    v.attempts = Number(v.attempts || 0) + 1;
+    if (v.attempts > 8) {
+      delete wallet.verifications[String(cardId)];
+      await _walletSave(email, wallet);
+      return res.status(429).json({ ok: false, message: 'Too many attempts. Please resend.' });
+    }
+
+    const ok = _hashWalletVerifyCode(code) === String(v.codeHash || '');
+    if (!ok) {
+      wallet.verifications[String(cardId)] = v;
+      await _walletSave(email, wallet);
+      return res.status(400).json({ ok: false, message: 'Invalid code' });
+    }
+
+    // Mark card verified
+    const cards = Array.isArray(wallet.cards) ? wallet.cards : [];
+    const idx = cards.findIndex(c => String(c.id) === String(cardId));
+    if (idx < 0) return res.status(404).json({ ok: false, message: 'Card not found' });
+
+    cards[idx].verified = true;
+    cards[idx].verifiedAtMs = nowMs;
+    wallet.cards = cards;
+
+    delete wallet.verifications[String(cardId)];
+    await _walletSave(email, wallet);
+
+    return res.json({ ok: true, card: cards[idx] });
+  } catch (e) {
+    console.error('[wallet verify confirm] error', e);
+    return res.status(500).json({ ok: false, message: 'Failed to confirm verification' });
+  }
+});
+
+
+app.post('/api/me/wallet/prefs', authMiddleware, async (req, res) => {
+  try {
+    const email = _normalizeEmail((req.user && req.user.email) || '');
+    if (!email) return res.status(401).json({ ok: false, message: 'Not signed in' });
 
     const rebillPrimary = !!(req.body && req.body.rebillPrimary);
 
@@ -6443,10 +6593,10 @@ app.post('/api/me/wallet/prefs', async (req, res) => {
   }
 });
 
-app.post('/api/me/wallet/tx/add', async (req, res) => {
+app.post('/api/me/wallet/tx/add', authMiddleware, async (req, res) => {
   try {
-    if (!DB.user) return res.status(401).json({ ok: false, message: 'Not signed in' });
-    const email = DB.user.email;
+    const email = _normalizeEmail((req.user && req.user.email) || '');
+    if (!email) return res.status(401).json({ ok: false, message: 'Not signed in' });
 
     const raw = req.body && req.body.tx;
     const tx = raw && typeof raw === 'object' ? raw : {};
@@ -6473,8 +6623,8 @@ app.post('/api/me/wallet/tx/add', async (req, res) => {
 
 app.get('/api/me/payments', async (req, res) => {
   try {
-    if (!DB.user) return res.status(401).json({ ok: false, message: 'Not signed in' });
-    const email = DB.user.email;
+    const email = _normalizeEmail((req.user && req.user.email) || '');
+    if (!email) return res.status(401).json({ ok: false, message: 'Not signed in' });
 
     let subs = [];
     if (hasFirebase && firestore) {
@@ -6868,6 +7018,9 @@ function _creatorPostToClient(id, d) {
     pollVotes: Array.isArray(d?.pollVotes) ? d.pollVotes : null,
     quiz: d?.quiz || null,
     quizVotes: Array.isArray(d?.quizVotes) ? d.quizVotes : null,
+    reactionCounts: (d && d.reactionCounts && typeof d.reactionCounts === 'object') ? d.reactionCounts : {},
+    reactionCount: Number.isFinite(d?.reactionCount) ? d.reactionCount : 0,
+    commentCount: Number.isFinite(d?.commentCount) ? d.commentCount : 0,
     timestamp: createdAtMs || Date.now(),
     updatedAt: updatedAtMs || null,
   };
@@ -6921,6 +7074,9 @@ app.post('/api/creator/posts', async (req, res) => {
       pollVotes: payload.pollVotes,
       quiz: payload.quiz,
       quizVotes: payload.quizVotes,
+      reactionCounts: {},
+      reactionCount: 0,
+      commentCount: 0,
       createdAt: new Date(nowMs),
       updatedAt: new Date(nowMs),
     };
@@ -7033,6 +7189,10 @@ app.get('/api/creators/feed', async (req, res) => {
         (p.isSubscribed ? subsPosts : otherPosts).push(p);
       }
 
+      // Attach current user's reaction (cross-device)
+      await _attachMyReactionsToPosts(meEmail, subsPosts);
+      await _attachMyReactionsToPosts(meEmail, otherPosts);
+
       return res.json({ ok: true, items: _mixPriority(subsPosts, otherPosts, limit), subscribedCreators: Array.from(subscribedSet) });
     }
 
@@ -7065,6 +7225,10 @@ app.get('/api/creators/feed', async (req, res) => {
       (p.isSubscribed ? subsPosts : otherPosts).push(p);
     }
 
+    // Attach current user's reaction (cross-device)
+    await _attachMyReactionsToPosts(meEmail, subsPosts);
+    await _attachMyReactionsToPosts(meEmail, otherPosts);
+
     return res.json({
       ok: true,
       items: _mixPriority(subsPosts, otherPosts, limit),
@@ -7074,6 +7238,243 @@ app.get('/api/creators/feed', async (req, res) => {
     return res.status(400).json({ ok: false, error: String(e?.message || e) });
   }
 });
+
+
+// ---- Creator post interactions (reactions + comments) ----
+function _reactionDocIdForUser(email) {
+  return crypto.createHash('sha1').update(String(email || '').toLowerCase()).digest('hex');
+}
+function _cleanReaction(r) {
+  const s = String(r || '').trim();
+  if (!s) return '';
+  if (s.length > 24) return '';
+  return s;
+}
+function _cleanCommentText(t) {
+  const s = String(t || '').trim();
+  if (!s) return '';
+  if (s.length > 600) return s.slice(0, 600);
+  return s;
+}
+function _incMapCount(map, key, delta) {
+  const k = String(key || '').trim();
+  if (!k) return;
+  const cur = Number(map[k] || 0);
+  const next = cur + Number(delta || 0);
+  if (!Number.isFinite(next) || next <= 0) {
+    delete map[k];
+  } else {
+    map[k] = next;
+  }
+}
+async function _attachMyReactionsToPosts(email, posts) {
+  try {
+    const me = _normalizeEmail(email);
+    if (!me || !Array.isArray(posts) || posts.length === 0) return posts;
+
+    if (!hasFirebase || !firestore) {
+      DB.creatorPostReactions = DB.creatorPostReactions || {};
+      for (const p of posts) {
+        const pid = String(p.id || p.postId || '');
+        const key = `${pid}|${me}`;
+        p.myReaction = DB.creatorPostReactions[key] || '';
+      }
+      return posts;
+    }
+
+    // Firebase: read per-post reaction doc (cheap for <= ~40 posts)
+    await Promise.all(posts.map(async (p) => {
+      const pid = String(p.id || p.postId || '');
+      if (!pid) { p.myReaction = ''; return; }
+      try {
+        const rId = _reactionDocIdForUser(me);
+        const rSnap = await creatorPostsCollection.doc(pid).collection('reactions').doc(rId).get();
+        p.myReaction = rSnap.exists ? String((rSnap.data() || {}).reaction || '') : '';
+      } catch (e) {
+        p.myReaction = '';
+      }
+    }));
+    return posts;
+  } catch (e) {
+    return posts;
+  }
+}
+
+// React to a creator post (cross-device)
+app.post('/api/creator/posts/react', authMiddleware, async (req, res) => {
+  try {
+    const email = _normalizeEmail((req.user && req.user.email) || '');
+    if (!email) return res.status(401).json({ ok: false, message: 'Not authenticated' });
+
+    const body = (req.body && typeof req.body === 'object') ? req.body : {};
+    const postId = safeStr(body.postId || body.id || '');
+    const reaction = _cleanReaction(body.reaction);
+    if (!postId) return res.status(400).json({ ok: false, message: 'postId is required' });
+
+    // In-memory mode
+    if (!hasFirebase || !firestore) {
+      if (!DB.creatorPosts || !DB.creatorPosts[postId]) return res.status(404).json({ ok: false, message: 'Post not found' });
+
+      DB.creatorPostReactions = DB.creatorPostReactions || {};
+      const key = `${postId}|${email}`;
+      const prev = DB.creatorPostReactions[key] || '';
+      const next = (reaction && reaction === prev) ? '' : reaction;
+
+      const post = DB.creatorPosts[postId];
+      post.reactionCounts = (post.reactionCounts && typeof post.reactionCounts === 'object') ? post.reactionCounts : {};
+      post.reactionCount = Number.isFinite(post.reactionCount) ? post.reactionCount : 0;
+
+      if (prev) _incMapCount(post.reactionCounts, prev, -1);
+      if (next) _incMapCount(post.reactionCounts, next, +1);
+
+      post.reactionCount = Object.values(post.reactionCounts).reduce((a, b) => a + Number(b || 0), 0);
+      post.updatedAtMs = Date.now();
+
+      if (next) DB.creatorPostReactions[key] = next; else delete DB.creatorPostReactions[key];
+
+      return res.json({ ok: true, postId, myReaction: next, reactionCounts: post.reactionCounts, reactionCount: post.reactionCount });
+    }
+
+    // Firebase mode: transaction updates post counts + per-user reaction doc
+    const postRef = creatorPostsCollection.doc(postId);
+    const rId = _reactionDocIdForUser(email);
+    const reactRef = postRef.collection('reactions').doc(rId);
+    const nowMs = Date.now();
+
+    const result = await firestore.runTransaction(async (t) => {
+      const [postSnap, reactSnap] = await Promise.all([t.get(postRef), t.get(reactRef)]);
+      if (!postSnap.exists) throw new Error('Post not found');
+
+      const post = postSnap.data() || {};
+      const counts = (post.reactionCounts && typeof post.reactionCounts === 'object') ? { ...post.reactionCounts } : {};
+      const prev = reactSnap.exists ? String((reactSnap.data() || {}).reaction || '') : '';
+      const next = (reaction && reaction === prev) ? '' : reaction;
+
+      if (prev) _incMapCount(counts, prev, -1);
+      if (next) _incMapCount(counts, next, +1);
+
+      const total = Object.values(counts).reduce((a, b) => a + Number(b || 0), 0);
+
+      t.update(postRef, { reactionCounts: counts, reactionCount: total, updatedAt: new Date(nowMs) });
+
+      if (next) {
+        t.set(reactRef, { reaction: next, userEmail: email, updatedAt: new Date(nowMs), updatedAtMs: nowMs }, { merge: true });
+      } else if (reactSnap.exists) {
+        t.delete(reactRef);
+      }
+
+      return { myReaction: next, reactionCounts: counts, reactionCount: total };
+    });
+
+    return res.json({ ok: true, postId, ...result });
+  } catch (e) {
+    const msg = String(e && e.message ? e.message : '');
+    if (msg.includes('Post not found')) return res.status(404).json({ ok: false, message: 'Post not found' });
+    console.error('POST /api/creator/posts/react error', e);
+    return res.status(500).json({ ok: false, message: 'Failed to react' });
+  }
+});
+
+// Add a comment to a creator post (cross-device)
+app.post('/api/creator/posts/comment', authMiddleware, async (req, res) => {
+  try {
+    const email = _normalizeEmail((req.user && req.user.email) || '');
+    if (!email) return res.status(401).json({ ok: false, message: 'Not authenticated' });
+
+    const body = (req.body && typeof req.body === 'object') ? req.body : {};
+    const postId = safeStr(body.postId || body.id || '');
+    const text = _cleanCommentText(body.text || body.comment || '');
+    if (!postId) return res.status(400).json({ ok: false, message: 'postId is required' });
+    if (!text) return res.status(400).json({ ok: false, message: 'text is required' });
+
+    const nowMs = Date.now();
+    const meDoc = (req.user && typeof req.user === 'object') ? req.user : null;
+    const displayName = safeStr((meDoc && (meDoc.name || meDoc.displayName)) || '');
+
+    const comment = {
+      id: crypto.randomUUID(),
+      postId,
+      text,
+      authorEmail: email,
+      authorName: displayName || email.split('@')[0],
+      createdAtMs: nowMs
+    };
+
+    if (!hasFirebase || !firestore) {
+      if (!DB.creatorPosts || !DB.creatorPosts[postId]) return res.status(404).json({ ok: false, message: 'Post not found' });
+
+      DB.creatorPostComments = DB.creatorPostComments || {};
+      DB.creatorPostComments[postId] = Array.isArray(DB.creatorPostComments[postId]) ? DB.creatorPostComments[postId] : [];
+      DB.creatorPostComments[postId].unshift(comment);
+
+      const post = DB.creatorPosts[postId];
+      post.commentCount = Number.isFinite(post.commentCount) ? post.commentCount : 0;
+      post.commentCount += 1;
+      post.updatedAtMs = nowMs;
+
+      return res.json({ ok: true, postId, comment, commentCount: post.commentCount });
+    }
+
+    const postRef = creatorPostsCollection.doc(postId);
+    const cRef = postRef.collection('comments').doc(comment.id);
+
+    const commentCount = await firestore.runTransaction(async (t) => {
+      const postSnap = await t.get(postRef);
+      if (!postSnap.exists) throw new Error('Post not found');
+
+      t.set(cRef, { ...comment, createdAt: new Date(nowMs) }, { merge: false });
+
+      const post = postSnap.data() || {};
+      const nextCount = Number(post.commentCount || 0) + 1;
+      t.update(postRef, { commentCount: nextCount, updatedAt: new Date(nowMs) });
+      return nextCount;
+    });
+
+    return res.json({ ok: true, postId, comment, commentCount });
+  } catch (e) {
+    const msg = String(e && e.message ? e.message : '');
+    if (msg.includes('Post not found')) return res.status(404).json({ ok: false, message: 'Post not found' });
+    console.error('POST /api/creator/posts/comment error', e);
+    return res.status(500).json({ ok: false, message: 'Failed to comment' });
+  }
+});
+
+// Fetch comments for a creator post
+app.get('/api/creator/posts/comments', authMiddleware, async (req, res) => {
+  try {
+    const email = _normalizeEmail((req.user && req.user.email) || '');
+    if (!email) return res.status(401).json({ ok: false, message: 'Not authenticated' });
+
+    const postId = safeStr(req.query.postId || req.query.id || '');
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
+    if (!postId) return res.status(400).json({ ok: false, message: 'postId is required' });
+
+    if (!hasFirebase || !firestore) {
+      DB.creatorPostComments = DB.creatorPostComments || {};
+      const list = Array.isArray(DB.creatorPostComments[postId]) ? DB.creatorPostComments[postId] : [];
+      return res.json({ ok: true, postId, comments: list.slice(0, limit) });
+    }
+
+    const postRef = creatorPostsCollection.doc(postId);
+    const snap = await postRef.collection('comments').orderBy('createdAtMs', 'desc').limit(limit).get();
+    const comments = snap.docs.map(d => {
+      const x = d.data() || {};
+      return {
+        id: safeStr(x.id || d.id),
+        postId: safeStr(x.postId || postId),
+        text: safeStr(x.text || ''),
+        authorEmail: safeStr(x.authorEmail || ''),
+        authorName: safeStr(x.authorName || ''),
+        createdAtMs: Number(x.createdAtMs || 0)
+      };
+    });
+    return res.json({ ok: true, postId, comments });
+  } catch (e) {
+    console.error('GET /api/creator/posts/comments error', e);
+    return res.status(500).json({ ok: false, message: 'Failed to load comments' });
+  }
+});
+
 
 // ---------------- End Creator Posts (Feed) ----------------
 
