@@ -237,3 +237,77 @@ export function savePrefsForUser(email, prefs) {
     // ignore
   }
 }
+
+// ---------------------------------------------------------------------------
+// OPTIONAL SHARED ME CACHE (backend-first)
+// - Keeps a lightweight in-memory cache of /api/me for pages that want it.
+// - Updates window.__tmMe for cross-module usage (Creators app uses this).
+// - Never treats localStorage as authoritative: server still enforces auth.
+// ---------------------------------------------------------------------------
+
+let __tmMeCache = null;
+let __tmMeCacheAt = 0;
+const __TM_ME_TTL_MS = 30 * 1000;
+
+export function getCachedMe() {
+  try {
+    return __tmMeCache || (typeof window !== 'undefined' ? (window.__tmMe || null) : null);
+  } catch {
+    return __tmMeCache;
+  }
+}
+
+export function setCachedMe(user) {
+  __tmMeCache = user || null;
+  __tmMeCacheAt = Date.now();
+  try { if (typeof window !== 'undefined') window.__tmMe = user || null; } catch {}
+}
+
+export function dispatchMeUpdated(detail = {}) {
+  try {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(new CustomEvent('tm:me-updated', { detail }));
+  } catch {
+    // ignore
+  }
+}
+
+// Fetch /api/me and hydrate caches.
+// NOTE: This does NOT replace real server checks; it's just a convenient getter.
+export async function apiMe(force = false) {
+  try {
+    const now = Date.now();
+    if (!force && __tmMeCache && (now - __tmMeCacheAt) < __TM_ME_TTL_MS) {
+      return { ok: true, user: __tmMeCache, cached: true };
+    }
+
+    const res = await fetch('/api/me', { method: 'GET', credentials: 'include' });
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok || !data || !data.ok || !data.user) {
+      // If the session is invalid, clear local hints.
+      if (res.status === 401 || data?.message === 'not_logged_in') {
+        try { clearAuth(); } catch {}
+        setCachedMe(null);
+        dispatchMeUpdated({ reason: 'auth_cleared' });
+      }
+      return data || { ok: false, message: 'not_logged_in' };
+    }
+
+    setCachedMe(data.user);
+
+    // Keep local UI hint in sync (email/name/plan). Only stores if email exists.
+    try {
+      saveLocalUser({
+        email: data.user.email,
+        name: data.user.name,
+        plan: data.user.plan
+      });
+    } catch {}
+
+    dispatchMeUpdated({ reason: 'me_refreshed' });
+    return data;
+  } catch (e) {
+    return { ok: false, message: 'network_error' };
+  }
+}
