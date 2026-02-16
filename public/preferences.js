@@ -21,6 +21,57 @@
   let EXISTING_AVATAR_URL = '';
   let AVATAR_HANDLERS_ATTACHED = false;
 
+
+  // ---- Button loading helpers (shared UX) ----
+  function tmEscapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function tmGetSubmitButton(form, evt) {
+    // Prefer the button that actually triggered submit
+    const submitter = evt && evt.submitter;
+    if (submitter && submitter.tagName) return submitter;
+
+    // Fallback: active element inside the form
+    const ae = document.activeElement;
+    if (ae && form && form.contains(ae) && ae.matches('button, input[type="submit"], input[type="button"]')) return ae;
+
+    // Final fallback: first submit button in the form
+    return (form && form.querySelector('button[type="submit"], button:not([type]), input[type="submit"]')) || null;
+  }
+
+  function tmSetButtonLoading(btn, isLoading, loadingText) {
+    if (!btn) return;
+
+    if (isLoading) {
+      if (!btn.dataset.tmOriginalHtml) btn.dataset.tmOriginalHtml = btn.innerHTML;
+
+      const label = loadingText || btn.textContent.trim() || 'Loading…';
+      btn.classList.add('tm-btn--loading');
+      btn.setAttribute('aria-busy', 'true');
+      btn.disabled = true;
+
+      btn.innerHTML =
+        '<span class="tm-btn__inner">' +
+          '<span class="tm-btn__label">' + tmEscapeHtml(label) + '</span>' +
+          '<span class="tm-btn__spinner" aria-hidden="true"></span>' +
+        '</span>';
+    } else {
+      btn.classList.remove('tm-btn--loading');
+      btn.removeAttribute('aria-busy');
+      btn.disabled = false;
+
+      if (btn.dataset.tmOriginalHtml) {
+        btn.innerHTML = btn.dataset.tmOriginalHtml;
+      }
+    }
+  }
+
   function setAvatarPreview(src) {
     const img = qs('#avatarPreviewImg');
     const ph = qs('#avatarPlaceholder');
