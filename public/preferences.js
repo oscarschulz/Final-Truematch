@@ -1040,14 +1040,18 @@ if (prefs.intent && qs('select[name="intent"]')) {
 
     form.addEventListener('submit', async (evt) => {
       evt.preventDefault();
+
+      const submitBtn = tmGetSubmitButton(form, evt);
+      tmSetButtonLoading(submitBtn, true, 'Saving…');
+      let didNavigate = false;
       clearAvatarRequiredNotice();
 
       const prefs = getFormValues();
-      if (!validateFormValues(prefs)) return;
+      if (!validateFormValues(prefs)) { tmSetButtonLoading(submitBtn, false); return; }
 
       const profile = getProfileValues();
       const requireAll = true; // Profile photo (existing or new) is required when saving preferences
-      if (!validateProfileValues(profile, { requireAll })) return;
+      if (!validateProfileValues(profile, { requireAll })) { tmSetButtonLoading(submitBtn, false); return; }
 
       // If the user picked a file but it has not been processed yet, process now.
       if (profile.file && !AVATAR_DATA_URL_FOR_UPLOAD) {
@@ -1060,13 +1064,12 @@ if (prefs.intent && qs('select[name="intent"]')) {
         updateAvatarRequiredNotice();
         } catch (err) {
           toast(err.message || 'Could not process image.', 'error');
+          tmSetButtonLoading(submitBtn, false);
           return;
         }
       }
 
       const user = getLocalUserFromSessionOrStorage() || localUser;
-
-      showLoader();
 
       try {
         if (isLiveMode) {
@@ -1156,12 +1159,13 @@ if (prefs.intent && qs('select[name="intent"]')) {
           step: 'prefs-saved',
           dest: 'dashboard'
         });
+        didNavigate = true;
         window.location.replace(`/dashboard.html${qsStr ? `?${qsStr}` : ''}`);
       } catch (submitErr) {
         console.error('[prefs] unexpected submit error', submitErr);
         toast('Something went wrong while saving. Please try again.', 'error');
       } finally {
-        hideLoader();
+        if (!didNavigate) tmSetButtonLoading(submitBtn, false);
       }
     });
   }

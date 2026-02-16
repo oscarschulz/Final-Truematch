@@ -17,6 +17,55 @@
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
+  // --- Inline button loading (spinner inside button) ---
+  function tmGetSubmitButton(form, ev) {
+    // Modern browsers: submitter is the button that triggered submit (click or Enter)
+    const s = ev && ev.submitter;
+    if (s && (s.tagName === 'BUTTON' || s.tagName === 'INPUT')) return s;
+    if (!form) return null;
+    return form.querySelector('button[type="submit"], input[type="submit"]');
+  }
+
+  function tmPrepareButtonSpinner(btn) {
+    if (!btn || btn.dataset.tmSpinnerReady === '1') return;
+    btn.dataset.tmSpinnerReady = '1';
+
+    // Preserve original label
+    const origLabel = (btn.textContent || '').trim();
+    btn.dataset.tmOrigLabel = origLabel;
+
+    // Replace content with label + spinner (keeps button semantics intact)
+    btn.innerHTML = `
+      <span class="tm-btn-label"></span>
+      <span class="tm-btn-spinner" aria-hidden="true"></span>
+    `.trim();
+    const labelEl = btn.querySelector('.tm-btn-label');
+    if (labelEl) labelEl.textContent = origLabel;
+  }
+
+  function tmSetButtonLoading(btn, isLoading, loadingLabel) {
+    if (!btn) return;
+    tmPrepareButtonSpinner(btn);
+
+    const labelEl = btn.querySelector('.tm-btn-label');
+    const spinnerEl = btn.querySelector('.tm-btn-spinner');
+
+    if (isLoading) {
+      btn.classList.add('is-loading');
+      btn.disabled = true;
+      btn.setAttribute('aria-busy', 'true');
+      if (labelEl) labelEl.textContent = loadingLabel || (btn.dataset.tmOrigLabel || 'Loading…');
+      if (spinnerEl) spinnerEl.style.display = 'inline-block';
+    } else {
+      btn.classList.remove('is-loading');
+      btn.disabled = false;
+      btn.removeAttribute('aria-busy');
+      if (labelEl) labelEl.textContent = btn.dataset.tmOrigLabel || (labelEl.textContent || '');
+      if (spinnerEl) spinnerEl.style.display = 'none';
+    }
+  }
+
+
   function getParam(k) {
     try { return new URLSearchParams(location.search).get(k); } catch { return null; }
   }
@@ -565,8 +614,12 @@
     signupForm.dataset.tmBound = "1";
     signupForm.addEventListener("submit", async (e) => {
       e.preventDefault();
+      const submitBtn = tmGetSubmitButton(signupForm, e);
+
+      // Button-level feedback (click + Enter)
+      tmSetButtonLoading(submitBtn, true, "Creating…");
+
       const fd = new FormData(signupForm);
-      try { tmShowLoader('Creating account…','Securing session'); } catch {}
       try {
         const payload = Object.fromEntries(fd.entries());
         payload.name = payload.name || payload.fullName || '';
@@ -581,7 +634,13 @@
         setParam("mode", "login");
         const email = String(payload.email || "").trim();
         if (email && $("#loginEmail")) $("#loginEmail").value = email;
-      } finally { try { tmHideLoader(); } catch {} }
+      } catch (err) {
+        console.error("[auth] signup submit error:", err);
+        alert("Something went wrong while creating your account. Please try again.");
+      } finally {
+        // No navigation here; always restore the button state
+        tmSetButtonLoading(submitBtn, false);
+      }
     });
   });
 
@@ -591,11 +650,24 @@
     loginForm.dataset.tmBound = "1";
     loginForm.addEventListener("submit", async (e) => {
       e.preventDefault();
-      try { tmShowLoader('Signing in…','Checking credentials'); } catch {}
+      const submitBtn = tmGetSubmitButton(loginForm, e);
+
+      // Button-level feedback (click + Enter)
+      tmSetButtonLoading(submitBtn, true, "Signing in…");
+
+      let didNavigate = false;
+      const hrefBefore = window.location.href;
+
       try {
         const email = String($("#loginEmail")?.value || "").trim();
         const password = String($("#loginPass")?.value || "").trim();
-        if (await tryDemoLogin(email, password)) return;
+
+        if (await tryDemoLogin(email, password)) {
+          // Demo login may redirect; keep spinner if so
+          didNavigate = (window.location.href !== hrefBefore);
+          return;
+        }
+
         const res = await callAPI("/api/auth/login", { email, password });
         const offline = !!(res && (res.demo || res.status === 0));
         const ok = !!(res && (res.ok || offline));
@@ -604,10 +676,22 @@
           return;
         }
         saveLocalUser(res.user || { email, name: email.split("@")[0] || "User" });
+
         const extra = new URLSearchParams();
         if (offline) extra.set("demo", "1");
-        finishLogin(extra.toString());
-      } finally { try { tmHideLoader(); } catch {} }
+
+        // finishLogin may either redirect OR open a verification dialog.
+        await finishLogin(extra.toString());
+        didNavigate = (window.location.href !== hrefBefore);
+      } catch (err) {
+        console.error("[auth] login submit error:", err);
+        alert("Something went wrong while signing in. Please try again.");
+      } finally {
+        // If we’re navigating, keep the spinner visible until the next page loads.
+        if (!didNavigate) {
+          tmSetButtonLoading(submitBtn, false);
+        }
+      }
     });
   });
 
