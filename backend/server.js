@@ -6541,48 +6541,74 @@ function _innerCircleEmailContent(baseUrl) {
   const base = String(baseUrl || '').replace(/\/+$/g, '');
   const pricingUrl = base ? `${base}/#pricing` : '';
   const signupUrl = base ? `${base}/auth.html?mode=signup` : '';
-  const featuredUrl = base ? `${base}/optin.html` : '';
+  const featuredUrl =
+    String(process.env.INNER_CIRCLE_FEATURED_URL || '').trim() ||
+    (base ? `${base}/optin.html` : '');
 
-  const html = `
-    <div style="font-family:Arial,sans-serif;line-height:1.55;color:#111">
-      <h2 style="margin:0 0 6px">Your iTRUEMATCH Inner Circle options</h2>
-      <p style="margin:0 0 14px;color:#444">You requested the 2 ways in. Pick the one that fits you:</p>
+  const bodyHtml = `
+    <h1 style="margin:18px 0 10px 0;font-family:Arial,Helvetica,sans-serif;font-size:22px;line-height:1.2;color:#EAF7FA;">
+      Join the Inner Circle
+    </h1>
 
-      <div style="border:1px solid #e9e9e9;border-radius:12px;padding:14px 14px;margin:0 0 12px">
-        <h3 style="margin:0 0 6px">1) Curated Service</h3>
-        <p style="margin:0 0 10px;color:#444">
-          We hand-pick and coordinate your matches—less swiping, more real dates.
-        </p>
-        ${pricingUrl ? `<p style="margin:0 0 6px"><a href="${pricingUrl}" style="color:#0b74ff;text-decoration:none;font-weight:700">View plans & pricing →</a></p>` : ''}
-        ${signupUrl ? `<p style="margin:0"><a href="${signupUrl}" style="color:#0b74ff;text-decoration:none;font-weight:700">Sign up to request Curated Service →</a></p>` : ''}
+    <div style="margin:0 0 14px 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.7;color:rgba(234,247,250,0.72);">
+      Two ways in —
+      <span style="font-weight:800;color:#EAF7FA;">Curated Service</span>
+      <span style="color:rgba(234,247,250,0.45);padding:0 6px;">•</span>
+      <span style="font-weight:800;color:#EAF7FA;">Get Featured</span>
+    </div>
+
+    <div style="background:#0B1A1F;border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:16px;margin:0 0 12px 0;">
+      <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:900;color:#EAF7FA;margin:0 0 6px 0;">
+        Curated Service
       </div>
-
-      <div style="border:1px solid #e9e9e9;border-radius:12px;padding:14px 14px;margin:0 0 12px">
-        <h3 style="margin:0 0 6px">2) Get Featured</h3>
-        <p style="margin:0 0 10px;color:#444">
-          Want to be featured on the website? We spotlight standout profiles and success stories.
-        </p>
-        ${featuredUrl ? `<p style="margin:0 0 6px"><a href="${featuredUrl}" style="color:#0b74ff;text-decoration:none;font-weight:700">See what we feature →</a></p>` : ''}
-        <p style="margin:0;color:#444">Reply to this email with your <b>name</b>, <b>city</b>, and a <b>short intro</b> so our team can review you.</p>
+      <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.7;color:rgba(234,247,250,0.72);margin:0 0 12px 0;">
+        We hand-pick and coordinate your matches—less swiping, more real dates.
       </div>
+      <div>
+        ${pricingUrl ? `<a href="${pricingUrl}" style="display:inline-block;background:#3AAFB9;color:#001011;text-decoration:none;font-family:Arial,Helvetica,sans-serif;font-weight:900;font-size:12px;padding:10px 14px;border-radius:999px;margin:0 10px 10px 0;">View plans & pricing</a>` : ''}
+        ${signupUrl ? `<a href="${signupUrl}" style="display:inline-block;border:1px solid rgba(100,233,238,0.35);color:#EAF7FA;text-decoration:none;font-family:Arial,Helvetica,sans-serif;font-weight:900;font-size:12px;padding:10px 14px;border-radius:999px;margin:0 0 10px 0;">Sign up to request</a>` : ''}
+      </div>
+    </div>
 
-      <p style="margin:14px 0 0;color:#666;font-size:12px">
-        If you didn’t request this, you can ignore this email.
-      </p>
+    <div style="background:#0B1A1F;border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:16px;margin:0 0 12px 0;">
+      <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:900;color:#EAF7FA;margin:0 0 6px 0;">
+        Get Featured
+      </div>
+      <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.7;color:rgba(234,247,250,0.72);margin:0 0 12px 0;">
+        Want to be featured on the website? We spotlight standout profiles and success stories.
+      </div>
+      <div style="margin:0 0 10px 0;">
+        ${featuredUrl ? `<a href="${featuredUrl}" style="display:inline-block;background:#3AAFB9;color:#001011;text-decoration:none;font-family:Arial,Helvetica,sans-serif;font-weight:900;font-size:12px;padding:10px 14px;border-radius:999px;margin:0 0 10px 0;">Open featured page</a>` : ''}
+      </div>
+      <div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.7;color:rgba(234,247,250,0.6);">
+        Reply to this email with your <b style="color:#EAF7FA;">name</b>, <b style="color:#EAF7FA;">city</b>, and a <b style="color:#EAF7FA;">short intro</b> so our team can review you.
+      </div>
     </div>
   `;
+
+  const html = _renderBrandedEmailShell({
+    title: 'Your iTRUEMATCH Inner Circle options',
+    preheader: 'Two ways in: Curated Service or Get Featured.',
+    bodyHtml,
+    footerHtml: 'If you didn’t request this, you can ignore this email.'
+  });
 
   const text =
 `Your iTRUEMATCH Inner Circle options
 
+Two ways in: Curated Service • Get Featured
+
 1) Curated Service
 We hand-pick and coordinate your matches—less swiping, more real dates.
-${pricingUrl ? `Plans & pricing: ${pricingUrl}\n` : ''}${signupUrl ? `Sign up: ${signupUrl}\n` : ''}
+${pricingUrl ? `Plans & pricing: ${pricingUrl}
+` : ''}${signupUrl ? `Sign up: ${signupUrl}
+` : ''}
 
 2) Get Featured
-Want to be featured on the website? We spotlight standout profiles and success stories.
-${featuredUrl ? `See what we feature: ${featuredUrl}\n` : ''}
-Reply to this email with your name, city, and a short intro so our team can review you.
+We spotlight standout profiles and success stories.
+${featuredUrl ? `Open featured page: ${featuredUrl}
+` : ''}
+Reply with your name, city, and a short intro so our team can review you.
 
 If you didn’t request this, you can ignore this email.
 `;
@@ -7662,147 +7688,160 @@ async function sendMail(toEmail, subject, html, text) {
   }
 }
 
-async function sendPasswordResetOtpEmail(toEmail, code) {
-  const subj = 'Your iTrueMatch password reset code';
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;">
-      <h2 style="margin:0 0 12px 0;">Reset your password</h2>
-      <p style="margin:0 0 16px 0;">Enter this 6-digit code to reset your password. It expires in <b>10 minutes</b>.</p>
-      <div style="font-size:28px;letter-spacing:6px;font-weight:700;padding:14px 16px;border:1px solid #ddd;border-radius:12px;display:inline-block;">
-        ${code}
+// ---------------- EMAIL UI (Branded HTML templates) ----------------
+// Note: Email clients have limited CSS support (no external CSS/JS). We use inline styles to match the landing look.
+function _escapeHtmlEmail(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function _emailBase() {
+  const base = String(process.env.PUBLIC_BASE_URL || '').replace(/\/+$/g, '');
+  // In prod, prefer https base (helps with images and links in email)
+  if (!base) return 'https://itruematch.com';
+  if (IS_PROD && !/^https:\/\//i.test(base)) return 'https://itruematch.com';
+  return base;
+}
+
+function _emailAssetUrl(relPath) {
+  const base = _emailBase();
+  const p = String(relPath || '').replace(/^\/+/g, '');
+  return `${base}/${p}`;
+}
+
+function _renderBrandedEmailShell({ title, preheader, bodyHtml, footerHtml }) {
+  const safeTitle = _escapeHtmlEmail(title || 'iTRUEMATCH');
+  const safePreheader = _escapeHtmlEmail(preheader || '');
+  const logoUrl = _emailAssetUrl('assets/images/truematch-mark.png');
+
+  // Preheader: hidden preview text for inboxes
+  const preheaderHtml = safePreheader
+    ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;mso-hide:all;">${safePreheader}</div>`
+    : '';
+
+  return `
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <meta name="x-apple-disable-message-reformatting">
+  <title>${safeTitle}</title>
+</head>
+<body style="margin:0;padding:0;background:#05090D;color:#EAF7FA;">
+  ${preheaderHtml}
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#05090D;padding:28px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#070F14;border:1px solid rgba(100,233,238,0.28);border-radius:18px;overflow:hidden;">
+          <tr>
+            <td style="padding:20px 22px 14px 22px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="vertical-align:middle;">
+                    <table role="presentation" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="vertical-align:middle;">
+                          <img src="${logoUrl}" width="22" height="22" alt="iTRUEMATCH" style="display:block;border:0;outline:none;text-decoration:none;">
+                        </td>
+                        <td style="padding-left:10px;vertical-align:middle;font-family:Arial,Helvetica,sans-serif;font-size:14px;letter-spacing:1px;font-weight:800;color:#EAF7FA;">
+                          iTRUEMATCH
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td align="right" style="vertical-align:middle;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:rgba(234,247,250,0.6);">
+                    ${_escapeHtmlEmail(process.env.NODE_ENV === 'production' ? 'Official email' : 'Test email')}
+                  </td>
+                </tr>
+              </table>
+
+              <div style="height:1px;background:rgba(255,255,255,0.08);margin:14px 0 0 0;"></div>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:0 22px 18px 22px;">
+              ${bodyHtml || ''}
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:14px 22px 18px 22px;border-top:1px solid rgba(255,255,255,0.08);font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:rgba(234,247,250,0.6);">
+              ${footerHtml || 'If you didn’t request this, you can ignore this email.'}
+            </td>
+          </tr>
+        </table>
+
+        <div style="max-width:600px;width:100%;text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.6;color:rgba(234,247,250,0.45);padding:12px 8px 0 8px;">
+          © ${new Date().getFullYear()} iTRUEMATCH Inc. All rights reserved.
+        </div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+function _renderOtpEmail({ heading, intro, code, expiresNote }) {
+  const h = _escapeHtmlEmail(heading || 'Verification code');
+  const i = _escapeHtmlEmail(intro || '');
+  const c = _escapeHtmlEmail(code || '');
+  const exp = _escapeHtmlEmail(expiresNote || '');
+
+  const bodyHtml = `
+    <h1 style="margin:18px 0 10px 0;font-family:Arial,Helvetica,sans-serif;font-size:22px;line-height:1.2;color:#EAF7FA;">
+      ${h}
+    </h1>
+    <p style="margin:0 0 16px 0;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.7;color:rgba(234,247,250,0.72);">
+      ${i}
+    </p>
+
+    <div style="display:inline-block;background:#0B1A1F;border:1px solid rgba(100,233,238,0.22);border-radius:14px;padding:14px 16px;margin:0 0 14px 0;">
+      <div style="font-family:Arial,Helvetica,sans-serif;font-size:28px;letter-spacing:8px;font-weight:900;color:#EAF7FA;">
+        ${c}
       </div>
-      <p style="margin:16px 0 0 0;color:#666;font-size:12px;">
-        If you didn’t request this, you can ignore this email.
-      </p>
     </div>
+
+    ${exp ? `<div style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:rgba(234,247,250,0.6);">${exp}</div>` : ''}
   `;
-  return sendMail(String(toEmail || '').trim(), subj, html, `Your iTrueMatch password reset code is ${code}`);
+
+  return _renderBrandedEmailShell({
+    title: `iTRUEMATCH • ${heading || 'Code'}`,
+    preheader: `${heading || 'Code'} • ${String(code || '').trim()}`.trim(),
+    bodyHtml,
+    footerHtml: 'If you didn’t request this, you can ignore this email.'
+  });
+}
+
+async function sendPasswordResetOtpEmail(toEmail, code) {
+  const subj = 'Your iTRUEMATCH password reset code';
+  const html = _renderOtpEmail({
+    heading: 'Reset your password',
+    intro: 'Enter this 6-digit code to reset your password.',
+    code,
+    expiresNote: 'This code expires in 10 minutes.'
+  });
+  const text = `Your iTRUEMATCH password reset code is ${code}. It expires in 10 minutes.`;
+  return sendMail(String(toEmail || '').trim(), subj, html, text);
 }
 
 async function sendVerificationEmail(toEmail, code) {
-  const subj = "Your iTrueMatch verification code";
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;">
-      <h2 style="margin:0 0 12px 0;">Verify your email</h2>
-      <p style="margin:0 0 16px 0;">Use this code to finish signing in:</p>
-      <div style="font-size:28px;letter-spacing:6px;font-weight:700;padding:14px 16px;border:1px solid #ddd;border-radius:12px;display:inline-block;">
-        ${code}
-      </div>
-      <p style="margin:16px 0 0 0;color:#666;font-size:12px;">
-        If you didn’t request this, you can ignore this email.
-      </p>
-    </div>
-  `;
-
-  // Preferred: Resend (fast; avoids SMTP port issues on hosts)
-  if (process.env.RESEND_API_KEY) {
-    try {
-      const data = await promiseTimeout(
-        sendWithResend({
-          to: toEmail,
-          subject: subj,
-          html,
-          text: `Your iTrueMatch verification code is ${code}`,
-        }),
-        12000,
-        "Resend"
-      );
-      console.log(`[mail] Resend OTP sent to ${toEmail}`, data?.id ? `id=${data.id}` : "");
-      return true;
-    } catch (err) {
-      console.error("[mail] Resend send failed:", err?.message || err);
-      // fall through to SMTP fallback
-    }
-  }
-
-  // Fallback: SMTP (keep this for local/dev, but protect with a short timeout)
-  try {
-    const mailer = await getMailer();
-    if (!mailer) {
-      console.error("[mail] No mailer configured (set RESEND_API_KEY or SMTP_* env vars).");
-      return false;
-    }
-
-    const from = process.env.MAIL_FROM || process.env.SMTP_USER || "noreply@itruematch.com";
-
-    await promiseTimeout(
-      mailer.sendMail({
-        from,
-        to: toEmail,
-        subject: subj,
-        html,
-        text: `Your iTrueMatch verification code is ${code}`,
-      }),
-      12000,
-      "SMTP sendMail"
-    );
-
-    console.log("[mail] OTP email sent via SMTP to:", toEmail);
-    return true;
-  } catch (err) {
-    console.error("[mail] Email send failed:", err?.message || err);
-    return false;
-  }
+  const subj = 'Your iTRUEMATCH verification code';
+  const html = _renderOtpEmail({
+    heading: 'Verify your email',
+    intro: 'Use this code to finish signing in.',
+    code,
+    expiresNote: 'This code expires in 10 minutes.'
+  });
+  const text = `Your iTRUEMATCH verification code is ${code}. It expires in 10 minutes.`;
+  return sendMail(String(toEmail || '').trim(), subj, html, text);
 }
 
-async function sendPasswordResetEmail(toEmail, resetUrl) {
-  try {
-    const safeTo = String(toEmail || '').trim();
-    if (!safeTo) return false;
-
-    const html = `
-      <div style="font-family: Arial, sans-serif; line-height:1.5; color:#111;">
-        <h2 style="margin:0 0 12px 0;">Reset your TrueMatch password</h2>
-        <p style="margin:0 0 10px 0;">Someone requested a password reset for this email.</p>
-        <p style="margin:0 0 14px 0;">If this was you, click the button below. This link expires in <b>30 minutes</b>.</p>
-        <p style="margin:0 0 16px 0;">
-          <a href="${resetUrl}" style="display:inline-block; padding:10px 14px; background:#111; color:#fff; text-decoration:none; border-radius:8px;">
-            Reset Password
-          </a>
-        </p>
-        <p style="margin:0; font-size:12px; color:#555;">If you didn’t request this, you can ignore this email.</p>
-      </div>
-    `;
-
-    const ok = await sendMail(safeTo, "TrueMatch • Password Reset", html);
-    if (ok) console.log("[mail] Password reset email sent to:", safeTo);
-    return ok;
-  } catch (err) {
-    console.error("[mail] Password reset email send failed:", err?.message || err);
-    return false;
-  }
-}
-
-// ---------------- SWIPE & MATCHING ENGINE ----------------
-
-// 1. Get Candidates (Real Users)
-// 1. Get Candidates (Global + Cap 20)
-// [UPDATED] Get Candidates (Supports Firestore & Local)
-// [UPDATED] Get Candidates with Daily Limit Check
-// =======================================================================
-// [PALITAN ANG BUONG "
-// ---------------------------------------------------------------------
-// PREMIUM SOCIETY SWIPE API
-// Definition (authoritative):
-// - Eligible: active Elite (tier2) or Concierge (tier3) plan.
-// - Premium Society Member: eligible + premiumStatus === 'approved'.
-// This API is intentionally separate from /api/swipe/* so other matchmaking flows can keep their own rules.
-// ---------------------------------------------------------------------
-function psTierNumFromPlanKey(planKey) {
-  const k = normalizePlanKey(planKey || 'free');
-  if (k === 'tier3') return 3;
-  if (k === 'tier2') return 2;
-  if (k === 'tier1') return 1;
-  return 0;
-}
-
-function psIsEligibleForPremiumSociety(uPublic) {
-  return Boolean(uPublic && uPublic.planActive === true && psTierNumFromPlanKey(uPublic.plan) >= 2);
-}
-
-function psIsPremiumSocietyMember(uPublic) {
-  return psIsEligibleForPremiumSociety(uPublic) && String(uPublic.premiumStatus || '').toLowerCase() === 'approved';
-}
 
 // ---------------------------------------------------------------------
 // Premium Society - Edit Profile (updates premiumApplication details)
