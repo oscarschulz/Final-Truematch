@@ -6541,7 +6541,7 @@ function _innerCircleEmailContent(baseUrl) {
   const base = String(baseUrl || '').replace(/\/+$/g, '');
   const pricingUrl = base ? `${base}/#pricing` : '';
   const signupUrl = base ? `${base}/auth.html?mode=signup` : '';
-  const featuredUrl = base ? `${base}/#optin.html` : '';
+  const featuredUrl = base ? `${base}/optin.html` : '';
 
   const html = `
     <div style="font-family:Arial,sans-serif;line-height:1.55;color:#111">
