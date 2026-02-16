@@ -297,7 +297,9 @@ async function tmUploadProfilePhoto(kind, dataUrl) {
   // Force-refresh cached me
   __meCache = null;
   await ensureMe(true);
-  tmDispatchMeUpdated({ source: 'settings', reason: 'photo', kind });
+    tmDispatchMeUpdated({ reason: 'photo', kind });
+
+tmDispatchMeUpdated({ source: 'settings', reason: 'photo', kind });
 
   return out;
 }
@@ -1059,7 +1061,8 @@ async function saveCreatorProfile(container) {
   if (!out?.ok) throw new Error(out?.error || 'Save failed');
 
   __meCache = null;
-  await ensureMe(true);
+  await ensureMe(true);  tmDispatchMeUpdated({ reason: 'creator_profile' });
+
 }
 
 
@@ -1210,6 +1213,7 @@ function bindAccountControls(container, me) {
         if (u) u.textContent = `@${(handle || 'username').replace(/^@/, '')}`;
 
         tmToast('Account updated.', 'success');
+        tmDispatchMeUpdated({ reason: 'account' });
         tmDispatchMeUpdated({ source: 'settings', reason: 'account' });
       } catch (e) {
         console.error(e);
