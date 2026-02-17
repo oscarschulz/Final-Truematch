@@ -27,17 +27,6 @@ function tmEscapeHtml(str = '') {
         .replace(/'/g, '&#39;');
 }
 
-function tmNameOnly(raw = '') {
-    let s = (raw === null || raw === undefined) ? '' : String(raw);
-    s = s.replace(/\s+/g, ' ').trim();
-    if (!s) return '';
-    // Many profiles store a packed summary like "Name | Bio: ... | Location: ..."
-    if (s.includes('|')) s = s.split('|')[0].trim();
-    if (s.includes('\n')) s = s.split('\n')[0].trim();
-    return s || '';
-}
-
-
 function tmGetCreatorIdentity() {
     const safeStr = (v) => (v === null || v === undefined) ? '' : String(v).trim();
 
@@ -1027,7 +1016,7 @@ export function initHome(TopToast) {
                     text,
                     timestamp: Date.now(),
                     authorEmail: meIdentity.email || '',
-                    authorName: (tmNameOnly(meIdentity.name) || meIdentity.name) || '',
+                    authorName: meIdentity.name || '',
                     authorHandle: meIdentity.handle || '',
                     authorAvatarUrl: meIdentity.avatarUrl || ''
                 };
@@ -1061,23 +1050,32 @@ export function initHome(TopToast) {
 
             
 
-            // --- REPLY CLICK ---
-            if (target.classList.contains('action-reply-comment')) {
-                const commentItem = target.closest('.comment-item');
-                const commentBody = commentItem.querySelector('.comment-body');
-                let replyBox = commentBody.querySelector('.reply-input-row');
-                
-                if (!replyBox) {
-                    const replyHTML = `
-                        <div class="reply-input-row">
-                            <img src="${tmGetCreatorIdentity().avatarUrl || 'assets/images/truematch-mark.png'}" style="width:25px; height:25px; border-radius:50%;">
-                            <input type="text" class="reply-input" placeholder="Write a reply...">
-                        </div>
-                    `;
-                    commentBody.insertAdjacentHTML('beforeend', replyHTML);
-                    replyBox = commentBody.querySelector('.reply-input-row');
+            // --- REPLY OPEN (click/tap comment bubble) ---
+            const bubble = target.closest('.comment-bubble');
+            const replyTrigger = target.closest('.action-reply-comment') || target.closest('.c-reply');
+
+            if (bubble || replyTrigger) {
+                const anchor = bubble || replyTrigger;
+                const commentItem = anchor.closest('.comment-item');
+                if (commentItem) {
+                    const commentBody = commentItem.querySelector('.comment-body') || commentItem;
+                    let replyBox = commentBody.querySelector('.reply-input-row');
+
+                    if (!replyBox) {
+                        const me = tmGetCreatorIdentity();
+                        const replyHTML = `
+                            <div class="reply-input-row" style="display:flex; gap:10px; align-items:center; margin-top:10px;">
+                                <img src="${tmEscapeHtml(me.avatarUrl || 'assets/images/truematch-mark.png')}" style="width:25px; height:25px; border-radius:50%; object-fit:cover;">
+                                <input type="text" class="reply-input" placeholder="Write a reply..." style="flex:1; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius:999px; padding:10px 12px; color:#fff;">
+                            </div>
+                        `;
+                        commentBody.insertAdjacentHTML('beforeend', replyHTML);
+                        replyBox = commentBody.querySelector('.reply-input-row');
+                    }
+
+                    const inp = replyBox?.querySelector('input');
+                    if (inp) inp.focus();
                 }
-                replyBox.querySelector('input').focus();
             }
 
             // Bookmark & Tip
@@ -1118,24 +1116,23 @@ export function initHome(TopToast) {
                 }
                 else if (e.target.classList.contains('reply-input')) {
                     e.preventDefault();
-                    const text = e.target.value.trim();
-                    if(text) {
-                        const replyHTML = `
-                            <div class="comment-item" style="margin-top:10px; animation:fadeIn 0.2s;">
-                                <img src="assets/images/truematch-mark.png" class="comment-avatar" style="width:25px; height:25px;">
-                                <div class="comment-body">
-                                    <div class="comment-bubble">
-                                        <div style="font-weight:700; font-size:0.8rem;">You</div>
-                                        <div>${text}</div>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
+                    const text = (e.target.value || '').trim();
+                    if (text) {
+                        const me = tmGetCreatorIdentity();
+                        const replyObj = {
+                            text,
+                            authorEmail: me.email || '',
+                            authorName: me.name || 'You',
+                            authorAvatarUrl: me.avatarUrl || '',
+                            timestamp: Date.now()
+                        };
+
+                        const replyHTML = generateCommentHTML(replyObj);
                         e.target.closest('.reply-input-row').insertAdjacentHTML('beforebegin', replyHTML);
                         e.target.closest('.reply-input-row').remove();
                     }
                 }
-            }
+}
         });
 
         // Close Dropdown Outside Click
@@ -1602,66 +1599,50 @@ function renderPost(post, animate) {
 
 // 🔥 UPDATED GENERATOR TO INCLUDE EMOJIS IN COMMENTS 🔥
 
+function tmCompactDisplayName(raw) {
+    const s = (raw === null || raw === undefined) ? '' : String(raw);
+    if (!s.trim()) return '';
+    // If someone saved a packed profile string like "Name | Bio: ... | Location: ...",
+    // keep only the first segment (the actual display name).
+    const first = s.split('|')[0].trim();
+    return first || s.trim();
+}
+
 function generateCommentHTML(textOrObj, timestampMaybe) {
-    const safeStr = (v) => (v === null || v === undefined) ? '' : String(v).trim();
-
-    const c = (textOrObj && typeof textOrObj === 'object')
-        ? textOrObj
-        : { text: textOrObj, timestamp: timestampMaybe };
-
+    const safeStr = (v) => (v === null || v === undefined) ? '' : String(v);
     const me = tmGetCreatorIdentity();
 
-    const authorEmail = safeStr(c.authorEmail || c.creatorEmail || c.email);
-    const authorNameRaw = safeStr(c.authorName || c.creatorName || c.name);
+    const c = (textOrObj && typeof textOrObj === 'object' && !Array.isArray(textOrObj))
+        ? textOrObj
+        : { text: safeStr(textOrObj), timestamp: timestampMaybe };
 
-    const isMe =
-        (authorEmail && me.email && authorEmail.toLowerCase() === me.email.toLowerCase()) ||
-        (!authorEmail && (authorNameRaw === 'You' || authorNameRaw === 'Me'));
+    const commentId = safeStr(c.id || c.commentId || c._id || '');
+    const authorEmail = safeStr(c.authorEmail || c.creatorEmail || c.userEmail || c.email || '');
+    const isMe = authorEmail && me.email && authorEmail.toLowerCase() === me.email.toLowerCase();
 
-    // Only show the display name in comments (no packed Bio/Location/etc)
-    const displayName =
-        tmNameOnly(isMe ? safeStr(me.name) : authorNameRaw) ||
-        (isMe ? 'You' : (authorNameRaw || 'Unknown'));
+    const authorNameRaw = safeStr(c.authorName || c.creatorName || c.name || '');
+    const name = tmCompactDisplayName(isMe ? me.name : (authorNameRaw || 'Unknown')) || 'Unknown';
 
-    const avatar =
-        isMe
-            ? safeStr(me.avatarUrl)
-            : (safeStr(c.authorAvatarUrl || c.creatorAvatarUrl || c.avatarUrl) || 'assets/images/truematch-mark.png');
+    const avatarRaw = safeStr(c.authorAvatarUrl || c.creatorAvatarUrl || c.avatarUrl || c.avatar || '');
+    const avatarUrl = safeStr(isMe ? me.avatarUrl : avatarRaw) || 'assets/images/truematch-mark.png';
 
-    const avatarAttr = avatar.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-
-    const text = tmEscapeHtml(safeStr(c.text));
-    const commentId = safeStr(c.id || c._id || c.commentId || '');
-    const idAttr = commentId ? ` data-comment-id="${tmEscapeHtml(commentId)}"` : '';
+    const text = tmEscapeHtml(safeStr(c.text || ''));
+    const cidAttr = commentId ? ` data-comment-id="${tmEscapeHtml(commentId)}"` : '';
 
     return `
-        <div class="comment-item"${idAttr}>
-            <img class="comment-avatar" src="${avatarAttr}" alt="">
-            <div class="comment-body">
-                <div class="comment-bubble">
-                    <div class="c-user">${tmEscapeHtml(displayName)}</div>
-                    <div class="comment-text">${text}</div>
-                </div>
-
-                <div class="comment-actions">
-                    <div class="comment-reaction-wrapper">
-                        <span class="c-action c-like action-comment-like" title="React">${getEmojiIcon('like')}</span>
-                        <div class="comment-reaction-picker">
-                            <span data-reaction="like">${getEmojiIcon('like')}</span>
-                            <span data-reaction="love">${getEmojiIcon('love')}</span>
-                            <span data-reaction="laugh">${getEmojiIcon('laugh')}</span>
-                            <span data-reaction="shock">${getEmojiIcon('shock')}</span>
-                            <span data-reaction="angry">${getEmojiIcon('angry')}</span>
-                        </div>
-                    </div>
-                    <span class="c-action c-reply action-reply-comment">Reply</span>
+        <div class="comment-item"${cidAttr} style="display:flex; gap:10px; align-items:flex-start; margin-top:10px;">
+            <img src="${tmEscapeHtml(avatarUrl)}" class="comment-avatar" style="width:32px; height:32px; border-radius:50%; object-fit:cover;">
+            <div class="comment-body" style="flex:1;">
+                <div class="comment-bubble" style="padding:10px 12px; border-radius:14px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);">
+                    <div class="comment-author" style="font-weight:800; font-size:0.85rem; color:#fff; line-height:1.1; margin-bottom:6px;">${tmEscapeHtml(name)}</div>
+                    <div class="comment-text" style="font-size:0.92rem; color: rgba(255,255,255,0.88); line-height:1.35;">${text}</div>
                 </div>
             </div>
         </div>
     `;
 }
 
-// Helpers for Icons/Colors (Same as Profile.js)
+// Helpers for Icons/Colors
 // (Same as Profile.js)
 function getEmojiIcon(type) {
     switch(type) {
