@@ -15,6 +15,7 @@ const POST_REACT_ENDPOINT = '/api/creator/posts/react';
 const POST_COMMENT_ENDPOINT = '/api/creator/posts/comment';
 const POST_PIN_ENDPOINT = '/api/creator/posts/pin';
 const POST_COMMENTS_ENDPOINT = '/api/creator/posts/comments';
+const POST_VOTE_ENDPOINT = '/api/creator/posts/vote';
 // ------------------------------
 // Helpers (safe HTML + identity)
 // ------------------------------
@@ -169,6 +170,27 @@ async function tmFetchPostComments(postId, limit = 50) {
     if (data && data.ok && Array.isArray(data.items)) return data.items;
     if (Array.isArray(data?.comments)) return data.comments;
     return null;
+}
+
+async function tmVoteCreatorPost(postId, type, optionIndex) {
+    if (!postId) return null;
+
+    const payload = {
+        id: String(postId),
+        type: String(type || ''),
+        optionIndex: Number(optionIndex),
+    };
+
+    const { res, data } = await tmFetchJson(POST_VOTE_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+
+    // If endpoint doesn't exist yet, treat as not available
+    if (!res || res.status === 404) return null;
+
+    return { status: res.status, data };
 }
 
 function tmMergeComments(localComments, remoteComments) {
@@ -762,59 +784,156 @@ export function initHome(TopToast) {
             if (quizBtn) {
                 const postId = quizBtn.getAttribute('data-post-id');
                 const idx = Number(quizBtn.getAttribute('data-option-idx'));
-                if (postId) {
-                    const updated = updatePost(postId, (post) => {
-                        if (!post || post.type !== 'quiz' || !post.quiz) return post;
-                        if (post.quizMyAnswer != null) return post;
-                        const opts = (post.quiz.options || []);
-                        if (!Number.isFinite(idx) || idx < 0 || idx >= opts.length) return post;
-                        if (!Array.isArray(post.quizVotes) || post.quizVotes.length !== opts.length) {
-                            post.quizVotes = new Array(opts.length).fill(0);
-                        }
-                        post.quizVotes[idx] = (post.quizVotes[idx] || 0) + 1;
-                        post.quizMyAnswer = idx;
-                        return post;
-                    });
 
-                    if (updated && updated.type === 'quiz') {
+                if (postId) {
+                    // Prevent double-answer client-side
+                    const cur = getPosts().find(x => String(x.id) === String(postId));
+                    if (cur && cur.quizMyAnswer != null) return;
+
+                    // Backend-first (best-effort). If endpoint not available yet, fallback to local.
+                    let serverResp = null;
+                    try {
+                        serverResp = await tmVoteCreatorPost(postId, 'quiz', idx);
+                    } catch {}
+
+                    let updatedPost = null;
+
+                    // If server responds with canonical state, apply it
+                    if (serverResp && serverResp.data) {
+                        const d = serverResp.data;
+
+                        if (d && d.ok) {
+                            const patch = (d.post && typeof d.post === 'object') ? d.post
+                                : (d.patch && typeof d.patch === 'object') ? d.patch
+                                : d;
+
+                            updatedPost = updatePost(postId, (post) => {
+                                if (!post) return post;
+                                return { ...post, ...patch };
+                            });
+                        } else if (serverResp.status === 409) {
+                            // already answered on server
+                            const patch = (d && d.post && typeof d.post === 'object') ? d.post
+                                : (d && d.patch && typeof d.patch === 'object') ? d.patch
+                                : null;
+
+                            if (patch) {
+                                updatedPost = updatePost(postId, (post) => {
+                                    if (!post) return post;
+                                    return { ...post, ...patch };
+                                });
+                            }
+                            tmToast(TopToast, 'info', 'Already answered');
+                        }
+                    }
+
+                    // Fallback: local-only behavior (keeps current UX even if backend vote route isn't deployed yet)
+                    if (!updatedPost) {
+                        updatedPost = updatePost(postId, (post) => {
+                            if (!post || post.type !== 'quiz' || !post.quiz) return post;
+                            if (post.quizMyAnswer != null) return post;
+
+                            const opts = (post.quiz.options || []);
+                            if (!Number.isFinite(idx) || idx < 0 || idx >= opts.length) return post;
+
+                            if (!Array.isArray(post.quizVotes) || post.quizVotes.length !== opts.length) {
+                                post.quizVotes = new Array(opts.length).fill(0);
+                            }
+                            post.quizVotes[idx] = (post.quizVotes[idx] || 0) + 1;
+                            post.quizMyAnswer = idx;
+                            return post;
+                        });
+                    }
+
+                    if (updatedPost && updatedPost.type === 'quiz') {
                         const card = document.getElementById(`post-${postId}`);
                         const block = card ? card.querySelector('.post-quiz-block') : null;
-                        if (block) block.outerHTML = renderQuizBlock(updated);
-                        const isCorrect = updated.quizMyAnswer === updated.quiz.correctIndex;
+                        if (block) block.outerHTML = renderQuizBlock(updatedPost);
+
+                        const isCorrect = updatedPost.quizMyAnswer === updatedPost.quiz.correctIndex;
                         tmToast(TopToast, isCorrect ? 'success' : 'error', isCorrect ? 'Correct!' : 'Wrong answer');
                     }
                 }
                 return;
             }
 
+
             // --- POLL OPTION CLICK ---
             const pollBtn = target.closest('.poll-option-btn');
             if (pollBtn) {
                 const postId = pollBtn.getAttribute('data-post-id');
                 const idx = Number(pollBtn.getAttribute('data-option-idx'));
-                if (postId) {
-                    const updated = updatePost(postId, (post) => {
-                        if (!post || post.type !== 'poll' || !post.poll) return post;
-                        if (post.pollMyVote != null) return post;
-                        const opts = (post.poll.options || []);
-                        if (!Number.isFinite(idx) || idx < 0 || idx >= opts.length) return post;
-                        if (!Array.isArray(post.pollVotes) || post.pollVotes.length !== opts.length) {
-                            post.pollVotes = new Array(opts.length).fill(0);
-                        }
-                        post.pollVotes[idx] = (post.pollVotes[idx] || 0) + 1;
-                        post.pollMyVote = idx;
-                        return post;
-                    });
 
-                    if (updated && updated.type === 'poll') {
+                if (postId) {
+                    // Prevent double-vote client-side
+                    const cur = getPosts().find(x => String(x.id) === String(postId));
+                    if (cur && cur.pollMyVote != null) return;
+
+                    // Backend-first (best-effort). If endpoint not available yet, fallback to local.
+                    let serverResp = null;
+                    try {
+                        serverResp = await tmVoteCreatorPost(postId, 'poll', idx);
+                    } catch {}
+
+                    let updatedPost = null;
+
+                    // If server responds with canonical state, apply it
+                    if (serverResp && serverResp.data) {
+                        const d = serverResp.data;
+
+                        if (d && d.ok) {
+                            const patch = (d.post && typeof d.post === 'object') ? d.post
+                                : (d.patch && typeof d.patch === 'object') ? d.patch
+                                : d;
+
+                            updatedPost = updatePost(postId, (post) => {
+                                if (!post) return post;
+                                return { ...post, ...patch };
+                            });
+                        } else if (serverResp.status === 409) {
+                            // already voted on server
+                            const patch = (d && d.post && typeof d.post === 'object') ? d.post
+                                : (d && d.patch && typeof d.patch === 'object') ? d.patch
+                                : null;
+
+                            if (patch) {
+                                updatedPost = updatePost(postId, (post) => {
+                                    if (!post) return post;
+                                    return { ...post, ...patch };
+                                });
+                            }
+                            tmToast(TopToast, 'info', 'Already voted');
+                        }
+                    }
+
+                    // Fallback: local-only behavior (keeps current UX even if backend vote route isn't deployed yet)
+                    if (!updatedPost) {
+                        updatedPost = updatePost(postId, (post) => {
+                            if (!post || post.type !== 'poll' || !post.poll) return post;
+                            if (post.pollMyVote != null) return post;
+
+                            const opts = (post.poll.options || []);
+                            if (!Number.isFinite(idx) || idx < 0 || idx >= opts.length) return post;
+
+                            if (!Array.isArray(post.pollVotes) || post.pollVotes.length !== opts.length) {
+                                post.pollVotes = new Array(opts.length).fill(0);
+                            }
+                            post.pollVotes[idx] = (post.pollVotes[idx] || 0) + 1;
+                            post.pollMyVote = idx;
+                            return post;
+                        });
+                    }
+
+                    if (updatedPost && updatedPost.type === 'poll') {
                         const card = document.getElementById(`post-${postId}`);
                         const block = card ? card.querySelector('.post-poll-block') : null;
-                        if (block) block.outerHTML = renderPollBlock(updated);
+                        if (block) block.outerHTML = renderPollBlock(updatedPost);
                         tmToast(TopToast, 'success', 'Voted');
                     }
                 }
                 return;
             }
+
 
             // Close pickers if clicking outside
             if (!target.closest('.reaction-wrapper') && !target.closest('.comment-reaction-wrapper')) {
@@ -962,135 +1081,78 @@ export function initHome(TopToast) {
                 return;
             }
 
-            // --- COMMENT LIKE CLICK (Toggle Default) ---
-            if (target.classList.contains('action-comment-like')) {
-                const btn = target;
-                if (btn.classList.contains('liked')) {
-                    btn.classList.remove('liked');
-                    btn.innerHTML = 'Like';
-                    btn.style.color = '';
-                    btn.style.fontWeight = '600';
-                } else {
-                    btn.classList.add('liked');
-                    btn.innerHTML = '<i class="fa-solid fa-heart"></i> 1';
-                    btn.style.color = '#ff4757';
-                }
-            }
             
-            // --- COMMENT TOGGLE ---
-            if (target.classList.contains('btn-toggle-comment') || target.classList.contains('fa-comment')) {
-                const postCard = target.closest('.post-card');
-                const commentSection = postCard ? postCard.querySelector('.post-comments-section') : null;
-                const input = postCard ? postCard.querySelector('.comment-input') : null;
+// --- COMMENT LIKE CLICK (Toggle Default) ---
+const commentLikeBtn = target.closest('.action-comment-like');
+if (commentLikeBtn) {
+    const btn = commentLikeBtn;
+    const parentComment = btn.closest('.comment-item');
+    const postCard = btn.closest('.post-card');
+    const postId = postCard?.dataset?.postId;
 
-                if (commentSection) {
-                    const willOpen = commentSection.classList.contains('hidden');
-                    commentSection.classList.toggle('hidden');
+    // Toggle UI only (server persistence can be added later)
+    const nowLiked = !btn.classList.contains('liked');
+    if (nowLiked) {
+        btn.classList.add('liked');
+        btn.innerHTML = getEmojiIcon('like');
+        btn.style.color = getEmojiColor('like');
+        btn.style.fontWeight = '700';
+    } else {
+        btn.classList.remove('liked');
+        btn.innerHTML = 'Like';
+        btn.style.color = '';
+        btn.style.fontWeight = '600';
+    }
 
-                    if (willOpen) {
-                        // Backend-first: try to load comments once from server (fallback to local-only if 404)
-                        await tmEnsureCommentsLoaded(postCard, TopToast);
+    // Best-effort local state update (if we have ids)
+    const commentId = parentComment?.dataset?.commentId;
+    if (postId && commentId) {
+        try {
+            const posts = getPosts();
+            const p = posts.find(x => String(x.id) === String(postId));
+            if (p && Array.isArray(p.comments)) {
+                const c = p.comments.find(cc => String(cc.id || cc.commentId || '') === String(commentId));
+                if (c) c.myReaction = nowLiked ? 'like' : '';
+                setPosts(posts);
+            }
+        } catch (err) { /* ignore */ }
+    }
 
-                        if (input) setTimeout(() => input.focus(), 100);
-                    }
+    return;
+}
+
+            // --- REPLY CLICK (SHOW REPLY INPUT) ---
+            const replyBtn = target.closest('.action-reply-comment');
+            if (replyBtn) {
+                const parentComment = replyBtn.closest('.comment-item');
+                if (!parentComment) return;
+
+                const commentBody = parentComment.querySelector('.comment-body');
+                if (!commentBody) return;
+
+                // Toggle close if already open
+                const existing = commentBody.querySelector('.reply-input-row');
+                if (existing) {
+                    existing.remove();
+                    return;
                 }
-            }
 
-            // --- SEND COMMENT (Persisted) ---
-            if (target.closest('.btn-send-comment')) {
-                const postCard = target.closest('.post-card');
-                const input = postCard ? postCard.querySelector('.comment-input') : null;
-                const list = postCard ? postCard.querySelector('.comment-list') : null;
-                const emptyMsg = postCard ? postCard.querySelector('.no-comments-msg') : null;
-                const text = input ? input.value.trim() : '';
-                if (!postCard || !input || !list) return;
+                const me = (typeof tmGetCreatorIdentity === 'function') ? tmGetCreatorIdentity() : {};
+                const myAvatar = tmEscapeHtml((me && me.avatarUrl) ? me.avatarUrl : 'assets/images/truematch-mark.png');
 
-                if (!text) return;
+                const inputRow = document.createElement('div');
+                inputRow.className = 'reply-input-row';
+                inputRow.innerHTML = `
+                    <img src="${myAvatar}" class="comment-avatar" style="width:25px; height:25px;">
+                    <input type="text" class="reply-input" placeholder="Write a reply...">
+                `;
+                commentBody.appendChild(inputRow);
 
-                const postId = postCard.id.replace('post-', '');
-
-                // Optimistic UI
-                const meIdentity = tmGetCreatorIdentity();
-                const optimistic = {
-                    id: tmNowId(),
-                    text,
-                    timestamp: Date.now(),
-                    authorEmail: meIdentity.email || '',
-                    authorName: meIdentity.name || '',
-                    authorHandle: meIdentity.handle || '',
-                    authorAvatarUrl: meIdentity.avatarUrl || ''
-                };
-                updatePost(postId, (post) => {
-                    if (!post) return post;
-                    if (!Array.isArray(post.comments)) post.comments = [];
-                    post.comments.push({ ...optimistic, creatorEmail: optimistic.authorEmail, creatorName: optimistic.authorName, creatorAvatarUrl: optimistic.authorAvatarUrl });
-                    return post;
-                });
-
-                if (emptyMsg) emptyMsg.style.display = 'none';
-                list.insertAdjacentHTML('beforeend', generateCommentHTML(optimistic));
-                input.value = '';
-
-                // Backend-first (best-effort). If endpoint not available yet, comment stays local.
-                let persisted = false;
-                try {
-                    const resp = await tmAddPostComment(postId, text);
-                    if (resp && resp.ok) persisted = true;
-
-                    // If server is live, refresh comments once so IDs/timestamps line up across devices
-                    const commentSection = postCard.querySelector('.post-comments-section');
-                    if (persisted && commentSection) {
-                        commentSection.dataset.loaded = '0';
-                        await tmEnsureCommentsLoaded(postCard, TopToast);
-                    }
-                } catch {}
-
-                tmToast(TopToast, 'success', persisted ? 'Comment added' : 'Comment added (local)');
-            }
-
-            
-
-            // --- REPLY OPEN (click/tap comment bubble) ---
-            const bubble = target.closest('.comment-bubble');
-            const replyTrigger = target.closest('.action-reply-comment') || target.closest('.c-reply');
-
-            if (bubble || replyTrigger) {
-                const anchor = bubble || replyTrigger;
-                const commentItem = anchor.closest('.comment-item');
-                if (commentItem) {
-                    const commentBody = commentItem.querySelector('.comment-body') || commentItem;
-                    let replyBox = commentBody.querySelector('.reply-input-row');
-
-                    if (!replyBox) {
-                        const me = tmGetCreatorIdentity();
-                        const replyHTML = `
-                            <div class="reply-input-row" style="display:flex; gap:10px; align-items:center; margin-top:10px;">
-                                <img src="${tmEscapeHtml(me.avatarUrl || 'assets/images/truematch-mark.png')}" style="width:25px; height:25px; border-radius:50%; object-fit:cover;">
-                                <input type="text" class="reply-input" placeholder="Write a reply..." style="flex:1; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius:999px; padding:10px 12px; color:#fff;">
-                            </div>
-                        `;
-                        commentBody.insertAdjacentHTML('beforeend', replyHTML);
-                        replyBox = commentBody.querySelector('.reply-input-row');
-                    }
-
-                    const inp = replyBox?.querySelector('input');
+                setTimeout(() => {
+                    const inp = inputRow.querySelector('.reply-input');
                     if (inp) inp.focus();
-                }
-            }
+                }, 0);
 
-            // Bookmark & Tip
-            const bmIcon = target.closest('.fa-bookmark');
-            if (bmIcon && bmIcon.closest('.post-actions')) {
-                const postCard = bmIcon.closest('.post-card');
-                const postId = postCard?.dataset?.postId;
-
-                if (postId) {
-                    const saved = tmToggleBookmark(postId);
-                    bmIcon.classList.toggle('fa-solid', saved);
-                    bmIcon.classList.toggle('fa-regular', !saved);
-                    bmIcon.style.color = saved ? '#64E9EE' : '';
-                    tmToast(TopToast, saved ? 'success' : 'info', saved ? 'Saved' : 'Removed');
-                }
                 return;
             }
 
@@ -1116,23 +1178,31 @@ export function initHome(TopToast) {
                 }
                 else if (e.target.classList.contains('reply-input')) {
                     e.preventDefault();
-                    const text = (e.target.value || '').trim();
-                    if (text) {
-                        const me = tmGetCreatorIdentity();
-                        const replyObj = {
-                            text,
-                            authorEmail: me.email || '',
-                            authorName: me.name || 'You',
-                            authorAvatarUrl: me.avatarUrl || '',
-                            timestamp: Date.now()
-                        };
+                    const rawText = e.target.value.trim();
+                    if(rawText) {
+                        const text = tmEscapeHtml(rawText).replace(/\n/g, '<br>');
 
-                        const replyHTML = generateCommentHTML(replyObj);
+                        const me = (typeof tmGetCreatorIdentity === 'function') ? tmGetCreatorIdentity() : {};
+                        const myNameRaw = (me && me.name) ? String(me.name) : 'You';
+                        const myName = tmEscapeHtml((myNameRaw.split('|')[0] || myNameRaw).trim() || 'You');
+                        const myAvatar = tmEscapeHtml((me && me.avatarUrl) ? me.avatarUrl : 'assets/images/truematch-mark.png');
+
+                        const replyHTML = `
+                            <div class="comment-item" style="margin-top:10px; padding-left:40px; animation:fadeIn 0.2s;">
+                                <img src="${myAvatar}" class="comment-avatar" style="width:25px; height:25px;">
+                                <div class="comment-body">
+                                    <div class="comment-bubble">
+                                        <div class="comment-author" style="font-weight:700; font-size:0.8rem;">${myName}</div>
+                                        <div class="comment-text">${text}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
                         e.target.closest('.reply-input-row').insertAdjacentHTML('beforebegin', replyHTML);
                         e.target.closest('.reply-input-row').remove();
                     }
                 }
-}
+            }
         });
 
         // Close Dropdown Outside Click
@@ -1599,56 +1669,111 @@ function renderPost(post, animate) {
 
 // 🔥 UPDATED GENERATOR TO INCLUDE EMOJIS IN COMMENTS 🔥
 
-function tmCompactDisplayName(raw) {
-    const s = (raw === null || raw === undefined) ? '' : String(raw);
-    if (!s.trim()) return '';
-    // If someone saved a packed profile string like "Name | Bio: ... | Location: ...",
-    // keep only the first segment (the actual display name).
-    const first = s.split('|')[0].trim();
-    return first || s.trim();
+
+// Time-ago helper (was referenced but missing in some builds)
+function tmTimeAgo(tsMs) {
+  const t = Number(tsMs) || 0;
+  if (!t) return '';
+  const deltaMs = Date.now() - t;
+  if (!isFinite(deltaMs)) return '';
+  const s = Math.floor(Math.abs(deltaMs) / 1000);
+  const isFuture = deltaMs < 0;
+
+  const fmt = (n, unit) => `${n}${unit}${isFuture ? '' : ' ago'}`;
+
+  if (s < 10 && !isFuture) return 'just now';
+  if (s < 60) return fmt(s, 's');
+  const m = Math.floor(s / 60);
+  if (m < 60) return fmt(m, 'm');
+  const h = Math.floor(m / 60);
+  if (h < 24) return fmt(h, 'h');
+  const d = Math.floor(h / 24);
+  if (d < 7) return fmt(d, 'd');
+  const w = Math.floor(d / 7);
+  if (w < 5) return fmt(w, 'w');
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return fmt(mo, 'mo');
+  const y = Math.floor(d / 365);
+  return fmt(y, 'y');
 }
 
 function generateCommentHTML(textOrObj, timestampMaybe) {
     const safeStr = (v) => (v === null || v === undefined) ? '' : String(v);
-    const me = tmGetCreatorIdentity();
 
-    const c = (textOrObj && typeof textOrObj === 'object' && !Array.isArray(textOrObj))
+    const c = (textOrObj && typeof textOrObj === 'object')
         ? textOrObj
-        : { text: safeStr(textOrObj), timestamp: timestampMaybe };
+        : { text: textOrObj, timestamp: timestampMaybe };
 
-    const commentId = safeStr(c.id || c.commentId || c._id || '');
-    const authorEmail = safeStr(c.authorEmail || c.creatorEmail || c.userEmail || c.email || '');
-    const isMe = authorEmail && me.email && authorEmail.toLowerCase() === me.email.toLowerCase();
+    const me = (typeof tmGetCreatorIdentity === 'function') ? tmGetCreatorIdentity() : {};
 
-    const authorNameRaw = safeStr(c.authorName || c.creatorName || c.name || '');
-    const name = tmCompactDisplayName(isMe ? me.name : (authorNameRaw || 'Unknown')) || 'Unknown';
+    const authorEmail = safeStr(c.authorEmail || c.creatorEmail || c.email || '').trim();
+    const authorNameRaw = safeStr(c.authorName || c.creatorName || c.name || '').trim();
 
-    const avatarRaw = safeStr(c.authorAvatarUrl || c.creatorAvatarUrl || c.avatarUrl || c.avatar || '');
-    const avatarUrl = safeStr(isMe ? me.avatarUrl : avatarRaw) || 'assets/images/truematch-mark.png';
+    const meEmail = safeStr(me.email || '').trim();
+    const isMe =
+        (authorEmail && meEmail && authorEmail.toLowerCase() === meEmail.toLowerCase()) ||
+        (!authorEmail && (authorNameRaw === 'You' || authorNameRaw === 'Me'));
 
-    const text = tmEscapeHtml(safeStr(c.text || ''));
-    const cidAttr = commentId ? ` data-comment-id="${tmEscapeHtml(commentId)}"` : '';
+    // Name: keep only the display name (strip " | Bio: ..." etc if present)
+    const rawName = (isMe ? safeStr(me.name || '').trim() : (authorNameRaw || 'Unknown'));
+    const name = (rawName.split('|')[0] || rawName).trim() || 'Unknown';
+
+    // Avatar
+    const avatar =
+        (isMe ? safeStr(me.avatarUrl || '').trim()
+              : safeStr(c.authorAvatarUrl || c.creatorAvatarUrl || c.avatarUrl || '').trim())
+        || 'assets/images/truematch-mark.png';
+
+    const avatarAttr = tmEscapeHtml(avatar);
+
+    const text = tmEscapeHtml(safeStr(c.text || '').trim()).replace(/\n/g, '<br>');
+    const commentId = safeStr(c.id || c.commentId || c._id || '').trim();
+
+    // Optional initial reaction (local-only for now)
+    const myReaction = safeStr(c.myReaction || c.reaction || c.reactionType || '').trim();
+    const likeHtml = myReaction ? getEmojiIcon(myReaction) : 'Like';
+    const likedClass = myReaction ? 'liked' : '';
+    const likeColorStyle = myReaction ? `style="color:${getEmojiColor(myReaction)}; font-weight:700;"` : 'style="font-weight:600;"';
+
+    const idAttr = commentId ? ` data-comment-id="${tmEscapeHtml(commentId)}"` : '';
 
     return `
-        <div class="comment-item"${cidAttr} style="display:flex; gap:10px; align-items:flex-start; margin-top:10px;">
-            <img src="${tmEscapeHtml(avatarUrl)}" class="comment-avatar" style="width:32px; height:32px; border-radius:50%; object-fit:cover;">
-            <div class="comment-body" style="flex:1;">
-                <div class="comment-bubble" style="padding:10px 12px; border-radius:14px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);">
-                    <div class="comment-author" style="font-weight:800; font-size:0.85rem; color:#fff; line-height:1.1; margin-bottom:6px;">${tmEscapeHtml(name)}</div>
-                    <div class="comment-text" style="font-size:0.92rem; color: rgba(255,255,255,0.88); line-height:1.35;">${text}</div>
+        <div class="comment-item"${idAttr}>
+            <img class="comment-avatar" src="${avatarAttr}" alt="">
+            <div class="comment-body">
+                <div class="comment-bubble">
+                    <div class="comment-author" style="font-weight:700; font-size:0.85rem;">${tmEscapeHtml(name)}</div>
+                    <div class="comment-text">${text}</div>
+                </div>
+
+                <div class="comment-actions">
+                    <div class="comment-reaction-wrapper">
+                        <span class="c-action c-like action-comment-like ${likedClass}" ${likeColorStyle}>${likeHtml}</span>
+                        <div class="comment-reaction-picker">
+                            <span class="react-emoji" data-type="comment" data-reaction="like">👍</span>
+                            <span class="react-emoji" data-type="comment" data-reaction="love">❤️</span>
+                            <span class="react-emoji" data-type="comment" data-reaction="haha">😆</span>
+                            <span class="react-emoji" data-type="comment" data-reaction="wow">😮</span>
+                            <span class="react-emoji" data-type="comment" data-reaction="sad">😢</span>
+                            <span class="react-emoji" data-type="comment" data-reaction="angry">😡</span>
+                        </div>
+                    </div>
+
+                    <span class="c-action action-reply-comment">Reply</span>
                 </div>
             </div>
         </div>
     `;
 }
 
-// Helpers for Icons/Colors
+// Helpers for Icons/Colors (Same as Profile.js)
 // (Same as Profile.js)
 function getEmojiIcon(type) {
     switch(type) {
         case 'like': return '<i class="fa-solid fa-thumbs-up"></i> 1';
         case 'love': return '<i class="fa-solid fa-heart"></i> 1';
         case 'haha': return '<i class="fa-solid fa-face-laugh-squint"></i> 1';
+        case 'wow': return '<i class="fa-solid fa-face-surprise"></i> 1';
         case 'sad': return '<i class="fa-solid fa-face-sad-tear"></i> 1';
         case 'angry': return '<i class="fa-solid fa-face-angry"></i> 1';
         default: return 'Like';
@@ -1660,6 +1785,7 @@ function getEmojiColor(type) {
         case 'like': return '#64E9EE';
         case 'love': return '#ff4757';
         case 'haha': return '#f1c40f';
+        case 'wow': return '#f1c40f';
         case 'sad': return '#e67e22';
         case 'angry': return '#e74c3c';
         default: return '';
