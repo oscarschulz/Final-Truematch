@@ -27,6 +27,17 @@ function tmEscapeHtml(str = '') {
         .replace(/'/g, '&#39;');
 }
 
+function tmNameOnly(raw = '') {
+    let s = (raw === null || raw === undefined) ? '' : String(raw);
+    s = s.replace(/\s+/g, ' ').trim();
+    if (!s) return '';
+    // Many profiles store a packed summary like "Name | Bio: ... | Location: ..."
+    if (s.includes('|')) s = s.split('|')[0].trim();
+    if (s.includes('\n')) s = s.split('\n')[0].trim();
+    return s || '';
+}
+
+
 function tmGetCreatorIdentity() {
     const safeStr = (v) => (v === null || v === undefined) ? '' : String(v).trim();
 
@@ -100,29 +111,6 @@ function tmToast(TopToast, icon, title) {
 
 function tmNowId() {
     return String(Date.now()) + '-' + Math.random().toString(16).slice(2);
-}
-
-// Consistent "time ago" helper used by post header + comments.
-// Returns compact units: 3m, 2h, 5d, etc.
-function tmTimeAgo(timestamp) {
-    const t = Number(timestamp || 0);
-    if (!t) return '';
-    const seconds = Math.floor((Date.now() - t) / 1000);
-    if (!Number.isFinite(seconds) || seconds < 0) return '';
-    if (seconds < 10) return 'now';
-    if (seconds < 60) return `${seconds}s`;
-    const mins = Math.floor(seconds / 60);
-    if (mins < 60) return `${mins}m`;
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h`;
-    const days = Math.floor(hrs / 24);
-    if (days < 7) return `${days}d`;
-    const weeks = Math.floor(days / 7);
-    if (weeks < 4) return `${weeks}w`;
-    const months = Math.floor(days / 30);
-    if (months < 12) return `${months}mo`;
-    const years = Math.floor(days / 365);
-    return `${years}y`;
 }
 
 
@@ -1039,7 +1027,7 @@ export function initHome(TopToast) {
                     text,
                     timestamp: Date.now(),
                     authorEmail: meIdentity.email || '',
-                    authorName: meIdentity.name || '',
+                    authorName: (tmNameOnly(meIdentity.name) || meIdentity.name) || '',
                     authorHandle: meIdentity.handle || '',
                     authorAvatarUrl: meIdentity.avatarUrl || ''
                 };
@@ -1078,15 +1066,12 @@ export function initHome(TopToast) {
                 const commentItem = target.closest('.comment-item');
                 const commentBody = commentItem.querySelector('.comment-body');
                 let replyBox = commentBody.querySelector('.reply-input-row');
-                const commenterName = (commentItem.querySelector('.c-user')?.textContent || '').trim() || 'this comment';
-                const me = tmGetCreatorIdentity();
-                const meAvatar = (me?.avatarUrl || 'assets/images/truematch-mark.png');
                 
                 if (!replyBox) {
                     const replyHTML = `
                         <div class="reply-input-row">
-                            <img src="${tmEscapeHtml(meAvatar)}" class="comment-avatar" style="width:25px; height:25px; border-radius:50%; object-fit:cover;">
-                            <input type="text" class="reply-input" placeholder="Reply to ${tmEscapeHtml(commenterName)}...">
+                            <img src="${tmGetCreatorIdentity().avatarUrl || 'assets/images/truematch-mark.png'}" style="width:25px; height:25px; border-radius:50%;">
+                            <input type="text" class="reply-input" placeholder="Write a reply...">
                         </div>
                     `;
                     commentBody.insertAdjacentHTML('beforeend', replyHTML);
@@ -1135,17 +1120,13 @@ export function initHome(TopToast) {
                     e.preventDefault();
                     const text = e.target.value.trim();
                     if(text) {
-                        const me = tmGetCreatorIdentity();
-                        const meName = tmEscapeHtml((me?.name || 'You'));
-                        const meAvatar = tmEscapeHtml((me?.avatarUrl || 'assets/images/truematch-mark.png'));
-                        const safeReply = tmEscapeHtml(text).replace(/\n/g, '<br>');
                         const replyHTML = `
                             <div class="comment-item" style="margin-top:10px; animation:fadeIn 0.2s;">
-                                <img src="${meAvatar}" class="comment-avatar" style="width:25px; height:25px; object-fit:cover;">
+                                <img src="assets/images/truematch-mark.png" class="comment-avatar" style="width:25px; height:25px;">
                                 <div class="comment-body">
                                     <div class="comment-bubble">
-                                        <div style="font-weight:700; font-size:0.8rem;">${meName}</div>
-                                        <div>${safeReply}</div>
+                                        <div style="font-weight:700; font-size:0.8rem;">You</div>
+                                        <div>${text}</div>
                                     </div>
                                 </div>
                             </div>
@@ -1530,8 +1511,6 @@ function renderPost(post, animate) {
     const animationStyle = animate ? 'animation: fadeIn 0.3s ease;' : '';
 
     const { name, handle, avatarUrl, verified } = tmGetPostIdentity(post);
-    const meIdentity = tmGetCreatorIdentity();
-    const meAvatarUrl = (meIdentity?.avatarUrl || 'assets/images/truematch-mark.png');
 
     const safeText = tmRenderFormattedText(post.text || '');
     const meEmail = tmGetMeEmail();
@@ -1576,7 +1555,7 @@ function renderPost(post, animate) {
 
             ${extraBlock}
 
-            <div class="post-actions" style="display: flex; justify-content: space-between; align-items: center; color: var(--muted); padding-top: 10px; position: relative; clear: both;">
+            <div class="post-actions" style="display: flex; justify-content: space-between; align-items: center; color: var(--muted); padding-top: 10px; position: relative;">
                 <div style="display: flex; gap: 25px; font-size: 1.3rem; align-items: center;">
 
                     <div class="reaction-wrapper">
@@ -1597,15 +1576,15 @@ function renderPost(post, animate) {
                 <i class="${isBookmarked ? 'fa-solid' : 'fa-regular'} fa-bookmark" style="cursor: pointer; font-size: 1.2rem; transition: 0.2s; ${isBookmarked ? 'color: #64E9EE;' : ''}"></i>
             </div>
 
-            <div class="post-likes" style="font-size: 0.85rem; font-weight: 700; margin-top: 10px; color: var(--text); clear: both;">${tmLikesText(likeCount)}</div>
+            <div class="post-likes" style="font-size: 0.85rem; font-weight: 700; margin-top: 10px; color: var(--text);">${tmLikesText(likeCount)}</div>
 
-            <div class="post-comments-section hidden" style="clear: both;">
+            <div class="post-comments-section hidden">
                  <div class="comment-list">
                     <div class="no-comments-msg" style="text-align: center; font-size: 0.85rem; color: var(--muted); ${noCommentsStyle}">No comments yet</div>
                     ${commentsHTML}
                  </div>
                  <div class="comment-input-area">
-                    <img src="${tmEscapeHtml(meAvatarUrl)}" class="comment-avatar" style="width: 30px; height: 30px; border-radius: 50%; object-fit: cover;">
+                    <img src="${tmEscapeHtml(avatarUrl)}" style="width: 30px; height: 30px; border-radius: 50%;">
                     <input type="text" class="comment-input" placeholder="Write a comment...">
                     <button class="btn-send-comment"><i class="fa-solid fa-paper-plane"></i></button>
                  </div>
@@ -1639,46 +1618,43 @@ function generateCommentHTML(textOrObj, timestampMaybe) {
         (authorEmail && me.email && authorEmail.toLowerCase() === me.email.toLowerCase()) ||
         (!authorEmail && (authorNameRaw === 'You' || authorNameRaw === 'Me'));
 
-    const name = isMe ? safeStr(me.name) : (authorNameRaw || 'Unknown');
+    // Only show the display name in comments (no packed Bio/Location/etc)
+    const displayName =
+        tmNameOnly(isMe ? safeStr(me.name) : authorNameRaw) ||
+        (isMe ? 'You' : (authorNameRaw || 'Unknown'));
 
     const avatar =
         isMe
             ? safeStr(me.avatarUrl)
             : (safeStr(c.authorAvatarUrl || c.creatorAvatarUrl || c.avatarUrl) || 'assets/images/truematch-mark.png');
 
-    const avatarAttr = tmEscapeHtml(avatar);
+    const avatarAttr = avatar.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
-    const text = tmEscapeHtml(safeStr(c.text)).replace(/\n/g, '<br>');
-    const timestamp = Number(c.timestamp || c.createdAtMs || c.createdAt || timestampMaybe || Date.now()) || Date.now();
-    const timeAgo = tmTimeAgo(timestamp);
-    const commentId = safeStr(c.id || c._id || c.commentId) || `${timestamp}-${Math.random().toString(16).slice(2)}`;
+    const text = tmEscapeHtml(safeStr(c.text));
+    const commentId = safeStr(c.id || c._id || c.commentId || '');
+    const idAttr = commentId ? ` data-comment-id="${tmEscapeHtml(commentId)}"` : '';
 
-    // NOTE: Keep `.c-user` class for existing reply-handler compatibility.
     return `
-        <div class="comment-item" data-comment-id="${tmEscapeHtml(commentId)}">
+        <div class="comment-item"${idAttr}>
             <img class="comment-avatar" src="${avatarAttr}" alt="">
             <div class="comment-body">
                 <div class="comment-bubble">
-                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
-                        <span class="c-user" style="font-weight:800; font-size:0.85rem;">${tmEscapeHtml(name)}</span>
-                        <span class="c-time" style="font-size:0.75rem; color: var(--muted);">${tmEscapeHtml(timeAgo)}</span>
-                    </div>
-                    <div class="c-text">${text}</div>
+                    <div class="c-user">${tmEscapeHtml(displayName)}</div>
+                    <div class="comment-text">${text}</div>
                 </div>
 
                 <div class="comment-actions">
                     <div class="comment-reaction-wrapper">
-                        <span class="c-action c-like action-comment-like" style="font-weight:600;">Like</span>
+                        <span class="c-action c-like action-comment-like" title="React">${getEmojiIcon('like')}</span>
                         <div class="comment-reaction-picker">
-                            <span class="react-emoji" data-type="comment" data-reaction="like">👍</span>
-                            <span class="react-emoji" data-type="comment" data-reaction="love">❤️</span>
-                            <span class="react-emoji" data-type="comment" data-reaction="haha">😆</span>
-                            <span class="react-emoji" data-type="comment" data-reaction="wow">😮</span>
-                            <span class="react-emoji" data-type="comment" data-reaction="sad">😢</span>
-                            <span class="react-emoji" data-type="comment" data-reaction="angry">😡</span>
+                            <span data-reaction="like">${getEmojiIcon('like')}</span>
+                            <span data-reaction="love">${getEmojiIcon('love')}</span>
+                            <span data-reaction="laugh">${getEmojiIcon('laugh')}</span>
+                            <span data-reaction="shock">${getEmojiIcon('shock')}</span>
+                            <span data-reaction="angry">${getEmojiIcon('angry')}</span>
                         </div>
                     </div>
-                    <span class="c-action action-reply-comment">Reply</span>
+                    <span class="c-action c-reply action-reply-comment">Reply</span>
                 </div>
             </div>
         </div>
