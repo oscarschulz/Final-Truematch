@@ -5240,12 +5240,155 @@ app.get('/api/dates', async (_req, res) => {
 });
 
 // ---------------- Messages (per-match chat + daily limits) -------------------
-// NOTE: This is an in-memory demo implementation. In production you would persist
-// messages in Firestore or another database, but the interface can stay the same.
+// NOTE: Firestore-backed when Firebase is configured; otherwise falls back to the
+// existing in-memory store (DB.messages) so dev/demo behavior stays intact.
+// Interface/response shapes are kept backward-compatible for the frontend.
+//
+// Storage model (Firestore):
+// - Collection: CHAT_THREADS_COLLECTION (default: tm_chat_threads)
+// - Doc id: deterministic hash of the 2 participant emails
+// - Fields: participants[], updatedAtMs, lastMessage{}, unread{<safeEmailKey>:n}
+// - Subcollection: items (message docs)
+
+const CHAT_THREADS_COLLECTION = process.env.CHAT_THREADS_COLLECTION || 'tm_chat_threads';
+
+function _chatSafeKey(email) {
+  return String(email || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
+}
+
+function _chatThreadId(a, b) {
+  const ea = String(a || '').trim().toLowerCase();
+  const eb = String(b || '').trim().toLowerCase();
+  const pair = [ea, eb].sort().join('|');
+  try {
+    return crypto.createHash('sha256').update(pair).digest('hex').slice(0, 32);
+  } catch {
+    // crypto should exist; fallback to a stable-ish id
+    return Buffer.from(pair).toString('base64').replace(/[^a-z0-9]/gi, '').slice(0, 32);
+  }
+}
+
+async function _chatListThreadsFS(email) {
+  // Avoid requiring composite indexes: query + sort in memory.
+  const snap = await firestore
+    .collection(CHAT_THREADS_COLLECTION)
+    .where('participants', 'array-contains', email)
+    .limit(200)
+    .get();
+
+  const threads = snap.docs.map(d => ({ id: d.id, ...(d.data() || {}) }));
+  threads.sort((a, b) => (Number(b.updatedAtMs || 0) - Number(a.updatedAtMs || 0)));
+  return threads;
+}
+
+async function _chatLoadThreadFS(email, peerEmail, planKey) {
+  const threadId = _chatThreadId(email, peerEmail);
+  const threadRef = firestore.collection(CHAT_THREADS_COLLECTION).doc(threadId);
+
+  const itemsSnap = await threadRef
+    .collection('items')
+    .orderBy('createdAtMs', 'asc')
+    .limit(500)
+    .get();
+
+  const list = itemsSnap.docs.map(d => {
+    const m = d.data() || {};
+    // Keep legacy shape {id, from, to, text, sentAt, readAt?}
+    return {
+      id: m.id || d.id,
+      from: m.from,
+      to: m.to,
+      text: m.text,
+      sentAt: m.sentAt || (m.createdAtMs ? new Date(Number(m.createdAtMs)).toISOString() : ''),
+      ...(m.readAt ? { readAt: m.readAt } : {}),
+    };
+  });
+
+  // Read receipts (tier1+ only): mark unread inbound as read
+  if (planKey !== 'free' && list.length) {
+    const nowIso = new Date().toISOString();
+    const nowMs = Date.now();
+    const batch = firestore.batch();
+    let changed = false;
+
+    for (const doc of itemsSnap.docs) {
+      const m = doc.data() || {};
+      const to = String(m.to || '').trim().toLowerCase();
+      const readAt = m.readAt || '';
+      if (to === String(email).trim().toLowerCase() && !readAt) {
+        batch.update(doc.ref, { readAt: nowIso, readAtMs: nowMs });
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      // Also reset unread counter for this user on the thread doc (best-effort).
+      const kMe = _chatSafeKey(email);
+      batch.set(threadRef, { unread: { [kMe]: 0 }, lastReadAtMs: { [kMe]: nowMs } }, { merge: true });
+      try { await batch.commit(); } catch (e) { /* best-effort */ }
+    }
+  }
+
+  return list;
+}
+
+async function _chatSendMessageFS(email, peerEmail, text) {
+  const threadId = _chatThreadId(email, peerEmail);
+  const threadRef = firestore.collection(CHAT_THREADS_COLLECTION).doc(threadId);
+  const msgId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+
+  const msg = {
+    id: msgId,
+    from: String(email).trim().toLowerCase(),
+    to: String(peerEmail).trim().toLowerCase(),
+    text: String(text || '').trim(),
+    sentAt: nowIso,
+    createdAtMs: nowMs,
+    readAt: '',
+    readAtMs: 0
+  };
+
+  const kMe = _chatSafeKey(email);
+  const kPeer = _chatSafeKey(peerEmail);
+
+  // Transaction keeps unread counters consistent.
+  await firestore.runTransaction(async (tx) => {
+    const snap = await tx.get(threadRef);
+    const cur = snap.exists ? (snap.data() || {}) : {};
+    const curUnread = (cur.unread && typeof cur.unread === 'object') ? cur.unread : {};
+
+    const unreadMe = 0; // sending a message implies you have "seen" the thread
+    const unreadPeer = Number(curUnread[kPeer] || 0) + 1;
+
+    tx.set(threadRef, {
+      participants: [String(email).trim().toLowerCase(), String(peerEmail).trim().toLowerCase()],
+      updatedAtMs: nowMs,
+      lastMessage: { id: msgId, from: msg.from, to: msg.to, text: msg.text, sentAt: msg.sentAt },
+      unread: { ...curUnread, [kMe]: unreadMe, [kPeer]: unreadPeer }
+    }, { merge: true });
+
+    const msgRef = threadRef.collection('items').doc(msgId);
+    tx.set(msgRef, msg, { merge: true });
+  });
+
+  // Return legacy shape
+  const out = { id: msg.id, from: msg.from, to: msg.to, text: msg.text, sentAt: msg.sentAt };
+  return out;
+}
+
+function _getSessionEmailForMessages(req) {
+  // Prefer signed cookie session; fallback to DB.user if needed.
+  const e = (typeof getSessionEmail === 'function' ? getSessionEmail(req) : '') ||
+            String((DB.user && DB.user.email) || '').trim();
+  return String(e || '').trim().toLowerCase();
+}
 
 // List all message threads for the logged-in user, including usage info.
-app.get('/api/messages', (req, res) => {
-  const email = DB.user && DB.user.email;
+app.get('/api/messages', async (req, res) => {
+  const email = _getSessionEmailForMessages(req);
   if (!email) {
     return res.status(401).json({ ok: false, message: 'not logged in' });
   }
@@ -5254,6 +5397,41 @@ app.get('/api/messages', (req, res) => {
   const plan = user.plan || null;
   const usage = getOrInitMessageUsage(email, plan);
 
+  // Firestore-backed
+  if (hasFirebase && firestore) {
+    try {
+      const docs = await _chatListThreadsFS(email);
+      const threads = docs.map(t => {
+        const parts = Array.isArray(t.participants) ? t.participants : [];
+        const peerEmail = String(parts.find(p => String(p).trim().toLowerCase() !== email) || '').trim().toLowerCase();
+        const last = (t.lastMessage && typeof t.lastMessage === 'object') ? t.lastMessage : null;
+        // count is optional; keep a safe default
+        return {
+          peerEmail,
+          count: Number(t.count || 0),
+          lastMessage: last ? {
+            id: last.id,
+            from: last.from,
+            to: last.to,
+            text: last.text,
+            sentAt: last.sentAt
+          } : null
+        };
+      }).filter(t => !!t.peerEmail);
+
+      return res.json({
+        ok: true,
+        plan: normalizePlanKey(plan),
+        usage: { dayKey: usage.dayKey, sentToday: usage.sentToday || 0, limit: usage.limit },
+        threads
+      });
+    } catch (e) {
+      // If Firestore fails, fall through to legacy in-memory behavior
+      console.warn('messages: firestore list failed, falling back to memory:', e?.message || e);
+    }
+  }
+
+  // Legacy in-memory behavior
   const byPeer = DB.messages[email] || {};
   const threads = Object.keys(byPeer).map((peerEmail) => {
     const list = byPeer[peerEmail] || [];
@@ -5262,13 +5440,7 @@ app.get('/api/messages', (req, res) => {
       peerEmail,
       count: list.length,
       lastMessage: last
-        ? {
-            id: last.id,
-            from: last.from,
-            to: last.to,
-            text: last.text,
-            sentAt: last.sentAt
-          }
+        ? { id: last.id, from: last.from, to: last.to, text: last.text, sentAt: last.sentAt }
         : null
     };
   });
@@ -5276,18 +5448,14 @@ app.get('/api/messages', (req, res) => {
   return res.json({
     ok: true,
     plan: normalizePlanKey(plan),
-    usage: {
-      dayKey: usage.dayKey,
-      sentToday: usage.sentToday || 0,
-      limit: usage.limit
-    },
+    usage: { dayKey: usage.dayKey, sentToday: usage.sentToday || 0, limit: usage.limit },
     threads
   });
 });
 
 // Get the full conversation with a specific peer.
-app.get('/api/messages/thread/:peer', (req, res) => {
-  const email = DB.user && DB.user.email;
+app.get('/api/messages/thread/:peer', async (req, res) => {
+  const email = _getSessionEmailForMessages(req);
   if (!email) {
     return res.status(401).json({ ok: false, message: 'not logged in' });
   }
@@ -5303,11 +5471,26 @@ app.get('/api/messages/thread/:peer', (req, res) => {
   const planKey = normalizePlanKey(plan);
   const usage = getOrInitMessageUsage(email, plan);
 
+  // Firestore-backed
+  if (hasFirebase && firestore) {
+    try {
+      const list = await _chatLoadThreadFS(email, peerEmail, planKey);
+      return res.json({
+        ok: true,
+        plan: planKey,
+        usage: { dayKey: usage.dayKey, sentToday: usage.sentToday || 0, limit: usage.limit },
+        messages: list
+      });
+    } catch (e) {
+      console.warn('messages: firestore thread failed, falling back to memory:', e?.message || e);
+    }
+  }
+
+  // Legacy in-memory
   const byPeer = DB.messages[email] || {};
   const list = byPeer[peerEmail] || [];
 
-  // Read receipts:
-  // Only tier1+ should update read state (free has no read receipts)
+  // Read receipts: only tier1+ should update read state (free has no read receipts)
   if (planKey !== 'free' && Array.isArray(list) && list.length) {
     const nowIso = new Date().toISOString();
     let changed = false;
@@ -5317,8 +5500,6 @@ app.get('/api/messages/thread/:peer', (req, res) => {
         changed = true;
       }
     }
-    // Because the same msg objects are stored for both sides in this demo store,
-    // marking readAt here is enough for the sender to see "seen".
     if (changed) {
       DB.messages[email][peerEmail] = list;
     }
@@ -5327,17 +5508,14 @@ app.get('/api/messages/thread/:peer', (req, res) => {
   return res.json({
     ok: true,
     plan: planKey,
-    usage: {
-      dayKey: usage.dayKey,
-      sentToday: usage.sentToday || 0,
-      limit: usage.limit
-    },
+    usage: { dayKey: usage.dayKey, sentToday: usage.sentToday || 0, limit: usage.limit },
     messages: list
   });
 });
+
 // Send a message to a peer. Free plan has 20 messages/day cap; paid tiers are unlimited.
-app.post('/api/messages/send', (req, res) => {
-  const email = DB.user && DB.user.email;
+app.post('/api/messages/send', async (req, res) => {
+  const email = _getSessionEmailForMessages(req);
   if (!email) {
     return res.status(401).json({ ok: false, message: 'not logged in' });
   }
@@ -5370,14 +5548,26 @@ app.post('/api/messages/send', (req, res) => {
     return res.status(403).json({
       ok: false,
       message: 'daily_message_limit_reached',
-      usage: {
-        dayKey: usage.dayKey,
-        sentToday: used,
-        limit
-      }
+      usage: { dayKey: usage.dayKey, sentToday: used, limit }
     });
   }
 
+  // Firestore-backed
+  if (hasFirebase && firestore) {
+    try {
+      const msg = await _chatSendMessageFS(email, peerEmail, text);
+      usage.sentToday = used + 1;
+      return res.json({
+        ok: true,
+        message: msg,
+        usage: { dayKey: usage.dayKey, sentToday: usage.sentToday, limit }
+      });
+    } catch (e) {
+      console.warn('messages: firestore send failed, falling back to memory:', e?.message || e);
+    }
+  }
+
+  // Legacy in-memory behavior
   const nowIso = new Date().toISOString();
   const msg = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -5387,18 +5577,12 @@ app.post('/api/messages/send', (req, res) => {
     sentAt: nowIso
   };
 
-  // Store under sender
   if (!DB.messages[email]) DB.messages[email] = {};
-  if (!Array.isArray(DB.messages[email][peerEmail])) {
-    DB.messages[email][peerEmail] = [];
-  }
+  if (!Array.isArray(DB.messages[email][peerEmail])) DB.messages[email][peerEmail] = [];
   DB.messages[email][peerEmail].push(msg);
 
-  // Store symmetric view for the recipient
   if (!DB.messages[peerEmail]) DB.messages[peerEmail] = {};
-  if (!Array.isArray(DB.messages[peerEmail][email])) {
-    DB.messages[peerEmail][email] = [];
-  }
+  if (!Array.isArray(DB.messages[peerEmail][email])) DB.messages[peerEmail][email] = [];
   DB.messages[peerEmail][email].push(msg);
 
   usage.sentToday = used + 1;
@@ -5406,14 +5590,9 @@ app.post('/api/messages/send', (req, res) => {
   return res.json({
     ok: true,
     message: msg,
-    usage: {
-      dayKey: usage.dayKey,
-      sentToday: usage.sentToday,
-      limit
-    }
+    usage: { dayKey: usage.dayKey, sentToday: usage.sentToday, limit }
   });
 });
-
 
 // ---------------- Messages Meta (cross-device chat state) -------------------
 // Stores per-thread meta (starred, hidden, priority, note, lastSeenAt, unread)
