@@ -28,15 +28,68 @@ function tmEscapeHtml(str = '') {
 }
 
 function tmGetCreatorIdentity() {
-    const nameEl = document.getElementById('creatorProfileName') || document.getElementById('creatorPopoverName');
-    const handleEl = document.getElementById('creatorProfileHandle') || document.getElementById('creatorPopoverHandle');
-    const avatarEl = document.getElementById('creatorProfileAvatar') || document.querySelector('#view-my-profile .profile-avatar-main');
+    const safeStr = (v) => (v === null || v === undefined) ? '' : String(v).trim();
 
-    const name = (nameEl && nameEl.textContent && nameEl.textContent.trim()) ? nameEl.textContent.trim() : 'Your Name';
-    const handle = (handleEl && handleEl.textContent && handleEl.textContent.trim()) ? handleEl.textContent.trim() : '@username';
-    const avatarUrl = (avatarEl && avatarEl.getAttribute) ? (avatarEl.getAttribute('src') || 'assets/images/truematch-mark.png') : 'assets/images/truematch-mark.png';
+    // Prefer hydrated session object from app.js
+    const me = (typeof window !== 'undefined' && window.__tmMe) ? window.__tmMe : null;
 
-    return { name, handle, avatarUrl };
+    const contentStyle = safeStr(me?.creatorApplication?.contentStyle || me?.creatorApplication?.content_style || '');
+
+    const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const getPacked = (label) => {
+        if (!contentStyle) return '';
+        const re = new RegExp(`(?:^|\n)\s*${escapeRe(label)}\s*:\s*(.+?)(?:\n|$)`, 'i');
+        const m = contentStyle.match(re);
+        return m ? safeStr(m[1]) : '';
+    };
+
+    // DOM fallbacks (already hydrated on creators.html by app.js/profile.js)
+    const nameEl =
+        document.getElementById('creatorProfileName') ||
+        document.getElementById('creatorHeaderName') ||
+        document.getElementById('creatorPopoverName');
+
+    const handleEl =
+        document.getElementById('creatorProfileHandle') ||
+        document.getElementById('creatorHeaderHandle') ||
+        document.getElementById('creatorPopoverHandle');
+
+    const avatarEl =
+        document.getElementById('creatorProfileAvatar') ||
+        document.getElementById('creatorPopoverAvatar') ||
+        document.querySelector('#view-my-profile .profile-avatar-main') ||
+        document.querySelector('.sidebar .user img');
+
+    const domName = safeStr(nameEl?.textContent);
+    const domHandle = safeStr(handleEl?.textContent);
+    const domAvatar = safeStr(avatarEl?.getAttribute?.('src') || avatarEl?.src);
+
+    const email = safeStr(me?.email);
+    const emailPrefix = email ? safeStr(email.split('@')[0]) : '';
+
+    const displayName =
+        getPacked('Display name') ||
+        getPacked('Name') ||
+        safeStr(me?.name || me?.displayName) ||
+        domName ||
+        emailPrefix ||
+        'You';
+
+    let rawHandle =
+        safeStr(me?.handle || me?.username || me?.userName) ||
+        (domHandle ? domHandle.replace(/^@+/, '') : '') ||
+        emailPrefix ||
+        'you';
+
+    rawHandle = rawHandle.replace(/^@+/, '').replace(/\s+/g, '');
+    const handle = rawHandle ? `@${rawHandle}` : '@you';
+
+    const avatarUrl =
+        safeStr(me?.avatarUrl || me?.photoURL || me?.photoUrl || me?.photoURL) ||
+        domAvatar ||
+        'assets/images/truematch-mark.png';
+
+    return { name: displayName, handle, avatarUrl, email };
 }
 
 function tmToast(TopToast, icon, title) {
@@ -130,9 +183,15 @@ function tmMergeComments(localComments, remoteComments) {
         id: c?.id || c?._id || null,
         text: String(c?.text || ''),
         timestamp: Number(c?.timestamp || c?.createdAtMs || c?.createdAt || Date.now()) || Date.now(),
+
+        // Back-compat + new fields
         creatorEmail: c?.creatorEmail || c?.authorEmail || null,
         creatorName: c?.creatorName || c?.authorName || null,
-        creatorAvatarUrl: c?.creatorAvatarUrl || c?.authorAvatarUrl || c?.avatarUrl || c?.avatar || null,
+        creatorAvatarUrl: c?.creatorAvatarUrl || c?.authorAvatarUrl || c?.avatarUrl || null,
+
+        authorEmail: c?.authorEmail || c?.creatorEmail || null,
+        authorName: c?.authorName || c?.creatorName || null,
+        authorAvatarUrl: c?.authorAvatarUrl || c?.creatorAvatarUrl || c?.avatarUrl || null,
     });
 
     // Remote first (authoritative)
@@ -952,11 +1011,19 @@ export function initHome(TopToast) {
 
                 // Optimistic UI
                 const meIdentity = tmGetCreatorIdentity();
-                const optimistic = { id: tmNowId(), text, timestamp: Date.now(), creatorName: meIdentity?.name || null, creatorAvatarUrl: meIdentity?.avatarUrl || null };
+                const optimistic = {
+                    id: tmNowId(),
+                    text,
+                    timestamp: Date.now(),
+                    authorEmail: meIdentity.email || '',
+                    authorName: meIdentity.name || '',
+                    authorHandle: meIdentity.handle || '',
+                    authorAvatarUrl: meIdentity.avatarUrl || ''
+                };
                 updatePost(postId, (post) => {
                     if (!post) return post;
                     if (!Array.isArray(post.comments)) post.comments = [];
-                    post.comments.push({ id: optimistic.id, text: optimistic.text, timestamp: optimistic.timestamp, creatorName: optimistic.creatorName, creatorAvatarUrl: optimistic.creatorAvatarUrl });
+                    post.comments.push({ ...optimistic, creatorEmail: optimistic.authorEmail, creatorName: optimistic.authorName, creatorAvatarUrl: optimistic.authorAvatarUrl });
                     return post;
                 });
 
@@ -1042,17 +1109,13 @@ export function initHome(TopToast) {
                     e.preventDefault();
                     const text = e.target.value.trim();
                     if(text) {
-                        const meIdentity = tmGetCreatorIdentity();
-                        const safeText = tmEscapeHtml(text);
-                        const safeName = tmEscapeHtml(meIdentity?.name || 'You');
-                        const safeAvatar = tmEscapeHtml(meIdentity?.avatarUrl || 'assets/images/truematch-mark.png');
                         const replyHTML = `
                             <div class="comment-item" style="margin-top:10px; animation:fadeIn 0.2s;">
-                                <img src="${safeAvatar}" class="comment-avatar" style="width:25px; height:25px;">
+                                <img src="assets/images/truematch-mark.png" class="comment-avatar" style="width:25px; height:25px;">
                                 <div class="comment-body">
                                     <div class="comment-bubble">
-                                        <div style="font-weight:700; font-size:0.8rem;">${safeName}</div>
-                                        <div>${safeText}</div>
+                                        <div style="font-weight:700; font-size:0.8rem;">You</div>
+                                        <div>${text}</div>
                                     </div>
                                 </div>
                             </div>
@@ -1528,46 +1591,47 @@ function renderPost(post, animate) {
 
 // 🔥 UPDATED GENERATOR TO INCLUDE EMOJIS IN COMMENTS 🔥
 
-function generateCommentHTML(commentOrText, timestamp = Date.now()) {
-    const c = (commentOrText && typeof commentOrText === 'object') ? commentOrText : { text: commentOrText, timestamp };
-    const meIdentity = tmGetCreatorIdentity();
+function generateCommentHTML(textOrObj, timestampMaybe) {
+    const safeStr = (v) => (v === null || v === undefined) ? '' : String(v).trim();
 
-    const ts = Number(c?.timestamp || c?.createdAtMs || c?.createdAt || timestamp || Date.now()) || Date.now();
-    const ago = getTimeAgo(ts);
+    const c = (textOrObj && typeof textOrObj === 'object')
+        ? textOrObj
+        : { text: textOrObj, timestamp: timestampMaybe };
 
-    const rawName = String(c?.creatorName || c?.authorName || '').trim();
-    const displayName = (rawName && rawName !== 'You') ? rawName : (rawName === 'You' ? String(meIdentity?.name || 'You') : 'Unknown');
-    const safeName = tmEscapeHtml(displayName);
+    const me = tmGetCreatorIdentity();
 
-    const rawAvatar = String(c?.creatorAvatarUrl || c?.authorAvatarUrl || c?.avatarUrl || c?.avatar || '').trim();
-    const avatar = rawAvatar || ((meIdentity && displayName === meIdentity.name && meIdentity.avatarUrl) ? meIdentity.avatarUrl : '') || 'assets/images/truematch-mark.png';
-    const safeAvatar = tmEscapeHtml(avatar);
+    const authorEmail = safeStr(c.authorEmail || c.creatorEmail || c.email);
+    const authorNameRaw = safeStr(c.authorName || c.creatorName || c.name);
 
-    const safe = tmEscapeHtml(String(c?.text || '')).replace(/\n/g, '<br>');
+    const isMe =
+        (authorEmail && me.email && authorEmail.toLowerCase() === me.email.toLowerCase()) ||
+        (!authorEmail && (authorNameRaw === 'You' || authorNameRaw === 'Me'));
+
+    const name = isMe ? safeStr(me.name) : (authorNameRaw || 'Unknown');
+
+    const avatar =
+        isMe
+            ? safeStr(me.avatarUrl)
+            : (safeStr(c.authorAvatarUrl || c.creatorAvatarUrl || c.avatarUrl) || 'assets/images/truematch-mark.png');
+
+    const avatarAttr = avatar.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+    const text = tmEscapeHtml(safeStr(c.text));
+    const timestamp = Number(c.timestamp || c.createdAtMs || c.createdAt || timestampMaybe || Date.now()) || Date.now();
+    const timeAgo = tmTimeAgo(timestamp);
 
     return `
-        <div class="comment-item" style="animation: fadeIn 0.3s; display: flex; gap: 10px; align-items: flex-start;">
-            <img src="${safeAvatar}" class="comment-avatar" style="width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;">
-            <div class="comment-body" style="flex: 1;">
-                <div class="comment-bubble" style="background: var(--bg); padding: 8px 12px; border-radius: 12px; border: 1px solid var(--border-color); display: inline-block;">
-                    <div style="font-weight:700; font-size:0.8rem; margin-bottom:2px;">${safeName}</div>
-                    <div>${safe}</div>
+        <div class="comment">
+            <img class="c-avatar" src="${avatarAttr}" alt="">
+            <div class="c-body">
+                <div class="c-meta">
+                    <div class="c-user">${tmEscapeHtml(name)}</div>
+                    <div class="c-time">${timeAgo}</div>
                 </div>
-                <div class="comment-actions" style="display: flex; gap: 15px; margin-top: 5px; padding-left: 5px; font-size: 0.75rem; color: var(--muted); font-weight: 600;">
-
-                    <div class="comment-reaction-wrapper">
-                        <span class="action-comment-like c-action" style="cursor: pointer;">Like</span>
-                        <div class="comment-reaction-picker">
-                            <span class="react-emoji" data-type="comment" data-reaction="like">👍</span>
-                            <span class="react-emoji" data-type="comment" data-reaction="love">❤️</span>
-                            <span class="react-emoji" data-type="comment" data-reaction="haha">😆</span>
-                            <span class="react-emoji" data-type="comment" data-reaction="sad">😢</span>
-                            <span class="react-emoji" data-type="comment" data-reaction="angry">😡</span>
-                        </div>
-                    </div>
-
-                    <span class="c-action action-reply-comment" style="cursor: pointer;">Reply</span>
-                    <span style="opacity:0.6;">${ago}</span>
+                <div class="c-text">${text}</div>
+                <div class="c-actions">
+                    <button class="c-like" type="button">Like</button>
+                    <button class="c-reply" type="button">Reply</button>
                 </div>
             </div>
         </div>

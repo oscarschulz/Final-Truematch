@@ -7464,15 +7464,23 @@ app.post('/api/creator/posts/comment', authMiddleware, async (req, res) => {
     if (!text) return res.status(400).json({ ok: false, message: 'text is required' });
 
     const nowMs = Date.now();
-    const meDoc = (req.user && typeof req.user === 'object') ? req.user : null;
-    const displayName = safeStr((meDoc && (meDoc.name || meDoc.displayName)) || '');
+const meDoc = (req.user && typeof req.user === 'object') ? req.user : { email };
+const meta = _creatorMetaFromUserDoc(meDoc || { email });
+
+const authorName = safeStr(meta.creatorName) || email.split('@')[0];
+const authorHandle = safeStr(meta.creatorHandle) || `@${email.split('@')[0]}`;
+const authorAvatarUrl = safeStr(meta.creatorAvatarUrl) || '';
+const authorVerified = !!meta.creatorVerified;
 
     const comment = {
       id: crypto.randomUUID(),
       postId,
       text,
       authorEmail: email,
-      authorName: displayName || email.split('@')[0],
+      authorName,
+      authorHandle,
+      authorAvatarUrl,
+      authorVerified,
       createdAtMs: nowMs
     };
 
@@ -7541,6 +7549,9 @@ app.get('/api/creator/posts/comments', authMiddleware, async (req, res) => {
         text: safeStr(x.text || ''),
         authorEmail: safeStr(x.authorEmail || ''),
         authorName: safeStr(x.authorName || ''),
+        authorHandle: safeStr(x.authorHandle || ''),
+        authorAvatarUrl: safeStr(x.authorAvatarUrl || ''),
+        authorVerified: !!x.authorVerified,
         createdAtMs: Number(x.createdAtMs || 0)
       };
     });
