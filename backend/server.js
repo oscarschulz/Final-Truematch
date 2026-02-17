@@ -404,6 +404,10 @@ const DB = {
   moments: []
 };
 
+// Messages Meta (per-user thread metadata, server-backed)
+DB.messageMetaByEmail = DB.messageMetaByEmail || {}; // { myEmail: { peerEmail: { starred, priority, hidden, note, lastSeenAt } } }
+
+
 /* =========================
    Request-scoped DB.user / DB.prefs (fix concurrency bug)
    - Many routes mutate DB.user / DB.prefs based on the current request (tm_session cookie).
@@ -5282,6 +5286,58 @@ app.post('/api/messages/send', (req, res) => {
     }
   });
 });
+
+// ---------------- Messages Meta (server-backed, per-user) -------------------
+// Stores per-thread UI metadata: starred, priority, hidden, note, lastSeenAt.
+// Used by Creators/messages module (message.js) via GET/POST /api/me/messages/meta
+
+app.get('/api/me/messages/meta', (req, res) => {
+  const email = DB.user && DB.user.email;
+  if (!email) return res.status(401).json({ ok: false, message: 'not logged in' });
+
+  const me = String(email).trim().toLowerCase();
+  if (!DB.messageMetaByEmail) DB.messageMetaByEmail = {};
+  const items = (DB.messageMetaByEmail[me] && typeof DB.messageMetaByEmail[me] === 'object')
+    ? DB.messageMetaByEmail[me]
+    : {};
+
+  return res.json({ ok: true, items });
+});
+
+app.post('/api/me/messages/meta', (req, res) => {
+  const email = DB.user && DB.user.email;
+  if (!email) return res.status(401).json({ ok: false, message: 'not logged in' });
+
+  const me = String(email).trim().toLowerCase();
+  const body = req.body || {};
+  const threadKeyRaw = body.threadKey || body.peer || body.peerEmail || '';
+  const metaRaw = body.meta || body.data || body.item || {};
+
+  const peer = String(threadKeyRaw || '').trim().toLowerCase();
+  if (!peer) return res.status(400).json({ ok: false, message: 'threadKey required' });
+
+  const clean = (metaRaw && typeof metaRaw === 'object') ? metaRaw : {};
+  const next = {
+    starred: !!clean.starred,
+    priority: Number.isFinite(Number(clean.priority)) ? Number(clean.priority) : 0,
+    hidden: !!clean.hidden,
+    note: (clean.note != null) ? String(clean.note) : '',
+    lastSeenAt: (clean.lastSeenAt != null) ? String(clean.lastSeenAt) : ''
+  };
+
+  if (!DB.messageMetaByEmail) DB.messageMetaByEmail = {};
+  if (!DB.messageMetaByEmail[me] || typeof DB.messageMetaByEmail[me] !== 'object') {
+    DB.messageMetaByEmail[me] = {};
+  }
+
+  DB.messageMetaByEmail[me][peer] = {
+    ...(DB.messageMetaByEmail[me][peer] || {}),
+    ...next
+  };
+
+  return res.json({ ok: true, threadKey: peer, meta: DB.messageMetaByEmail[me][peer] });
+});
+
 // ---------------- Plan selection -------------------
 // Free upgrade (beta) mode: allows manual plan activation without payment.
 // Secure by requiring either:
