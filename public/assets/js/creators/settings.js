@@ -152,6 +152,31 @@ function tmDispatchMeUpdated(detail = {}) {
   } catch (_) {}
 }
 
+async function tmPatchSettings(partialSettings = {}) {
+  // Server-backed settings patch (merged server-side)
+  const payload = { settings: partialSettings };
+
+  const out = await apiPost('/api/me/settings', payload).catch(() => null);
+  if (!out || !out.ok) {
+    const msg = (out && (out.message || out.error)) ? (out.message || out.error) : 'Failed to save settings.';
+    throw new Error(msg);
+  }
+
+  // Update local caches for cross-view consistency
+  try {
+    if (__meCache && __meCache.user) __meCache.user.settings = out.settings || __meCache.user.settings || {};
+  } catch (_) {}
+
+  try {
+    if (window.__tmMe) window.__tmMe.settings = out.settings || window.__tmMe.settings || {};
+  } catch (_) {}
+
+  tmDispatchMeUpdated({ source: 'settings', reason: 'settings_saved' });
+
+  return out.settings;
+}
+
+
 // ---------------- Profile photos (Avatar + Cover) ----------------
 // Goal: allow selecting ANY image size/file-size, then auto-compress + crop client-side
 // so we can safely store it in the backend (Firestore/Storage) without hitting limits.
@@ -582,8 +607,7 @@ function bindSecurityControls(container) {
       }
     });
   }
-
-  // --- Two-Factor Authentication (client-only toggle for now) ---
+  // --- Two-Factor Authentication (server-backed flag; still a "demo" feature UX-wise) ---
   try {
     const hdrs = Array.from(container.querySelectorAll('.set-section-header'));
     const twofaHdr = hdrs.find(h => String(h.textContent || '').toLowerCase().includes('two-factor'));
@@ -592,17 +616,40 @@ function bindSecurityControls(container) {
       const cb = row ? row.querySelector('input[type="checkbox"]') : null;
       if (cb && !cb.__tmBound) {
         cb.__tmBound = true;
+
         const KEY = 'tm_2fa_enabled';
 
-        // hydrate
-        let saved = null;
-        try { saved = localStorage.getItem(KEY); } catch (_) {}
-        cb.checked = (saved === '1' || saved === 'true');
+        // hydrate (prefer server)
+        const serverVal = (me && me.user && me.user.settings && me.user.settings.security && typeof me.user.settings.security.twoFactorEnabled === 'boolean')
+          ? me.user.settings.security.twoFactorEnabled
+          : null;
 
-        cb.addEventListener('change', () => {
+        if (serverVal !== null) {
+          cb.checked = !!serverVal;
+          try { localStorage.setItem(KEY, cb.checked ? '1' : '0'); } catch (_) {}
+        } else {
+          let saved = null;
+          try { saved = localStorage.getItem(KEY); } catch (_) {}
+          cb.checked = (saved === '1' || saved === 'true');
+        }
+
+        cb.addEventListener('change', async () => {
           const on = !!cb.checked;
-          try { localStorage.setItem(KEY, on ? '1' : '0'); } catch (_) {}
-          tmToast(on ? 'Two-factor enabled (demo).' : 'Two-factor disabled.', 'success');
+          cb.disabled = true;
+
+          try {
+            await tmPatchSettings({ security: { twoFactorEnabled: on } });
+            try { localStorage.setItem(KEY, on ? '1' : '0'); } catch (_) {}
+
+            // UX note: this is still demo until you implement OTP / authenticator flow.
+            tmToast(on ? 'Two-factor enabled.' : 'Two-factor disabled.', 'success');
+          } catch (e) {
+            console.error(e);
+            cb.checked = !on; // revert
+            tmToast(e?.message || 'Failed to save two-factor setting.', 'error');
+          } finally {
+            cb.disabled = false;
+          }
         });
       }
     }
@@ -632,7 +679,7 @@ function bindSecurityControls(container) {
 
 }
 
-function bindPrivacyControls(container) {
+function bindPrivacyControls(container, me) {
   if (!container) return;
 
   const toggles = Array.from(container.querySelectorAll('.toggle-row input[type="checkbox"]'));
@@ -653,27 +700,61 @@ function bindPrivacyControls(container) {
     try { localStorage.setItem(key, on ? '1' : '0'); } catch {}
   }
 
-  // Toggle #1: Activity Status
+  const sPriv = (me && me.user && me.user.settings && me.user.settings.privacy) ? me.user.settings.privacy : {};
+  const serverActivity = (typeof sPriv.showActivityStatus === 'boolean') ? sPriv.showActivityStatus : null;
+  const serverOffers = (typeof sPriv.showSubscriptionOffers === 'boolean') ? sPriv.showSubscriptionOffers : null;
+
+  // Toggle #1: Activity Status (server-backed)
   if (toggles[0] && !toggles[0].__tmBound) {
     const cb = toggles[0];
     cb.__tmBound = true;
-    cb.checked = lsGet(KEY_ACTIVITY, true);
-    cb.addEventListener('change', () => {
+
+    const initial = (serverActivity !== null) ? !!serverActivity : lsGet(KEY_ACTIVITY, true);
+    cb.checked = initial;
+    lsSet(KEY_ACTIVITY, initial);
+
+    cb.addEventListener('change', async () => {
       const on = !!cb.checked;
-      lsSet(KEY_ACTIVITY, on);
-      tmToast(on ? 'Activity status is ON.' : 'Activity status is OFF.', 'success');
+      cb.disabled = true;
+
+      try {
+        await tmPatchSettings({ privacy: { showActivityStatus: on } });
+        lsSet(KEY_ACTIVITY, on);
+        tmToast(on ? 'Activity status is ON.' : 'Activity status is OFF.', 'success');
+      } catch (e) {
+        console.error(e);
+        cb.checked = !on; // revert
+        tmToast(e?.message || 'Failed to save privacy setting.', 'error');
+      } finally {
+        cb.disabled = false;
+      }
     });
   }
 
-  // Toggle #2: Subscription Offers
+  // Toggle #2: Subscription Offers (server-backed)
   if (toggles[1] && !toggles[1].__tmBound) {
     const cb = toggles[1];
     cb.__tmBound = true;
-    cb.checked = lsGet(KEY_OFFERS, true);
-    cb.addEventListener('change', () => {
+
+    const initial = (serverOffers !== null) ? !!serverOffers : lsGet(KEY_OFFERS, true);
+    cb.checked = initial;
+    lsSet(KEY_OFFERS, initial);
+
+    cb.addEventListener('change', async () => {
       const on = !!cb.checked;
-      lsSet(KEY_OFFERS, on);
-      tmToast(on ? 'Subscription offers are ON.' : 'Subscription offers are OFF.', 'success');
+      cb.disabled = true;
+
+      try {
+        await tmPatchSettings({ privacy: { showSubscriptionOffers: on } });
+        lsSet(KEY_OFFERS, on);
+        tmToast(on ? 'Subscription offers are ON.' : 'Subscription offers are OFF.', 'success');
+      } catch (e) {
+        console.error(e);
+        cb.checked = !on; // revert
+        tmToast(e?.message || 'Failed to save privacy setting.', 'error');
+      } finally {
+        cb.disabled = false;
+      }
     });
   }
 
@@ -794,7 +875,7 @@ function bindPrivacyControls(container) {
 
 
 
-function bindNotificationsControls(container) {
+function bindNotificationsControls(container, me) {
   if (!container) return;
 
   const toggles = Array.from(container.querySelectorAll('.toggle-row input[type="checkbox"]'));
@@ -804,10 +885,10 @@ function bindNotificationsControls(container) {
   // 2 = Messages (Push)
   // 3 = New Login (Email)
   const KEYS = [
-    { key: 'tm_notif_push_new_subscriber', labelOn: 'Push: New Subscriber ON.', labelOff: 'Push: New Subscriber OFF.', isPush: true },
-    { key: 'tm_notif_push_tips', labelOn: 'Push: Tips ON.', labelOff: 'Push: Tips OFF.', isPush: true },
-    { key: 'tm_notif_push_messages', labelOn: 'Push: Messages ON.', labelOff: 'Push: Messages OFF.', isPush: true },
-    { key: 'tm_notif_email_new_login', labelOn: 'Email: New Login ON.', labelOff: 'Email: New Login OFF.', isPush: false },
+    { lsKey: 'tm_notif_push_new_subscriber', serverKey: 'pushNewSubscriber', labelOn: 'Push: New Subscriber ON.', labelOff: 'Push: New Subscriber OFF.', isPush: true },
+    { lsKey: 'tm_notif_push_tips', serverKey: 'pushTips', labelOn: 'Push: Tips ON.', labelOff: 'Push: Tips OFF.', isPush: true },
+    { lsKey: 'tm_notif_push_messages', serverKey: 'pushMessages', labelOn: 'Push: Messages ON.', labelOff: 'Push: Messages OFF.', isPush: true },
+    { lsKey: 'tm_notif_email_new_login', serverKey: 'emailNewLogin', labelOn: 'Email: New Login ON.', labelOff: 'Email: New Login OFF.', isPush: false },
   ];
 
   function lsGetBool(key, defVal) {
@@ -824,11 +905,15 @@ function bindNotificationsControls(container) {
     try { localStorage.setItem(key, on ? '1' : '0'); } catch {}
   }
 
+  function getServerBool(serverKey) {
+    const n = (me && me.user && me.user.settings && me.user.settings.notifications) ? me.user.settings.notifications : null;
+    const v = n ? n[serverKey] : undefined;
+    return (typeof v === 'boolean') ? v : null;
+  }
+
   function syncGlobalCache() {
     const out = {};
-    KEYS.forEach((it) => {
-      out[it.key] = lsGetBool(it.key, true);
-    });
+    KEYS.forEach((it) => { out[it.lsKey] = lsGetBool(it.lsKey, true); });
     window.__tmNotificationSettings = out;
     try { localStorage.setItem('tm_notification_settings', JSON.stringify(out)); } catch {}
   }
@@ -836,10 +921,7 @@ function bindNotificationsControls(container) {
   async function ensurePushPermission() {
     if (!('Notification' in window)) return true;
 
-    // If user already granted, we're good.
     if (Notification.permission === 'granted') return true;
-
-    // If denied, user must change browser/site settings manually.
     if (Notification.permission === 'denied') return false;
 
     try {
@@ -855,30 +937,47 @@ function bindNotificationsControls(container) {
     if (!cb || cb.__tmBound) return;
 
     cb.__tmBound = true;
-    cb.checked = lsGetBool(meta.key, true);
+
+    // hydrate (prefer server)
+    const serverVal = getServerBool(meta.serverKey);
+    const initial = (serverVal !== null) ? !!serverVal : lsGetBool(meta.lsKey, true);
+    cb.checked = initial;
+    lsSetBool(meta.lsKey, initial);
 
     cb.addEventListener('change', async () => {
       let on = !!cb.checked;
 
-      if (meta.isPush && on) {
-        const ok = await ensurePushPermission();
-        if (!ok) {
-          // Revert toggle
-          cb.checked = false;
-          on = false;
-          tmToast('Push notifications are blocked. Enable notifications for this site in your browser settings.', 'error');
-        }
-      }
+      cb.disabled = true;
 
-      lsSetBool(meta.key, on);
-      syncGlobalCache();
-      tmToast(on ? meta.labelOn : meta.labelOff, 'success');
+      try {
+        if (meta.isPush && on) {
+          const ok = await ensurePushPermission();
+          if (!ok) {
+            cb.checked = false;
+            on = false;
+            throw new Error('Push notifications are blocked. Enable notifications for this site in your browser settings.');
+          }
+        }
+
+        await tmPatchSettings({ notifications: { [meta.serverKey]: on } });
+
+        lsSetBool(meta.lsKey, on);
+        syncGlobalCache();
+        tmToast(on ? meta.labelOn : meta.labelOff, 'success');
+      } catch (e) {
+        console.error(e);
+        cb.checked = !on; // revert
+        tmToast(e?.message || 'Failed to save notification setting.', 'error');
+      } finally {
+        cb.disabled = false;
+      }
     });
   });
 
-  // Make sure global cache exists even before any toggles are used
   syncGlobalCache();
 }
+
+
 
 
 function setActiveMenuItem(el) {
