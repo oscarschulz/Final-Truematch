@@ -7012,6 +7012,7 @@ function _creatorPostToClient(id, d) {
     creatorHandle: safeStr(d?.creatorHandle || ''),
     creatorAvatarUrl: safeStr(d?.creatorAvatarUrl || ''),
     creatorVerified: !!d?.creatorVerified,
+    pinned: !!d?.pinned,
     type: safeStr(d?.type || 'text') || 'text',
     text: safeStr(d?.text || ''),
     poll: d?.poll || null,
@@ -7077,6 +7078,7 @@ app.post('/api/creator/posts', async (req, res) => {
       reactionCounts: {},
       reactionCount: 0,
       commentCount: 0,
+      pinned: false,
       createdAt: new Date(nowMs),
       updatedAt: new Date(nowMs),
     };
@@ -7161,6 +7163,8 @@ app.get('/api/creator/posts', async (req, res) => {
 app.get('/api/creators/feed', async (req, res) => {
   try {
     const me = _normalizeEmail(getSessionEmail(req));
+
+    const meEmail = me;
     if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
 
     const limit = Math.max(1, Math.min(100, parseInt(req.query?.limit || '40', 10) || 40));
@@ -7372,6 +7376,48 @@ app.post('/api/creator/posts/react', authMiddleware, async (req, res) => {
     if (msg.includes('Post not found')) return res.status(404).json({ ok: false, message: 'Post not found' });
     console.error('POST /api/creator/posts/react error', e);
     return res.status(500).json({ ok: false, message: 'Failed to react' });
+  }
+});
+
+
+// Pin/unpin a creator post (creator only)
+app.post('/api/creator/posts/pin', authMiddleware, async (req, res) => {
+  try {
+    const email = _normalizeEmail((req.user && req.user.email) || '');
+    if (!email) return res.status(401).json({ ok: false, message: 'Not authenticated' });
+
+    const body = (req.body && typeof req.body === 'object') ? req.body : {};
+    const postId = safeStr(body.postId || body.id || '').trim();
+    const pinned = !!body.pinned;
+
+    if (!postId) return res.status(400).json({ ok: false, message: 'postId is required' });
+
+    // In-memory mode
+    if (!hasFirebase || !firestore) {
+      if (!DB.creatorPosts || !DB.creatorPosts[postId]) return res.status(404).json({ ok: false, message: 'Post not found' });
+
+      const post = DB.creatorPosts[postId];
+      if (_normalizeEmail(post.creatorEmail) !== email) return res.status(403).json({ ok: false, message: 'Forbidden' });
+
+      post.pinned = pinned;
+      post.updatedAtMs = Date.now();
+      return res.json({ ok: true, postId, pinned });
+    }
+
+    const postRef = creatorPostsCollection.doc(postId);
+    const snap = await postRef.get();
+    if (!snap.exists) return res.status(404).json({ ok: false, message: 'Post not found' });
+
+    const post = snap.data() || {};
+    if (_normalizeEmail(post.creatorEmail) !== email) return res.status(403).json({ ok: false, message: 'Forbidden' });
+
+    const nowMs = Date.now();
+    await postRef.update({ pinned, updatedAt: new Date(nowMs) });
+
+    return res.json({ ok: true, postId, pinned });
+  } catch (e) {
+    console.error('POST /api/creator/posts/pin error', e);
+    return res.status(500).json({ ok: false, message: 'Failed to pin' });
   }
 });
 

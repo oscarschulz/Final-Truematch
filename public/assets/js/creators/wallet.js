@@ -15,6 +15,9 @@ import {
   tmPaymentsSetAll
 } from './data.js';
 
+// Shared toast ref for module-scope helpers
+let TM_WALLET_TOAST = null;
+
 // =============================================================
 // Wallet / Cards
 // Data #2
@@ -255,14 +258,13 @@ function tmVerifyDelete(cardId) {
 }
 
 function tmCardsGetAllWithVerify() {
-  const cards = tmCardsGetAllWithVerify();
-  if (!cards.length) return [];
+  const cards = tmCardsGetAll();
+  if (!Array.isArray(cards) || !cards.length) return [];
   return cards.map((c) => {
     const v = tmVerifyGet(c.id);
     return { ...c, verified: !!v.verified, verifiedAtMs: v.verifiedAtMs };
   });
 }
-
 function tmPrimaryCardId() {
   const cards = tmCardsGetAllWithVerify();
   if (!cards.length) return '';
@@ -512,7 +514,7 @@ function tmRenderCardsList() {
       ? '<span style="font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; background: rgba(100,233,238,0.14); color: var(--primary-cyan); border: 1px solid rgba(100,233,238,0.25);">VERIFIED</span>'
       : '<span style="font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; background: rgba(255,255,255,0.04); color: var(--muted); border: 1px solid rgba(255,255,255,0.10);">UNVERIFIED</span>';
 
-    const rightPills = `<div style="margin-left:auto; display:flex; gap:8px; align-items:center;">${verifiedPill}${rightPills}</div>`;
+    const rightPills = `<div style="margin-left:auto; display:flex; gap:8px; align-items:center;">${primaryPill}${verifiedPill}</div>`;
 
     const exp = (c.expMonth && c.expYear) ? `${c.expMonth}/${String(c.expYear).slice(-2)}` : '';
 
@@ -937,7 +939,7 @@ async function tmLoadPayments(force = false) {
   } catch (err) {
     console.error('Payments load error:', err);
     tmSetPaymentsEmpty('Unable to load payments.');
-    try { TopToast.fire({ icon: 'error', title: 'Unable to load payments' }); } catch (_) {}
+    try { if (TM_WALLET_TOAST && typeof TM_WALLET_TOAST.fire === 'function') TM_WALLET_TOAST.fire({ icon: 'error', title: 'Unable to load payments' }); } catch (_) {}
   } finally {
     tmPayState.loading = false;
   }
@@ -1049,6 +1051,7 @@ function tmBindWalletRebillToggle(toast) {
 
 export function initWallet(TopToast) {
   const toast = TopToast;
+  TM_WALLET_TOAST = toast;
 
   // Wire Wallet Card Verification (Email OTP)
   tmBindVerifyButtons(toast);

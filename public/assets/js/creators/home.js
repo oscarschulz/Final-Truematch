@@ -9,6 +9,12 @@ const BOOKMARKS_KEY = 'tm_creator_bookmarks';
 const FEED_ENDPOINT = '/api/creators/feed';
 const CREATE_POST_ENDPOINT = '/api/creator/posts';
 const DELETE_POST_ENDPOINT = '/api/creator/posts/delete';
+
+// Backend-first interaction endpoints (best-effort; fallback to local if 404/disabled)
+const POST_REACT_ENDPOINT = '/api/creator/posts/react';
+const POST_COMMENT_ENDPOINT = '/api/creator/posts/comment';
+const POST_PIN_ENDPOINT = '/api/creator/posts/pin';
+const POST_COMMENTS_ENDPOINT = '/api/creator/posts/comments';
 // ------------------------------
 // Helpers (safe HTML + identity)
 // ------------------------------
@@ -41,6 +47,158 @@ function tmToast(TopToast, icon, title) {
 
 function tmNowId() {
     return String(Date.now()) + '-' + Math.random().toString(16).slice(2);
+}
+
+
+// ------------------------------
+// Backend-first interactions (best-effort)
+// If server routes are not present yet, we fallback to existing local-only behavior.
+// ------------------------------
+async function tmFetchJson(url, opts = {}) {
+    try {
+        const res = await fetch(url, { credentials: 'include', ...opts });
+        const isJson = (res.headers.get('content-type') || '').includes('application/json');
+        const data = isJson ? await res.json().catch(() => null) : null;
+        return { res, data };
+    } catch (e) {
+        return { res: null, data: null };
+    }
+}
+
+async function tmSetPostReaction(postId, reaction) {
+    if (!postId) return null;
+    const payload = { id: String(postId), reaction: reaction || null };
+    const { res, data } = await tmFetchJson(POST_REACT_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+
+    // If endpoint doesn't exist yet, treat as not available
+    if (!res || res.status === 404) return null;
+    if (data && data.ok) return data;
+    return null;
+}
+
+async function tmPinPost(postId, pinned) {
+    if (!postId) return null;
+    const payload = { id: String(postId), pinned: !!pinned };
+    const { res, data } = await tmFetchJson(POST_PIN_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    if (!res || res.status === 404) return null;
+    if (data && data.ok) return data;
+    return null;
+}
+
+async function tmAddPostComment(postId, text) {
+    if (!postId || !text) return null;
+    const payload = { id: String(postId), text: String(text) };
+    const { res, data } = await tmFetchJson(POST_COMMENT_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    if (!res || res.status === 404) return null;
+    if (data && data.ok) return data;
+    return null;
+}
+
+async function tmFetchPostComments(postId, limit = 50) {
+    if (!postId) return null;
+
+    // Prefer querystring to avoid breaking if backend uses query-based endpoint
+    const url = `${POST_COMMENTS_ENDPOINT}?id=${encodeURIComponent(String(postId))}&limit=${encodeURIComponent(limit)}`;
+    const { res, data } = await tmFetchJson(url, { method: 'GET' });
+    if (!res || res.status === 404) return null;
+    if (data && data.ok && Array.isArray(data.items)) return data.items;
+    if (Array.isArray(data?.comments)) return data.comments;
+    return null;
+}
+
+function tmMergeComments(localComments, remoteComments) {
+    const lc = Array.isArray(localComments) ? localComments : [];
+    const rc = Array.isArray(remoteComments) ? remoteComments : [];
+    if (!rc.length) return lc;
+
+    const seen = new Set();
+    const out = [];
+
+    const norm = (c) => ({
+        id: c?.id || c?._id || null,
+        text: String(c?.text || ''),
+        timestamp: Number(c?.timestamp || c?.createdAtMs || c?.createdAt || Date.now()) || Date.now(),
+        creatorEmail: c?.creatorEmail || c?.authorEmail || null,
+        creatorName: c?.creatorName || c?.authorName || null,
+    });
+
+    // Remote first (authoritative)
+    for (const c of rc) {
+        const n = norm(c);
+        const k = n.id ? String(n.id) : `${n.timestamp}|${n.text}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push(n);
+    }
+
+    // Append local-only
+    for (const c of lc) {
+        const n = norm(c);
+        const k = n.id ? String(n.id) : `${n.timestamp}|${n.text}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push(n);
+    }
+
+    // Oldest to newest for UI list
+    out.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    return out;
+}
+
+async function tmEnsureCommentsLoaded(postCard, TopToast) {
+    try {
+        if (!postCard) return;
+        const postId = postCard?.dataset?.postId || postCard?.id?.replace('post-', '');
+        if (!postId) return;
+
+        const commentSection = postCard.querySelector('.post-comments-section');
+        const list = postCard.querySelector('.comment-list');
+        const emptyMsg = postCard.querySelector('.no-comments-msg');
+        if (!commentSection || !list) return;
+
+        if (commentSection.dataset.loaded === '1') return;
+
+        const remote = await tmFetchPostComments(postId, 80);
+        if (!remote) {
+            // Leave as-is (local-only)
+            commentSection.dataset.loaded = '1';
+            return;
+        }
+
+        // Merge with local cache
+        const updated = updatePost(postId, (post) => {
+            if (!post) return post;
+            const merged = tmMergeComments(post.comments, remote);
+            post.comments = merged;
+            return post;
+        });
+
+        const comments = Array.isArray(updated?.comments) ? updated.comments : tmMergeComments([], remote);
+
+        // Rebuild list UI (keep the "no comments" element)
+        const keepNo = emptyMsg ? emptyMsg.outerHTML : '<div class="no-comments-msg" style="text-align: center; font-size: 0.85rem; color: var(--muted);">No comments yet</div>';
+        list.innerHTML = keepNo + comments.map(c => generateCommentHTML(c.text, c.timestamp)).join('');
+
+        const has = comments.length > 0;
+        const newEmpty = list.querySelector('.no-comments-msg');
+        if (newEmpty) newEmpty.style.display = has ? 'none' : 'block';
+
+        commentSection.dataset.loaded = '1';
+    } catch (e) {
+        // silent
+    }
 }
 
 
@@ -475,7 +633,7 @@ export function initHome(TopToast) {
         feed.addEventListener('touchmove', () => clearTimeout(pressTimer));
 
         // CLICK HANDLER
-        feed.addEventListener('click', (e) => {
+        feed.addEventListener('click', async (e) => {
             const target = e.target;
 
             // --- POST MENU ACTIONS (Copy Link / Pin) ---
@@ -509,7 +667,21 @@ export function initHome(TopToast) {
                 if (!p) return;
 
                 const nextPinned = !p.pinned;
-                updatePost(postId, { pinned: nextPinned });
+
+                // Backend-first (best-effort). If endpoint not available yet, fallback to local.
+                let serverPinned = null;
+                try {
+                    const resp = await tmPinPost(postId, nextPinned);
+                    if (resp && resp.ok) {
+                        if (resp.pinned !== undefined) serverPinned = !!resp.pinned;
+                        else if (resp.post && resp.post.pinned !== undefined) serverPinned = !!resp.post.pinned;
+                        else serverPinned = nextPinned;
+                    }
+                } catch {}
+
+                const finalPinned = (serverPinned === null) ? nextPinned : serverPinned;
+
+                updatePost(postId, { pinned: finalPinned });
 
                 // Re-render at top (keeps UX simple)
                 const el = document.getElementById(`post-${postId}`);
@@ -518,7 +690,7 @@ export function initHome(TopToast) {
                 const updated = getPosts().find(x => String(x.id) === String(postId));
                 if (updated) renderPost(updated, true);
 
-                tmToast(TopToast, 'success', nextPinned ? 'Pinned' : 'Unpinned');
+                tmToast(TopToast, 'success', finalPinned ? 'Pinned' : 'Unpinned');
 
                 const dropdown = target.closest('.post-menu-dropdown');
                 if (dropdown) dropdown.classList.add('hidden');
@@ -621,12 +793,11 @@ export function initHome(TopToast) {
                 const emojiBtn = target;
                 const reactionType = emojiBtn.dataset.reaction;
                 const context = emojiBtn.dataset.type; // 'post' or 'comment'
-                const postCard = target.closest('.post-card');
 
                 // Hide pickers
                 document.querySelectorAll('.reaction-picker.active, .comment-reaction-picker.active').forEach(p => p.classList.remove('active'));
 
-                // POST REACTION
+                // POST REACTION (backend-first, fallback to local)
                 if (context === 'post') {
                     const postCard = target.closest('.post-card');
                     const postId = postCard?.dataset?.postId;
@@ -634,26 +805,49 @@ export function initHome(TopToast) {
                     const mainIcon = postCard?.querySelector('.main-like-btn');
                     const likesCount = postCard?.querySelector('.post-likes');
 
-                    if (postId) {
-                        updatePost(postId, { reaction: reactionType, reactionCount: 1 });
+                    if (!postId) return;
+
+                    const posts = getPosts();
+                    const p = posts.find(x => String(x.id) === String(postId));
+                    const prevReaction = p?.reaction || null;
+
+                    let finalReaction = reactionType || null;
+                    let finalCount = null;
+
+                    try {
+                        const resp = await tmSetPostReaction(postId, finalReaction);
+                        if (resp) {
+                            const r = resp?.reaction ?? resp?.myReaction ?? resp?.post?.reaction ?? resp?.post?.myReaction ?? resp?.post?.reactionType;
+                            if (r !== undefined) finalReaction = (r === null ? null : String(r));
+                            const c = resp?.reactionCount ?? resp?.post?.reactionCount ?? resp?.post?.likes ?? resp?.post?.likeCount;
+                            if (c !== undefined) finalCount = Number(c);
+                        }
+                    } catch {}
+
+                    if (finalCount == null || Number.isNaN(finalCount)) {
+                        // Simple fallback: treated as 0/1 per-user like state
+                        finalCount = finalReaction ? 1 : 0;
+                        if (prevReaction && finalReaction) finalCount = 1;
                     }
 
-                    const ui = tmGetLikeUi(reactionType);
+                    updatePost(postId, { reaction: finalReaction, reactionCount: finalCount });
+
+                    const ui = tmGetLikeUi(finalReaction);
 
                     if (mainIcon) {
                         mainIcon.className = `${ui.icon} main-like-btn action-like`;
                         mainIcon.style.color = ui.color || '';
                         mainIcon.style.transform = 'scale(1.4)';
-                        setTimeout(() => mainIcon.style.transform = 'scale(1)', 200);
+                        setTimeout(() => (mainIcon.style.transform = 'scale(1)'), 200);
                     }
-                    if (likesCount) likesCount.innerText = tmLikesText(1);
+                    if (likesCount) likesCount.innerText = tmLikesText(finalCount);
                 }
-                // COMMENT REACTION
+                // COMMENT REACTION (local-only for now)
                 else if (context === 'comment') {
                     const commentWrapper = target.closest('.comment-reaction-wrapper');
-                    const commentLikeBtn = commentWrapper.querySelector('.action-comment-like');
-                    
-                    if(commentLikeBtn) {
+                    const commentLikeBtn = commentWrapper?.querySelector('.action-comment-like');
+
+                    if (commentLikeBtn) {
                         commentLikeBtn.innerHTML = getEmojiIcon(reactionType);
                         commentLikeBtn.classList.add('liked');
                         commentLikeBtn.style.color = getEmojiColor(reactionType);
@@ -676,19 +870,35 @@ export function initHome(TopToast) {
                 const p = posts.find(x => String(x.id) === String(postId));
                 const hasReaction = !!(p && p.reaction);
 
-                const nextReaction = hasReaction ? null : 'like';
-                const nextCount = hasReaction ? 0 : 1;
+                const desiredReaction = hasReaction ? null : 'like';
 
-                updatePost(postId, { reaction: nextReaction, reactionCount: nextCount });
+                let finalReaction = desiredReaction;
+                let finalCount = null;
 
-                const ui = tmGetLikeUi(nextReaction);
+                try {
+                    const resp = await tmSetPostReaction(postId, desiredReaction);
+                    if (resp) {
+                        const r = resp?.reaction ?? resp?.myReaction ?? resp?.post?.reaction ?? resp?.post?.myReaction ?? resp?.post?.reactionType;
+                        if (r !== undefined) finalReaction = (r === null ? null : String(r));
+                        const c = resp?.reactionCount ?? resp?.post?.reactionCount ?? resp?.post?.likes ?? resp?.post?.likeCount;
+                        if (c !== undefined) finalCount = Number(c);
+                    }
+                } catch {}
+
+                if (finalCount == null || Number.isNaN(finalCount)) {
+                    finalCount = finalReaction ? 1 : 0;
+                }
+
+                updatePost(postId, { reaction: finalReaction, reactionCount: finalCount });
+
+                const ui = tmGetLikeUi(finalReaction);
 
                 icon.className = `${ui.icon} main-like-btn action-like`;
                 icon.style.color = ui.color || '';
                 icon.style.transform = 'scale(1.3)';
-                setTimeout(() => icon.style.transform = 'scale(1)', 200);
+                setTimeout(() => (icon.style.transform = 'scale(1)'), 200);
 
-                if (likesCount) likesCount.innerText = tmLikesText(nextCount);
+                if (likesCount) likesCount.innerText = tmLikesText(finalCount);
                 return;
             }
 
@@ -710,11 +920,19 @@ export function initHome(TopToast) {
             // --- COMMENT TOGGLE ---
             if (target.classList.contains('btn-toggle-comment') || target.classList.contains('fa-comment')) {
                 const postCard = target.closest('.post-card');
-                const commentSection = postCard.querySelector('.post-comments-section');
-                const input = postCard.querySelector('.comment-input');
+                const commentSection = postCard ? postCard.querySelector('.post-comments-section') : null;
+                const input = postCard ? postCard.querySelector('.comment-input') : null;
+
                 if (commentSection) {
+                    const willOpen = commentSection.classList.contains('hidden');
                     commentSection.classList.toggle('hidden');
-                    if (!commentSection.classList.contains('hidden') && input) setTimeout(() => input.focus(), 100);
+
+                    if (willOpen) {
+                        // Backend-first: try to load comments once from server (fallback to local-only if 404)
+                        await tmEnsureCommentsLoaded(postCard, TopToast);
+
+                        if (input) setTimeout(() => input.focus(), 100);
+                    }
                 }
             }
 
@@ -727,24 +945,41 @@ export function initHome(TopToast) {
                 const text = input ? input.value.trim() : '';
                 if (!postCard || !input || !list) return;
 
-                if (text) {
-                    const postId = postCard.id.replace('post-', '');
-                    const comment = { id: tmNowId(), text, timestamp: Date.now() };
+                if (!text) return;
 
-                    const updated = updatePost(postId, (post) => {
-                        if (!post) return post;
-                        if (!Array.isArray(post.comments)) post.comments = [];
-                        post.comments.push(comment);
-                        return post;
-                    });
+                const postId = postCard.id.replace('post-', '');
 
-                    if (emptyMsg) emptyMsg.style.display = 'none';
-                    list.insertAdjacentHTML('beforeend', generateCommentHTML(comment.text, comment.timestamp));
-                    input.value = '';
+                // Optimistic UI
+                const optimistic = { id: tmNowId(), text, timestamp: Date.now() };
+                updatePost(postId, (post) => {
+                    if (!post) return post;
+                    if (!Array.isArray(post.comments)) post.comments = [];
+                    post.comments.push({ id: optimistic.id, text: optimistic.text, timestamp: optimistic.timestamp });
+                    return post;
+                });
 
-                    tmToast(TopToast, 'success', 'Comment added');
-                }
+                if (emptyMsg) emptyMsg.style.display = 'none';
+                list.insertAdjacentHTML('beforeend', generateCommentHTML(optimistic.text, optimistic.timestamp));
+                input.value = '';
+
+                // Backend-first (best-effort). If endpoint not available yet, comment stays local.
+                let persisted = false;
+                try {
+                    const resp = await tmAddPostComment(postId, text);
+                    if (resp && resp.ok) persisted = true;
+
+                    // If server is live, refresh comments once so IDs/timestamps line up across devices
+                    const commentSection = postCard.querySelector('.post-comments-section');
+                    if (persisted && commentSection) {
+                        commentSection.dataset.loaded = '0';
+                        await tmEnsureCommentsLoaded(postCard, TopToast);
+                    }
+                } catch {}
+
+                tmToast(TopToast, 'success', persisted ? 'Comment added' : 'Comment added (local)');
             }
+
+            
 
             // --- REPLY CLICK ---
             if (target.classList.contains('action-reply-comment')) {
@@ -1150,6 +1385,10 @@ async function loadPosts() {
             if (!lp) return p;
 
             const merged = { ...p };
+
+            // Normalize possible server shapes (future-proof)
+            if (merged.myReaction != null && merged.reaction == null) merged.reaction = merged.myReaction;
+
             const clientFields = [
                 'comments',
                 'reaction',
@@ -1162,10 +1401,11 @@ async function loadPosts() {
             ];
 
             for (const f of clientFields) {
-                if (lp[f] !== undefined) merged[f] = lp[f];
+                // Only fill missing fields from local cache (server stays authoritative when present)
+                if (merged[f] === undefined && lp[f] !== undefined) merged[f] = lp[f];
             }
 
-            if (Array.isArray(lp.comments)) merged.comments = lp.comments;
+            if (!Array.isArray(merged.comments) && Array.isArray(lp.comments)) merged.comments = lp.comments;
             return merged;
         });
 
@@ -1197,7 +1437,7 @@ function renderPost(post, animate) {
     const canDelete = !!(meEmail && post.creatorEmail && meEmail === String(post.creatorEmail).toLowerCase());
 
     const isBookmarked = tmIsBookmarked(post.id);
-    const likeCount = post.reaction ? (Number(post.reactionCount) || 1) : (Number(post.reactionCount) || 0);
+    const likeCount = (Number(post.reactionCount) || (post.reaction ? 1 : 0)) || 0;
     const likeUI = tmGetLikeUi(post.reaction);
     const likeIconClass = `${likeUI.icon} main-like-btn action-like`;
     const likeColorStyle = likeUI.color ? `color: ${likeUI.color};` : '';
