@@ -1176,15 +1176,10 @@ export function initHome(TopToast) {
                 let replyBox = commentBody.querySelector('.reply-input-row');
                 
                 if (!replyBox) {
-                    
-const meIdentity = tmGetCreatorIdentity ? tmGetCreatorIdentity() : {};
-                    const av = (meIdentity && meIdentity.avatarUrl) ? String(meIdentity.avatarUrl) : 'assets/images/truematch-mark.png';
-                    const avAttr = av.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-
                     const replyHTML = `
-                        <div class="reply-input-row" style="display:flex; gap:8px; align-items:center; margin-top:8px;">
-                            <img src="${avAttr}" style="width:25px; height:25px; border-radius:50%; object-fit:cover;">
-                            <input type="text" class="reply-input" placeholder="Write a reply..." style="flex:1; min-width:0;">
+                        <div class="reply-input-row">
+                            <img src="assets/images/truematch-mark.png" style="width:25px; height:25px; border-radius:50%;">
+                            <input type="text" class="reply-input" placeholder="Write a reply...">
                         </div>
                     `;
                     commentBody.insertAdjacentHTML('beforeend', replyHTML);
@@ -1233,24 +1228,17 @@ const meIdentity = tmGetCreatorIdentity ? tmGetCreatorIdentity() : {};
                     e.preventDefault();
                     const text = e.target.value.trim();
                     if(text) {
-                        
-const meIdentity = tmGetCreatorIdentity ? tmGetCreatorIdentity() : {};
-const meName = (meIdentity && meIdentity.name) ? String(meIdentity.name).trim() : 'You';
-const av = (meIdentity && meIdentity.avatarUrl) ? String(meIdentity.avatarUrl) : 'assets/images/truematch-mark.png';
-const avAttr = av.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-const safeText = tmEscapeHtml(text);
-
-const replyHTML = `
-    <div class="comment-item" style="display:flex; gap:10px; margin-top:10px; animation:fadeIn 0.2s;">
-        <img src="${avAttr}" class="comment-avatar" style="width:25px; height:25px; border-radius:50%; object-fit:cover;">
-        <div class="comment-body" style="flex:1; min-width:0;">
-            <div class="comment-bubble" style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); padding:10px 12px; border-radius:12px;">
-                <div style="font-weight:700; font-size:0.85rem; margin-bottom:6px;">${tmEscapeHtml(meName)}</div>
-                <div style="white-space:pre-wrap;">${safeText}</div>
-            </div>
-        </div>
-    </div>
-`;
+                        const replyHTML = `
+                            <div class="comment-item" style="margin-top:10px; animation:fadeIn 0.2s;">
+                                <img src="assets/images/truematch-mark.png" class="comment-avatar" style="width:25px; height:25px;">
+                                <div class="comment-body">
+                                    <div class="comment-bubble">
+                                        <div style="font-weight:700; font-size:0.8rem;">You</div>
+                                        <div>${text}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
                         e.target.closest('.reply-input-row').insertAdjacentHTML('beforebegin', replyHTML);
                         e.target.closest('.reply-input-row').remove();
                     }
@@ -1752,63 +1740,65 @@ function tmTimeAgo(tsMs) {
 
 function generateCommentHTML(textOrObj, timestampMaybe) {
     const safeStr = (v) => (v === null || v === undefined) ? '' : String(v).trim();
+    const escAttr = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
     const c = (textOrObj && typeof textOrObj === 'object')
         ? textOrObj
         : { text: textOrObj, timestamp: timestampMaybe };
 
-    const me = tmGetCreatorIdentity ? tmGetCreatorIdentity() : {};
+    const me = tmGetCreatorIdentity();
 
     const authorEmail = safeStr(c.authorEmail || c.creatorEmail || c.email);
     const authorNameRaw = safeStr(c.authorName || c.creatorName || c.name);
-    const authorHandle = safeStr(c.authorHandle || c.creatorHandle || c.handle);
+    const authorHandleRaw = safeStr(c.authorHandle || c.creatorHandle || c.handle);
 
     const isMe =
         (authorEmail && me.email && authorEmail.toLowerCase() === String(me.email).toLowerCase()) ||
-        (!authorEmail && (authorNameRaw === 'You' || authorNameRaw === 'Me')) ||
-        (c.isMe === true);
+        (!authorEmail && (authorNameRaw === 'You' || authorNameRaw === 'Me'));
 
-    let name = isMe ? safeStr(me.name) : authorNameRaw;
-    if (!name) name = authorHandle;
-    if (!name && authorEmail) name = authorEmail.split('@')[0];
-    if (!name) name = 'Unknown';
+    const emailPrefix = authorEmail ? (authorEmail.split('@')[0] || '') : '';
+    const name = safeStr(isMe ? (me.name || authorNameRaw || authorHandleRaw || emailPrefix) : (authorNameRaw || authorHandleRaw || emailPrefix)) || 'Unknown';
 
     const avatar =
-        isMe
-            ? safeStr(me.avatarUrl)
-            : (safeStr(c.authorAvatarUrl || c.creatorAvatarUrl || c.avatarUrl) || 'assets/images/truematch-mark.png');
+        safeStr(isMe ? (me.avatarUrl || '') : (c.authorAvatarUrl || c.creatorAvatarUrl || c.avatarUrl)) ||
+        'assets/images/truematch-mark.png';
 
-    const avatarAttr = avatar.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    const commentId = safeStr(c.id || c.commentId || '');
 
     const text = tmEscapeHtml(safeStr(c.text));
     const timestamp = Number(c.timestamp || c.createdAtMs || c.createdAt || timestampMaybe || Date.now()) || Date.now();
-    const timeAgo = (typeof tmTimeAgo === 'function') ? tmTimeAgo(timestamp) : '';
+    const timeAgo = tmTimeAgo(timestamp);
 
-    const commentId = safeStr(c.id || c.commentId || '');
-    const commentIdAttr = commentId ? commentId.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;') : '';
+    const timeHtml = timeAgo
+        ? ('<div class="c-time" style="font-size:0.75rem; color: var(--muted);">' + tmEscapeHtml(timeAgo) + '</div>')
+        : '';
 
-    // NOTE: Inline styles on purpose so Home feed comments are readable even if comment-specific CSS isn't loaded.
     return `
-        <div class="comment-item" ${commentIdAttr ? `data-comment-id="${commentIdAttr}"` : ''} style="display:flex; gap:10px; margin-top:10px;">
-            <img src="${avatarAttr}" class="comment-avatar" style="width:32px; height:32px; border-radius:50%; object-fit:cover; flex:0 0 auto;" alt="">
+        <div class="comment-item" data-comment-id="${escAttr(commentId)}">
+            <img class="c-avatar" src="${escAttr(avatar)}" alt="">
             <div class="comment-body" style="flex:1; min-width:0;">
-                <div class="comment-bubble" style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); padding:10px 12px; border-radius:12px;">
-                    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:6px;">
-                        <div style="font-weight:700; font-size:0.85rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                            ${tmEscapeHtml(name)}
-                        </div>
-                        <div style="font-size:0.75rem; opacity:0.75; white-space:nowrap;">
-                            ${tmEscapeHtml(timeAgo)}
-                        </div>
+                <div class="c-bubble">
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <div class="c-user">${tmEscapeHtml(name)}</div>
+                        ${timeHtml}
                     </div>
-                    <div style="font-size:0.92rem; line-height:1.35; white-space:pre-wrap;">
-                        ${text}
-                    </div>
+                    <div class="c-txt">${text}</div>
                 </div>
 
-                <div class="comment-actions" style="display:flex; gap:12px; margin-top:6px;">
-                    <button type="button" class="action-comment-like" style="background:transparent; border:0; color:rgba(255,255,255,0.78); font-size:0.8rem; cursor:pointer; padding:0;">Like</button>
-                    <button type="button" class="action-reply-comment" style="background:transparent; border:0; color:rgba(255,255,255,0.78); font-size:0.8rem; cursor:pointer; padding:0;">Reply</button>
+                <div class="comment-actions" style="display:flex; gap:14px; margin-top:4px; padding-left:6px; font-size:0.8rem; color: var(--muted);">
+                    <div class="comment-reaction-wrapper" style="position:relative; display:inline-flex; align-items:center;">
+                        <button type="button" class="action-comment-like" style="background:none; border:none; color:inherit; cursor:pointer; font-weight:600; padding:0;">Like</button>
+                        <div class="comment-reaction-picker">
+                            <span class="react-emoji" data-type="comment" data-reaction="like">👍</span>
+                            <span class="react-emoji" data-type="comment" data-reaction="love">❤️</span>
+                            <span class="react-emoji" data-type="comment" data-reaction="haha">😆</span>
+                            <span class="react-emoji" data-type="comment" data-reaction="wow">😮</span>
+                            <span class="react-emoji" data-type="comment" data-reaction="sad">😢</span>
+                            <span class="react-emoji" data-type="comment" data-reaction="angry">😡</span>
+                        </div>
+                    </div>
+
+                    <button type="button" class="action-reply-comment" style="background:none; border:none; color:inherit; cursor:pointer; font-weight:600; padding:0;">Reply</button>
                 </div>
             </div>
         </div>
