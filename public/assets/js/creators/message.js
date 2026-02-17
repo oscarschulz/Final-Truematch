@@ -6,6 +6,9 @@ import {
     sendMessageTo,
     getMySubscriptions
 } from './data.js';
+import { apiGet, apiPost } from '../../../tm-api.js';
+import { getCurrentUserEmail, readJSON, writeJSON } from '../../../tm-session.js';
+
 
 // =============================================================
 // Messages module (Creators)
@@ -38,13 +41,303 @@ const TM_LAST_SEEN_KEY = 'tm_msg_last_seen_v1';
 const TM_STARRED_KEY = 'tm_starred_chats';
 
 // -------------------------------
+// Server-backed Messages Meta (progressive enhancement)
+// - Persists: starred, priority ($/$$/$$$), hidden, notes, lastSeenAt
+// - Endpoint: GET/POST /api/me/messages/meta
+// - Auto-fallback: per-user local cache + legacy localStorage keys
+// -------------------------------
+
+const TM_META_PREFIX = 'tm_msg_meta_';
+
+let __tmMsgMeta = {
+    loaded: false,
+    serverOk: null,
+    map: {} // peerEmail -> { starred, priority, hidden, note, lastSeenAt }
+};
+
+let __tmMsgMetaPending = new Set();
+let __tmMsgMetaSaveTimer = null;
+
+function __tmNormalizeKey(v) {
+    return String(v || '').trim().toLowerCase();
+}
+
+function __tmMetaStorageKey() {
+    const email = (typeof getCurrentUserEmail === 'function' ? getCurrentUserEmail() : '') || '';
+    const e = __tmNormalizeKey(email) || 'anon';
+    return `${TM_META_PREFIX}${e}`;
+}
+
+function __tmReadLegacyJSON(key, fallback) {
+    try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+    } catch {
+        return fallback;
+    }
+}
+
+function __tmWriteLegacyJSON(key, value) {
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+        // ignore
+    }
+}
+
+function __tmBuildMetaFromLegacy() {
+    const tags = __tmReadLegacyJSON(TM_TAGS_KEY, {}) || {};
+    const hidden = __tmReadLegacyJSON(TM_HIDDEN_KEY, []) || [];
+    const notes = __tmReadLegacyJSON(TM_NOTES_KEY, {}) || {};
+    const lastSeen = __tmReadLegacyJSON(TM_LAST_SEEN_KEY, {}) || {};
+    const starred = __tmReadLegacyJSON(TM_STARRED_KEY, {}) || {};
+
+    const peers = new Set([
+        ...Object.keys(tags || {}),
+        ...Object.keys(notes || {}),
+        ...Object.keys(lastSeen || {}),
+        ...Object.keys(starred || {}),
+        ...(Array.isArray(hidden) ? hidden : [])
+    ].map(__tmNormalizeKey).filter(Boolean));
+
+    const map = {};
+    peers.forEach((peer) => {
+        const t = tags?.[peer];
+        let priority = 0;
+        if (t === 'paid') priority = 3;
+        else if (t === 'priority') priority = 1;
+
+        map[peer] = {
+            starred: !!starred?.[peer],
+            priority,
+            hidden: Array.isArray(hidden) ? hidden.map(__tmNormalizeKey).includes(peer) : false,
+            note: typeof notes?.[peer] === 'string' ? notes[peer] : '',
+            lastSeenAt: typeof lastSeen?.[peer] === 'string' ? lastSeen[peer] : ''
+        };
+    });
+
+    return map;
+}
+
+function __tmSyncLegacyFromMeta() {
+    try {
+        const tags = {};
+        const notes = {};
+        const lastSeen = {};
+        const starred = {};
+        const hidden = [];
+
+        const map = (__tmMsgMeta.map && typeof __tmMsgMeta.map === 'object') ? __tmMsgMeta.map : {};
+        for (const [k, m] of Object.entries(map)) {
+            const peer = __tmNormalizeKey(k);
+            if (!peer) continue;
+
+            const pr = Number(m?.priority || 0);
+            if (pr >= 3) tags[peer] = 'paid';
+            else if (pr >= 1) tags[peer] = 'priority';
+
+            if (m?.note) notes[peer] = String(m.note);
+            if (m?.lastSeenAt) lastSeen[peer] = String(m.lastSeenAt);
+            if (m?.starred) starred[peer] = true;
+            if (m?.hidden) hidden.push(peer);
+        }
+
+        __tmWriteLegacyJSON(TM_TAGS_KEY, tags);
+        __tmWriteLegacyJSON(TM_NOTES_KEY, notes);
+        __tmWriteLegacyJSON(TM_LAST_SEEN_KEY, lastSeen);
+        __tmWriteLegacyJSON(TM_STARRED_KEY, starred);
+        __tmWriteLegacyJSON(TM_HIDDEN_KEY, hidden);
+    } catch {
+        // ignore
+    }
+}
+
+async function __tmEnsureMetaLoaded() {
+    if (__tmMsgMeta.loaded) return __tmMsgMeta.map;
+
+    // 1) Try server (best)
+    try {
+        const res = await apiGet('/api/me/messages/meta');
+        if (res && res.ok !== false) {
+            const items = (res.items && typeof res.items === 'object') ? res.items
+                : (res.meta && typeof res.meta === 'object') ? res.meta
+                : (res.data && typeof res.data === 'object') ? res.data
+                : null;
+
+            if (items && typeof items === 'object') {
+                __tmMsgMeta.map = items;
+                __tmMsgMeta.serverOk = true;
+                __tmMsgMeta.loaded = true;
+
+                // cache locally (per-user)
+                try { writeJSON(__tmMetaStorageKey(), __tmMsgMeta.map); } catch {}
+                __tmSyncLegacyFromMeta();
+                return __tmMsgMeta.map;
+            }
+        }
+
+        // Missing route or explicit error
+        if (res && res.ok === false && (String(res.status) === '404' || /not found/i.test(String(res.error || res.message || '')))) {
+            __tmMsgMeta.serverOk = false;
+        }
+    } catch {
+        // ignore
+    }
+
+    // 2) Per-user local cache
+    try {
+        const local = readJSON(__tmMetaStorageKey(), null);
+        if (local && typeof local === 'object') {
+            __tmMsgMeta.map = local;
+            __tmMsgMeta.loaded = true;
+            if (__tmMsgMeta.serverOk === null) __tmMsgMeta.serverOk = false;
+            __tmSyncLegacyFromMeta();
+            return __tmMsgMeta.map;
+        }
+    } catch {
+        // ignore
+    }
+
+    // 3) Legacy keys (your current implementation)
+    __tmMsgMeta.map = __tmBuildMetaFromLegacy();
+    __tmMsgMeta.loaded = true;
+    if (__tmMsgMeta.serverOk === null) __tmMsgMeta.serverOk = false;
+
+    try { writeJSON(__tmMetaStorageKey(), __tmMsgMeta.map); } catch {}
+    __tmSyncLegacyFromMeta();
+
+    return __tmMsgMeta.map;
+}
+
+function __tmGetMeta(peerEmail) {
+    const peer = __tmNormalizeKey(peerEmail);
+    if (!peer) return {};
+    const m = __tmMsgMeta.map?.[peer];
+    return (m && typeof m === 'object') ? m : {};
+}
+
+function __tmSetMeta(peerEmail, patch) {
+    const peer = __tmNormalizeKey(peerEmail);
+    if (!peer) return;
+
+    const prev = __tmGetMeta(peer);
+    __tmMsgMeta.map[peer] = { ...prev, ...(patch || {}) };
+
+    // keep caches in sync
+    try { writeJSON(__tmMetaStorageKey(), __tmMsgMeta.map); } catch {}
+    __tmSyncLegacyFromMeta();
+
+    // schedule server write
+    __tmSchedulePersistMeta(peer);
+}
+
+function __tmSchedulePersistMeta(peerEmail) {
+    const peer = __tmNormalizeKey(peerEmail);
+    if (!peer) return;
+
+    __tmMsgMetaPending.add(peer);
+
+    if (__tmMsgMetaSaveTimer) return;
+
+    __tmMsgMetaSaveTimer = setTimeout(async () => {
+        const keys = Array.from(__tmMsgMetaPending);
+        __tmMsgMetaPending.clear();
+        __tmMsgMetaSaveTimer = null;
+
+        // Always refresh local cache
+        try { writeJSON(__tmMetaStorageKey(), __tmMsgMeta.map); } catch {}
+
+        // Best-effort server writes (per-thread)
+        for (const k of keys) {
+            try {
+                const payload = { threadKey: k, meta: __tmGetMeta(k) };
+                const r = await apiPost('/api/me/messages/meta', payload);
+                if (r && r.ok !== false) __tmMsgMeta.serverOk = true;
+                else __tmMsgMeta.serverOk = false;
+            } catch {
+                __tmMsgMeta.serverOk = false;
+            }
+        }
+    }, 250);
+}
+
+
+// -------------------------------
 // Local-only UX helpers (tags, delete, notes)
 // -------------------------------
 function getUserTags() {
+    // Prefer server-backed meta (if already loaded), else legacy localStorage.
+    const out = {};
+    try {
+        const map = (__tmMsgMeta.map && typeof __tmMsgMeta.map === 'object') ? __tmMsgMeta.map : null;
+        if (map) {
+            for (const [peerKey, m] of Object.entries(map)) {
+                const peer = normalizeEmail(peerKey);
+                if (!peer) continue;
+                const pr = Number(m?.priority || 0);
+                if (pr >= 3) out[peer] = 'paid';
+                else if (pr >= 1) out[peer] = 'priority';
+            }
+            // If meta is loaded, return derived tags (even if empty).
+            if (__tmMsgMeta.loaded) return out;
+            if (Object.keys(out).length) return out;
+        }
+    } catch {
+        // ignore
+    }
     return JSON.parse(localStorage.getItem(TM_TAGS_KEY) || '{}');
 }
 
+
+
+function getHiddenSet() {
+    const set = new Set();
+    try {
+        const map = (__tmMsgMeta.map && typeof __tmMsgMeta.map === 'object') ? __tmMsgMeta.map : null;
+        if (map) {
+            for (const [peerKey, m] of Object.entries(map)) {
+                const peer = normalizeEmail(peerKey);
+                if (!peer) continue;
+                if (m?.hidden) set.add(peer);
+            }
+            // If meta is loaded, trust it (even if empty).
+            if (__tmMsgMeta.loaded) return set;
+            if (set.size) return set;
+        }
+    } catch {
+        // ignore
+    }
+
+    // Legacy fallback
+    try {
+        const raw = localStorage.getItem(TM_HIDDEN_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(arr)) {
+            arr.map(normalizeEmail).filter(Boolean).forEach(p => set.add(p));
+        }
+    } catch {
+        // ignore
+    }
+    return set;
+}
+
+
 function getStarredMap() {
+    const out = {};
+    try {
+        const map = (__tmMsgMeta.map && typeof __tmMsgMeta.map === 'object') ? __tmMsgMeta.map : null;
+        if (map) {
+            for (const [peerKey, m] of Object.entries(map)) {
+                const peer = normalizeEmail(peerKey);
+                if (!peer) continue;
+                if (m?.starred) out[peer] = true;
+            }
+            if (__tmMsgMeta.loaded) return out;
+            if (Object.keys(out).length) return out;
+        }
+    } catch {
+        // ignore
+    }
     try {
         const raw = localStorage.getItem(TM_STARRED_KEY);
         const v = raw ? JSON.parse(raw) : {};
@@ -54,21 +347,34 @@ function getStarredMap() {
     }
 }
 
+
 function isStarred(peerEmail) {
     const peer = normalizeEmail(peerEmail);
     if (!peer) return false;
+
+    try {
+        const m = __tmGetMeta(peer);
+        if (m && typeof m === 'object' && typeof m.starred === 'boolean') return !!m.starred;
+        if (m && typeof m === 'object' && m.starred) return true;
+    } catch {
+        // ignore
+    }
+
     const map = getStarredMap();
     return !!map[peer];
 }
 
+
 function setStarred(peerEmail, starred) {
     const peer = normalizeEmail(peerEmail);
     if (!peer) return;
-    const map = getStarredMap();
-    if (starred) map[peer] = true;
-    else delete map[peer];
-    localStorage.setItem(TM_STARRED_KEY, JSON.stringify(map));
+
+    // Ensure we have whatever meta exists before we overwrite.
+    __tmEnsureMetaLoaded().catch(() => {});
+
+    __tmSetMeta(peer, { starred: !!starred });
 }
+
 
 function syncStarIcon(peerEmail) {
     if (!DOM.btnChatStar) return;
@@ -81,42 +387,82 @@ function syncStarIcon(peerEmail) {
 }
 
 function setUserTag(userId, tag) {
-    const tags = getUserTags();
+    const peer = normalizeEmail(userId);
+    if (!peer) return;
 
-    // Toggle: if same tag, remove; else set
-    if (tags[userId] === tag) {
-        delete tags[userId];
-        toastInstance?.fire?.({ icon: 'success', title: 'Tag removed' });
+    __tmEnsureMetaLoaded().catch(() => {});
+
+    const m = __tmGetMeta(peer);
+    const cur = Number(m?.priority || 0);
+
+    let next = cur;
+
+    if (tag === 'priority') {
+        // Toggle “Priority” (any 1-2 clears; anything else sets to 1)
+        next = (cur >= 1 && cur < 3) ? 0 : 1;
+    } else if (tag === 'paid') {
+        // Toggle “$$$” (3 clears; anything else sets to 3)
+        next = (cur >= 3) ? 0 : 3;
     } else {
-        tags[userId] = tag;
-        toastInstance?.fire?.({ icon: 'success', title: `Tagged as ${String(tag).toUpperCase()}` });
+        // Unknown tag => clear
+        next = 0;
     }
 
-    localStorage.setItem(TM_TAGS_KEY, JSON.stringify(tags));
+    if (next === 0) {
+        toastInstance?.fire?.({ icon: 'success', title: 'Tag removed' });
+    } else {
+        const label = (next >= 3) ? '$$$' : 'PRIORITY';
+        toastInstance?.fire?.({ icon: 'success', title: `Tagged as ${label}` });
+    }
+
+    __tmSetMeta(peer, { priority: next });
+
     renderMessageList();
 }
 
+
 function deleteConversation(userId) {
     // UI-only hide. (Backend delete not implemented yet.)
-    const hidden = JSON.parse(localStorage.getItem(TM_HIDDEN_KEY) || '[]');
-    if (!hidden.includes(userId)) hidden.push(userId);
-    localStorage.setItem(TM_HIDDEN_KEY, JSON.stringify(hidden));
+    const peer = normalizeEmail(userId);
+    if (!peer) return;
+
+    __tmEnsureMetaLoaded().catch(() => {});
+    __tmSetMeta(peer, { hidden: true });
 
     // If deleting active chat, reset chat UI.
-    if (activePeerEmail && userId === activePeerEmail) {
+    if (activePeerEmail && peer === activePeerEmail) {
         activePeerEmail = null;
         activeChatUser = null;
         lockChatInputs();
         if (DOM.chatHistoryContainer) DOM.chatHistoryContainer.innerHTML = '';
         if (DOM.activeChatName) DOM.activeChatName.textContent = 'Messages';
         if (DOM.activeChatAvatar) DOM.activeChatAvatar.src = DEFAULT_AVATAR;
+        if (DOM.chatSearchInput) DOM.chatSearchInput.value = '';
+        syncStarIcon(null);
     }
 
+    // Refresh list immediately
     renderMessageList();
-    toastInstance?.fire?.({ icon: 'success', title: 'Conversation deleted' });
 }
 
+
 function getLastSeenMap() {
+    const out = {};
+    try {
+        const map = (__tmMsgMeta.map && typeof __tmMsgMeta.map === 'object') ? __tmMsgMeta.map : null;
+        if (map) {
+            for (const [peerKey, m] of Object.entries(map)) {
+                const peer = normalizeEmail(peerKey);
+                if (!peer) continue;
+                if (m?.lastSeenAt) out[peer] = String(m.lastSeenAt);
+            }
+            if (__tmMsgMeta.loaded) return out;
+            if (Object.keys(out).length) return out;
+        }
+    } catch {
+        // ignore
+    }
+
     try {
         const raw = localStorage.getItem(TM_LAST_SEEN_KEY);
         const v = raw ? JSON.parse(raw) : {};
@@ -126,11 +472,16 @@ function getLastSeenMap() {
     }
 }
 
+
 function setLastSeen(peerEmail, iso) {
-    const map = getLastSeenMap();
-    map[String(peerEmail || '').toLowerCase()] = String(iso || new Date().toISOString());
-    localStorage.setItem(TM_LAST_SEEN_KEY, JSON.stringify(map));
+    const peer = normalizeEmail(peerEmail);
+    if (!peer) return;
+
+    __tmEnsureMetaLoaded().catch(() => {});
+
+    __tmSetMeta(peer, { lastSeenAt: String(iso || new Date().toISOString()) });
 }
+
 
 // -------------------------------
 // Formatting helpers
@@ -231,8 +582,19 @@ function computeUnread(peerEmail, lastMessage) {
     const from = normalizeEmail(last.from);
     if (from !== peer) return 0;
 
-    const seenMap = getLastSeenMap();
-    const seenIso = seenMap[peer];
+    // Prefer server-backed meta lastSeenAt, fallback to legacy map.
+    let seenIso = '';
+    try {
+        const m = __tmGetMeta(peer);
+        if (m && typeof m === 'object' && m.lastSeenAt) seenIso = String(m.lastSeenAt);
+    } catch {
+        // ignore
+    }
+    if (!seenIso) {
+        const seenMap = getLastSeenMap();
+        seenIso = seenMap[peer] || '';
+    }
+
     if (!seenIso) return 1;
 
     const lastMs = new Date(last.sentAt).getTime();
@@ -240,6 +602,7 @@ function computeUnread(peerEmail, lastMessage) {
     if (!Number.isFinite(lastMs) || !Number.isFinite(seenMs)) return 1;
     return lastMs > seenMs ? 1 : 0;
 }
+
 
 function peerToUser(peerEmail, threadInfo) {
     const peer = normalizeEmail(peerEmail);
@@ -270,6 +633,8 @@ function peerToUser(peerEmail, threadInfo) {
 
 async function refreshThreads({ silent = false } = {}) {
     try {
+        // Load server-backed meta first so unread/star/priority/hidden are consistent across devices.
+        await __tmEnsureMetaLoaded();
         // Profiles first (best-effort)
         __peerProfileByEmail = await buildPeerProfileMap();
 
@@ -335,13 +700,13 @@ async function refreshThreads({ silent = false } = {}) {
 function renderMessageList() {
     if (!DOM.msgUserList) return;
 
-    const hidden = JSON.parse(localStorage.getItem(TM_HIDDEN_KEY) || '[]');
+    const hiddenSet = getHiddenSet();
     const tags = getUserTags();
 
     let list = Array.isArray(__msgUsers) ? __msgUsers.slice() : [];
 
     // Remove hidden
-    list = list.filter(u => !hidden.includes(u.id));
+    list = list.filter(u => !hiddenSet.has(u.id));
 
     // Apply tab filter
     if (currentFilter === 'Unread') list = list.filter(u => (u.unread || 0) > 0);
@@ -596,20 +961,43 @@ function unlockChatInputs() {
 // Notes
 // -------------------------------
 function loadUserNote(userId) {
-    const notes = JSON.parse(localStorage.getItem(TM_NOTES_KEY) || '{}');
-    const note = notes[userId] || '';
+    const peer = normalizeEmail(userId);
+    if (!peer) return;
 
     const noteInput = document.getElementById('chat-user-note') || document.getElementById('user-note-input');
     if (!noteInput) return;
 
+    // Prefer meta note, fallback to legacy notes.
+    let note = '';
+    try {
+        const m = __tmGetMeta(peer);
+        if (typeof m?.note === 'string') note = m.note;
+    } catch {
+        // ignore
+    }
+    if (!note) {
+        try {
+            const notes = JSON.parse(localStorage.getItem(TM_NOTES_KEY) || '{}');
+            note = notes?.[peer] || '';
+        } catch {
+            note = '';
+        }
+    }
+
     noteInput.value = note;
 
+    __tmEnsureMetaLoaded().catch(() => {});
+
+    let t = null;
     noteInput.oninput = () => {
-        const updated = JSON.parse(localStorage.getItem(TM_NOTES_KEY) || '{}');
-        updated[userId] = noteInput.value;
-        localStorage.setItem(TM_NOTES_KEY, JSON.stringify(updated));
+        const val = String(noteInput.value || '');
+        if (t) clearTimeout(t);
+        t = setTimeout(() => {
+            __tmSetMeta(peer, { note: val });
+        }, 180);
     };
 }
+
 
 // -------------------------------
 // Search UI (left) + chat search
@@ -1134,6 +1522,9 @@ export function initMessages(TopToast) {
 
     // Start locked until a chat is chosen
     lockChatInputs();
+
+    // Preload message meta (server-backed if available; local fallback)
+    __tmEnsureMetaLoaded().catch(() => {});
 
     // UI init
     initTabs();

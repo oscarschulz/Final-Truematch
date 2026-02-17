@@ -393,6 +393,7 @@ const DB = {
   approvedState: {},
   messages: {},
   messageUsage: {},
+  messageMeta: {},
   emailVerify: {},
   resetTokens: {},
   forgotOtps: {},
@@ -552,6 +553,38 @@ function saveSwipesStore() {
     console.error('[DB] Failed to save swipes store:', e.message);
   }
 }
+
+
+// ---------------- MESSAGE META PERSISTENCE (chat meta: starred/hidden/priority/notes) ----------------
+// Used when Firebase is OFF (local/demo mode) so meta still survives server restarts.
+const MESSAGE_META_STORE_PATH = path.join(__dirname, '_message_meta_store.json');
+
+function loadMessageMetaStore() {
+  try {
+    if (!fs.existsSync(MESSAGE_META_STORE_PATH)) return;
+    const raw = fs.readFileSync(MESSAGE_META_STORE_PATH, 'utf8');
+    const obj = JSON.parse(raw || '{}');
+    if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+      DB.messageMeta = obj;
+      console.log(`[DB] Loaded message meta for ${Object.keys(DB.messageMeta).length} users from disk.`);
+    }
+  } catch (e) {
+    console.error('[DB] Failed to load message meta store:', e.message);
+  }
+}
+
+function saveMessageMetaStore() {
+  try {
+    fs.writeFileSync(
+      MESSAGE_META_STORE_PATH,
+      JSON.stringify(DB.messageMeta || {}, null, 2),
+      'utf8'
+    );
+  } catch (e) {
+    // Some hosts have read-only FS; ignore
+  }
+}
+
 
 
 // ---------------- Plan rules & date helpers ----------------
@@ -1672,6 +1705,7 @@ if (!hasFirebase) {
   loadPrefsStore();
   loadUsersStore();
   loadSwipesStore();
+  loadMessageMetaStore();
   loadMomentsStore();
 } // <--- IMPORTANTE: Load users & swipes on boot
 
@@ -5282,6 +5316,146 @@ app.post('/api/messages/send', (req, res) => {
     }
   });
 });
+
+
+// ---------------- Messages Meta (cross-device chat state) -------------------
+// Stores per-thread meta (starred, hidden, priority, note, lastSeenAt, unread)
+// Contract:
+// - GET  /api/me/messages/meta  -> { ok:true, items:{ [threadKey]: meta } }
+// - POST /api/me/messages/meta  -> { ok:true }
+//
+// This is intentionally separate from /api/messages (which contains the actual chat messages).
+
+function _sanitizeMessageMeta(meta) {
+  const m = (meta && typeof meta === 'object') ? meta : {};
+  const out = {};
+
+  // Only allow known keys (keeps payload small & safe)
+  if (typeof m.starred === 'boolean') out.starred = m.starred;
+  if (typeof m.hidden === 'boolean') out.hidden = m.hidden;
+
+  if (m.priority != null) {
+    const p = Number(m.priority);
+    out.priority = Number.isFinite(p) ? Math.max(0, Math.min(3, Math.floor(p))) : 0;
+  }
+
+  if (typeof m.note === 'string') {
+    // cap notes to 2000 chars
+    out.note = m.note.slice(0, 2000);
+  }
+
+  if (typeof m.lastSeenAt === 'string') {
+    // basic iso sanity; don't strictly validate to avoid false negatives
+    out.lastSeenAt = m.lastSeenAt.slice(0, 64);
+  }
+
+  if (m.unread != null) {
+    const u = Number(m.unread);
+    out.unread = Number.isFinite(u) ? Math.max(0, Math.min(999, Math.floor(u))) : 0;
+  }
+
+  return out;
+}
+
+async function _getMessageMetaMapForUser(email) {
+  const emailNorm = String(email || '').trim().toLowerCase();
+  if (!emailNorm) return {};
+
+  // Firebase (preferred for cross-device)
+  if (hasFirebase && usersCollection && firestore) {
+    const u = await findUserByEmail(emailNorm);
+    if (!u || !u.id) return {};
+
+    const col = usersCollection.doc(u.id).collection('messageMeta');
+    const snap = await col.get();
+
+    const map = {};
+    snap.forEach((doc) => {
+      const d = doc.data() || {};
+      const key = String(d.threadKey || '').trim().toLowerCase();
+      if (!key) return;
+      map[key] = (d.meta && typeof d.meta === 'object') ? d.meta : {};
+    });
+    return map;
+  }
+
+  // Local fallback
+  DB.messageMeta = DB.messageMeta && typeof DB.messageMeta === 'object' ? DB.messageMeta : {};
+  const map = DB.messageMeta[emailNorm];
+  return (map && typeof map === 'object') ? map : {};
+}
+
+async function _setMessageMetaForUser(email, threadKey, metaObj) {
+  const emailNorm = String(email || '').trim().toLowerCase();
+  const key = String(threadKey || '').trim().toLowerCase();
+  if (!emailNorm || !key) return;
+
+  const meta = _sanitizeMessageMeta(metaObj);
+
+  // Firebase
+  if (hasFirebase && usersCollection && firestore) {
+    const u = await findUserByEmail(emailNorm);
+    if (!u || !u.id) return;
+
+    const docId = _b64url(key);
+    const ref = usersCollection.doc(u.id).collection('messageMeta').doc(docId);
+    await ref.set(
+      {
+        threadKey: key,
+        meta,
+        updatedAt: admin ? admin.firestore.FieldValue.serverTimestamp() : new Date()
+      },
+      { merge: true }
+    );
+    return;
+  }
+
+  // Local fallback
+  DB.messageMeta = DB.messageMeta && typeof DB.messageMeta === 'object' ? DB.messageMeta : {};
+  if (!DB.messageMeta[emailNorm] || typeof DB.messageMeta[emailNorm] !== 'object') {
+    DB.messageMeta[emailNorm] = {};
+  }
+  DB.messageMeta[emailNorm][key] = meta;
+  saveMessageMetaStore();
+}
+
+// GET meta map
+app.get('/api/me/messages/meta', authMiddleware, async (req, res) => {
+  try {
+    const email = (req.user && req.user.email) || (DB.user && DB.user.email) || '';
+    if (!email) return res.status(401).json({ ok: false, error: 'Not authenticated' });
+
+    const map = await _getMessageMetaMapForUser(email);
+    return res.json({ ok: true, items: map });
+  } catch (e) {
+    console.error('GET /api/me/messages/meta error:', e);
+    return res.status(500).json({ ok: false, error: 'server error' });
+  }
+});
+
+// POST meta upsert
+app.post('/api/me/messages/meta', authMiddleware, async (req, res) => {
+  try {
+    const email = (req.user && req.user.email) || (DB.user && DB.user.email) || '';
+    if (!email) return res.status(401).json({ ok: false, error: 'Not authenticated' });
+
+    const body = req.body || {};
+    const threadKey = String(body.threadKey || body.peerEmail || body.peer || body.thread || '').trim().toLowerCase();
+    const meta = body.meta || body.data || {};
+
+    if (!threadKey) {
+      return res.status(400).json({ ok: false, error: 'threadKey required' });
+    }
+
+    await _setMessageMetaForUser(email, threadKey, meta);
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('POST /api/me/messages/meta error:', e);
+    return res.status(500).json({ ok: false, error: 'server error' });
+  }
+});
+
+
 // ---------------- Plan selection -------------------
 // Free upgrade (beta) mode: allows manual plan activation without payment.
 // Secure by requiring either:
