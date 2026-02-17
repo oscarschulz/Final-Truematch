@@ -161,7 +161,7 @@ async function tmHydrateCreatorsFromMe() {
   tmSetText('#creatorHeaderHandle', handle);
 
   // Apply saved creator status
-  try { tmApplyCreatorStatus(user?.creatorStatus || user?.status || 'Available'); } catch {}
+  try { tmApplyCreatorStatus(user?.presenceStatus || user?.status || 'Available'); } catch {}
 
   if (bio && bio.trim()) tmSetText('#view-my-profile .profile-bio-text', bio);
   tmSetSrc('#view-my-profile .profile-avatar-main', user.avatarUrl);
