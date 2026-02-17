@@ -1176,10 +1176,15 @@ export function initHome(TopToast) {
                 let replyBox = commentBody.querySelector('.reply-input-row');
                 
                 if (!replyBox) {
+                    
+const meIdentity = tmGetCreatorIdentity ? tmGetCreatorIdentity() : {};
+                    const av = (meIdentity && meIdentity.avatarUrl) ? String(meIdentity.avatarUrl) : 'assets/images/truematch-mark.png';
+                    const avAttr = av.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
                     const replyHTML = `
-                        <div class="reply-input-row">
-                            <img src="assets/images/truematch-mark.png" style="width:25px; height:25px; border-radius:50%;">
-                            <input type="text" class="reply-input" placeholder="Write a reply...">
+                        <div class="reply-input-row" style="display:flex; gap:8px; align-items:center; margin-top:8px;">
+                            <img src="${avAttr}" style="width:25px; height:25px; border-radius:50%; object-fit:cover;">
+                            <input type="text" class="reply-input" placeholder="Write a reply..." style="flex:1; min-width:0;">
                         </div>
                     `;
                     commentBody.insertAdjacentHTML('beforeend', replyHTML);
@@ -1228,17 +1233,24 @@ export function initHome(TopToast) {
                     e.preventDefault();
                     const text = e.target.value.trim();
                     if(text) {
-                        const replyHTML = `
-                            <div class="comment-item" style="margin-top:10px; animation:fadeIn 0.2s;">
-                                <img src="assets/images/truematch-mark.png" class="comment-avatar" style="width:25px; height:25px;">
-                                <div class="comment-body">
-                                    <div class="comment-bubble">
-                                        <div style="font-weight:700; font-size:0.8rem;">You</div>
-                                        <div>${text}</div>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
+                        
+const meIdentity = tmGetCreatorIdentity ? tmGetCreatorIdentity() : {};
+const meName = (meIdentity && meIdentity.name) ? String(meIdentity.name).trim() : 'You';
+const av = (meIdentity && meIdentity.avatarUrl) ? String(meIdentity.avatarUrl) : 'assets/images/truematch-mark.png';
+const avAttr = av.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const safeText = tmEscapeHtml(text);
+
+const replyHTML = `
+    <div class="comment-item" style="display:flex; gap:10px; margin-top:10px; animation:fadeIn 0.2s;">
+        <img src="${avAttr}" class="comment-avatar" style="width:25px; height:25px; border-radius:50%; object-fit:cover;">
+        <div class="comment-body" style="flex:1; min-width:0;">
+            <div class="comment-bubble" style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); padding:10px 12px; border-radius:12px;">
+                <div style="font-weight:700; font-size:0.85rem; margin-bottom:6px;">${tmEscapeHtml(meName)}</div>
+                <div style="white-space:pre-wrap;">${safeText}</div>
+            </div>
+        </div>
+    </div>
+`;
                         e.target.closest('.reply-input-row').insertAdjacentHTML('beforebegin', replyHTML);
                         e.target.closest('.reply-input-row').remove();
                     }
@@ -1745,16 +1757,21 @@ function generateCommentHTML(textOrObj, timestampMaybe) {
         ? textOrObj
         : { text: textOrObj, timestamp: timestampMaybe };
 
-    const me = tmGetCreatorIdentity();
+    const me = tmGetCreatorIdentity ? tmGetCreatorIdentity() : {};
 
     const authorEmail = safeStr(c.authorEmail || c.creatorEmail || c.email);
     const authorNameRaw = safeStr(c.authorName || c.creatorName || c.name);
+    const authorHandle = safeStr(c.authorHandle || c.creatorHandle || c.handle);
 
     const isMe =
-        (authorEmail && me.email && authorEmail.toLowerCase() === me.email.toLowerCase()) ||
-        (!authorEmail && (authorNameRaw === 'You' || authorNameRaw === 'Me'));
+        (authorEmail && me.email && authorEmail.toLowerCase() === String(me.email).toLowerCase()) ||
+        (!authorEmail && (authorNameRaw === 'You' || authorNameRaw === 'Me')) ||
+        (c.isMe === true);
 
-    const name = isMe ? safeStr(me.name) : (authorNameRaw || 'Unknown');
+    let name = isMe ? safeStr(me.name) : authorNameRaw;
+    if (!name) name = authorHandle;
+    if (!name && authorEmail) name = authorEmail.split('@')[0];
+    if (!name) name = 'Unknown';
 
     const avatar =
         isMe
@@ -1765,20 +1782,33 @@ function generateCommentHTML(textOrObj, timestampMaybe) {
 
     const text = tmEscapeHtml(safeStr(c.text));
     const timestamp = Number(c.timestamp || c.createdAtMs || c.createdAt || timestampMaybe || Date.now()) || Date.now();
-    const timeAgo = tmTimeAgo(timestamp);
+    const timeAgo = (typeof tmTimeAgo === 'function') ? tmTimeAgo(timestamp) : '';
 
+    const commentId = safeStr(c.id || c.commentId || '');
+    const commentIdAttr = commentId ? commentId.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;') : '';
+
+    // NOTE: Inline styles on purpose so Home feed comments are readable even if comment-specific CSS isn't loaded.
     return `
-        <div class="comment">
-            <img class="c-avatar" src="${avatarAttr}" alt="">
-            <div class="c-body">
-                <div class="c-meta">
-                    <div class="c-user">${tmEscapeHtml(name)}</div>
-                    <div class="c-time">${timeAgo}</div>
+        <div class="comment-item" ${commentIdAttr ? `data-comment-id="${commentIdAttr}"` : ''} style="display:flex; gap:10px; margin-top:10px;">
+            <img src="${avatarAttr}" class="comment-avatar" style="width:32px; height:32px; border-radius:50%; object-fit:cover; flex:0 0 auto;" alt="">
+            <div class="comment-body" style="flex:1; min-width:0;">
+                <div class="comment-bubble" style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); padding:10px 12px; border-radius:12px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:6px;">
+                        <div style="font-weight:700; font-size:0.85rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                            ${tmEscapeHtml(name)}
+                        </div>
+                        <div style="font-size:0.75rem; opacity:0.75; white-space:nowrap;">
+                            ${tmEscapeHtml(timeAgo)}
+                        </div>
+                    </div>
+                    <div style="font-size:0.92rem; line-height:1.35; white-space:pre-wrap;">
+                        ${text}
+                    </div>
                 </div>
-                <div class="c-text">${text}</div>
-                <div class="c-actions">
-                    <button class="c-like" type="button">Like</button>
-                    <button class="c-reply" type="button">Reply</button>
+
+                <div class="comment-actions" style="display:flex; gap:12px; margin-top:6px;">
+                    <button type="button" class="action-comment-like" style="background:transparent; border:0; color:rgba(255,255,255,0.78); font-size:0.8rem; cursor:pointer; padding:0;">Like</button>
+                    <button type="button" class="action-reply-comment" style="background:transparent; border:0; color:rgba(255,255,255,0.78); font-size:0.8rem; cursor:pointer; padding:0;">Reply</button>
                 </div>
             </div>
         </div>
