@@ -15,6 +15,7 @@ const POST_REACT_ENDPOINT = '/api/creator/posts/react';
 const POST_COMMENT_ENDPOINT = '/api/creator/posts/comment';
 const POST_PIN_ENDPOINT = '/api/creator/posts/pin';
 const POST_COMMENTS_ENDPOINT = '/api/creator/posts/comments';
+const POST_VOTE_ENDPOINT = '/api/creator/posts/vote';
 // ------------------------------
 // Helpers (safe HTML + identity)
 // ------------------------------
@@ -169,6 +170,27 @@ async function tmFetchPostComments(postId, limit = 50) {
     if (data && data.ok && Array.isArray(data.items)) return data.items;
     if (Array.isArray(data?.comments)) return data.comments;
     return null;
+}
+
+async function tmVoteCreatorPost(postId, type, optionIndex) {
+    if (!postId) return null;
+
+    const payload = {
+        id: String(postId),
+        type: String(type || ''),
+        optionIndex: Number(optionIndex),
+    };
+
+    const { res, data } = await tmFetchJson(POST_VOTE_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+
+    // If endpoint doesn't exist yet, treat as not available
+    if (!res || res.status === 404) return null;
+
+    return { status: res.status, data };
 }
 
 function tmMergeComments(localComments, remoteComments) {
@@ -762,59 +784,156 @@ export function initHome(TopToast) {
             if (quizBtn) {
                 const postId = quizBtn.getAttribute('data-post-id');
                 const idx = Number(quizBtn.getAttribute('data-option-idx'));
-                if (postId) {
-                    const updated = updatePost(postId, (post) => {
-                        if (!post || post.type !== 'quiz' || !post.quiz) return post;
-                        if (post.quizMyAnswer != null) return post;
-                        const opts = (post.quiz.options || []);
-                        if (!Number.isFinite(idx) || idx < 0 || idx >= opts.length) return post;
-                        if (!Array.isArray(post.quizVotes) || post.quizVotes.length !== opts.length) {
-                            post.quizVotes = new Array(opts.length).fill(0);
-                        }
-                        post.quizVotes[idx] = (post.quizVotes[idx] || 0) + 1;
-                        post.quizMyAnswer = idx;
-                        return post;
-                    });
 
-                    if (updated && updated.type === 'quiz') {
+                if (postId) {
+                    // Prevent double-answer client-side
+                    const cur = getPosts().find(x => String(x.id) === String(postId));
+                    if (cur && cur.quizMyAnswer != null) return;
+
+                    // Backend-first (best-effort). If endpoint not available yet, fallback to local.
+                    let serverResp = null;
+                    try {
+                        serverResp = await tmVoteCreatorPost(postId, 'quiz', idx);
+                    } catch {}
+
+                    let updatedPost = null;
+
+                    // If server responds with canonical state, apply it
+                    if (serverResp && serverResp.data) {
+                        const d = serverResp.data;
+
+                        if (d && d.ok) {
+                            const patch = (d.post && typeof d.post === 'object') ? d.post
+                                : (d.patch && typeof d.patch === 'object') ? d.patch
+                                : d;
+
+                            updatedPost = updatePost(postId, (post) => {
+                                if (!post) return post;
+                                return { ...post, ...patch };
+                            });
+                        } else if (serverResp.status === 409) {
+                            // already answered on server
+                            const patch = (d && d.post && typeof d.post === 'object') ? d.post
+                                : (d && d.patch && typeof d.patch === 'object') ? d.patch
+                                : null;
+
+                            if (patch) {
+                                updatedPost = updatePost(postId, (post) => {
+                                    if (!post) return post;
+                                    return { ...post, ...patch };
+                                });
+                            }
+                            tmToast(TopToast, 'info', 'Already answered');
+                        }
+                    }
+
+                    // Fallback: local-only behavior (keeps current UX even if backend vote route isn't deployed yet)
+                    if (!updatedPost) {
+                        updatedPost = updatePost(postId, (post) => {
+                            if (!post || post.type !== 'quiz' || !post.quiz) return post;
+                            if (post.quizMyAnswer != null) return post;
+
+                            const opts = (post.quiz.options || []);
+                            if (!Number.isFinite(idx) || idx < 0 || idx >= opts.length) return post;
+
+                            if (!Array.isArray(post.quizVotes) || post.quizVotes.length !== opts.length) {
+                                post.quizVotes = new Array(opts.length).fill(0);
+                            }
+                            post.quizVotes[idx] = (post.quizVotes[idx] || 0) + 1;
+                            post.quizMyAnswer = idx;
+                            return post;
+                        });
+                    }
+
+                    if (updatedPost && updatedPost.type === 'quiz') {
                         const card = document.getElementById(`post-${postId}`);
                         const block = card ? card.querySelector('.post-quiz-block') : null;
-                        if (block) block.outerHTML = renderQuizBlock(updated);
-                        const isCorrect = updated.quizMyAnswer === updated.quiz.correctIndex;
+                        if (block) block.outerHTML = renderQuizBlock(updatedPost);
+
+                        const isCorrect = updatedPost.quizMyAnswer === updatedPost.quiz.correctIndex;
                         tmToast(TopToast, isCorrect ? 'success' : 'error', isCorrect ? 'Correct!' : 'Wrong answer');
                     }
                 }
                 return;
             }
 
+
             // --- POLL OPTION CLICK ---
             const pollBtn = target.closest('.poll-option-btn');
             if (pollBtn) {
                 const postId = pollBtn.getAttribute('data-post-id');
                 const idx = Number(pollBtn.getAttribute('data-option-idx'));
-                if (postId) {
-                    const updated = updatePost(postId, (post) => {
-                        if (!post || post.type !== 'poll' || !post.poll) return post;
-                        if (post.pollMyVote != null) return post;
-                        const opts = (post.poll.options || []);
-                        if (!Number.isFinite(idx) || idx < 0 || idx >= opts.length) return post;
-                        if (!Array.isArray(post.pollVotes) || post.pollVotes.length !== opts.length) {
-                            post.pollVotes = new Array(opts.length).fill(0);
-                        }
-                        post.pollVotes[idx] = (post.pollVotes[idx] || 0) + 1;
-                        post.pollMyVote = idx;
-                        return post;
-                    });
 
-                    if (updated && updated.type === 'poll') {
+                if (postId) {
+                    // Prevent double-vote client-side
+                    const cur = getPosts().find(x => String(x.id) === String(postId));
+                    if (cur && cur.pollMyVote != null) return;
+
+                    // Backend-first (best-effort). If endpoint not available yet, fallback to local.
+                    let serverResp = null;
+                    try {
+                        serverResp = await tmVoteCreatorPost(postId, 'poll', idx);
+                    } catch {}
+
+                    let updatedPost = null;
+
+                    // If server responds with canonical state, apply it
+                    if (serverResp && serverResp.data) {
+                        const d = serverResp.data;
+
+                        if (d && d.ok) {
+                            const patch = (d.post && typeof d.post === 'object') ? d.post
+                                : (d.patch && typeof d.patch === 'object') ? d.patch
+                                : d;
+
+                            updatedPost = updatePost(postId, (post) => {
+                                if (!post) return post;
+                                return { ...post, ...patch };
+                            });
+                        } else if (serverResp.status === 409) {
+                            // already voted on server
+                            const patch = (d && d.post && typeof d.post === 'object') ? d.post
+                                : (d && d.patch && typeof d.patch === 'object') ? d.patch
+                                : null;
+
+                            if (patch) {
+                                updatedPost = updatePost(postId, (post) => {
+                                    if (!post) return post;
+                                    return { ...post, ...patch };
+                                });
+                            }
+                            tmToast(TopToast, 'info', 'Already voted');
+                        }
+                    }
+
+                    // Fallback: local-only behavior (keeps current UX even if backend vote route isn't deployed yet)
+                    if (!updatedPost) {
+                        updatedPost = updatePost(postId, (post) => {
+                            if (!post || post.type !== 'poll' || !post.poll) return post;
+                            if (post.pollMyVote != null) return post;
+
+                            const opts = (post.poll.options || []);
+                            if (!Number.isFinite(idx) || idx < 0 || idx >= opts.length) return post;
+
+                            if (!Array.isArray(post.pollVotes) || post.pollVotes.length !== opts.length) {
+                                post.pollVotes = new Array(opts.length).fill(0);
+                            }
+                            post.pollVotes[idx] = (post.pollVotes[idx] || 0) + 1;
+                            post.pollMyVote = idx;
+                            return post;
+                        });
+                    }
+
+                    if (updatedPost && updatedPost.type === 'poll') {
                         const card = document.getElementById(`post-${postId}`);
                         const block = card ? card.querySelector('.post-poll-block') : null;
-                        if (block) block.outerHTML = renderPollBlock(updated);
+                        if (block) block.outerHTML = renderPollBlock(updatedPost);
                         tmToast(TopToast, 'success', 'Voted');
                     }
                 }
                 return;
             }
+
 
             // Close pickers if clicking outside
             if (!target.closest('.reaction-wrapper') && !target.closest('.comment-reaction-wrapper')) {
