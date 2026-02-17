@@ -1168,3 +1168,4 @@ export function initWallet(TopToast) {
   tmBindWalletRebillToggle(toast);
   tmRenderWalletTransactions();
 }
+ 
