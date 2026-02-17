@@ -398,10 +398,10 @@ function setUserTag(userId, tag) {
     let next = cur;
 
     if (tag === 'priority') {
-        // Toggle “Priority” (any 1-2 clears; anything else sets to 1)
+        // Toggle: if already priority (1-2), remove; else set to 1
         next = (cur >= 1 && cur < 3) ? 0 : 1;
     } else if (tag === 'paid') {
-        // Toggle “$$$” (3 clears; anything else sets to 3)
+        // Toggle: if already paid (3), remove; else set to 3
         next = (cur >= 3) ? 0 : 3;
     } else {
         // Unknown tag => clear
@@ -411,8 +411,7 @@ function setUserTag(userId, tag) {
     if (next === 0) {
         toastInstance?.fire?.({ icon: 'success', title: 'Tag removed' });
     } else {
-        const label = (next >= 3) ? '$$$' : 'PRIORITY';
-        toastInstance?.fire?.({ icon: 'success', title: `Tagged as ${label}` });
+        toastInstance?.fire?.({ icon: 'success', title: `Tagged as ${String(tag).toUpperCase()}` });
     }
 
     __tmSetMeta(peer, { priority: next });
@@ -443,6 +442,9 @@ function deleteConversation(userId) {
 
     // Refresh list immediately
     renderMessageList();
+
+    // Keep legacy UX feedback
+    toastInstance?.fire?.({ icon: 'success', title: 'Conversation deleted' });
 }
 
 

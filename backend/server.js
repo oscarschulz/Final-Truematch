@@ -5126,6 +5126,103 @@ app.post('/api/admin/confirmed-date', async (req, res) => {
   }
 });
 
+
+// GET all confirmed/scheduled dates (Admin)
+// Used by Admin "Confirmed Dates" tab to list scheduled dates across all users.
+app.get('/api/admin/confirmed-date', async (req, res) => {
+  try {
+    const providedKey = getProvidedAdminKey(req);
+    if (!isValidAdminKey(providedKey)) {
+      return res.status(401).json({ ok: false, message: 'admin_unauthorized' });
+    }
+
+    const emailFilter = String(req.query.email || '').trim().toLowerCase();
+    const statusFilter = String(req.query.status || '').trim().toLowerCase();
+
+    let items = [];
+
+    if (admin && admin.firestore) {
+      const snap = await admin.firestore().collection('users').get();
+
+      snap.docs.forEach((doc) => {
+        const data = doc.data() || {};
+        const ownerEmail = String(data.email || data.userEmail || '').trim().toLowerCase();
+        if (!ownerEmail) return;
+        if (emailFilter && ownerEmail !== emailFilter) return;
+
+        const arr = Array.isArray(data.scheduledDates) ? data.scheduledDates : [];
+        arr.forEach((p) => {
+          if (!p) return;
+          const status = String(p.status || 'scheduled').trim().toLowerCase();
+          if (statusFilter && status !== statusFilter) return;
+          items.push({
+            ownerEmail,
+            userId: doc.id,
+            ...p,
+            status
+          });
+        });
+      });
+    } else {
+      // Local/demo fallback
+      const map = (DB.datesState && typeof DB.datesState === 'object') ? DB.datesState : null;
+
+      if (map) {
+        Object.keys(map).forEach((ownerEmail) => {
+          const emailNorm = String(ownerEmail || '').trim().toLowerCase();
+          if (!emailNorm) return;
+          if (emailFilter && emailNorm !== emailFilter) return;
+
+          const arr = Array.isArray(map[ownerEmail]) ? map[ownerEmail] : [];
+          arr.forEach((p) => {
+            if (!p) return;
+            const status = String(p.status || 'scheduled').trim().toLowerCase();
+            if (statusFilter && status !== statusFilter) return;
+            items.push({
+              ownerEmail: emailNorm,
+              userId: null,
+              ...p,
+              status
+            });
+          });
+        });
+      } else if (DB.users) {
+        const usersArr = Array.isArray(DB.users) ? DB.users : Object.values(DB.users);
+        usersArr.forEach((u) => {
+          const ownerEmail = String((u && (u.email || u.userEmail)) || '').trim().toLowerCase();
+          if (!ownerEmail) return;
+          if (emailFilter && ownerEmail !== emailFilter) return;
+
+          const arr = Array.isArray(u.scheduledDates) ? u.scheduledDates : [];
+          arr.forEach((p) => {
+            if (!p) return;
+            const status = String(p.status || 'scheduled').trim().toLowerCase();
+            if (statusFilter && status !== statusFilter) return;
+            items.push({
+              ownerEmail,
+              userId: u.id || u.uid || null,
+              ...p,
+              status
+            });
+          });
+        });
+      }
+    }
+
+    // Sort newest first (best-effort)
+    items.sort((a, b) => {
+      const ta = Date.parse(String(a.scheduledAt || '')) || 0;
+      const tb = Date.parse(String(b.scheduledAt || '')) || 0;
+      return tb - ta;
+    });
+
+    return res.json({ ok: true, items });
+  } catch (err) {
+    console.error('admin confirmed-date list error:', err);
+    return res.status(500).json({ ok: false, message: 'server error' });
+  }
+});
+
 // ---------------- Dates (Tier 3 scheduling) -------------------
 app.get('/api/dates', async (_req, res) => {
   try {
