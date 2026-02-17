@@ -15,7 +15,6 @@ const POST_REACT_ENDPOINT = '/api/creator/posts/react';
 const POST_COMMENT_ENDPOINT = '/api/creator/posts/comment';
 const POST_PIN_ENDPOINT = '/api/creator/posts/pin';
 const POST_COMMENTS_ENDPOINT = '/api/creator/posts/comments';
-const POST_VOTE_ENDPOINT = '/api/creator/posts/vote';
 // ------------------------------
 // Helpers (safe HTML + identity)
 // ------------------------------
@@ -103,6 +102,29 @@ function tmNowId() {
     return String(Date.now()) + '-' + Math.random().toString(16).slice(2);
 }
 
+// Consistent "time ago" helper used by post header + comments.
+// Returns compact units: 3m, 2h, 5d, etc.
+function tmTimeAgo(timestamp) {
+    const t = Number(timestamp || 0);
+    if (!t) return '';
+    const seconds = Math.floor((Date.now() - t) / 1000);
+    if (!Number.isFinite(seconds) || seconds < 0) return '';
+    if (seconds < 10) return 'now';
+    if (seconds < 60) return `${seconds}s`;
+    const mins = Math.floor(seconds / 60);
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h`;
+    const days = Math.floor(hrs / 24);
+    if (days < 7) return `${days}d`;
+    const weeks = Math.floor(days / 7);
+    if (weeks < 4) return `${weeks}w`;
+    const months = Math.floor(days / 30);
+    if (months < 12) return `${months}mo`;
+    const years = Math.floor(days / 365);
+    return `${years}y`;
+}
+
 
 // ------------------------------
 // Backend-first interactions (best-effort)
@@ -170,27 +192,6 @@ async function tmFetchPostComments(postId, limit = 50) {
     if (data && data.ok && Array.isArray(data.items)) return data.items;
     if (Array.isArray(data?.comments)) return data.comments;
     return null;
-}
-
-async function tmVoteCreatorPost(postId, type, optionIndex) {
-    if (!postId) return null;
-
-    const payload = {
-        id: String(postId),
-        type: String(type || ''),
-        optionIndex: Number(optionIndex),
-    };
-
-    const { res, data } = await tmFetchJson(POST_VOTE_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-    });
-
-    // If endpoint doesn't exist yet, treat as not available
-    if (!res || res.status === 404) return null;
-
-    return { status: res.status, data };
 }
 
 function tmMergeComments(localComments, remoteComments) {
@@ -784,156 +785,59 @@ export function initHome(TopToast) {
             if (quizBtn) {
                 const postId = quizBtn.getAttribute('data-post-id');
                 const idx = Number(quizBtn.getAttribute('data-option-idx'));
-
                 if (postId) {
-                    // Prevent double-answer client-side
-                    const cur = getPosts().find(x => String(x.id) === String(postId));
-                    if (cur && cur.quizMyAnswer != null) return;
-
-                    // Backend-first (best-effort). If endpoint not available yet, fallback to local.
-                    let serverResp = null;
-                    try {
-                        serverResp = await tmVoteCreatorPost(postId, 'quiz', idx);
-                    } catch {}
-
-                    let updatedPost = null;
-
-                    // If server responds with canonical state, apply it
-                    if (serverResp && serverResp.data) {
-                        const d = serverResp.data;
-
-                        if (d && d.ok) {
-                            const patch = (d.post && typeof d.post === 'object') ? d.post
-                                : (d.patch && typeof d.patch === 'object') ? d.patch
-                                : d;
-
-                            updatedPost = updatePost(postId, (post) => {
-                                if (!post) return post;
-                                return { ...post, ...patch };
-                            });
-                        } else if (serverResp.status === 409) {
-                            // already answered on server
-                            const patch = (d && d.post && typeof d.post === 'object') ? d.post
-                                : (d && d.patch && typeof d.patch === 'object') ? d.patch
-                                : null;
-
-                            if (patch) {
-                                updatedPost = updatePost(postId, (post) => {
-                                    if (!post) return post;
-                                    return { ...post, ...patch };
-                                });
-                            }
-                            tmToast(TopToast, 'info', 'Already answered');
+                    const updated = updatePost(postId, (post) => {
+                        if (!post || post.type !== 'quiz' || !post.quiz) return post;
+                        if (post.quizMyAnswer != null) return post;
+                        const opts = (post.quiz.options || []);
+                        if (!Number.isFinite(idx) || idx < 0 || idx >= opts.length) return post;
+                        if (!Array.isArray(post.quizVotes) || post.quizVotes.length !== opts.length) {
+                            post.quizVotes = new Array(opts.length).fill(0);
                         }
-                    }
+                        post.quizVotes[idx] = (post.quizVotes[idx] || 0) + 1;
+                        post.quizMyAnswer = idx;
+                        return post;
+                    });
 
-                    // Fallback: local-only behavior (keeps current UX even if backend vote route isn't deployed yet)
-                    if (!updatedPost) {
-                        updatedPost = updatePost(postId, (post) => {
-                            if (!post || post.type !== 'quiz' || !post.quiz) return post;
-                            if (post.quizMyAnswer != null) return post;
-
-                            const opts = (post.quiz.options || []);
-                            if (!Number.isFinite(idx) || idx < 0 || idx >= opts.length) return post;
-
-                            if (!Array.isArray(post.quizVotes) || post.quizVotes.length !== opts.length) {
-                                post.quizVotes = new Array(opts.length).fill(0);
-                            }
-                            post.quizVotes[idx] = (post.quizVotes[idx] || 0) + 1;
-                            post.quizMyAnswer = idx;
-                            return post;
-                        });
-                    }
-
-                    if (updatedPost && updatedPost.type === 'quiz') {
+                    if (updated && updated.type === 'quiz') {
                         const card = document.getElementById(`post-${postId}`);
                         const block = card ? card.querySelector('.post-quiz-block') : null;
-                        if (block) block.outerHTML = renderQuizBlock(updatedPost);
-
-                        const isCorrect = updatedPost.quizMyAnswer === updatedPost.quiz.correctIndex;
+                        if (block) block.outerHTML = renderQuizBlock(updated);
+                        const isCorrect = updated.quizMyAnswer === updated.quiz.correctIndex;
                         tmToast(TopToast, isCorrect ? 'success' : 'error', isCorrect ? 'Correct!' : 'Wrong answer');
                     }
                 }
                 return;
             }
 
-
             // --- POLL OPTION CLICK ---
             const pollBtn = target.closest('.poll-option-btn');
             if (pollBtn) {
                 const postId = pollBtn.getAttribute('data-post-id');
                 const idx = Number(pollBtn.getAttribute('data-option-idx'));
-
                 if (postId) {
-                    // Prevent double-vote client-side
-                    const cur = getPosts().find(x => String(x.id) === String(postId));
-                    if (cur && cur.pollMyVote != null) return;
-
-                    // Backend-first (best-effort). If endpoint not available yet, fallback to local.
-                    let serverResp = null;
-                    try {
-                        serverResp = await tmVoteCreatorPost(postId, 'poll', idx);
-                    } catch {}
-
-                    let updatedPost = null;
-
-                    // If server responds with canonical state, apply it
-                    if (serverResp && serverResp.data) {
-                        const d = serverResp.data;
-
-                        if (d && d.ok) {
-                            const patch = (d.post && typeof d.post === 'object') ? d.post
-                                : (d.patch && typeof d.patch === 'object') ? d.patch
-                                : d;
-
-                            updatedPost = updatePost(postId, (post) => {
-                                if (!post) return post;
-                                return { ...post, ...patch };
-                            });
-                        } else if (serverResp.status === 409) {
-                            // already voted on server
-                            const patch = (d && d.post && typeof d.post === 'object') ? d.post
-                                : (d && d.patch && typeof d.patch === 'object') ? d.patch
-                                : null;
-
-                            if (patch) {
-                                updatedPost = updatePost(postId, (post) => {
-                                    if (!post) return post;
-                                    return { ...post, ...patch };
-                                });
-                            }
-                            tmToast(TopToast, 'info', 'Already voted');
+                    const updated = updatePost(postId, (post) => {
+                        if (!post || post.type !== 'poll' || !post.poll) return post;
+                        if (post.pollMyVote != null) return post;
+                        const opts = (post.poll.options || []);
+                        if (!Number.isFinite(idx) || idx < 0 || idx >= opts.length) return post;
+                        if (!Array.isArray(post.pollVotes) || post.pollVotes.length !== opts.length) {
+                            post.pollVotes = new Array(opts.length).fill(0);
                         }
-                    }
+                        post.pollVotes[idx] = (post.pollVotes[idx] || 0) + 1;
+                        post.pollMyVote = idx;
+                        return post;
+                    });
 
-                    // Fallback: local-only behavior (keeps current UX even if backend vote route isn't deployed yet)
-                    if (!updatedPost) {
-                        updatedPost = updatePost(postId, (post) => {
-                            if (!post || post.type !== 'poll' || !post.poll) return post;
-                            if (post.pollMyVote != null) return post;
-
-                            const opts = (post.poll.options || []);
-                            if (!Number.isFinite(idx) || idx < 0 || idx >= opts.length) return post;
-
-                            if (!Array.isArray(post.pollVotes) || post.pollVotes.length !== opts.length) {
-                                post.pollVotes = new Array(opts.length).fill(0);
-                            }
-                            post.pollVotes[idx] = (post.pollVotes[idx] || 0) + 1;
-                            post.pollMyVote = idx;
-                            return post;
-                        });
-                    }
-
-                    if (updatedPost && updatedPost.type === 'poll') {
+                    if (updated && updated.type === 'poll') {
                         const card = document.getElementById(`post-${postId}`);
                         const block = card ? card.querySelector('.post-poll-block') : null;
-                        if (block) block.outerHTML = renderPollBlock(updatedPost);
+                        if (block) block.outerHTML = renderPollBlock(updated);
                         tmToast(TopToast, 'success', 'Voted');
                     }
                 }
                 return;
             }
-
 
             // Close pickers if clicking outside
             if (!target.closest('.reaction-wrapper') && !target.closest('.comment-reaction-wrapper')) {
@@ -1174,12 +1078,15 @@ export function initHome(TopToast) {
                 const commentItem = target.closest('.comment-item');
                 const commentBody = commentItem.querySelector('.comment-body');
                 let replyBox = commentBody.querySelector('.reply-input-row');
+                const commenterName = (commentItem.querySelector('.c-user')?.textContent || '').trim() || 'this comment';
+                const me = tmGetCreatorIdentity();
+                const meAvatar = (me?.avatarUrl || 'assets/images/truematch-mark.png');
                 
                 if (!replyBox) {
                     const replyHTML = `
                         <div class="reply-input-row">
-                            <img src="assets/images/truematch-mark.png" style="width:25px; height:25px; border-radius:50%;">
-                            <input type="text" class="reply-input" placeholder="Write a reply...">
+                            <img src="${tmEscapeHtml(meAvatar)}" class="comment-avatar" style="width:25px; height:25px; border-radius:50%; object-fit:cover;">
+                            <input type="text" class="reply-input" placeholder="Reply to ${tmEscapeHtml(commenterName)}...">
                         </div>
                     `;
                     commentBody.insertAdjacentHTML('beforeend', replyHTML);
@@ -1228,13 +1135,17 @@ export function initHome(TopToast) {
                     e.preventDefault();
                     const text = e.target.value.trim();
                     if(text) {
+                        const me = tmGetCreatorIdentity();
+                        const meName = tmEscapeHtml((me?.name || 'You'));
+                        const meAvatar = tmEscapeHtml((me?.avatarUrl || 'assets/images/truematch-mark.png'));
+                        const safeReply = tmEscapeHtml(text).replace(/\n/g, '<br>');
                         const replyHTML = `
                             <div class="comment-item" style="margin-top:10px; animation:fadeIn 0.2s;">
-                                <img src="assets/images/truematch-mark.png" class="comment-avatar" style="width:25px; height:25px;">
+                                <img src="${meAvatar}" class="comment-avatar" style="width:25px; height:25px; object-fit:cover;">
                                 <div class="comment-body">
                                     <div class="comment-bubble">
-                                        <div style="font-weight:700; font-size:0.8rem;">You</div>
-                                        <div>${text}</div>
+                                        <div style="font-weight:700; font-size:0.8rem;">${meName}</div>
+                                        <div>${safeReply}</div>
                                     </div>
                                 </div>
                             </div>
@@ -1619,6 +1530,8 @@ function renderPost(post, animate) {
     const animationStyle = animate ? 'animation: fadeIn 0.3s ease;' : '';
 
     const { name, handle, avatarUrl, verified } = tmGetPostIdentity(post);
+    const meIdentity = tmGetCreatorIdentity();
+    const meAvatarUrl = (meIdentity?.avatarUrl || 'assets/images/truematch-mark.png');
 
     const safeText = tmRenderFormattedText(post.text || '');
     const meEmail = tmGetMeEmail();
@@ -1663,7 +1576,7 @@ function renderPost(post, animate) {
 
             ${extraBlock}
 
-            <div class="post-actions" style="display: flex; justify-content: space-between; align-items: center; color: var(--muted); padding-top: 10px; position: relative;">
+            <div class="post-actions" style="display: flex; justify-content: space-between; align-items: center; color: var(--muted); padding-top: 10px; position: relative; clear: both;">
                 <div style="display: flex; gap: 25px; font-size: 1.3rem; align-items: center;">
 
                     <div class="reaction-wrapper">
@@ -1684,15 +1597,15 @@ function renderPost(post, animate) {
                 <i class="${isBookmarked ? 'fa-solid' : 'fa-regular'} fa-bookmark" style="cursor: pointer; font-size: 1.2rem; transition: 0.2s; ${isBookmarked ? 'color: #64E9EE;' : ''}"></i>
             </div>
 
-            <div class="post-likes" style="font-size: 0.85rem; font-weight: 700; margin-top: 10px; color: var(--text);">${tmLikesText(likeCount)}</div>
+            <div class="post-likes" style="font-size: 0.85rem; font-weight: 700; margin-top: 10px; color: var(--text); clear: both;">${tmLikesText(likeCount)}</div>
 
-            <div class="post-comments-section hidden">
+            <div class="post-comments-section hidden" style="clear: both;">
                  <div class="comment-list">
                     <div class="no-comments-msg" style="text-align: center; font-size: 0.85rem; color: var(--muted); ${noCommentsStyle}">No comments yet</div>
                     ${commentsHTML}
                  </div>
                  <div class="comment-input-area">
-                    <img src="${tmEscapeHtml(avatarUrl)}" style="width: 30px; height: 30px; border-radius: 50%;">
+                    <img src="${tmEscapeHtml(meAvatarUrl)}" class="comment-avatar" style="width: 30px; height: 30px; border-radius: 50%; object-fit: cover;">
                     <input type="text" class="comment-input" placeholder="Write a comment...">
                     <button class="btn-send-comment"><i class="fa-solid fa-paper-plane"></i></button>
                  </div>
@@ -1710,37 +1623,8 @@ function renderPost(post, animate) {
 
 // 🔥 UPDATED GENERATOR TO INCLUDE EMOJIS IN COMMENTS 🔥
 
-
-// Time-ago helper (was referenced but missing in some builds)
-function tmTimeAgo(tsMs) {
-  const t = Number(tsMs) || 0;
-  if (!t) return '';
-  const deltaMs = Date.now() - t;
-  if (!isFinite(deltaMs)) return '';
-  const s = Math.floor(Math.abs(deltaMs) / 1000);
-  const isFuture = deltaMs < 0;
-
-  const fmt = (n, unit) => `${n}${unit}${isFuture ? '' : ' ago'}`;
-
-  if (s < 10 && !isFuture) return 'just now';
-  if (s < 60) return fmt(s, 's');
-  const m = Math.floor(s / 60);
-  if (m < 60) return fmt(m, 'm');
-  const h = Math.floor(m / 60);
-  if (h < 24) return fmt(h, 'h');
-  const d = Math.floor(h / 24);
-  if (d < 7) return fmt(d, 'd');
-  const w = Math.floor(d / 7);
-  if (w < 5) return fmt(w, 'w');
-  const mo = Math.floor(d / 30);
-  if (mo < 12) return fmt(mo, 'mo');
-  const y = Math.floor(d / 365);
-  return fmt(y, 'y');
-}
-
 function generateCommentHTML(textOrObj, timestampMaybe) {
     const safeStr = (v) => (v === null || v === undefined) ? '' : String(v).trim();
-    const escAttr = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
     const c = (textOrObj && typeof textOrObj === 'object')
         ? textOrObj
@@ -1750,44 +1634,41 @@ function generateCommentHTML(textOrObj, timestampMaybe) {
 
     const authorEmail = safeStr(c.authorEmail || c.creatorEmail || c.email);
     const authorNameRaw = safeStr(c.authorName || c.creatorName || c.name);
-    const authorHandleRaw = safeStr(c.authorHandle || c.creatorHandle || c.handle);
 
     const isMe =
-        (authorEmail && me.email && authorEmail.toLowerCase() === String(me.email).toLowerCase()) ||
+        (authorEmail && me.email && authorEmail.toLowerCase() === me.email.toLowerCase()) ||
         (!authorEmail && (authorNameRaw === 'You' || authorNameRaw === 'Me'));
 
-    const emailPrefix = authorEmail ? (authorEmail.split('@')[0] || '') : '';
-    const name = safeStr(isMe ? (me.name || authorNameRaw || authorHandleRaw || emailPrefix) : (authorNameRaw || authorHandleRaw || emailPrefix)) || 'Unknown';
+    const name = isMe ? safeStr(me.name) : (authorNameRaw || 'Unknown');
 
     const avatar =
-        safeStr(isMe ? (me.avatarUrl || '') : (c.authorAvatarUrl || c.creatorAvatarUrl || c.avatarUrl)) ||
-        'assets/images/truematch-mark.png';
+        isMe
+            ? safeStr(me.avatarUrl)
+            : (safeStr(c.authorAvatarUrl || c.creatorAvatarUrl || c.avatarUrl) || 'assets/images/truematch-mark.png');
 
-    const commentId = safeStr(c.id || c.commentId || '');
+    const avatarAttr = tmEscapeHtml(avatar);
 
-    const text = tmEscapeHtml(safeStr(c.text));
+    const text = tmEscapeHtml(safeStr(c.text)).replace(/\n/g, '<br>');
     const timestamp = Number(c.timestamp || c.createdAtMs || c.createdAt || timestampMaybe || Date.now()) || Date.now();
     const timeAgo = tmTimeAgo(timestamp);
+    const commentId = safeStr(c.id || c._id || c.commentId) || `${timestamp}-${Math.random().toString(16).slice(2)}`;
 
-    const timeHtml = timeAgo
-        ? ('<div class="c-time" style="font-size:0.75rem; color: var(--muted);">' + tmEscapeHtml(timeAgo) + '</div>')
-        : '';
-
+    // NOTE: Keep `.c-user` class for existing reply-handler compatibility.
     return `
-        <div class="comment-item" data-comment-id="${escAttr(commentId)}">
-            <img class="c-avatar" src="${escAttr(avatar)}" alt="">
-            <div class="comment-body" style="flex:1; min-width:0;">
-                <div class="c-bubble">
-                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                        <div class="c-user">${tmEscapeHtml(name)}</div>
-                        ${timeHtml}
+        <div class="comment-item" data-comment-id="${tmEscapeHtml(commentId)}">
+            <img class="comment-avatar" src="${avatarAttr}" alt="">
+            <div class="comment-body">
+                <div class="comment-bubble">
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                        <span class="c-user" style="font-weight:800; font-size:0.85rem;">${tmEscapeHtml(name)}</span>
+                        <span class="c-time" style="font-size:0.75rem; color: var(--muted);">${tmEscapeHtml(timeAgo)}</span>
                     </div>
-                    <div class="c-txt">${text}</div>
+                    <div class="c-text">${text}</div>
                 </div>
 
-                <div class="comment-actions" style="display:flex; gap:14px; margin-top:4px; padding-left:6px; font-size:0.8rem; color: var(--muted);">
-                    <div class="comment-reaction-wrapper" style="position:relative; display:inline-flex; align-items:center;">
-                        <button type="button" class="action-comment-like" style="background:none; border:none; color:inherit; cursor:pointer; font-weight:600; padding:0;">Like</button>
+                <div class="comment-actions">
+                    <div class="comment-reaction-wrapper">
+                        <span class="c-action c-like action-comment-like" style="font-weight:600;">Like</span>
                         <div class="comment-reaction-picker">
                             <span class="react-emoji" data-type="comment" data-reaction="like">👍</span>
                             <span class="react-emoji" data-type="comment" data-reaction="love">❤️</span>
@@ -1797,8 +1678,7 @@ function generateCommentHTML(textOrObj, timestampMaybe) {
                             <span class="react-emoji" data-type="comment" data-reaction="angry">😡</span>
                         </div>
                     </div>
-
-                    <button type="button" class="action-reply-comment" style="background:none; border:none; color:inherit; cursor:pointer; font-weight:600; padding:0;">Reply</button>
+                    <span class="c-action action-reply-comment">Reply</span>
                 </div>
             </div>
         </div>
