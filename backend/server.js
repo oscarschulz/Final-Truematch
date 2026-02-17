@@ -392,6 +392,8 @@ const DB = {
   datesState: {},
   approvedState: {},
   messages: {},
+  messageMetaByEmail: {},
+  creatorPostVotesByUser: {},
   messageUsage: {},
   emailVerify: {},
   resetTokens: {},
@@ -403,10 +405,6 @@ const DB = {
   // and media may be stored in Firebase Storage; otherwise we use local disk JSON persistence.
   moments: []
 };
-
-// Messages Meta (per-user thread metadata, server-backed)
-DB.messageMetaByEmail = DB.messageMetaByEmail || {}; // { myEmail: { peerEmail: { starred, priority, hidden, note, lastSeenAt } } }
-
 
 /* =========================
    Request-scoped DB.user / DB.prefs (fix concurrency bug)
@@ -5208,6 +5206,42 @@ app.get('/api/messages/thread/:peer', (req, res) => {
     messages: list
   });
 });
+
+
+// Messages meta (server-backed; progressive enhancement for message.js)
+app.get('/api/me/messages/meta', (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req));
+    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+
+    DB.messageMetaByEmail = DB.messageMetaByEmail || {};
+    const map = DB.messageMetaByEmail[me] || {};
+    return res.json({ ok: true, items: map });
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+app.post('/api/me/messages/meta', (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req));
+    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+
+    const body = req.body || {};
+    const threadKey = _normalizeEmail(body.threadKey || '');
+    const meta = (body.meta && typeof body.meta === 'object') ? body.meta : {};
+
+    if (!threadKey) return res.status(400).json({ ok: false, error: 'Missing threadKey.' });
+
+    DB.messageMetaByEmail = DB.messageMetaByEmail || {};
+    DB.messageMetaByEmail[me] = DB.messageMetaByEmail[me] || {};
+    DB.messageMetaByEmail[me][threadKey] = { ...(DB.messageMetaByEmail[me][threadKey] || {}), ...meta, updatedAt: Date.now() };
+
+    return res.json({ ok: true, item: DB.messageMetaByEmail[me][threadKey] });
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: String(e?.message || e) });
+  }
+});
 // Send a message to a peer. Free plan has 20 messages/day cap; paid tiers are unlimited.
 app.post('/api/messages/send', (req, res) => {
   const email = DB.user && DB.user.email;
@@ -5286,58 +5320,6 @@ app.post('/api/messages/send', (req, res) => {
     }
   });
 });
-
-// ---------------- Messages Meta (server-backed, per-user) -------------------
-// Stores per-thread UI metadata: starred, priority, hidden, note, lastSeenAt.
-// Used by Creators/messages module (message.js) via GET/POST /api/me/messages/meta
-
-app.get('/api/me/messages/meta', (req, res) => {
-  const email = DB.user && DB.user.email;
-  if (!email) return res.status(401).json({ ok: false, message: 'not logged in' });
-
-  const me = String(email).trim().toLowerCase();
-  if (!DB.messageMetaByEmail) DB.messageMetaByEmail = {};
-  const items = (DB.messageMetaByEmail[me] && typeof DB.messageMetaByEmail[me] === 'object')
-    ? DB.messageMetaByEmail[me]
-    : {};
-
-  return res.json({ ok: true, items });
-});
-
-app.post('/api/me/messages/meta', (req, res) => {
-  const email = DB.user && DB.user.email;
-  if (!email) return res.status(401).json({ ok: false, message: 'not logged in' });
-
-  const me = String(email).trim().toLowerCase();
-  const body = req.body || {};
-  const threadKeyRaw = body.threadKey || body.peer || body.peerEmail || '';
-  const metaRaw = body.meta || body.data || body.item || {};
-
-  const peer = String(threadKeyRaw || '').trim().toLowerCase();
-  if (!peer) return res.status(400).json({ ok: false, message: 'threadKey required' });
-
-  const clean = (metaRaw && typeof metaRaw === 'object') ? metaRaw : {};
-  const next = {
-    starred: !!clean.starred,
-    priority: Number.isFinite(Number(clean.priority)) ? Number(clean.priority) : 0,
-    hidden: !!clean.hidden,
-    note: (clean.note != null) ? String(clean.note) : '',
-    lastSeenAt: (clean.lastSeenAt != null) ? String(clean.lastSeenAt) : ''
-  };
-
-  if (!DB.messageMetaByEmail) DB.messageMetaByEmail = {};
-  if (!DB.messageMetaByEmail[me] || typeof DB.messageMetaByEmail[me] !== 'object') {
-    DB.messageMetaByEmail[me] = {};
-  }
-
-  DB.messageMetaByEmail[me][peer] = {
-    ...(DB.messageMetaByEmail[me][peer] || {}),
-    ...next
-  };
-
-  return res.json({ ok: true, threadKey: peer, meta: DB.messageMetaByEmail[me][peer] });
-});
-
 // ---------------- Plan selection -------------------
 // Free upgrade (beta) mode: allows manual plan activation without payment.
 // Secure by requiring either:
@@ -6960,6 +6942,8 @@ app.post('/api/inner-circle-signup', async (req, res) => {
 // ---------------- Creator Posts (Feed) ----------------
 const CREATOR_POSTS_COLLECTION = process.env.CREATOR_POSTS_COLLECTION || 'iTrueMatchCreatorPosts';
 
+const CREATOR_POST_VOTES_COLLECTION = process.env.CREATOR_POST_VOTES_COLLECTION || 'iTrueMatchCreatorPostVotes';
+
 function _splitPipesSafe(str) {
   return String(str || '')
     .split('|')
@@ -7083,6 +7067,58 @@ function _creatorPostToClient(id, d) {
   };
 }
 
+function _voteDocId(postId, voterEmail) {
+  const pid = safeStr(postId).trim();
+  const e = encodeURIComponent(_normalizeEmail(voterEmail || '')).replace(/%/g, '_');
+  return `${pid}__${e}`;
+}
+
+// Attach the current user's vote selection to posts (pollMyVote / quizMyAnswer)
+async function _attachMyVotesToPosts(items, meEmail) {
+  const me = _normalizeEmail(meEmail || '');
+  if (!me || !Array.isArray(items) || !items.length) return items;
+
+  const byId = new Map(items.map(p => [safeStr(p?.id), p]));
+  const ids = Array.from(byId.keys()).filter(Boolean);
+  if (!ids.length) return items;
+
+  // In-memory fallback
+  if (!hasFirebase || !firestore) {
+    const map = DB.creatorPostVotesByUser?.[me] || {};
+    for (const id of ids) {
+      const v = map[id];
+      if (!v || typeof v !== 'object') continue;
+      const p = byId.get(id);
+      if (!p) continue;
+      if (v.type === 'poll') p.pollMyVote = v.optionIndex;
+      if (v.type === 'quiz') p.quizMyAnswer = v.optionIndex;
+    }
+    return items;
+  }
+
+  try {
+    const refs = ids.map(id => firestore.collection(CREATOR_POST_VOTES_COLLECTION).doc(_voteDocId(id, me)));
+    if (!refs.length) return items;
+    const snaps = await firestore.getAll(...refs);
+    for (let i = 0; i < snaps.length; i++) {
+      const snap = snaps[i];
+      if (!snap || !snap.exists) continue;
+      const v = snap.data() || {};
+      const id = ids[i];
+      const p = byId.get(id);
+      if (!p) continue;
+      if (v.type === 'poll') p.pollMyVote = v.optionIndex;
+      if (v.type === 'quiz') p.quizMyAnswer = v.optionIndex;
+    }
+  } catch {
+    // ignore
+  }
+
+  return items;
+}
+
+
+
 function _mixPriority(subs, others, limit) {
   const out = [];
   let i = 0, j = 0;
@@ -7201,18 +7237,142 @@ app.get('/api/creator/posts', async (req, res) => {
       return res.json({ ok: true, items: all });
     }
 
-    const snap = await firestore
-      .collection(CREATOR_POSTS_COLLECTION)
-      .where('creatorEmail', '==', creatorEmail)
-      .orderBy('createdAt', 'desc')
-      .limit(limit)
-      .get();
+    let snap = null;
+    try {
+      snap = await firestore
+        .collection(CREATOR_POSTS_COLLECTION)
+        .where('creatorEmail', '==', creatorEmail)
+        .orderBy('createdAt', 'desc')
+        .limit(limit)
+        .get();
 
-    const items = snap.docs.map(d => _creatorPostToClient(d.id, d.data() || {}));
-    return res.json({ ok: true, items });
+      const items = snap.docs.map(d => _creatorPostToClient(d.id, d.data() || {}));
+      await _attachMyVotesToPosts(items, me);
+      return res.json({ ok: true, items });
+    } catch (e) {
+      // Most common: Firestore composite index missing for (creatorEmail ==) + orderBy(createdAt desc)
+      // Fallback: fetch by creatorEmail only, then sort in-memory.
+      const snap2 = await firestore
+        .collection(CREATOR_POSTS_COLLECTION)
+        .where('creatorEmail', '==', creatorEmail)
+        .get();
+
+      const docs = snap2.docs.map(d => ({ id: d.id, data: d.data() || {} }));
+      docs.sort((a, b) => (_tsToMs(b.data?.createdAt) || 0) - (_tsToMs(a.data?.createdAt) || 0));
+      const items = docs.slice(0, limit).map(d => _creatorPostToClient(d.id, d.data));
+      await _attachMyVotesToPosts(items, me);
+      return res.json({ ok: true, items, warn: 'firestore_index_fallback' });
+    }
   } catch (e) {
     return res.status(400).json({ ok: false, error: String(e?.message || e) });
   }
+
+
+// Vote on a creator post poll/quiz (server-backed)
+app.post('/api/creator/posts/vote', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req));
+    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+
+    const body = req.body || {};
+    const postId = safeStr(body.postId || body.id || '').trim();
+    const type = String(body.type || '').trim().toLowerCase();
+    const optionIndex = parseInt(body.optionIndex, 10);
+
+    if (!postId) return res.status(400).json({ ok: false, error: 'Missing postId.' });
+    if (type !== 'poll' && type !== 'quiz') return res.status(400).json({ ok: false, error: 'Invalid type.' });
+    if (!Number.isFinite(optionIndex) || optionIndex < 0) return res.status(400).json({ ok: false, error: 'Invalid optionIndex.' });
+
+    // In-memory fallback
+    if (!hasFirebase || !firestore) {
+      DB.creatorPosts = DB.creatorPosts || {};
+      const post = DB.creatorPosts[postId];
+      if (!post) return res.status(404).json({ ok: false, error: 'Post not found.' });
+
+      DB.creatorPostVotesByUser = DB.creatorPostVotesByUser || {};
+      DB.creatorPostVotesByUser[me] = DB.creatorPostVotesByUser[me] || {};
+
+      if (DB.creatorPostVotesByUser[me][postId]) {
+        const existing = DB.creatorPostVotesByUser[me][postId];
+        const client = _creatorPostToClient(postId, post);
+        if (existing.type === 'poll') client.pollMyVote = existing.optionIndex;
+        if (existing.type === 'quiz') client.quizMyAnswer = existing.optionIndex;
+        return res.status(409).json({ ok: false, error: 'already_voted', post: client });
+      }
+
+      const field = type === 'poll' ? 'pollVotes' : 'quizVotes';
+      let votes = Array.isArray(post[field]) ? post[field].slice() : [];
+      if (votes.length <= optionIndex) {
+        while (votes.length <= optionIndex) votes.push(0);
+      }
+      votes[optionIndex] = Number(votes[optionIndex] || 0) + 1;
+      post[field] = votes;
+      post.updatedAt = Date.now();
+
+      DB.creatorPostVotesByUser[me][postId] = { type, optionIndex, createdAt: Date.now() };
+
+      const client = _creatorPostToClient(postId, post);
+      if (type === 'poll') client.pollMyVote = optionIndex;
+      if (type === 'quiz') client.quizMyAnswer = optionIndex;
+      return res.json({ ok: true, post: client });
+    }
+
+    // Firestore
+    const postRef = firestore.collection(CREATOR_POSTS_COLLECTION).doc(postId);
+    const voteRef = firestore.collection(CREATOR_POST_VOTES_COLLECTION).doc(_voteDocId(postId, me));
+
+    const existingSnap = await voteRef.get();
+    if (existingSnap.exists) {
+      const existing = existingSnap.data() || {};
+      const postSnap = await postRef.get();
+      const post = postSnap.exists ? (postSnap.data() || {}) : {};
+      const client = _creatorPostToClient(postId, post);
+      if (existing.type === 'poll') client.pollMyVote = existing.optionIndex;
+      if (existing.type === 'quiz') client.quizMyAnswer = existing.optionIndex;
+      return res.status(409).json({ ok: false, error: 'already_voted', post: client });
+    }
+
+    let updatedPost = null;
+
+    await firestore.runTransaction(async (tx) => {
+      const ps = await tx.get(postRef);
+      if (!ps.exists) throw new Error('Post not found.');
+      const p = ps.data() || {};
+
+      const field = type === 'poll' ? 'pollVotes' : 'quizVotes';
+      const options = type === 'poll'
+        ? (p.poll && Array.isArray(p.poll.options) ? p.poll.options : [])
+        : (p.quiz && Array.isArray(p.quiz.options) ? p.quiz.options : []);
+
+      const n = Array.isArray(options) ? options.length : 0;
+      if (n && optionIndex >= n) throw new Error('Invalid optionIndex.');
+
+      let votes = Array.isArray(p[field]) ? p[field].slice() : [];
+      if (n) {
+        if (votes.length !== n) votes = Array.from({ length: n }, (_, i) => Number(votes[i] || 0));
+      } else {
+        if (votes.length <= optionIndex) {
+          while (votes.length <= optionIndex) votes.push(0);
+        }
+      }
+
+      votes[optionIndex] = Number(votes[optionIndex] || 0) + 1;
+
+      tx.update(postRef, { [field]: votes, updatedAt: new Date() });
+      tx.set(voteRef, { postId, voterEmail: me, type, optionIndex, createdAt: new Date() }, { merge: true });
+
+      updatedPost = { ...p, [field]: votes };
+    });
+
+    const client = _creatorPostToClient(postId, updatedPost || {});
+    if (type === 'poll') client.pollMyVote = optionIndex;
+    if (type === 'quiz') client.quizMyAnswer = optionIndex;
+    return res.json({ ok: true, post: client });
+
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: String(e?.message || e) });
+  }
+});
 });
 
 // Mixed feed: prioritize subscribed creators (2:1 mix)
@@ -7289,12 +7449,14 @@ app.get('/api/creators/feed', async (req, res) => {
     await _attachMyReactionsToPosts(meEmail, subsPosts);
     await _attachMyReactionsToPosts(meEmail, otherPosts);
 
+    const items = _mixPriority(subsPosts, otherPosts, limit);
+    await _attachMyVotesToPosts(items, meEmail);
+
     return res.json({
       ok: true,
-      items: _mixPriority(subsPosts, otherPosts, limit),
+      items,
       subscribedCreators: Array.from(subscribedSet),
-    });
-  } catch (e) {
+    });} catch (e) {
     return res.status(400).json({ ok: false, error: String(e?.message || e) });
   }
 });

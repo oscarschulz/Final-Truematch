@@ -1710,6 +1710,34 @@ function renderPost(post, animate) {
 
 // 🔥 UPDATED GENERATOR TO INCLUDE EMOJIS IN COMMENTS 🔥
 
+
+// Time-ago helper (was referenced but missing in some builds)
+function tmTimeAgo(tsMs) {
+  const t = Number(tsMs) || 0;
+  if (!t) return '';
+  const deltaMs = Date.now() - t;
+  if (!isFinite(deltaMs)) return '';
+  const s = Math.floor(Math.abs(deltaMs) / 1000);
+  const isFuture = deltaMs < 0;
+
+  const fmt = (n, unit) => `${n}${unit}${isFuture ? '' : ' ago'}`;
+
+  if (s < 10 && !isFuture) return 'just now';
+  if (s < 60) return fmt(s, 's');
+  const m = Math.floor(s / 60);
+  if (m < 60) return fmt(m, 'm');
+  const h = Math.floor(m / 60);
+  if (h < 24) return fmt(h, 'h');
+  const d = Math.floor(h / 24);
+  if (d < 7) return fmt(d, 'd');
+  const w = Math.floor(d / 7);
+  if (w < 5) return fmt(w, 'w');
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return fmt(mo, 'mo');
+  const y = Math.floor(d / 365);
+  return fmt(y, 'y');
+}
+
 function generateCommentHTML(textOrObj, timestampMaybe) {
     const safeStr = (v) => (v === null || v === undefined) ? '' : String(v).trim();
 
