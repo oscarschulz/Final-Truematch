@@ -7145,42 +7145,12 @@ app.get('/api/creator/posts', async (req, res) => {
       return res.json({ ok: true, items: all });
     }
 
-    let snap = null;
-    let usedIndexFallback = false;
-
-    try {
-      snap = await firestore
-        .collection(CREATOR_POSTS_COLLECTION)
-        .where('creatorEmail', '==', creatorEmail)
-        .orderBy('createdAt', 'desc')
-        .limit(limit)
-        .get();
-    } catch (err) {
-      const msg = String(err?.message || err || '');
-      // Firestore needs a composite index for where(creatorEmail) + orderBy(createdAt).
-      // We fallback to an in-memory sort so the UI doesn't break, but creating the index is still recommended.
-      if (msg.includes('requires an index') || msg.includes('FAILED_PRECONDITION')) {
-        usedIndexFallback = true;
-
-        // Pull a bigger slice (best-effort), sort locally, then trim to limit.
-        const fallbackSnap = await firestore
-          .collection(CREATOR_POSTS_COLLECTION)
-          .where('creatorEmail', '==', creatorEmail)
-          .limit(Math.max(limit, 500))
-          .get();
-
-        const tmp = fallbackSnap.docs.map(d => {
-          const data = d.data() || {};
-          const createdAt = _tsToMs(data.createdAt) || data.timestamp || 0;
-          return { id: d.id, data, createdAt };
-        });
-
-        tmp.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-        const items = tmp.slice(0, limit).map(x => _creatorPostToClient(x.id, x.data || {}));
-        return res.json({ ok: true, items, indexFallback: true });
-      }
-      throw err;
-    }
+    const snap = await firestore
+      .collection(CREATOR_POSTS_COLLECTION)
+      .where('creatorEmail', '==', creatorEmail)
+      .orderBy('createdAt', 'desc')
+      .limit(limit)
+      .get();
 
     const items = snap.docs.map(d => _creatorPostToClient(d.id, d.data() || {}));
     return res.json({ ok: true, items });
@@ -7464,13 +7434,13 @@ app.post('/api/creator/posts/comment', authMiddleware, async (req, res) => {
     if (!text) return res.status(400).json({ ok: false, message: 'text is required' });
 
     const nowMs = Date.now();
-const meDoc = (req.user && typeof req.user === 'object') ? req.user : { email };
-const meta = _creatorMetaFromUserDoc(meDoc || { email });
+    const meDoc = (req.user && typeof req.user === 'object') ? req.user : null;
+    const displayName = safeStr((meDoc && (meDoc.name || meDoc.displayName)) || '');
 
-const authorName = safeStr(meta.creatorName) || email.split('@')[0];
-const authorHandle = safeStr(meta.creatorHandle) || `@${email.split('@')[0]}`;
-const authorAvatarUrl = safeStr(meta.creatorAvatarUrl) || '';
-const authorVerified = !!meta.creatorVerified;
+    const meta = _creatorMetaFromUserDoc(meDoc);
+    const authorName = safeStr(meta.creatorName) || displayName || (email.split('@')[0] || 'User');
+    const authorAvatarUrl = safeStr(meta.creatorAvatarUrl);
+    const authorHandle = safeStr(meta.creatorHandle);
 
     const comment = {
       id: crypto.randomUUID(),
@@ -7478,9 +7448,11 @@ const authorVerified = !!meta.creatorVerified;
       text,
       authorEmail: email,
       authorName,
-      authorHandle,
+      creatorName: authorName,
       authorAvatarUrl,
-      authorVerified,
+      creatorAvatarUrl: authorAvatarUrl,
+      authorHandle,
+      creatorHandle: authorHandle,
       createdAtMs: nowMs
     };
 
@@ -7549,9 +7521,6 @@ app.get('/api/creator/posts/comments', authMiddleware, async (req, res) => {
         text: safeStr(x.text || ''),
         authorEmail: safeStr(x.authorEmail || ''),
         authorName: safeStr(x.authorName || ''),
-        authorHandle: safeStr(x.authorHandle || ''),
-        authorAvatarUrl: safeStr(x.authorAvatarUrl || ''),
-        authorVerified: !!x.authorVerified,
         createdAtMs: Number(x.createdAtMs || 0)
       };
     });
