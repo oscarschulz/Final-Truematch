@@ -964,6 +964,87 @@ export function initHome(TopToast) {
                 if (menu) menu.classList.toggle('hidden');
             }
 
+
+            // --- TOGGLE COMMENTS (open/close) ---
+            const toggleCommentBtn = target.closest('.btn-toggle-comment');
+            if (toggleCommentBtn) {
+                const postCard = toggleCommentBtn.closest('.post-card');
+                const section = postCard ? postCard.querySelector('.post-comments-section') : null;
+                if (!postCard || !section) return;
+
+                section.classList.toggle('hidden');
+
+                // Lazy-load comments when opening
+                if (!section.classList.contains('hidden')) {
+                    try { await tmEnsureCommentsLoaded(postCard, TopToast); } catch {}
+                    const input = section.querySelector('.comment-input');
+                    if (input) setTimeout(() => input.focus(), 0);
+                }
+                return;
+            }
+
+            // --- SEND COMMENT (backend-first, fallback to local) ---
+            const sendCommentBtn = target.closest('.btn-send-comment');
+            if (sendCommentBtn) {
+                const postCard = sendCommentBtn.closest('.post-card');
+                const postId = postCard?.dataset?.postId;
+                const input = postCard ? postCard.querySelector('.comment-input') : null;
+                const rawText = input ? String(input.value || '').trim() : '';
+                if (!postId || !input || !rawText) return;
+
+                const me = (typeof tmGetCreatorIdentity === 'function') ? tmGetCreatorIdentity() : {};
+                const localComment = {
+                    id: tmNowId(),
+                    text: rawText,
+                    timestamp: Date.now(),
+                    authorEmail: me?.email || null,
+                    authorName: me?.name || 'You',
+                    authorAvatarUrl: me?.avatarUrl || null,
+                };
+
+                // Try server first
+                let finalComment = localComment;
+                try {
+                    const resp = await tmAddPostComment(postId, rawText);
+                    if (resp && resp.ok) {
+                        // accept server-provided comment shape if present
+                        const c = resp.comment || resp.item || resp.data || resp.created || resp.newComment || null;
+                        if (c && typeof c === 'object') {
+                            finalComment = {
+                                ...localComment,
+                                ...c,
+                                id: c.id || c.commentId || c._id || localComment.id,
+                                text: c.text || c.message || localComment.text,
+                                timestamp: Number(c.timestamp || c.createdAtMs || c.createdAt || Date.now()) || Date.now(),
+                                authorEmail: c.authorEmail || c.creatorEmail || c.email || localComment.authorEmail,
+                                authorName: c.authorName || c.creatorName || c.name || localComment.authorName,
+                                authorAvatarUrl: c.authorAvatarUrl || c.creatorAvatarUrl || c.avatarUrl || localComment.authorAvatarUrl,
+                            };
+                        }
+                    }
+                } catch {}
+
+                // Persist locally (for UI continuity even if server route isn't deployed yet)
+                updatePost(postId, (post) => {
+                    const p = post || {};
+                    p.comments = Array.isArray(p.comments) ? p.comments : [];
+                    p.comments.push(finalComment);
+                    return p;
+                });
+
+                // Update UI
+                const list = postCard.querySelector('.comment-list');
+                if (list) {
+                    const empty = list.querySelector('.no-comments-msg');
+                    if (empty) empty.style.display = 'none';
+                    list.insertAdjacentHTML('beforeend', generateCommentHTML(finalComment));
+                }
+
+                input.value = '';
+                tmToast(TopToast, 'success', 'Comment sent');
+                return;
+            }
+
             // ===============================================
             // 🔥 POST & COMMENT REACTION PICKER LOGIC 🔥
             // ===============================================
