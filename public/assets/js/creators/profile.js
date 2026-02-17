@@ -171,11 +171,11 @@ async function tmHydrateProfileHeader() {
 
 function setupProfileHeaderActions() {
     const btnEdit = document.getElementById('btn-edit-profile');
-    if (btnEdit && btnEdit.dataset.bound === '1') return;
+    const editAlreadyBound = !!(btnEdit && btnEdit.dataset.bound === '1');
     if (btnEdit) btnEdit.dataset.bound = '1';
 
     // Edit Profile → edits Display name + Bio (backend-first, safe local fallback)
-    if (btnEdit) {
+    if (btnEdit && !editAlreadyBound) {
         btnEdit.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -372,6 +372,9 @@ function setupProfileHeaderActions() {
 // Tabs switching (Posts/Media)
 // ------------------------------
 function setupProfileTabs() {
+    const root = document.getElementById('view-my-profile');
+    if (root && root.dataset.tabsBound === '1') return;
+    if (root) root.dataset.tabsBound = '1';
     const btnPosts = document.getElementById('profile-tab-posts');
     const btnMedia = document.getElementById('profile-tab-media');
     const viewPosts = document.getElementById('profile-content-posts');
@@ -555,18 +558,15 @@ async function renderProfilePosts() {
 function setupProfileFeedInteractions() {
     const container = document.getElementById('view-my-profile');
     if (!container || container.dataset.bound === '1') return;
-    container.dataset.bound = '1';
-
-    // Close any open menus/popup if user taps outside
-    document.addEventListener('click', (e) => {
-        const openMenus = document.querySelectorAll('.post-menu-dropdown');
-        openMenus.forEach(m => m.style.display = 'none');
-
-        const openReactions = document.querySelectorAll('.reaction-popup');
-        openReactions.forEach(p => p.style.display = 'none');
-    });
-
-    container.addEventListener('click', async (e) => {
+    container.dataset.bound = '1';    // Close any open menus/popup if user taps outside (bind once)
+    if (!window.__tmProfileDocCloseBound) {
+        window.__tmProfileDocCloseBound = true;
+        document.addEventListener('click', () => {
+            document.querySelectorAll('.post-menu-dropdown').forEach(m => m.style.display = 'none');
+            document.querySelectorAll('.reaction-popup').forEach(p => p.style.display = 'none');
+        });
+    }
+container.addEventListener('click', async (e) => {
         const target = e.target;
 
         const postCard = target.closest('.post-card');
@@ -780,8 +780,31 @@ async function submitComment(postCard, postId) {
 
     if (empty) empty.style.display = 'none';
 
+    const me = await tmGetMeSafe();
+    const identity = tmGetProfileIdentityFromDOM();
+
+    const authorName =
+        String(identity?.name || '').trim() ||
+        String(me?.name || me?.displayName || '').trim() ||
+        'User';
+
+    const authorEmail = String(me?.email || '').trim() || null;
+    const authorHandle = String(identity?.handle || '').trim() || null;
+    const authorAvatarUrl = String(identity?.avatarUrl || '').trim() || null;
+
     // Optimistic UI
-    const optimistic = { text, creatorName: 'You', _local: true, timestamp: Date.now() };
+    const clientTs = Date.now();
+    const optimistic = {
+        id: null,
+        text,
+        creatorName: authorName,
+        creatorEmail: authorEmail,
+        creatorHandle: authorHandle,
+        creatorAvatarUrl: authorAvatarUrl,
+        _local: true,
+        timestamp: clientTs
+    };
+
     list.insertAdjacentHTML('beforeend', createCommentHTML(optimistic));
     tmSaveComment(postId, text, optimistic);
 
@@ -789,27 +812,51 @@ async function submitComment(postCard, postId) {
 
     // Best-effort server save (if route exists)
     try {
-        const resp = await tmAddPostComment(postId, text);
-        if (resp) {
-            // If server accepted, refresh comments once (brings cross-device state)
-            await tmEnsureCommentsLoaded(postCard, postId, true).catch(() => {});
-        }
+        const resp = await tmAddPostComment(postId, text, {
+            clientTs,
+            authorName,
+            authorEmail,
+            authorHandle,
+            authorAvatarUrl
+        });
+
+        const canonical = resp?.comment || resp?.item || resp?.data?.comment || null;
+        if (canonical) tmMarkLocalCommentSynced(postId, clientTs, canonical);
+
+        // Refresh comments once (brings cross-device state)
+        if (resp) await tmEnsureCommentsLoaded(postCard, postId, true).catch(() => {});
     } catch (_) {}
 }
+
+
 
 function createCommentHTML(comment) {
     const obj = (comment && typeof comment === 'object' && !Array.isArray(comment)) ? comment : { text: String(comment || '') };
     const text = String(obj.text || '').trim();
     const safe = tmEscapeHtml(text);
 
-    const author = String(obj.creatorName || obj.authorName || obj.name || '').trim() || 'User';
+    const email = String(obj.creatorEmail || obj.authorEmail || obj.email || '').trim();
+    const handle = String(obj.creatorHandle || obj.authorHandle || obj.handle || '').trim();
+
+    let author = String(obj.creatorName || obj.authorName || obj.name || obj.displayName || '').trim();
+    if (!author) {
+        if (handle) author = handle.startsWith('@') ? handle : '@' + handle;
+        else if (email) author = email.split('@')[0];
+        else author = 'Unknown';
+    }
+
     const authorSafe = tmEscapeHtml(author);
+
+    const avatarUrl = String(obj.creatorAvatarUrl || obj.authorAvatarUrl || obj.avatarUrl || obj.avatar || '').trim();
+    const avatarBlock = avatarUrl
+        ? `<img src="${tmEscapeAttr(avatarUrl)}" alt="" style="width:32px; height:32px; border-radius:50%; object-fit:cover; flex-shrink:0; border:1px solid rgba(255,255,255,0.12);">`
+        : `<div style="width:32px; height:32px; border-radius:50%; background: rgba(255,255,255,0.10); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                <i class="fa-solid fa-user" style="font-size: 0.85rem; color: rgba(255,255,255,0.75);"></i>
+           </div>`;
 
     return `
         <div class="comment-item" style="display:flex; gap:10px; align-items:flex-start;">
-            <div style="width:32px; height:32px; border-radius:50%; background: rgba(255,255,255,0.10); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-                <i class="fa-solid fa-user" style="font-size: 0.85rem; color: rgba(255,255,255,0.75);"></i>
-            </div>
+            ${avatarBlock}
             <div style="flex:1;">
                 <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8); line-height:1.35;">
                     <span style="font-weight:800; color:#fff;">${authorSafe}</span> ${safe}
@@ -910,10 +957,21 @@ async function tmSetPostReaction(postId, reaction) {
     return null;
 }
 
-async function tmAddPostComment(postId, text) {
+async function tmAddPostComment(postId, text, meta = {}) {
     if (!postId || !text) return null;
 
     const payload = { id: String(postId), text: String(text) };
+    try {
+        const m = (meta && typeof meta === 'object') ? meta : {};
+        if (m.clientTs != null) {
+            const n = Number(m.clientTs);
+            if (Number.isFinite(n)) payload.clientTs = n;
+        }
+        if (m.authorName) payload.authorName = String(m.authorName);
+        if (m.authorEmail) payload.authorEmail = String(m.authorEmail);
+        if (m.authorHandle) payload.authorHandle = String(m.authorHandle);
+        if (m.authorAvatarUrl) payload.authorAvatarUrl = String(m.authorAvatarUrl);
+    } catch (_) {}
     const { res, data } = await tmFetchJson(POST_COMMENT_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -940,11 +998,13 @@ async function tmFetchPostComments(postId, limit = 50) {
 function tmNormalizeCommentItem(c) {
     const obj = (c && typeof c === 'object' && !Array.isArray(c)) ? c : { text: String(c || '') };
     return {
-        id: obj.id || obj._id || null,
+        id: obj.id || obj._id || obj.commentId || null,
         text: String(obj.text || '').trim(),
         timestamp: Number(obj.timestamp || obj.createdAtMs || obj.createdAt || Date.now()) || Date.now(),
-        creatorEmail: obj.creatorEmail || obj.authorEmail || null,
-        creatorName: obj.creatorName || obj.authorName || obj.name || null,
+        creatorEmail: obj.creatorEmail || obj.authorEmail || obj.email || null,
+        creatorName: obj.creatorName || obj.authorName || obj.name || obj.displayName || null,
+        creatorHandle: obj.creatorHandle || obj.authorHandle || obj.handle || null,
+        creatorAvatarUrl: obj.creatorAvatarUrl || obj.authorAvatarUrl || obj.avatarUrl || obj.avatar || null,
         _local: !!obj._local,
     };
 }
@@ -1043,11 +1103,13 @@ function tmLoadComments(postId) {
             .map((c) => {
                 if (c && typeof c === 'object' && !Array.isArray(c)) {
                     return {
-                        id: c.id || c._id || null,
+                        id: c.id || c._id || c.commentId || null,
                         text: String(c.text || '').trim(),
                         timestamp: Number(c.timestamp || c.createdAtMs || c.createdAt || Date.now()) || Date.now(),
-                        creatorEmail: c.creatorEmail || c.authorEmail || null,
-                        creatorName: c.creatorName || c.authorName || null,
+                        creatorEmail: c.creatorEmail || c.authorEmail || c.email || null,
+                        creatorName: c.creatorName || c.authorName || c.name || c.displayName || null,
+                        creatorHandle: c.creatorHandle || c.authorHandle || c.handle || null,
+                        creatorAvatarUrl: c.creatorAvatarUrl || c.authorAvatarUrl || c.avatarUrl || c.avatar || null,
                         _local: !!c._local,
                     };
                 }
@@ -1069,14 +1131,58 @@ function tmSaveComment(postId, text, meta = {}) {
         id: meta?.id || null,
         text: t,
         timestamp: Number(meta?.timestamp || Date.now()) || Date.now(),
-        creatorEmail: meta?.creatorEmail || meta?.authorEmail || null,
-        creatorName: meta?.creatorName || meta?.authorName || null,
+        creatorEmail: meta?.creatorEmail || meta?.authorEmail || meta?.email || null,
+        creatorName: meta?.creatorName || meta?.authorName || meta?.name || meta?.displayName || null,
+        creatorHandle: meta?.creatorHandle || meta?.authorHandle || meta?.handle || null,
+        creatorAvatarUrl: meta?.creatorAvatarUrl || meta?.authorAvatarUrl || meta?.avatarUrl || meta?.avatar || null,
         _local: meta?._local !== false,
     };
 
     list.push(item);
 
     try { localStorage.setItem(tmCommentsKey(postId), JSON.stringify(list)); } catch (_) {}
+
+function tmMarkLocalCommentSynced(postId, clientTs, canonical) {
+    try {
+        const ts = Number(clientTs);
+        if (!Number.isFinite(ts)) return;
+
+        const c = (canonical && typeof canonical === 'object') ? canonical : null;
+        if (!c) return;
+
+        const canonId = c.id || c._id || c.commentId || null;
+        const canonTs = Number(c.timestamp || c.createdAtMs || c.createdAt || ts) || ts;
+        const canonName = c.creatorName || c.authorName || c.name || c.displayName || null;
+        const canonEmail = c.creatorEmail || c.authorEmail || c.email || null;
+        const canonHandle = c.creatorHandle || c.authorHandle || c.handle || null;
+        const canonAvatar = c.creatorAvatarUrl || c.authorAvatarUrl || c.avatarUrl || c.avatar || null;
+
+        const list = tmLoadComments(postId);
+        let changed = false;
+
+        for (const item of list) {
+            if (!item || typeof item !== 'object') continue;
+            if ((Number(item.timestamp) || 0) !== ts) continue;
+
+            if (canonId && !item.id) item.id = canonId;
+            item.timestamp = canonTs;
+
+            if (canonName) item.creatorName = canonName;
+            if (canonEmail) item.creatorEmail = canonEmail;
+            if (canonHandle) item.creatorHandle = canonHandle;
+            if (canonAvatar) item.creatorAvatarUrl = canonAvatar;
+
+            item._local = false;
+            changed = true;
+            break;
+        }
+
+        if (changed) {
+            try { localStorage.setItem(tmCommentsKey(postId), JSON.stringify(list)); } catch (_) {}
+        }
+    } catch (_) {}
+}
+
 }
 
 function tmReadLocalReaction(postId) {
