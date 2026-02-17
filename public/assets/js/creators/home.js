@@ -132,6 +132,7 @@ function tmMergeComments(localComments, remoteComments) {
         timestamp: Number(c?.timestamp || c?.createdAtMs || c?.createdAt || Date.now()) || Date.now(),
         creatorEmail: c?.creatorEmail || c?.authorEmail || null,
         creatorName: c?.creatorName || c?.authorName || null,
+        creatorAvatarUrl: c?.creatorAvatarUrl || c?.authorAvatarUrl || c?.avatarUrl || c?.avatar || null,
     });
 
     // Remote first (authoritative)
@@ -189,7 +190,7 @@ async function tmEnsureCommentsLoaded(postCard, TopToast) {
 
         // Rebuild list UI (keep the "no comments" element)
         const keepNo = emptyMsg ? emptyMsg.outerHTML : '<div class="no-comments-msg" style="text-align: center; font-size: 0.85rem; color: var(--muted);">No comments yet</div>';
-        list.innerHTML = keepNo + comments.map(c => generateCommentHTML(c.text, c.timestamp)).join('');
+        list.innerHTML = keepNo + comments.map(c => generateCommentHTML(c)).join('');
 
         const has = comments.length > 0;
         const newEmpty = list.querySelector('.no-comments-msg');
@@ -950,16 +951,17 @@ export function initHome(TopToast) {
                 const postId = postCard.id.replace('post-', '');
 
                 // Optimistic UI
-                const optimistic = { id: tmNowId(), text, timestamp: Date.now() };
+                const meIdentity = tmGetCreatorIdentity();
+                const optimistic = { id: tmNowId(), text, timestamp: Date.now(), creatorName: meIdentity?.name || null, creatorAvatarUrl: meIdentity?.avatarUrl || null };
                 updatePost(postId, (post) => {
                     if (!post) return post;
                     if (!Array.isArray(post.comments)) post.comments = [];
-                    post.comments.push({ id: optimistic.id, text: optimistic.text, timestamp: optimistic.timestamp });
+                    post.comments.push({ id: optimistic.id, text: optimistic.text, timestamp: optimistic.timestamp, creatorName: optimistic.creatorName, creatorAvatarUrl: optimistic.creatorAvatarUrl });
                     return post;
                 });
 
                 if (emptyMsg) emptyMsg.style.display = 'none';
-                list.insertAdjacentHTML('beforeend', generateCommentHTML(optimistic.text, optimistic.timestamp));
+                list.insertAdjacentHTML('beforeend', generateCommentHTML(optimistic));
                 input.value = '';
 
                 // Backend-first (best-effort). If endpoint not available yet, comment stays local.
@@ -1040,13 +1042,17 @@ export function initHome(TopToast) {
                     e.preventDefault();
                     const text = e.target.value.trim();
                     if(text) {
+                        const meIdentity = tmGetCreatorIdentity();
+                        const safeText = tmEscapeHtml(text);
+                        const safeName = tmEscapeHtml(meIdentity?.name || 'You');
+                        const safeAvatar = tmEscapeHtml(meIdentity?.avatarUrl || 'assets/images/truematch-mark.png');
                         const replyHTML = `
                             <div class="comment-item" style="margin-top:10px; animation:fadeIn 0.2s;">
-                                <img src="assets/images/truematch-mark.png" class="comment-avatar" style="width:25px; height:25px;">
+                                <img src="${safeAvatar}" class="comment-avatar" style="width:25px; height:25px;">
                                 <div class="comment-body">
                                     <div class="comment-bubble">
-                                        <div style="font-weight:700; font-size:0.8rem;">You</div>
-                                        <div>${text}</div>
+                                        <div style="font-weight:700; font-size:0.8rem;">${safeName}</div>
+                                        <div>${safeText}</div>
                                     </div>
                                 </div>
                             </div>
@@ -1443,7 +1449,7 @@ function renderPost(post, animate) {
     const likeColorStyle = likeUI.color ? `color: ${likeUI.color};` : '';
 
     const comments = Array.isArray(post.comments) ? post.comments : [];
-    const commentsHTML = comments.map(c => generateCommentHTML(c.text, c.timestamp)).join('');
+    const commentsHTML = comments.map(c => generateCommentHTML(c)).join('');
     const noCommentsStyle = comments.length ? 'display:none;' : '';
 
     const extraBlock = (post.type === 'poll') ? renderPollBlock(post)
@@ -1522,16 +1528,29 @@ function renderPost(post, animate) {
 
 // 🔥 UPDATED GENERATOR TO INCLUDE EMOJIS IN COMMENTS 🔥
 
-function generateCommentHTML(text, timestamp = Date.now()) {
-    const safe = tmEscapeHtml(text || '').replace(/\n/g, '<br>');
-    const ago = getTimeAgo(timestamp);
+function generateCommentHTML(commentOrText, timestamp = Date.now()) {
+    const c = (commentOrText && typeof commentOrText === 'object') ? commentOrText : { text: commentOrText, timestamp };
+    const meIdentity = tmGetCreatorIdentity();
+
+    const ts = Number(c?.timestamp || c?.createdAtMs || c?.createdAt || timestamp || Date.now()) || Date.now();
+    const ago = getTimeAgo(ts);
+
+    const rawName = String(c?.creatorName || c?.authorName || '').trim();
+    const displayName = (rawName && rawName !== 'You') ? rawName : (rawName === 'You' ? String(meIdentity?.name || 'You') : 'Unknown');
+    const safeName = tmEscapeHtml(displayName);
+
+    const rawAvatar = String(c?.creatorAvatarUrl || c?.authorAvatarUrl || c?.avatarUrl || c?.avatar || '').trim();
+    const avatar = rawAvatar || ((meIdentity && displayName === meIdentity.name && meIdentity.avatarUrl) ? meIdentity.avatarUrl : '') || 'assets/images/truematch-mark.png';
+    const safeAvatar = tmEscapeHtml(avatar);
+
+    const safe = tmEscapeHtml(String(c?.text || '')).replace(/\n/g, '<br>');
 
     return `
         <div class="comment-item" style="animation: fadeIn 0.3s; display: flex; gap: 10px; align-items: flex-start;">
-            <img src="assets/images/truematch-mark.png" class="comment-avatar" style="width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;">
+            <img src="${safeAvatar}" class="comment-avatar" style="width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;">
             <div class="comment-body" style="flex: 1;">
                 <div class="comment-bubble" style="background: var(--bg); padding: 8px 12px; border-radius: 12px; border: 1px solid var(--border-color); display: inline-block;">
-                    <div style="font-weight:700; font-size:0.8rem; margin-bottom:2px;">You</div>
+                    <div style="font-weight:700; font-size:0.8rem; margin-bottom:2px;">${safeName}</div>
                     <div>${safe}</div>
                 </div>
                 <div class="comment-actions" style="display: flex; gap: 15px; margin-top: 5px; padding-left: 5px; font-size: 0.75rem; color: var(--muted); font-weight: 600;">

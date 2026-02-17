@@ -393,7 +393,6 @@ const DB = {
   approvedState: {},
   messages: {},
   messageUsage: {},
-  messageMeta: {},
   emailVerify: {},
   resetTokens: {},
   forgotOtps: {},
@@ -553,38 +552,6 @@ function saveSwipesStore() {
     console.error('[DB] Failed to save swipes store:', e.message);
   }
 }
-
-
-// ---------------- MESSAGE META PERSISTENCE (chat meta: starred/hidden/priority/notes) ----------------
-// Used when Firebase is OFF (local/demo mode) so meta still survives server restarts.
-const MESSAGE_META_STORE_PATH = path.join(__dirname, '_message_meta_store.json');
-
-function loadMessageMetaStore() {
-  try {
-    if (!fs.existsSync(MESSAGE_META_STORE_PATH)) return;
-    const raw = fs.readFileSync(MESSAGE_META_STORE_PATH, 'utf8');
-    const obj = JSON.parse(raw || '{}');
-    if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
-      DB.messageMeta = obj;
-      console.log(`[DB] Loaded message meta for ${Object.keys(DB.messageMeta).length} users from disk.`);
-    }
-  } catch (e) {
-    console.error('[DB] Failed to load message meta store:', e.message);
-  }
-}
-
-function saveMessageMetaStore() {
-  try {
-    fs.writeFileSync(
-      MESSAGE_META_STORE_PATH,
-      JSON.stringify(DB.messageMeta || {}, null, 2),
-      'utf8'
-    );
-  } catch (e) {
-    // Some hosts have read-only FS; ignore
-  }
-}
-
 
 
 // ---------------- Plan rules & date helpers ----------------
@@ -1705,7 +1672,6 @@ if (!hasFirebase) {
   loadPrefsStore();
   loadUsersStore();
   loadSwipesStore();
-  loadMessageMetaStore();
   loadMomentsStore();
 } // <--- IMPORTANTE: Load users & swipes on boot
 
@@ -5126,103 +5092,6 @@ app.post('/api/admin/confirmed-date', async (req, res) => {
   }
 });
 
-
-// GET all confirmed/scheduled dates (Admin)
-// Used by Admin "Confirmed Dates" tab to list scheduled dates across all users.
-app.get('/api/admin/confirmed-date', async (req, res) => {
-  try {
-    const providedKey = getProvidedAdminKey(req);
-    if (!isValidAdminKey(providedKey)) {
-      return res.status(401).json({ ok: false, message: 'admin_unauthorized' });
-    }
-
-    const emailFilter = String(req.query.email || '').trim().toLowerCase();
-    const statusFilter = String(req.query.status || '').trim().toLowerCase();
-
-    let items = [];
-
-    if (admin && admin.firestore) {
-      const snap = await admin.firestore().collection('users').get();
-
-      snap.docs.forEach((doc) => {
-        const data = doc.data() || {};
-        const ownerEmail = String(data.email || data.userEmail || '').trim().toLowerCase();
-        if (!ownerEmail) return;
-        if (emailFilter && ownerEmail !== emailFilter) return;
-
-        const arr = Array.isArray(data.scheduledDates) ? data.scheduledDates : [];
-        arr.forEach((p) => {
-          if (!p) return;
-          const status = String(p.status || 'scheduled').trim().toLowerCase();
-          if (statusFilter && status !== statusFilter) return;
-          items.push({
-            ownerEmail,
-            userId: doc.id,
-            ...p,
-            status
-          });
-        });
-      });
-    } else {
-      // Local/demo fallback
-      const map = (DB.datesState && typeof DB.datesState === 'object') ? DB.datesState : null;
-
-      if (map) {
-        Object.keys(map).forEach((ownerEmail) => {
-          const emailNorm = String(ownerEmail || '').trim().toLowerCase();
-          if (!emailNorm) return;
-          if (emailFilter && emailNorm !== emailFilter) return;
-
-          const arr = Array.isArray(map[ownerEmail]) ? map[ownerEmail] : [];
-          arr.forEach((p) => {
-            if (!p) return;
-            const status = String(p.status || 'scheduled').trim().toLowerCase();
-            if (statusFilter && status !== statusFilter) return;
-            items.push({
-              ownerEmail: emailNorm,
-              userId: null,
-              ...p,
-              status
-            });
-          });
-        });
-      } else if (DB.users) {
-        const usersArr = Array.isArray(DB.users) ? DB.users : Object.values(DB.users);
-        usersArr.forEach((u) => {
-          const ownerEmail = String((u && (u.email || u.userEmail)) || '').trim().toLowerCase();
-          if (!ownerEmail) return;
-          if (emailFilter && ownerEmail !== emailFilter) return;
-
-          const arr = Array.isArray(u.scheduledDates) ? u.scheduledDates : [];
-          arr.forEach((p) => {
-            if (!p) return;
-            const status = String(p.status || 'scheduled').trim().toLowerCase();
-            if (statusFilter && status !== statusFilter) return;
-            items.push({
-              ownerEmail,
-              userId: u.id || u.uid || null,
-              ...p,
-              status
-            });
-          });
-        });
-      }
-    }
-
-    // Sort newest first (best-effort)
-    items.sort((a, b) => {
-      const ta = Date.parse(String(a.scheduledAt || '')) || 0;
-      const tb = Date.parse(String(b.scheduledAt || '')) || 0;
-      return tb - ta;
-    });
-
-    return res.json({ ok: true, items });
-  } catch (err) {
-    console.error('admin confirmed-date list error:', err);
-    return res.status(500).json({ ok: false, message: 'server error' });
-  }
-});
-
 // ---------------- Dates (Tier 3 scheduling) -------------------
 app.get('/api/dates', async (_req, res) => {
   try {
@@ -5240,155 +5109,12 @@ app.get('/api/dates', async (_req, res) => {
 });
 
 // ---------------- Messages (per-match chat + daily limits) -------------------
-// NOTE: Firestore-backed when Firebase is configured; otherwise falls back to the
-// existing in-memory store (DB.messages) so dev/demo behavior stays intact.
-// Interface/response shapes are kept backward-compatible for the frontend.
-//
-// Storage model (Firestore):
-// - Collection: CHAT_THREADS_COLLECTION (default: tm_chat_threads)
-// - Doc id: deterministic hash of the 2 participant emails
-// - Fields: participants[], updatedAtMs, lastMessage{}, unread{<safeEmailKey>:n}
-// - Subcollection: items (message docs)
-
-const CHAT_THREADS_COLLECTION = process.env.CHAT_THREADS_COLLECTION || 'tm_chat_threads';
-
-function _chatSafeKey(email) {
-  return String(email || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
-}
-
-function _chatThreadId(a, b) {
-  const ea = String(a || '').trim().toLowerCase();
-  const eb = String(b || '').trim().toLowerCase();
-  const pair = [ea, eb].sort().join('|');
-  try {
-    return crypto.createHash('sha256').update(pair).digest('hex').slice(0, 32);
-  } catch {
-    // crypto should exist; fallback to a stable-ish id
-    return Buffer.from(pair).toString('base64').replace(/[^a-z0-9]/gi, '').slice(0, 32);
-  }
-}
-
-async function _chatListThreadsFS(email) {
-  // Avoid requiring composite indexes: query + sort in memory.
-  const snap = await firestore
-    .collection(CHAT_THREADS_COLLECTION)
-    .where('participants', 'array-contains', email)
-    .limit(200)
-    .get();
-
-  const threads = snap.docs.map(d => ({ id: d.id, ...(d.data() || {}) }));
-  threads.sort((a, b) => (Number(b.updatedAtMs || 0) - Number(a.updatedAtMs || 0)));
-  return threads;
-}
-
-async function _chatLoadThreadFS(email, peerEmail, planKey) {
-  const threadId = _chatThreadId(email, peerEmail);
-  const threadRef = firestore.collection(CHAT_THREADS_COLLECTION).doc(threadId);
-
-  const itemsSnap = await threadRef
-    .collection('items')
-    .orderBy('createdAtMs', 'asc')
-    .limit(500)
-    .get();
-
-  const list = itemsSnap.docs.map(d => {
-    const m = d.data() || {};
-    // Keep legacy shape {id, from, to, text, sentAt, readAt?}
-    return {
-      id: m.id || d.id,
-      from: m.from,
-      to: m.to,
-      text: m.text,
-      sentAt: m.sentAt || (m.createdAtMs ? new Date(Number(m.createdAtMs)).toISOString() : ''),
-      ...(m.readAt ? { readAt: m.readAt } : {}),
-    };
-  });
-
-  // Read receipts (tier1+ only): mark unread inbound as read
-  if (planKey !== 'free' && list.length) {
-    const nowIso = new Date().toISOString();
-    const nowMs = Date.now();
-    const batch = firestore.batch();
-    let changed = false;
-
-    for (const doc of itemsSnap.docs) {
-      const m = doc.data() || {};
-      const to = String(m.to || '').trim().toLowerCase();
-      const readAt = m.readAt || '';
-      if (to === String(email).trim().toLowerCase() && !readAt) {
-        batch.update(doc.ref, { readAt: nowIso, readAtMs: nowMs });
-        changed = true;
-      }
-    }
-
-    if (changed) {
-      // Also reset unread counter for this user on the thread doc (best-effort).
-      const kMe = _chatSafeKey(email);
-      batch.set(threadRef, { unread: { [kMe]: 0 }, lastReadAtMs: { [kMe]: nowMs } }, { merge: true });
-      try { await batch.commit(); } catch (e) { /* best-effort */ }
-    }
-  }
-
-  return list;
-}
-
-async function _chatSendMessageFS(email, peerEmail, text) {
-  const threadId = _chatThreadId(email, peerEmail);
-  const threadRef = firestore.collection(CHAT_THREADS_COLLECTION).doc(threadId);
-  const msgId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-  const nowMs = Date.now();
-  const nowIso = new Date(nowMs).toISOString();
-
-  const msg = {
-    id: msgId,
-    from: String(email).trim().toLowerCase(),
-    to: String(peerEmail).trim().toLowerCase(),
-    text: String(text || '').trim(),
-    sentAt: nowIso,
-    createdAtMs: nowMs,
-    readAt: '',
-    readAtMs: 0
-  };
-
-  const kMe = _chatSafeKey(email);
-  const kPeer = _chatSafeKey(peerEmail);
-
-  // Transaction keeps unread counters consistent.
-  await firestore.runTransaction(async (tx) => {
-    const snap = await tx.get(threadRef);
-    const cur = snap.exists ? (snap.data() || {}) : {};
-    const curUnread = (cur.unread && typeof cur.unread === 'object') ? cur.unread : {};
-
-    const unreadMe = 0; // sending a message implies you have "seen" the thread
-    const unreadPeer = Number(curUnread[kPeer] || 0) + 1;
-
-    tx.set(threadRef, {
-      participants: [String(email).trim().toLowerCase(), String(peerEmail).trim().toLowerCase()],
-      updatedAtMs: nowMs,
-      lastMessage: { id: msgId, from: msg.from, to: msg.to, text: msg.text, sentAt: msg.sentAt },
-      unread: { ...curUnread, [kMe]: unreadMe, [kPeer]: unreadPeer }
-    }, { merge: true });
-
-    const msgRef = threadRef.collection('items').doc(msgId);
-    tx.set(msgRef, msg, { merge: true });
-  });
-
-  // Return legacy shape
-  const out = { id: msg.id, from: msg.from, to: msg.to, text: msg.text, sentAt: msg.sentAt };
-  return out;
-}
-
-function _getSessionEmailForMessages(req) {
-  // Prefer signed cookie session; fallback to DB.user if needed.
-  const e = (typeof getSessionEmail === 'function' ? getSessionEmail(req) : '') ||
-            String((DB.user && DB.user.email) || '').trim();
-  return String(e || '').trim().toLowerCase();
-}
+// NOTE: This is an in-memory demo implementation. In production you would persist
+// messages in Firestore or another database, but the interface can stay the same.
 
 // List all message threads for the logged-in user, including usage info.
-app.get('/api/messages', async (req, res) => {
-  const email = _getSessionEmailForMessages(req);
+app.get('/api/messages', (req, res) => {
+  const email = DB.user && DB.user.email;
   if (!email) {
     return res.status(401).json({ ok: false, message: 'not logged in' });
   }
@@ -5397,41 +5123,6 @@ app.get('/api/messages', async (req, res) => {
   const plan = user.plan || null;
   const usage = getOrInitMessageUsage(email, plan);
 
-  // Firestore-backed
-  if (hasFirebase && firestore) {
-    try {
-      const docs = await _chatListThreadsFS(email);
-      const threads = docs.map(t => {
-        const parts = Array.isArray(t.participants) ? t.participants : [];
-        const peerEmail = String(parts.find(p => String(p).trim().toLowerCase() !== email) || '').trim().toLowerCase();
-        const last = (t.lastMessage && typeof t.lastMessage === 'object') ? t.lastMessage : null;
-        // count is optional; keep a safe default
-        return {
-          peerEmail,
-          count: Number(t.count || 0),
-          lastMessage: last ? {
-            id: last.id,
-            from: last.from,
-            to: last.to,
-            text: last.text,
-            sentAt: last.sentAt
-          } : null
-        };
-      }).filter(t => !!t.peerEmail);
-
-      return res.json({
-        ok: true,
-        plan: normalizePlanKey(plan),
-        usage: { dayKey: usage.dayKey, sentToday: usage.sentToday || 0, limit: usage.limit },
-        threads
-      });
-    } catch (e) {
-      // If Firestore fails, fall through to legacy in-memory behavior
-      console.warn('messages: firestore list failed, falling back to memory:', e?.message || e);
-    }
-  }
-
-  // Legacy in-memory behavior
   const byPeer = DB.messages[email] || {};
   const threads = Object.keys(byPeer).map((peerEmail) => {
     const list = byPeer[peerEmail] || [];
@@ -5440,7 +5131,13 @@ app.get('/api/messages', async (req, res) => {
       peerEmail,
       count: list.length,
       lastMessage: last
-        ? { id: last.id, from: last.from, to: last.to, text: last.text, sentAt: last.sentAt }
+        ? {
+            id: last.id,
+            from: last.from,
+            to: last.to,
+            text: last.text,
+            sentAt: last.sentAt
+          }
         : null
     };
   });
@@ -5448,14 +5145,18 @@ app.get('/api/messages', async (req, res) => {
   return res.json({
     ok: true,
     plan: normalizePlanKey(plan),
-    usage: { dayKey: usage.dayKey, sentToday: usage.sentToday || 0, limit: usage.limit },
+    usage: {
+      dayKey: usage.dayKey,
+      sentToday: usage.sentToday || 0,
+      limit: usage.limit
+    },
     threads
   });
 });
 
 // Get the full conversation with a specific peer.
-app.get('/api/messages/thread/:peer', async (req, res) => {
-  const email = _getSessionEmailForMessages(req);
+app.get('/api/messages/thread/:peer', (req, res) => {
+  const email = DB.user && DB.user.email;
   if (!email) {
     return res.status(401).json({ ok: false, message: 'not logged in' });
   }
@@ -5471,26 +5172,11 @@ app.get('/api/messages/thread/:peer', async (req, res) => {
   const planKey = normalizePlanKey(plan);
   const usage = getOrInitMessageUsage(email, plan);
 
-  // Firestore-backed
-  if (hasFirebase && firestore) {
-    try {
-      const list = await _chatLoadThreadFS(email, peerEmail, planKey);
-      return res.json({
-        ok: true,
-        plan: planKey,
-        usage: { dayKey: usage.dayKey, sentToday: usage.sentToday || 0, limit: usage.limit },
-        messages: list
-      });
-    } catch (e) {
-      console.warn('messages: firestore thread failed, falling back to memory:', e?.message || e);
-    }
-  }
-
-  // Legacy in-memory
   const byPeer = DB.messages[email] || {};
   const list = byPeer[peerEmail] || [];
 
-  // Read receipts: only tier1+ should update read state (free has no read receipts)
+  // Read receipts:
+  // Only tier1+ should update read state (free has no read receipts)
   if (planKey !== 'free' && Array.isArray(list) && list.length) {
     const nowIso = new Date().toISOString();
     let changed = false;
@@ -5500,6 +5186,8 @@ app.get('/api/messages/thread/:peer', async (req, res) => {
         changed = true;
       }
     }
+    // Because the same msg objects are stored for both sides in this demo store,
+    // marking readAt here is enough for the sender to see "seen".
     if (changed) {
       DB.messages[email][peerEmail] = list;
     }
@@ -5508,14 +5196,17 @@ app.get('/api/messages/thread/:peer', async (req, res) => {
   return res.json({
     ok: true,
     plan: planKey,
-    usage: { dayKey: usage.dayKey, sentToday: usage.sentToday || 0, limit: usage.limit },
+    usage: {
+      dayKey: usage.dayKey,
+      sentToday: usage.sentToday || 0,
+      limit: usage.limit
+    },
     messages: list
   });
 });
-
 // Send a message to a peer. Free plan has 20 messages/day cap; paid tiers are unlimited.
-app.post('/api/messages/send', async (req, res) => {
-  const email = _getSessionEmailForMessages(req);
+app.post('/api/messages/send', (req, res) => {
+  const email = DB.user && DB.user.email;
   if (!email) {
     return res.status(401).json({ ok: false, message: 'not logged in' });
   }
@@ -5548,26 +5239,14 @@ app.post('/api/messages/send', async (req, res) => {
     return res.status(403).json({
       ok: false,
       message: 'daily_message_limit_reached',
-      usage: { dayKey: usage.dayKey, sentToday: used, limit }
+      usage: {
+        dayKey: usage.dayKey,
+        sentToday: used,
+        limit
+      }
     });
   }
 
-  // Firestore-backed
-  if (hasFirebase && firestore) {
-    try {
-      const msg = await _chatSendMessageFS(email, peerEmail, text);
-      usage.sentToday = used + 1;
-      return res.json({
-        ok: true,
-        message: msg,
-        usage: { dayKey: usage.dayKey, sentToday: usage.sentToday, limit }
-      });
-    } catch (e) {
-      console.warn('messages: firestore send failed, falling back to memory:', e?.message || e);
-    }
-  }
-
-  // Legacy in-memory behavior
   const nowIso = new Date().toISOString();
   const msg = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -5577,12 +5256,18 @@ app.post('/api/messages/send', async (req, res) => {
     sentAt: nowIso
   };
 
+  // Store under sender
   if (!DB.messages[email]) DB.messages[email] = {};
-  if (!Array.isArray(DB.messages[email][peerEmail])) DB.messages[email][peerEmail] = [];
+  if (!Array.isArray(DB.messages[email][peerEmail])) {
+    DB.messages[email][peerEmail] = [];
+  }
   DB.messages[email][peerEmail].push(msg);
 
+  // Store symmetric view for the recipient
   if (!DB.messages[peerEmail]) DB.messages[peerEmail] = {};
-  if (!Array.isArray(DB.messages[peerEmail][email])) DB.messages[peerEmail][email] = [];
+  if (!Array.isArray(DB.messages[peerEmail][email])) {
+    DB.messages[peerEmail][email] = [];
+  }
   DB.messages[peerEmail][email].push(msg);
 
   usage.sentToday = used + 1;
@@ -5590,148 +5275,13 @@ app.post('/api/messages/send', async (req, res) => {
   return res.json({
     ok: true,
     message: msg,
-    usage: { dayKey: usage.dayKey, sentToday: usage.sentToday, limit }
+    usage: {
+      dayKey: usage.dayKey,
+      sentToday: usage.sentToday,
+      limit
+    }
   });
 });
-
-// ---------------- Messages Meta (cross-device chat state) -------------------
-// Stores per-thread meta (starred, hidden, priority, note, lastSeenAt, unread)
-// Contract:
-// - GET  /api/me/messages/meta  -> { ok:true, items:{ [threadKey]: meta } }
-// - POST /api/me/messages/meta  -> { ok:true }
-//
-// This is intentionally separate from /api/messages (which contains the actual chat messages).
-
-function _sanitizeMessageMeta(meta) {
-  const m = (meta && typeof meta === 'object') ? meta : {};
-  const out = {};
-
-  // Only allow known keys (keeps payload small & safe)
-  if (typeof m.starred === 'boolean') out.starred = m.starred;
-  if (typeof m.hidden === 'boolean') out.hidden = m.hidden;
-
-  if (m.priority != null) {
-    const p = Number(m.priority);
-    out.priority = Number.isFinite(p) ? Math.max(0, Math.min(3, Math.floor(p))) : 0;
-  }
-
-  if (typeof m.note === 'string') {
-    // cap notes to 2000 chars
-    out.note = m.note.slice(0, 2000);
-  }
-
-  if (typeof m.lastSeenAt === 'string') {
-    // basic iso sanity; don't strictly validate to avoid false negatives
-    out.lastSeenAt = m.lastSeenAt.slice(0, 64);
-  }
-
-  if (m.unread != null) {
-    const u = Number(m.unread);
-    out.unread = Number.isFinite(u) ? Math.max(0, Math.min(999, Math.floor(u))) : 0;
-  }
-
-  return out;
-}
-
-async function _getMessageMetaMapForUser(email) {
-  const emailNorm = String(email || '').trim().toLowerCase();
-  if (!emailNorm) return {};
-
-  // Firebase (preferred for cross-device)
-  if (hasFirebase && usersCollection && firestore) {
-    const u = await findUserByEmail(emailNorm);
-    if (!u || !u.id) return {};
-
-    const col = usersCollection.doc(u.id).collection('messageMeta');
-    const snap = await col.get();
-
-    const map = {};
-    snap.forEach((doc) => {
-      const d = doc.data() || {};
-      const key = String(d.threadKey || '').trim().toLowerCase();
-      if (!key) return;
-      map[key] = (d.meta && typeof d.meta === 'object') ? d.meta : {};
-    });
-    return map;
-  }
-
-  // Local fallback
-  DB.messageMeta = DB.messageMeta && typeof DB.messageMeta === 'object' ? DB.messageMeta : {};
-  const map = DB.messageMeta[emailNorm];
-  return (map && typeof map === 'object') ? map : {};
-}
-
-async function _setMessageMetaForUser(email, threadKey, metaObj) {
-  const emailNorm = String(email || '').trim().toLowerCase();
-  const key = String(threadKey || '').trim().toLowerCase();
-  if (!emailNorm || !key) return;
-
-  const meta = _sanitizeMessageMeta(metaObj);
-
-  // Firebase
-  if (hasFirebase && usersCollection && firestore) {
-    const u = await findUserByEmail(emailNorm);
-    if (!u || !u.id) return;
-
-    const docId = _b64url(key);
-    const ref = usersCollection.doc(u.id).collection('messageMeta').doc(docId);
-    await ref.set(
-      {
-        threadKey: key,
-        meta,
-        updatedAt: admin ? admin.firestore.FieldValue.serverTimestamp() : new Date()
-      },
-      { merge: true }
-    );
-    return;
-  }
-
-  // Local fallback
-  DB.messageMeta = DB.messageMeta && typeof DB.messageMeta === 'object' ? DB.messageMeta : {};
-  if (!DB.messageMeta[emailNorm] || typeof DB.messageMeta[emailNorm] !== 'object') {
-    DB.messageMeta[emailNorm] = {};
-  }
-  DB.messageMeta[emailNorm][key] = meta;
-  saveMessageMetaStore();
-}
-
-// GET meta map
-app.get('/api/me/messages/meta', authMiddleware, async (req, res) => {
-  try {
-    const email = (req.user && req.user.email) || (DB.user && DB.user.email) || '';
-    if (!email) return res.status(401).json({ ok: false, error: 'Not authenticated' });
-
-    const map = await _getMessageMetaMapForUser(email);
-    return res.json({ ok: true, items: map });
-  } catch (e) {
-    console.error('GET /api/me/messages/meta error:', e);
-    return res.status(500).json({ ok: false, error: 'server error' });
-  }
-});
-
-// POST meta upsert
-app.post('/api/me/messages/meta', authMiddleware, async (req, res) => {
-  try {
-    const email = (req.user && req.user.email) || (DB.user && DB.user.email) || '';
-    if (!email) return res.status(401).json({ ok: false, error: 'Not authenticated' });
-
-    const body = req.body || {};
-    const threadKey = String(body.threadKey || body.peerEmail || body.peer || body.thread || '').trim().toLowerCase();
-    const meta = body.meta || body.data || {};
-
-    if (!threadKey) {
-      return res.status(400).json({ ok: false, error: 'threadKey required' });
-    }
-
-    await _setMessageMetaForUser(email, threadKey, meta);
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error('POST /api/me/messages/meta error:', e);
-    return res.status(500).json({ ok: false, error: 'server error' });
-  }
-});
-
-
 // ---------------- Plan selection -------------------
 // Free upgrade (beta) mode: allows manual plan activation without payment.
 // Secure by requiring either:
@@ -7595,12 +7145,42 @@ app.get('/api/creator/posts', async (req, res) => {
       return res.json({ ok: true, items: all });
     }
 
-    const snap = await firestore
-      .collection(CREATOR_POSTS_COLLECTION)
-      .where('creatorEmail', '==', creatorEmail)
-      .orderBy('createdAt', 'desc')
-      .limit(limit)
-      .get();
+    let snap = null;
+    let usedIndexFallback = false;
+
+    try {
+      snap = await firestore
+        .collection(CREATOR_POSTS_COLLECTION)
+        .where('creatorEmail', '==', creatorEmail)
+        .orderBy('createdAt', 'desc')
+        .limit(limit)
+        .get();
+    } catch (err) {
+      const msg = String(err?.message || err || '');
+      // Firestore needs a composite index for where(creatorEmail) + orderBy(createdAt).
+      // We fallback to an in-memory sort so the UI doesn't break, but creating the index is still recommended.
+      if (msg.includes('requires an index') || msg.includes('FAILED_PRECONDITION')) {
+        usedIndexFallback = true;
+
+        // Pull a bigger slice (best-effort), sort locally, then trim to limit.
+        const fallbackSnap = await firestore
+          .collection(CREATOR_POSTS_COLLECTION)
+          .where('creatorEmail', '==', creatorEmail)
+          .limit(Math.max(limit, 500))
+          .get();
+
+        const tmp = fallbackSnap.docs.map(d => {
+          const data = d.data() || {};
+          const createdAt = _tsToMs(data.createdAt) || data.timestamp || 0;
+          return { id: d.id, data, createdAt };
+        });
+
+        tmp.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        const items = tmp.slice(0, limit).map(x => _creatorPostToClient(x.id, x.data || {}));
+        return res.json({ ok: true, items, indexFallback: true });
+      }
+      throw err;
+    }
 
     const items = snap.docs.map(d => _creatorPostToClient(d.id, d.data() || {}));
     return res.json({ ok: true, items });
