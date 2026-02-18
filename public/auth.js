@@ -424,7 +424,7 @@
       return true;
     }
     saveLocalUser({ email, name: d.name, plan: d.plan });
-    try { await callAPI("/api/auth/login", { email, password: pass, remember: !!document.getElementById("rememberMe")?.checked }); } catch {}
+    try { await callAPI("/api/auth/login", { email, password: pass }); } catch {}
     const extra = new URLSearchParams({ demo: "1", prePlan: d.plan });
     finishLogin(extra.toString());
     return true;
@@ -668,7 +668,7 @@
           return;
         }
 
-        const res = await callAPI("/api/auth/login", { email, password, remember: !!document.getElementById("rememberMe")?.checked });
+        const res = await callAPI("/api/auth/login", { email, password });
         const offline = !!(res && (res.demo || res.status === 0));
         const ok = !!(res && (res.ok || offline));
         if (!ok) {
@@ -983,77 +983,67 @@
   });
 });
 
-})();
 
 
-  // --- Terms / Privacy modal ---
+  // --- Terms / Privacy modal (no page redirect) ---
   whenReady(() => {
-    const dlg = document.getElementById("dlgLegal");
-    const titleEl = document.getElementById("legalTitle");
-    const contentEl = document.getElementById("legalContent");
-    const tmplTerms = document.getElementById("tmplTerms");
-    const tmplPrivacy = document.getElementById("tmplPrivacy");
-    const btnCloseX = document.getElementById("btnCloseLegalX");
-    const btnCloseBottom = document.getElementById("btnCloseLegalBottom");
+    const dlg = document.getElementById('dlgLegal');
+    if (!dlg || dlg.dataset.tmBound === '1') return;
+    dlg.dataset.tmBound = '1';
 
-    if (!dlg || !titleEl || !contentEl || (!tmplTerms && !tmplPrivacy)) return;
-    if (dlg.dataset.tmBound === "1") return;
-    dlg.dataset.tmBound = "1";
+    const btnCloseX = document.getElementById('btnCloseLegalX');
+    const titleEl   = document.getElementById('legalTitle');
+    const bodyEl    = document.getElementById('legalContent');
+    const tplTerms  = document.getElementById('tplLegalTerms');
+    const tplPriv   = document.getElementById('tplLegalPrivacy');
 
-    let lastFocus = null;
+    function setLegal(type){
+      const t = String(type || '').toLowerCase();
+      const isTerms = (t === 'terms');
+      if (titleEl) titleEl.textContent = isTerms ? 'Terms of Service' : 'Privacy Policy';
+      if (!bodyEl) return;
 
-    function setBodyFromTemplate(which){
-      const tpl = which === "privacy" ? tmplPrivacy : tmplTerms;
-      titleEl.textContent = which === "privacy" ? "Privacy Policy" : "Terms of Service";
-      contentEl.innerHTML = "";
+      bodyEl.innerHTML = '';
+      const tpl = isTerms ? tplTerms : tplPriv;
       if (tpl && tpl.content) {
-        contentEl.appendChild(tpl.content.cloneNode(true));
+        bodyEl.appendChild(tpl.content.cloneNode(true));
+      } else {
+        bodyEl.textContent = isTerms ? 'Terms content unavailable.' : 'Privacy content unavailable.';
       }
-      // Always scroll to top on open
-      contentEl.scrollTop = 0;
     }
 
-    function openLegal(which){
-      lastFocus = document.activeElement;
-      setBodyFromTemplate(which);
-      try { dlg.showModal(); } catch { dlg.setAttribute("open", ""); }
-      // focus close button for accessibility
-      try { btnCloseX?.focus(); } catch {}
+    function openLegal(type){
+      setLegal(type);
+      try {
+        if (typeof dlg.showModal === 'function') dlg.showModal();
+        else dlg.setAttribute('open', '');
+      } catch {}
+      try { btnCloseX && btnCloseX.focus(); } catch {}
     }
 
-    function closeLegal(){
-      try { dlg.close(); } catch { dlg.removeAttribute("open"); }
-      // restore focus
-      try { lastFocus?.focus(); } catch {}
-      lastFocus = null;
-    }
-
-    // open from links
-    document.body.addEventListener("click", (e) => {
-      const a = e.target.closest('a[data-legal]');
+    // Open handler for the links
+    document.body.addEventListener('click', (e) => {
+      const a = e.target && e.target.closest ? e.target.closest('a[data-legal]') : null;
       if (!a) return;
-      const which = a.getAttribute("data-legal");
-      if (which !== "terms" && which !== "privacy") return;
       e.preventDefault();
-      openLegal(which);
+      openLegal(a.getAttribute('data-legal'));
     });
 
-    btnCloseX?.addEventListener("click", closeLegal);
-    btnCloseBottom?.addEventListener("click", closeLegal);
+    // Close handlers
+    if (btnCloseX) btnCloseX.addEventListener('click', () => safeDialogClose(dlg));
 
-    // ESC closes (dialog cancel)
-    dlg.addEventListener("cancel", (e) => {
-      e.preventDefault();
-      closeLegal();
+    // Click on backdrop closes (when using <dialog>)
+    dlg.addEventListener('click', (e) => {
+      if (e.target === dlg) safeDialogClose(dlg);
     });
 
-    // click outside closes (only when dialog is open)
-    dlg.addEventListener("click", (e) => {
-      const rect = dlg.getBoundingClientRect();
-      const inDialog =
-        e.clientX >= rect.left && e.clientX <= rect.right &&
-        e.clientY >= rect.top && e.clientY <= rect.bottom;
-      if (!inDialog) closeLegal();
-    });
+    // Safety: if some code sets #legal in URL, open it
+    try {
+      const h = String(location.hash || '').replace('#','').trim().toLowerCase();
+      if (h === 'terms' || h === 'privacy') {
+        setTimeout(() => openLegal(h), 30);
+      }
+    } catch {}
   });
 
+})();
