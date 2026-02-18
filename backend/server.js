@@ -6044,6 +6044,49 @@ function _normalizeEmail(e) {
   return String(e || '').trim().toLowerCase();
 }
 
+
+/**
+ * Return the currently authenticated user's email in normalized form.
+ * NOTE: Many routes run behind authMiddleware, but we still keep safe fallbacks.
+ */
+function _getMeEmailNormalized(req) {
+  try {
+    const direct = _normalizeEmail(req && req.user && req.user.email ? req.user.email : '');
+    if (direct) return direct;
+
+    // Fallback to session helper if present
+    if (typeof getSessionEmail === 'function') {
+      const ses = _normalizeEmail(getSessionEmail(req));
+      if (ses) return ses;
+    }
+  } catch (_) {}
+  return '';
+}
+
+/**
+ * Ensure reactionCounts-like objects are safe for Firestore writes:
+ * - plain object only
+ * - numeric, finite, non-negative integer values
+ * - optionally lowercases keys (useful for comments where reactions are normalized)
+ */
+function _sanitizeCountMap(map, opts) {
+  const lowerKeys = !!(opts && opts.lowerKeys);
+  const out = {};
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return out;
+  for (const [kRaw, vRaw] of Object.entries(map)) {
+    let k = String(kRaw || '').trim();
+    if (!k) continue;
+    if (lowerKeys) k = k.toLowerCase();
+
+    const n = Number(vRaw);
+    if (!Number.isFinite(n)) continue;
+    const nn = Math.max(0, Math.floor(n));
+    if (nn <= 0) continue;
+    out[k] = nn;
+  }
+  return out;
+}
+
 function _tsToMs(t) {
   if (!t) return null;
   if (typeof t === 'number') return t;
@@ -7574,7 +7617,7 @@ app.post('/api/creator/posts/react', authMiddleware, async (req, res) => {
       if (!postSnap.exists) throw new Error('Post not found');
 
       const post = postSnap.data() || {};
-      const counts = (post.reactionCounts && typeof post.reactionCounts === 'object') ? { ...post.reactionCounts } : {};
+      const counts = _sanitizeCountMap(post.reactionCounts, { lowerKeys: false });
       const prev = reactSnap.exists ? String((reactSnap.data() || {}).reaction || '') : '';
       const next = (reaction && reaction === prev) ? '' : reaction;
 
@@ -7610,7 +7653,7 @@ app.post('/api/creator/posts/comment/react', authMiddleware, async (req, res) =>
     const { postId, commentId, reaction } = req.body || {};
     const pid = safeStr(postId || '').trim();
     const cid = safeStr(commentId || '').trim();
-    const cleanReaction = (reaction === null || reaction === undefined) ? '' : safeStr(reaction).trim();
+    const cleanReaction = (reaction === null || reaction === undefined) ? '' : safeStr(reaction).trim().toLowerCase();
 
     if (!pid || !cid) return res.status(400).json({ ok: false, message: 'postId and commentId are required' });
     if (cleanReaction && cleanReaction.length > 24) return res.status(400).json({ ok: false, message: 'Invalid reaction' });
@@ -7619,32 +7662,13 @@ app.post('/api/creator/posts/comment/react', authMiddleware, async (req, res) =>
     if (!meEmail) return res.status(401).json({ ok: false, message: 'Not authenticated' });
     if (!hasFirebase || !firestore) return res.status(503).json({ ok: false, message: 'Firebase not configured' });
 
-    const toSafeCount = (v) => {
-      const n = Number(v);
-      if (!Number.isFinite(n)) return 0;
-      if (n <= 0) return 0;
-      return Math.floor(n);
-    };
-
     const myKey = _reactionDocIdForUser(meEmail);
     const postRef = _creatorPostsCol().doc(pid);
-    let commentRef = postRef.collection('comments').doc(cid);
+    const commentRef = postRef.collection('comments').doc(cid);
     const nowMs = Date.now();
 
     await firestore.runTransaction(async (t) => {
-      // Resolve comment doc (supports legacy cases where docId != comment.id)
-      let cSnap = await t.get(commentRef);
-      if (!cSnap.exists) {
-        try {
-          const q = postRef.collection('comments').where('id', '==', cid).limit(1);
-          const qSnap = await t.get(q);
-          if (qSnap && !qSnap.empty) {
-            commentRef = qSnap.docs[0].ref;
-            cSnap = qSnap.docs[0];
-          }
-        } catch (_) {}
-      }
-
+      const cSnap = await t.get(commentRef);
       if (!cSnap.exists) {
         const err = new Error('Comment not found');
         err.status = 404;
@@ -7653,41 +7677,32 @@ app.post('/api/creator/posts/comment/react', authMiddleware, async (req, res) =>
 
       const rRef = commentRef.collection('reactions').doc(myKey);
       const rSnap = await t.get(rRef);
-      const oldReaction = rSnap.exists ? safeStr((rSnap.data() || {}).reaction || '').trim() : '';
+      const oldReaction = rSnap.exists ? safeStr((rSnap.data() || {}).reaction || '').trim().toLowerCase() : '';
 
-      // Update reaction doc
+      // update reaction doc
       if (!cleanReaction) {
         if (rSnap.exists) t.delete(rRef);
       } else {
-        t.set(rRef, { reaction: cleanReaction, updatedAtMs: nowMs, updatedAt: new Date(nowMs) }, { merge: true });
+        t.set(rRef, { reaction: cleanReaction, createdAtMs: nowMs }, { merge: false });
       }
 
-      // Maintain aggregate counts on the comment doc (sanitize to avoid NaN writes)
+      // maintain aggregate counts on the comment doc
       const data = cSnap.data() || {};
-      const rawCounts = (data.reactionCounts && typeof data.reactionCounts === 'object') ? data.reactionCounts : {};
-      const counts = {};
-      try {
-        for (const [k, v] of Object.entries(rawCounts)) {
-          const key = safeStr(k || '').trim();
-          if (!key) continue;
-          const val = toSafeCount(v);
-          if (val > 0) counts[key] = val;
-        }
-      } catch (_) {}
+      const counts = _sanitizeCountMap(data.reactionCounts, { lowerKeys: true });
 
       if (oldReaction) {
-        const prev = toSafeCount(counts[oldReaction]);
+        const prev = Number(counts[oldReaction] || 0);
         const next = Math.max(0, prev - 1);
         if (next <= 0) delete counts[oldReaction];
         else counts[oldReaction] = next;
       }
       if (cleanReaction) {
-        const prev = toSafeCount(counts[cleanReaction]);
+        const prev = Number(counts[cleanReaction] || 0);
         counts[cleanReaction] = prev + 1;
       }
 
-      const total = Object.values(counts).reduce((a, b) => a + toSafeCount(b), 0);
-      t.set(commentRef, { reactionCounts: counts, reactionCount: total, updatedAtMs: nowMs, updatedAt: new Date(nowMs) }, { merge: true });
+      const total = Object.values(counts).reduce((a, b) => a + Number(b || 0), 0);
+      t.set(commentRef, { reactionCounts: counts, reactionCount: total, updatedAtMs: nowMs }, { merge: true });
     });
 
     return res.json({ ok: true, postId: pid, commentId: cid, myReaction: cleanReaction || null });
@@ -7831,66 +7846,51 @@ app.get('/api/creator/posts/comments', authMiddleware, async (req, res) => {
       return res.json({ ok: true, postId, comments: list.slice(0, limit) });
     }
 
-    const toMs = (v) => {
-      if (typeof v === 'number') return v;
-      if (v && typeof v.toMillis === 'function') return v.toMillis();
-      if (v && typeof v._seconds === 'number') return (v._seconds * 1000) + Math.floor((v._nanoseconds || 0) / 1e6);
-      const n = Number(v);
-      return Number.isFinite(n) ? n : 0;
-    };
-
     const postRef = _creatorPostsCol().doc(postId);
-    const commentsCol = postRef.collection('comments');
-
     let snap;
-    let usedFallback = false;
     try {
-      snap = await commentsCol.orderBy('createdAtMs', 'desc').limit(limit).get();
+      snap = await postRef.collection('comments').orderBy('createdAtMs', 'desc').limit(limit).get();
     } catch (err) {
-      // Fallback: some legacy/dirty data (mixed types) can break orderBy; still load and sort server-side.
-      usedFallback = true;
-      console.warn('GET /api/creator/posts/comments fallback (orderBy failed):', err && err.message ? err.message : err);
-      snap = await commentsCol.limit(limit).get();
+      // Fallback for legacy/dirty `createdAtMs` values that can break orderBy in Firestore
+      const fallback = await postRef.collection('comments').limit(limit).get();
+      // mimic the same shape as a QuerySnapshot-like object for downstream mapping
+      snap = { docs: fallback.docs };
     }
-
-    const comments = (snap && snap.docs ? snap.docs : []).map(d => {
+    const comments = snap.docs.map(d => {
       const x = d.data() || {};
-      const createdAtMs = toMs(x.createdAtMs || x.createdAt);
       return {
         id: safeStr(x.id || d.id),
         postId: safeStr(x.postId || postId),
         text: safeStr(x.text || ''),
         authorEmail: safeStr(x.authorEmail || ''),
         authorName: safeStr(x.authorName || ''),
-        createdAtMs,
+        createdAtMs: Number(x.createdAtMs || 0),
         reactionCounts: (x.reactionCounts && typeof x.reactionCounts === 'object') ? x.reactionCounts : {},
         reactionCount: Number(x.reactionCount || 0),
         myReaction: ''
       };
     });
 
-    // If we had to fallback, enforce consistent ordering
-    if (usedFallback) {
-      comments.sort((a, b) => Number(b.createdAtMs || 0) - Number(a.createdAtMs || 0));
-    }
+// Ensure deterministic ordering (newest first) even when Firestore orderBy fallback is used
+comments.sort((a, b) => (Number(b.createdAtMs || 0) - Number(a.createdAtMs || 0)));
 
-    // Attach myReaction for each comment (single-doc reads per comment)
-    if (hasFirebase && firestore) {
-      const meEmail = _getMeEmailNormalized(req);
-      if (meEmail) {
-        const myKey = _reactionDocIdForUser(meEmail);
-        await Promise.all(comments.map(async (c) => {
-          try {
-            if (!c || !c.id) return;
-            const rSnap = await commentsCol.doc(c.id).collection('reactions').doc(myKey).get();
-            if (rSnap.exists) {
-              const rd = rSnap.data() || {};
-              c.myReaction = safeStr(rd.reaction || '');
-            }
-          } catch (_) {}
-        }));
-      }
-    }
+// Attach myReaction for each comment (fast single-doc reads per comment)
+if (hasFirebase && firestore) {
+  const meEmail = _getMeEmailNormalized(req);
+  if (meEmail) {
+    const myKey = _reactionDocIdForUser(meEmail);
+    await Promise.all(comments.map(async (c) => {
+      try {
+        if (!c || !c.id) return;
+        const rSnap = await postRef.collection('comments').doc(c.id).collection('reactions').doc(myKey).get();
+        if (rSnap.exists) {
+          const rd = rSnap.data() || {};
+          c.myReaction = safeStr(rd.reaction || '');
+        }
+      } catch (_) {}
+    }));
+  }
+}
 
     return res.json({ ok: true, postId, comments });
   } catch (e) {
