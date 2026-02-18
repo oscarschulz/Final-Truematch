@@ -1122,19 +1122,55 @@ export function initHome(TopToast) {
                     }
                     if (likesCount) likesCount.innerText = tmLikesText(finalCount);
                 }
-                // COMMENT REACTION (local-only for now)
+                // COMMENT REACTION (persisted via backend)
                 else if (context === 'comment') {
                     const commentWrapper = target.closest('.comment-reaction-wrapper');
                     const commentLikeBtn = commentWrapper?.querySelector('.action-comment-like');
+                    const commentItem = target.closest('.comment-item');
+                    const postCard = target.closest('.post-card');
+                    const postId = postCard?.dataset?.postId;
+                    const commentId = commentItem?.dataset?.commentId;
 
-                    if (commentLikeBtn) {
-                        commentLikeBtn.innerHTML = getEmojiIcon(reactionType);
-                        commentLikeBtn.classList.add('liked');
-                        commentLikeBtn.style.color = getEmojiColor(reactionType);
-                        commentLikeBtn.style.fontWeight = 'bold';
+                    // If we can't resolve ids, fallback to UI-only (keeps old behavior)
+                    if (!postId || !commentId) {
+                        if (commentLikeBtn) tmApplyCommentReactionButton(commentLikeBtn, reactionType);
+                        return;
+                    }
+
+                    const prev = (commentLikeBtn?.dataset?.currentReaction || '').trim().toLowerCase();
+                    let desired = String(reactionType || '').trim().toLowerCase();
+
+                    // Toggle off if same reaction picked again
+                    if (desired && prev && prev === desired) desired = '';
+
+                    // Disable the button briefly to prevent double taps
+                    if (commentLikeBtn) commentLikeBtn.style.pointerEvents = 'none';
+
+                    try {
+                        const resp = await tmSetCommentReaction(postId, commentId, desired || null);
+                        if (!resp || !resp.ok) throw new Error(resp?.message || 'Failed');
+
+                        const finalReaction = (resp.myReaction || '').toString().trim().toLowerCase();
+                        if (commentLikeBtn) tmApplyCommentReactionButton(commentLikeBtn, finalReaction);
+
+                        // Best-effort local cache update (if present)
+                        try {
+                            const posts = getPosts();
+                            const p = posts.find(x => String(x.id) === String(postId));
+                            if (p && Array.isArray(p.comments)) {
+                                const c = p.comments.find(cc => String(cc.id || cc.commentId || '') === String(commentId));
+                                if (c) c.myReaction = finalReaction || '';
+                                setPosts(posts);
+                            }
+                        } catch (_) { /* ignore */ }
+                    } catch (err) {
+                        console.error('Comment reaction failed:', err);
+                        tmToast(TopToast, 'error', 'Failed to react');
+                    } finally {
+                        if (commentLikeBtn) commentLikeBtn.style.pointerEvents = '';
                     }
                 }
-                return;
+return;
             }
 
             // --- MAIN LIKE BUTTON CLICK (Toggle) ---
@@ -1183,40 +1219,50 @@ export function initHome(TopToast) {
             }
 
             
-// --- COMMENT LIKE CLICK (Toggle Default) ---
+// --- COMMENT LIKE CLICK (Persisted) ---
 const commentLikeBtn = target.closest('.action-comment-like');
 if (commentLikeBtn) {
     const btn = commentLikeBtn;
     const parentComment = btn.closest('.comment-item');
     const postCard = btn.closest('.post-card');
     const postId = postCard?.dataset?.postId;
+    const commentId = parentComment?.dataset?.commentId;
 
-    // Toggle UI only (server persistence can be added later)
-    const nowLiked = !btn.classList.contains('liked');
-    if (nowLiked) {
-        btn.classList.add('liked');
-        btn.innerHTML = getEmojiIcon('like');
-        btn.style.color = getEmojiColor('like');
-        btn.style.fontWeight = '700';
-    } else {
-        btn.classList.remove('liked');
-        btn.innerHTML = 'Like';
-        btn.style.color = '';
-        btn.style.fontWeight = '600';
+    // Fallback to UI-only if IDs are missing
+    if (!postId || !commentId) {
+        const nowLiked = !btn.classList.contains('liked');
+        if (nowLiked) tmApplyCommentReactionButton(btn, 'like');
+        else tmApplyCommentReactionButton(btn, '');
+        return;
     }
 
-    // Best-effort local state update (if we have ids)
-    const commentId = parentComment?.dataset?.commentId;
-    if (postId && commentId) {
+    const prev = (btn.dataset.currentReaction || '').trim().toLowerCase();
+    const desired = (prev === 'like') ? '' : 'like';
+
+    btn.style.pointerEvents = 'none';
+
+    try {
+        const resp = await tmSetCommentReaction(postId, commentId, desired || null);
+        if (!resp || !resp.ok) throw new Error(resp?.message || 'Failed');
+
+        const finalReaction = (resp.myReaction || '').toString().trim().toLowerCase();
+        tmApplyCommentReactionButton(btn, finalReaction);
+
+        // Best-effort local cache update (if present)
         try {
             const posts = getPosts();
             const p = posts.find(x => String(x.id) === String(postId));
             if (p && Array.isArray(p.comments)) {
                 const c = p.comments.find(cc => String(cc.id || cc.commentId || '') === String(commentId));
-                if (c) c.myReaction = nowLiked ? 'like' : '';
+                if (c) c.myReaction = finalReaction || '';
                 setPosts(posts);
             }
-        } catch (err) { /* ignore */ }
+        } catch (_) { /* ignore */ }
+    } catch (err) {
+        console.error('Comment like failed:', err);
+        tmToast(TopToast, 'error', 'Failed to react');
+    } finally {
+        btn.style.pointerEvents = '';
     }
 
     return;
@@ -1849,7 +1895,7 @@ function generateCommentHTML(textOrObj, timestampMaybe) {
 
                 <div class="comment-actions">
                     <div class="comment-reaction-wrapper">
-                        <span class="c-action c-like action-comment-like ${likedClass}" ${likeColorStyle}>${likeHtml}</span>
+                        <span class="c-action c-like action-comment-like ${likedClass}" data-current-reaction="${tmEscapeHtml(myReaction || '')}" ${likeColorStyle}>${likeHtml}</span>
                         <div class="comment-reaction-picker">
                             <span class="react-emoji" data-type="comment" data-reaction="like">👍</span>
                             <span class="react-emoji" data-type="comment" data-reaction="love">❤️</span>
@@ -1892,6 +1938,27 @@ function getEmojiColor(type) {
         default: return '';
     }
 }
+
+// Apply (and remember) a comment reaction on the "Like" button.
+// Keeps visuals consistent across picker clicks and simple like toggles.
+function tmApplyCommentReactionButton(btn, reaction) {
+    if (!btn) return;
+    const r = (reaction === null || reaction === undefined) ? '' : String(reaction).trim().toLowerCase();
+    btn.dataset.currentReaction = r;
+
+    if (r) {
+        btn.innerHTML = getEmojiIcon(r);
+        btn.classList.add('liked');
+        btn.style.color = getEmojiColor(r);
+        btn.style.fontWeight = '700';
+    } else {
+        btn.classList.remove('liked');
+        btn.innerHTML = 'Like';
+        btn.style.color = '';
+        btn.style.fontWeight = '600';
+    }
+}
+
 
 function getTimeAgo(timestamp) {
     const seconds = Math.floor((Date.now() - timestamp) / 1000);
