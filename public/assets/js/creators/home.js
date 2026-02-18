@@ -12,8 +12,8 @@ const DELETE_POST_ENDPOINT = '/api/creator/posts/delete';
 
 // Backend-first interaction endpoints (best-effort; fallback to local if 404/disabled)
 const POST_REACT_ENDPOINT = '/api/creator/posts/react';
-const COMMENT_REACT_ENDPOINT = '/api/creator/posts/comment/react';
 const POST_COMMENT_ENDPOINT = '/api/creator/posts/comment';
+const COMMENT_REACT_ENDPOINT = '/api/creator/posts/comment/react';
 const POST_PIN_ENDPOINT = '/api/creator/posts/pin';
 const POST_COMMENTS_ENDPOINT = '/api/creator/posts/comments';
 const POST_VOTE_ENDPOINT = '/api/creator/posts/vote';
@@ -135,28 +135,6 @@ async function tmSetPostReaction(postId, reaction) {
     return null;
 }
 
-
-async function tmSetCommentReaction(postId, commentId, reaction) {
-    if (!postId || !commentId) return null;
-
-    const payload = {
-        postId: String(postId),
-        commentId: String(commentId),
-        reaction: String(reaction || ''),
-    };
-
-    const { res, data } = await tmFetchJson(COMMENT_REACT_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-    });
-
-    // If endpoint doesn't exist yet, treat as not available
-    if (!res || res.status === 404) return null;
-
-    return { status: res.status, data };
-}
-
 async function tmPinPost(postId, pinned) {
     if (!postId) return null;
     const payload = { id: String(postId), pinned: !!pinned };
@@ -174,6 +152,20 @@ async function tmAddPostComment(postId, text) {
     if (!postId || !text) return null;
     const payload = { id: String(postId), text: String(text) };
     const { res, data } = await tmFetchJson(POST_COMMENT_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    if (!res || res.status === 404) return null;
+    if (data && data.ok) return data;
+    return null;
+}
+
+
+async function tmSetCommentReaction(postId, commentId, reaction) {
+    if (!postId || !commentId) return null;
+    const payload = { postId: String(postId), commentId: String(commentId), reaction: reaction || null };
+    const { res, data } = await tmFetchJson(COMMENT_REACT_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -233,17 +225,15 @@ function tmMergeComments(localComments, remoteComments) {
         creatorEmail: c?.creatorEmail || c?.authorEmail || null,
         creatorName: c?.creatorName || c?.authorName || null,
         creatorAvatarUrl: c?.creatorAvatarUrl || c?.authorAvatarUrl || c?.avatarUrl || null,
-        creatorHandle: c?.creatorHandle || c?.authorHandle || null,
 
         authorEmail: c?.authorEmail || c?.creatorEmail || null,
         authorName: c?.authorName || c?.creatorName || null,
         authorAvatarUrl: c?.authorAvatarUrl || c?.creatorAvatarUrl || c?.avatarUrl || null,
-        authorHandle: c?.authorHandle || c?.creatorHandle || null,
 
-        // Reactions (persistent)
-        reactionCounts: (c && c.reactionCounts && typeof c.reactionCounts === 'object') ? c.reactionCounts : null,
-        reactionCount: Number.isFinite(c?.reactionCount) ? Number(c.reactionCount) : 0,
-        myReaction: String(c?.myReaction || c?.reaction || c?.reactionType || '').trim() || '',
+        // Reactions on comments (server-persisted when available)
+        reactionCounts: (c?.reactionCounts && typeof c.reactionCounts === 'object') ? c.reactionCounts : (c?.reactions || {}),
+        reactionCount: Number(c?.reactionCount || 0) || 0,
+        myReaction: c?.myReaction || c?.reaction || '',
     });
 
     // Remote first (authoritative)
@@ -994,6 +984,87 @@ export function initHome(TopToast) {
                 if (menu) menu.classList.toggle('hidden');
             }
 
+
+            // --- TOGGLE COMMENTS (open/close) ---
+            const toggleCommentBtn = target.closest('.btn-toggle-comment');
+            if (toggleCommentBtn) {
+                const postCard = toggleCommentBtn.closest('.post-card');
+                const section = postCard ? postCard.querySelector('.post-comments-section') : null;
+                if (!postCard || !section) return;
+
+                section.classList.toggle('hidden');
+
+                // Lazy-load comments when opening
+                if (!section.classList.contains('hidden')) {
+                    try { await tmEnsureCommentsLoaded(postCard, TopToast); } catch {}
+                    const input = section.querySelector('.comment-input');
+                    if (input) setTimeout(() => input.focus(), 0);
+                }
+                return;
+            }
+
+            // --- SEND COMMENT (backend-first, fallback to local) ---
+            const sendCommentBtn = target.closest('.btn-send-comment');
+            if (sendCommentBtn) {
+                const postCard = sendCommentBtn.closest('.post-card');
+                const postId = postCard?.dataset?.postId;
+                const input = postCard ? postCard.querySelector('.comment-input') : null;
+                const rawText = input ? String(input.value || '').trim() : '';
+                if (!postId || !input || !rawText) return;
+
+                const me = (typeof tmGetCreatorIdentity === 'function') ? tmGetCreatorIdentity() : {};
+                const localComment = {
+                    id: tmNowId(),
+                    text: rawText,
+                    timestamp: Date.now(),
+                    authorEmail: me?.email || null,
+                    authorName: me?.name || 'You',
+                    authorAvatarUrl: me?.avatarUrl || null,
+                };
+
+                // Try server first
+                let finalComment = localComment;
+                try {
+                    const resp = await tmAddPostComment(postId, rawText);
+                    if (resp && resp.ok) {
+                        // accept server-provided comment shape if present
+                        const c = resp.comment || resp.item || resp.data || resp.created || resp.newComment || null;
+                        if (c && typeof c === 'object') {
+                            finalComment = {
+                                ...localComment,
+                                ...c,
+                                id: c.id || c.commentId || c._id || localComment.id,
+                                text: c.text || c.message || localComment.text,
+                                timestamp: Number(c.timestamp || c.createdAtMs || c.createdAt || Date.now()) || Date.now(),
+                                authorEmail: c.authorEmail || c.creatorEmail || c.email || localComment.authorEmail,
+                                authorName: c.authorName || c.creatorName || c.name || localComment.authorName,
+                                authorAvatarUrl: c.authorAvatarUrl || c.creatorAvatarUrl || c.avatarUrl || localComment.authorAvatarUrl,
+                            };
+                        }
+                    }
+                } catch {}
+
+                // Persist locally (for UI continuity even if server route isn't deployed yet)
+                updatePost(postId, (post) => {
+                    const p = post || {};
+                    p.comments = Array.isArray(p.comments) ? p.comments : [];
+                    p.comments.push(finalComment);
+                    return p;
+                });
+
+                // Update UI
+                const list = postCard.querySelector('.comment-list');
+                if (list) {
+                    const empty = list.querySelector('.no-comments-msg');
+                    if (empty) empty.style.display = 'none';
+                    list.insertAdjacentHTML('beforeend', generateCommentHTML(finalComment));
+                }
+
+                input.value = '';
+                tmToast(TopToast, 'success', 'Comment sent');
+                return;
+            }
+
             // ===============================================
             // 🔥 POST & COMMENT REACTION PICKER LOGIC 🔥
             // ===============================================
@@ -1051,68 +1122,55 @@ export function initHome(TopToast) {
                     }
                     if (likesCount) likesCount.innerText = tmLikesText(finalCount);
                 }
-                // COMMENT REACTION (persistent)
+                // COMMENT REACTION (server-first, falls back gracefully)
                 else if (context === 'comment') {
-                    const commentItem = target.closest('.comment-item');
-                    const postCard = target.closest('.post-card');
-                    const postId = postCard?.dataset?.postId;
-                    const commentId = commentItem?.dataset?.commentId;
-
-                    if (!postId || !commentId) return;
-
-                    const posts = getPosts();
-                    const p = posts.find(x => String(x.id) === String(postId));
-                    const prev = (() => {
-                        try {
-                            const list = Array.isArray(p?.comments) ? p.comments : [];
-                            const c = list.find(x => String(x?.id || x?._id || '') === String(commentId));
-                            return String(c?.myReaction || c?.reaction || '').trim();
-                        } catch { return ''; }
-                    })();
-
-                    const next = (prev && prev === reactionType) ? '' : (reactionType || '');
-
-                    let final = next;
-                    let finalCount = 0;
-
-                    try {
-                        const resp = await tmSetCommentReaction(postId, commentId, next);
-                        if (resp && resp.status >= 200 && resp.status < 300) {
-                            const d = resp.data || {};
-                            final = String(d.myReaction || d.reaction || next || '').trim();
-                            finalCount = Number.isFinite(d.reactionCount) ? Number(d.reactionCount) : 0;
-                        }
-                    } catch {}
-
-                    updatePost(postId, (post) => {
-                        if (!post) return post;
-                        const list = Array.isArray(post.comments) ? post.comments : [];
-                        const idx = list.findIndex(x => String(x?.id || x?._id || '') === String(commentId));
-                        if (idx >= 0) {
-                            const c = { ...(list[idx] || {}) };
-                            c.myReaction = final || '';
-                            if (finalCount) c.reactionCount = finalCount;
-                            list[idx] = c;
-                            post.comments = list;
-                        }
-                        return post;
-                    });
-
                     const commentWrapper = target.closest('.comment-reaction-wrapper');
                     const commentLikeBtn = commentWrapper?.querySelector('.action-comment-like');
 
-                    if (commentLikeBtn) {
-                        if (final) {
-                            commentLikeBtn.innerHTML = getEmojiIcon(final, finalCount || 1);
-                            commentLikeBtn.classList.add('liked');
-                            commentLikeBtn.style.color = getEmojiColor(final);
-                            commentLikeBtn.style.fontWeight = 'bold';
-                        } else {
-                            commentLikeBtn.innerHTML = 'Like';
-                            commentLikeBtn.classList.remove('liked');
-                            commentLikeBtn.style.color = '';
-                            commentLikeBtn.style.fontWeight = '600';
+                    const postCard = target.closest('.post-card');
+                    const postId = postCard?.dataset?.postId || null;
+
+                    const commentItem = commentWrapper?.closest('.comment-item');
+                    const commentId = commentItem?.dataset?.commentId || null;
+
+                    let finalReaction = reactionType;
+                    let finalCount = 0;
+                    let finalCounts = null;
+
+                    if (postId && commentId) {
+                        const resp = await tmSetCommentReaction(postId, commentId, reactionType);
+                        if (resp && resp.ok) {
+                            finalReaction = resp.myReaction || '';
+                            finalCount = Number(resp.reactionCount || 0) || 0;
+                            finalCounts = resp.reactionCounts || null;
+
+                            // persist into cached post state
+                            updatePost(postId, (post) => {
+                                const list = Array.isArray(post.comments) ? post.comments : [];
+                                const idx = list.findIndex(c => String(c?.id || c?._id || '') === String(commentId));
+                                if (idx !== -1) {
+                                    list[idx] = {
+                                        ...list[idx],
+                                        myReaction: finalReaction,
+                                        reactionCount: finalCount,
+                                        reactionCounts: finalCounts || list[idx].reactionCounts || {},
+                                    };
+                                    post.comments = list;
+                                }
+                                return post;
+                            });
                         }
+                    }
+
+                    if (commentLikeBtn) {
+                        commentLikeBtn.dataset.reaction = finalReaction || '';
+                        commentLikeBtn.innerHTML = finalReaction
+                            ? getEmojiIcon(finalReaction, finalCount)
+                            : (finalCount > 0 ? getEmojiIcon('like', finalCount) : 'Like');
+
+                        commentLikeBtn.classList.toggle('liked', !!finalReaction);
+                        commentLikeBtn.style.color = finalReaction ? getEmojiColor(finalReaction) : '';
+                        commentLikeBtn.style.fontWeight = finalReaction ? 'bold' : '';
                     }
                 }
                 return;
@@ -1164,66 +1222,64 @@ export function initHome(TopToast) {
             }
 
             
-// --- COMMENT LIKE CLICK (persistent) ---
+// --- COMMENT LIKE CLICK (Toggle Default) ---
 const commentLikeBtn = target.closest('.action-comment-like');
 if (commentLikeBtn) {
     const btn = commentLikeBtn;
     const parentComment = btn.closest('.comment-item');
     const postCard = btn.closest('.post-card');
-    const postId = postCard?.dataset?.postId;
-    const commentId = parentComment?.dataset?.commentId;
+    const postId = postCard?.dataset?.postId || null;
+    const commentId = parentComment?.dataset?.commentId || null;
 
-    if (!postId || !commentId) return;
+    // Default behavior: toggle "like" on the server (if possible).
+    const desiredReaction = 'like';
 
-    const posts = getPosts();
-    const p = posts.find(x => String(x.id) === String(postId));
-    const prev = (() => {
-        try {
-            const list = Array.isArray(p?.comments) ? p.comments : [];
-            const c = list.find(x => String(x?.id || x?._id || '') === String(commentId));
-            return String(c?.myReaction || c?.reaction || '').trim();
-        } catch { return ''; }
-    })();
-
-    const next = (prev === 'like') ? '' : 'like';
-
-    let final = next;
+    let finalReaction = btn.dataset.reaction || (btn.classList.contains('liked') ? desiredReaction : '');
     let finalCount = 0;
+    let finalCounts = null;
 
-    try {
-        const resp = await tmSetCommentReaction(postId, commentId, next);
-        if (resp && resp.status >= 200 && resp.status < 300) {
-            const d = resp.data || {};
-            final = String(d.myReaction || d.reaction || next || '').trim();
-            finalCount = Number.isFinite(d.reactionCount) ? Number(d.reactionCount) : 0;
+    if (postId && commentId) {
+        const resp = await tmSetCommentReaction(postId, commentId, desiredReaction);
+        if (resp && resp.ok) {
+            finalReaction = resp.myReaction || '';
+            finalCount = Number(resp.reactionCount || 0) || 0;
+            finalCounts = resp.reactionCounts || null;
+
+            updatePost(postId, (post) => {
+                const list = Array.isArray(post.comments) ? post.comments : [];
+                const idx = list.findIndex(c => String(c?.id || c?._id || '') === String(commentId));
+                if (idx !== -1) {
+                    list[idx] = {
+                        ...list[idx],
+                        myReaction: finalReaction,
+                        reactionCount: finalCount,
+                        reactionCounts: finalCounts || list[idx].reactionCounts || {},
+                    };
+                    post.comments = list;
+                }
+                return post;
+            });
+        } else {
+            // Fallback: local toggle only
+            const nowLiked = !btn.classList.contains('liked');
+            finalReaction = nowLiked ? desiredReaction : '';
+            finalCount = nowLiked ? 1 : 0;
         }
-    } catch {}
-
-    updatePost(postId, (post) => {
-        if (!post) return post;
-        const list = Array.isArray(post.comments) ? post.comments : [];
-        const idx = list.findIndex(x => String(x?.id || x?._id || '') === String(commentId));
-        if (idx >= 0) {
-            const c = { ...(list[idx] || {}) };
-            c.myReaction = final || '';
-            if (finalCount) c.reactionCount = finalCount;
-            list[idx] = c;
-            post.comments = list;
-        }
-        return post;
-    });
-
-    if (final) {
-        btn.classList.add('liked');
-        btn.innerHTML = getEmojiIcon(final, finalCount || 1);
-        btn.style.color = getEmojiColor(final);
-        btn.style.fontWeight = '700';
     } else {
-        btn.classList.remove('liked');
-        btn.innerHTML = 'Like';
-        btn.style.color = '';
-        btn.style.fontWeight = '600';
+        // No ids: local toggle only
+        const nowLiked = !btn.classList.contains('liked');
+        finalReaction = nowLiked ? desiredReaction : '';
+        finalCount = nowLiked ? 1 : 0;
     }
+
+    btn.dataset.reaction = finalReaction || '';
+    btn.innerHTML = finalReaction
+        ? getEmojiIcon(finalReaction, finalCount)
+        : (finalCount > 0 ? getEmojiIcon('like', finalCount) : 'Like');
+
+    btn.classList.toggle('liked', !!finalReaction);
+    btn.style.color = finalReaction ? getEmojiColor(finalReaction) : '';
+    btn.style.fontWeight = finalReaction ? '700' : '600';
 
     return;
 }
@@ -1838,8 +1894,8 @@ function generateCommentHTML(textOrObj, timestampMaybe) {
 
     // Optional initial reaction (local-only for now)
     const myReaction = safeStr(c.myReaction || c.reaction || c.reactionType || '').trim();
-    const rc = Number.isFinite(c?.reactionCount) ? Number(c.reactionCount) : (c?.reactionCounts && typeof c.reactionCounts === 'object' ? Object.values(c.reactionCounts).reduce((a,b)=>a+(Number(b)||0),0) : 0);
-    const likeHtml = myReaction ? getEmojiIcon(myReaction, rc || 1) : 'Like';
+    const cCount = Number(c?.reactionCount || 0) || 0;
+    const likeHtml = myReaction ? getEmojiIcon(myReaction, cCount) : (cCount > 0 ? getEmojiIcon('like', cCount) : 'Like');
     const likedClass = myReaction ? 'liked' : '';
     const likeColorStyle = myReaction ? `style="color:${getEmojiColor(myReaction)}; font-weight:700;"` : 'style="font-weight:600;"';
 
@@ -1876,16 +1932,17 @@ function generateCommentHTML(textOrObj, timestampMaybe) {
 
 // Helpers for Icons/Colors (Same as Profile.js)
 // (Same as Profile.js)
-function getEmojiIcon(type, count) {
-    const n = (count === null || count === undefined) ? 1 : Number(count) || 0;
+function getEmojiIcon(type, count = 0) {
+    const n = Number(count || 0);
+    const suffix = n > 0 ? ` ${n}` : '';
     switch(type) {
-        case 'like': return `<i class="fa-solid fa-thumbs-up"></i> ${n}`;
-        case 'love': return `<i class="fa-solid fa-heart"></i> ${n}`;
-        case 'haha': return `<i class="fa-solid fa-face-laugh-squint"></i> ${n}`;
-        case 'wow': return `<i class="fa-solid fa-face-surprise"></i> ${n}`;
-        case 'sad': return `<i class="fa-solid fa-face-sad-tear"></i> ${n}`;
-        case 'angry': return `<i class="fa-solid fa-face-angry"></i> ${n}`;
-        default: return 'Like';
+        case 'like': return `<i class="fa-solid fa-thumbs-up"></i>${suffix}`;
+        case 'love': return `<i class="fa-solid fa-heart"></i>${suffix}`;
+        case 'haha': return `<i class="fa-solid fa-face-laugh-squint"></i>${suffix}`;
+        case 'wow': return `<i class="fa-solid fa-face-surprise"></i>${suffix}`;
+        case 'sad': return `<i class="fa-solid fa-face-sad-tear"></i>${suffix}`;
+        case 'angry': return `<i class="fa-solid fa-face-angry"></i>${suffix}`;
+        default: return `<i class="fa-solid fa-thumbs-up"></i>${suffix}`;
     }
 }
 
