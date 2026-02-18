@@ -658,6 +658,9 @@ if (!process.env.SESSION_SECRET && !process.env.COOKIE_SECRET && !process.env.JW
 
 const SESSION_TTL_DAYS = Math.max(1, Math.min(30, Number(process.env.SESSION_TTL_DAYS || 14)));
 const SESSION_TTL_MS = SESSION_TTL_DAYS * 24 * 60 * 60 * 1000;
+const SESSION_TTL_SHORT_HOURS = Math.max(1, Math.min(168, Number(process.env.SESSION_TTL_SHORT_HOURS || 12)));
+const SESSION_TTL_SHORT_MS = SESSION_TTL_SHORT_HOURS * 60 * 60 * 1000;
+
 
 function b64urlEncode(buf) {
   return Buffer.from(buf).toString('base64').replace(/=+$/g, '').replace(/\+/g, '-').replace(/\//g, '_');
@@ -704,24 +707,48 @@ function verifySessionToken(token) {
   }
 }
 
-function setSession(res, email) {
+function parseRememberFlag(req) {
+  try {
+    const body = (req && req.body) ? req.body : {};
+    const v = body.remember ?? body.rememberMe ?? body.remember_me ?? body.keepSignedIn ?? body.keep_signed_in;
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'number') return v === 1;
+    if (typeof v === 'string') {
+      const s = v.trim().toLowerCase();
+      if (['0','false','no','off'].includes(s)) return false;
+      if (['1','true','yes','on'].includes(s)) return true;
+    }
+    return true; // default: preserve existing behavior
+  } catch {
+    return true;
+  }
+}
+
+function setSession(res, email, remember = true) {
   const emailNorm = String(email || '').trim().toLowerCase();
   const now = Date.now();
+  const ttl = remember ? SESSION_TTL_MS : SESSION_TTL_SHORT_MS;
+
   const token = signSessionPayload({
     v: 1,
     e: emailNorm,
     iat: now,
-    exp: now + SESSION_TTL_MS
+    exp: now + ttl,
+    r: remember ? 1 : 0
   });
 
-  res.cookie(SESSION_COOKIE, token, {
+  const cookieOpts = {
     httpOnly: true,
     sameSite: 'lax',
     secure: IS_PROD,
     path: '/',
-    maxAge: SESSION_TTL_MS,
     priority: 'high'
-  });
+  };
+
+  // If remember=false, omit maxAge/expires -> session cookie (clears on browser close).
+  if (remember) cookieOpts.maxAge = ttl;
+
+  res.cookie(SESSION_COOKIE, token, cookieOpts);
 
   // Clear legacy cookie if present (avoid confusion / downgrade attacks)
   res.clearCookie(LEGACY_SESSION_COOKIE, {
@@ -2279,7 +2306,7 @@ app.post('/api/auth/register', async (req, res) => {
       DB.users[emailNorm] = { ...DB.user, _pwHash: pwHash };
 
       // set cookie session (so protected pages work even in demo/local mode)
-      setSession(res, emailNorm);
+      setSession(res, emailNorm, parseRememberFlag(req));
 
       return res.json({ ok: true, user: DB.user, demo: true });
     }
@@ -2319,7 +2346,7 @@ app.post('/api/auth/register', async (req, res) => {
 
     DB.users[emailNorm] = { ...DB.user };
     DB.prefsByEmail[emailNorm] = DB.prefs;
-    setSession(res, emailNorm);
+    setSession(res, emailNorm, parseRememberFlag(req));
     saveUsersStore();
     return res.json({ ok: true, user: DB.user });
   } catch (err) {
@@ -2442,7 +2469,7 @@ app.post('/api/auth/login', async (req, res) => {
         DB.users[emailNorm] = { ...DB.user };
         DB.prefsByEmail[emailNorm] = DB.prefs;
 
-        setSession(res, emailNorm);
+        setSession(res, emailNorm, parseRememberFlag(req));
         return res.json({ ok: true, user: DB.user, bypass: true });
       }
     }
@@ -2544,7 +2571,7 @@ app.post('/api/auth/login', async (req, res) => {
       DB.users[emailNorm] = { ...DB.user, _pwHash: storedHash };
       DB.prefsByEmail[emailNorm] = DB.prefs;
 
-      setSession(res, emailNorm);
+      setSession(res, emailNorm, parseRememberFlag(req));
       saveUsersStore();
 
       return res.json({ ok: true, user: DB.user, demo: isSpecialDemo });
@@ -2673,7 +2700,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     DB.users[emailNorm] = { ...DB.user };
     DB.prefsByEmail[emailNorm] = DB.prefs;
-    setSession(res, emailNorm);
+    setSession(res, emailNorm, parseRememberFlag(req));
 
     return res.json({ ok: true, user: DB.user });
   } catch (err) {
@@ -9282,7 +9309,7 @@ app.post('/api/auth/oauth/google', async (req, res) => {
 
     // Cache user by email and set session cookie
     DB.users[emailNorm] = { ...DB.user };
-    setSession(res, emailNorm);
+    setSession(res, emailNorm, parseRememberFlag(req));
 
     // Decide if OTP is needed (one-time verification)
     let needVerification = !DB.user.emailVerified;

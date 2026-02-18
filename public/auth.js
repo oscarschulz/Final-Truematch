@@ -208,6 +208,15 @@
     return (any || "").toLowerCase();
   }
 
+  function getRememberChoice() {
+    // Default = true (keeps current behavior: persistent sessions)
+    // If checkbox exists and is unchecked -> session cookie only (expires when browser closes)
+    const el = document.getElementById("rememberMe");
+    if (!el) return true;
+    return !!el.checked;
+  }
+
+
   async function callAPI(path, payload = {}) {
     try {
       const controller = new AbortController();
@@ -424,7 +433,7 @@
       return true;
     }
     saveLocalUser({ email, name: d.name, plan: d.plan });
-    try { await callAPI("/api/auth/login", { email, password: pass }); } catch {}
+    try { await callAPI("/api/auth/login", { email, password: pass, remember: getRememberChoice() }); } catch {}
     const extra = new URLSearchParams({ demo: "1", prePlan: d.plan });
     finishLogin(extra.toString());
     return true;
@@ -662,13 +671,15 @@
         const email = String($("#loginEmail")?.value || "").trim();
         const password = String($("#loginPass")?.value || "").trim();
 
-        if (await tryDemoLogin(email, password)) {
+        
+        const remember = getRememberChoice();
+if (await tryDemoLogin(email, password)) {
           // Demo login may redirect; keep spinner if so
           didNavigate = (window.location.href !== hrefBefore);
           return;
         }
 
-        const res = await callAPI("/api/auth/login", { email, password });
+        const res = await callAPI("/api/auth/login", { email, password, remember });
         const offline = !!(res && (res.demo || res.status === 0));
         const ok = !!(res && (res.ok || offline));
         if (!ok) {
