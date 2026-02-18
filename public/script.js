@@ -75,21 +75,28 @@
     });
   }
 
-  // Pricing cards logic
+    // Pricing cards logic
+  // - Works even if JS is disabled (href fallback in index.html)
+  // - When JS is enabled, we normalize params and add onboarding context.
   qsa("a[data-plan]:not([data-action])").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.preventDefault();
-      const prePlan = btn.getAttribute("data-plan") || "";
+
+      const raw = (btn.getAttribute("data-plan") || "").trim().toLowerCase();
+      const plan = (raw && raw !== "free") ? raw : "";
+
       const qs = buildQuery({
         mode: "signup",
         onboarding: 1,
-        prePlan: prePlan || undefined,
+        // Use BOTH keys for compatibility across pages (some flows look for plan, others for prePlan)
+        plan: plan || undefined,
+        prePlan: plan || undefined,
       });
-      window.location.href = "/auth.html" + (qs ? "?" + qs : "");
+
+      window.location.href = "auth.html" + (qs ? "?" + qs : "");
     });
   });
-
-  // ------------------------
+// ------------------------
   // Mobile nav dropdown (hamburger)
   // ------------------------
   function initNavDropdown() {
