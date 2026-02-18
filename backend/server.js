@@ -7610,7 +7610,7 @@ app.post('/api/creator/posts/comment/react', authMiddleware, async (req, res) =>
     const { postId, commentId, reaction } = req.body || {};
     const pid = safeStr(postId || '').trim();
     const cid = safeStr(commentId || '').trim();
-    const cleanReaction = (reaction === null || reaction === undefined) ? '' : safeStr(reaction).trim().toLowerCase();
+    const cleanReaction = (reaction === null || reaction === undefined) ? '' : safeStr(reaction).trim();
 
     if (!pid || !cid) return res.status(400).json({ ok: false, message: 'postId and commentId are required' });
     if (cleanReaction && cleanReaction.length > 24) return res.status(400).json({ ok: false, message: 'Invalid reaction' });
@@ -7619,13 +7619,32 @@ app.post('/api/creator/posts/comment/react', authMiddleware, async (req, res) =>
     if (!meEmail) return res.status(401).json({ ok: false, message: 'Not authenticated' });
     if (!hasFirebase || !firestore) return res.status(503).json({ ok: false, message: 'Firebase not configured' });
 
+    const toSafeCount = (v) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return 0;
+      if (n <= 0) return 0;
+      return Math.floor(n);
+    };
+
     const myKey = _reactionDocIdForUser(meEmail);
     const postRef = _creatorPostsCol().doc(pid);
-    const commentRef = postRef.collection('comments').doc(cid);
+    let commentRef = postRef.collection('comments').doc(cid);
     const nowMs = Date.now();
 
     await firestore.runTransaction(async (t) => {
-      const cSnap = await t.get(commentRef);
+      // Resolve comment doc (supports legacy cases where docId != comment.id)
+      let cSnap = await t.get(commentRef);
+      if (!cSnap.exists) {
+        try {
+          const q = postRef.collection('comments').where('id', '==', cid).limit(1);
+          const qSnap = await t.get(q);
+          if (qSnap && !qSnap.empty) {
+            commentRef = qSnap.docs[0].ref;
+            cSnap = qSnap.docs[0];
+          }
+        } catch (_) {}
+      }
+
       if (!cSnap.exists) {
         const err = new Error('Comment not found');
         err.status = 404;
@@ -7634,60 +7653,41 @@ app.post('/api/creator/posts/comment/react', authMiddleware, async (req, res) =>
 
       const rRef = commentRef.collection('reactions').doc(myKey);
       const rSnap = await t.get(rRef);
-      const oldReaction = rSnap.exists ? safeStr((rSnap.data() || {}).reaction || '').trim().toLowerCase() : '';
+      const oldReaction = rSnap.exists ? safeStr((rSnap.data() || {}).reaction || '').trim() : '';
 
-      // update reaction doc
+      // Update reaction doc
       if (!cleanReaction) {
         if (rSnap.exists) t.delete(rRef);
       } else {
-        t.set(rRef, { reaction: cleanReaction, createdAtMs: nowMs }, { merge: false });
+        t.set(rRef, { reaction: cleanReaction, updatedAtMs: nowMs, updatedAt: new Date(nowMs) }, { merge: true });
       }
 
-      // maintain aggregate counts on the comment doc
+      // Maintain aggregate counts on the comment doc (sanitize to avoid NaN writes)
       const data = cSnap.data() || {};
-
-      // Defensive normalize: Firestore rejects NaN/Infinity; legacy data may contain strings/objects.
       const rawCounts = (data.reactionCounts && typeof data.reactionCounts === 'object') ? data.reactionCounts : {};
       const counts = {};
-      for (const [k, v] of Object.entries(rawCounts)) {
-        const key = safeStr(k || '').trim().toLowerCase();
-        if (!key) continue;
-        const num = Number(v);
-        if (!Number.isFinite(num)) continue;
-        const intVal = Math.max(0, Math.floor(num));
-        if (intVal > 0) counts[key] = intVal;
-      }
-
-      const getCount = (key) => {
-        const n = Number(counts[key] || 0);
-        return Number.isFinite(n) ? n : 0;
-      };
+      try {
+        for (const [k, v] of Object.entries(rawCounts)) {
+          const key = safeStr(k || '').trim();
+          if (!key) continue;
+          const val = toSafeCount(v);
+          if (val > 0) counts[key] = val;
+        }
+      } catch (_) {}
 
       if (oldReaction) {
-        const prev = getCount(oldReaction);
-        const next = prev - 1;
+        const prev = toSafeCount(counts[oldReaction]);
+        const next = Math.max(0, prev - 1);
         if (next <= 0) delete counts[oldReaction];
         else counts[oldReaction] = next;
       }
-
       if (cleanReaction) {
-        const prev = getCount(cleanReaction);
+        const prev = toSafeCount(counts[cleanReaction]);
         counts[cleanReaction] = prev + 1;
       }
 
-      // Final cleanup (guards against any accidental NaN)
-      for (const [k, v] of Object.entries(counts)) {
-        const n = Number(v);
-        if (!Number.isFinite(n) || n <= 0) delete counts[k];
-        else counts[k] = Math.floor(n);
-      }
-
-      const total = Object.values(counts).reduce((a, b) => {
-        const n = Number(b || 0);
-        return a + (Number.isFinite(n) ? n : 0);
-      }, 0);
-
-      t.set(commentRef, { reactionCounts: counts, reactionCount: total, updatedAtMs: nowMs }, { merge: true });
+      const total = Object.values(counts).reduce((a, b) => a + toSafeCount(b), 0);
+      t.set(commentRef, { reactionCounts: counts, reactionCount: total, updatedAtMs: nowMs, updatedAt: new Date(nowMs) }, { merge: true });
     });
 
     return res.json({ ok: true, postId: pid, commentId: cid, myReaction: cleanReaction || null });
@@ -7831,50 +7831,66 @@ app.get('/api/creator/posts/comments', authMiddleware, async (req, res) => {
       return res.json({ ok: true, postId, comments: list.slice(0, limit) });
     }
 
+    const toMs = (v) => {
+      if (typeof v === 'number') return v;
+      if (v && typeof v.toMillis === 'function') return v.toMillis();
+      if (v && typeof v._seconds === 'number') return (v._seconds * 1000) + Math.floor((v._nanoseconds || 0) / 1e6);
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+
     const postRef = _creatorPostsCol().doc(postId);
+    const commentsCol = postRef.collection('comments');
+
     let snap;
+    let usedFallback = false;
     try {
-      snap = await postRef.collection('comments').orderBy('createdAtMs', 'desc').limit(limit).get();
-    } catch (err1) {
-      // Legacy/dirty data can make Firestore refuse ordering if types differ. Fall back gracefully.
-      try {
-        snap = await postRef.collection('comments').orderBy('createdAt', 'desc').limit(limit).get();
-      } catch (err2) {
-        snap = await postRef.collection('comments').limit(limit).get();
-      }
+      snap = await commentsCol.orderBy('createdAtMs', 'desc').limit(limit).get();
+    } catch (err) {
+      // Fallback: some legacy/dirty data (mixed types) can break orderBy; still load and sort server-side.
+      usedFallback = true;
+      console.warn('GET /api/creator/posts/comments fallback (orderBy failed):', err && err.message ? err.message : err);
+      snap = await commentsCol.limit(limit).get();
     }
-    const comments = snap.docs.map(d => {
+
+    const comments = (snap && snap.docs ? snap.docs : []).map(d => {
       const x = d.data() || {};
+      const createdAtMs = toMs(x.createdAtMs || x.createdAt);
       return {
         id: safeStr(x.id || d.id),
         postId: safeStr(x.postId || postId),
         text: safeStr(x.text || ''),
         authorEmail: safeStr(x.authorEmail || ''),
         authorName: safeStr(x.authorName || ''),
-        createdAtMs: Number(x.createdAtMs || 0),
+        createdAtMs,
         reactionCounts: (x.reactionCounts && typeof x.reactionCounts === 'object') ? x.reactionCounts : {},
         reactionCount: Number(x.reactionCount || 0),
         myReaction: ''
       };
     });
 
-// Attach myReaction for each comment (fast single-doc reads per comment)
-if (hasFirebase && firestore) {
-  const meEmail = _getMeEmailNormalized(req);
-  if (meEmail) {
-    const myKey = _reactionDocIdForUser(meEmail);
-    await Promise.all(comments.map(async (c) => {
-      try {
-        if (!c || !c.id) return;
-        const rSnap = await postRef.collection('comments').doc(c.id).collection('reactions').doc(myKey).get();
-        if (rSnap.exists) {
-          const rd = rSnap.data() || {};
-          c.myReaction = safeStr(rd.reaction || '');
-        }
-      } catch (_) {}
-    }));
-  }
-}
+    // If we had to fallback, enforce consistent ordering
+    if (usedFallback) {
+      comments.sort((a, b) => Number(b.createdAtMs || 0) - Number(a.createdAtMs || 0));
+    }
+
+    // Attach myReaction for each comment (single-doc reads per comment)
+    if (hasFirebase && firestore) {
+      const meEmail = _getMeEmailNormalized(req);
+      if (meEmail) {
+        const myKey = _reactionDocIdForUser(meEmail);
+        await Promise.all(comments.map(async (c) => {
+          try {
+            if (!c || !c.id) return;
+            const rSnap = await commentsCol.doc(c.id).collection('reactions').doc(myKey).get();
+            if (rSnap.exists) {
+              const rd = rSnap.data() || {};
+              c.myReaction = safeStr(rd.reaction || '');
+            }
+          } catch (_) {}
+        }));
+      }
+    }
 
     return res.json({ ok: true, postId, comments });
   } catch (e) {
