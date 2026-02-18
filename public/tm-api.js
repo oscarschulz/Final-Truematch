@@ -150,7 +150,7 @@ export async function apiGetCreatorPosts(params = {}) {
 }
 
 export async function apiCreateCreatorPost(payload) {
-  return apiPost('/api/creator/posts/create', payload || {});
+  return apiPost('/api/creator/posts', payload || {});
 }
 
 export async function apiDeleteCreatorPost(postId) {
