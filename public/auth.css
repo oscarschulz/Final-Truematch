@@ -500,60 +500,51 @@ button.is-loading {
 }
 
 
-/* --- Legal (Terms/Privacy) modal --- */
-.terms-micro{
-  font-size: 12.5px;
-  line-height: 1.35;
+/* --- Legal (Terms / Privacy) Modal --- */
+dialog.modal--legal {
+  max-width: 920px;
+  width: min(920px, calc(100% - 28px));
+  padding: 0;
 }
-
-.terms-micro .legal-link{
-  font-weight: 700;
-  font-size: 0.92em;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  padding: 1px 5px;
-  border-radius: 9px;
-  background: rgba(120, 255, 255, 0.08);
-  color: #a9ffff;
+dialog.modal--legal .modal__body--legal {
+  position: relative;
+  padding: 26px 28px 20px;
 }
-.terms-micro .legal-link:hover{
-  background: rgba(120, 255, 255, 0.14);
+dialog.modal--legal #legalTitle {
+  margin: 10px 0 10px;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0.2px;
 }
-.terms-micro .legal-link:focus{
-  outline: 2px solid rgba(120, 255, 255, 0.55);
-  outline-offset: 2px;
-}
-.modal--legal{
-  max-width: min(860px, calc(100vw - 32px));
-}
-.modal--legal .legal-body{
-  padding-top: 18px;
-}
-.modal--legal .legal-content{
-  margin-top: 10px;
-  max-height: min(62vh, 540px);
-  overflow: auto;
-  padding-right: 6px;
-}
-.modal--legal .legal-content h4{
-  margin: 16px 0 6px;
-  font-size: 14px;
-  letter-spacing: .2px;
-}
-.modal--legal .legal-content p{
+dialog.modal--legal .legal-content {
+  max-height: 56vh;
+  overflow-y: auto;
+  padding-right: 14px;
   line-height: 1.55;
 }
-.modal--legal .legal-actions{
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 14px;
+dialog.modal--legal .legal-content h4 {
+  margin: 16px 0 8px;
+  font-size: 0.98rem;
+  font-weight: 800;
 }
-.btn-ghost{
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.14);
-  color: rgba(255,255,255,0.92);
-  padding: 10px 14px;
-  border-radius: 999px;
-  cursor: pointer;
+dialog.modal--legal .legal-content p,
+dialog.modal--legal .legal-content li {
+  font-size: 0.92rem;
+  color: rgba(255,255,255,0.86);
 }
-.btn-ghost:hover{ background: rgba(255,255,255,0.12); }
+dialog.modal--legal .legal-content ul {
+  margin: 8px 0 8px 18px;
+}
+dialog.modal--legal .legal-close-btn {
+  margin-top: 16px;
+  width: 100%;
+}
+
+/* Make legal links clean + clickable */
+.terms-micro .legal-link {
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  color: #64E9EE;
+}
+.terms-micro .legal-link:hover { opacity: 0.9; }

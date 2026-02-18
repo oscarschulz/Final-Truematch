@@ -984,66 +984,60 @@
 });
 
 
-
-  // --- Terms / Privacy modal (no page redirect) ---
+  // --- Terms / Privacy modal (in-page) ---
   whenReady(() => {
     const dlg = document.getElementById('dlgLegal');
-    if (!dlg || dlg.dataset.tmBound === '1') return;
+    const titleEl = document.getElementById('legalTitle');
+    const contentEl = document.getElementById('legalContent');
+    const tplTerms = document.getElementById('tplLegalTerms');
+    const tplPriv = document.getElementById('tplLegalPrivacy');
+    const btnCloseX = document.getElementById('btnCloseLegalX');
+    const btnCloseBottom = document.getElementById('btnCloseLegalBottom');
+
+    if (!dlg || !titleEl || !contentEl || (!tplTerms && !tplPriv)) return;
+    if (dlg.dataset.tmBound === '1') return;
     dlg.dataset.tmBound = '1';
 
-    const btnCloseX = document.getElementById('btnCloseLegalX');
-    const titleEl   = document.getElementById('legalTitle');
-    const bodyEl    = document.getElementById('legalContent');
-    const tplTerms  = document.getElementById('tplLegalTerms');
-    const tplPriv   = document.getElementById('tplLegalPrivacy');
+    const setLegal = (type) => {
+      const kind = (type || '').toLowerCase() === 'privacy' ? 'privacy' : 'terms';
+      titleEl.textContent = kind === 'privacy' ? 'Privacy Policy' : 'Terms of Service';
 
-    function setLegal(type){
-      const t = String(type || '').toLowerCase();
-      const isTerms = (t === 'terms');
-      if (titleEl) titleEl.textContent = isTerms ? 'Terms of Service' : 'Privacy Policy';
-      if (!bodyEl) return;
-
-      bodyEl.innerHTML = '';
-      const tpl = isTerms ? tplTerms : tplPriv;
+      contentEl.innerHTML = '';
+      const tpl = kind === 'privacy' ? tplPriv : tplTerms;
       if (tpl && tpl.content) {
-        bodyEl.appendChild(tpl.content.cloneNode(true));
+        contentEl.appendChild(tpl.content.cloneNode(true));
       } else {
-        bodyEl.textContent = isTerms ? 'Terms content unavailable.' : 'Privacy content unavailable.';
+        contentEl.textContent = kind === 'privacy' ? 'Privacy content unavailable.' : 'Terms content unavailable.';
       }
-    }
+    };
 
-    function openLegal(type){
+    const openLegal = (type) => {
       setLegal(type);
-      try {
-        if (typeof dlg.showModal === 'function') dlg.showModal();
-        else dlg.setAttribute('open', '');
-      } catch {}
-      try { btnCloseX && btnCloseX.focus(); } catch {}
-    }
+      try { dlg.showModal(); } catch { dlg.setAttribute('open', ''); }
+    };
 
-    // Open handler for the links
+    const closeLegal = () => safeDialogClose(dlg);
+
+    // Open by clicking links with data-legal="terms|privacy"
     document.body.addEventListener('click', (e) => {
       const a = e.target && e.target.closest ? e.target.closest('a[data-legal]') : null;
       if (!a) return;
       e.preventDefault();
-      openLegal(a.getAttribute('data-legal'));
+      const type = a.getAttribute('data-legal') || 'terms';
+      openLegal(type);
     });
 
-    // Close handlers
-    if (btnCloseX) btnCloseX.addEventListener('click', () => safeDialogClose(dlg));
+    // Close buttons + backdrop click
+    if (btnCloseX) btnCloseX.addEventListener('click', () => closeLegal());
+    if (btnCloseBottom) btnCloseBottom.addEventListener('click', () => closeLegal());
 
-    // Click on backdrop closes (when using <dialog>)
     dlg.addEventListener('click', (e) => {
-      if (e.target === dlg) safeDialogClose(dlg);
+      if (e.target === dlg) closeLegal();
     });
 
-    // Safety: if some code sets #legal in URL, open it
-    try {
-      const h = String(location.hash || '').replace('#','').trim().toLowerCase();
-      if (h === 'terms' || h === 'privacy') {
-        setTimeout(() => openLegal(h), 30);
-      }
-    } catch {}
+    dlg.addEventListener('cancel', (e) => {
+      try { e.preventDefault(); } catch {}
+      closeLegal();
+    });
   });
-
 })();
