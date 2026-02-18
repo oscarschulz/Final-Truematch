@@ -208,15 +208,6 @@
     return (any || "").toLowerCase();
   }
 
-  function getRememberChoice() {
-    // Default = true (keeps current behavior: persistent sessions)
-    // If checkbox exists and is unchecked -> session cookie only (expires when browser closes)
-    const el = document.getElementById("rememberMe");
-    if (!el) return true;
-    return !!el.checked;
-  }
-
-
   async function callAPI(path, payload = {}) {
     try {
       const controller = new AbortController();
@@ -433,7 +424,7 @@
       return true;
     }
     saveLocalUser({ email, name: d.name, plan: d.plan });
-    try { await callAPI("/api/auth/login", { email, password: pass, remember: getRememberChoice() }); } catch {}
+    try { await callAPI("/api/auth/login", { email, password: pass, remember: !!document.getElementById("rememberMe")?.checked }); } catch {}
     const extra = new URLSearchParams({ demo: "1", prePlan: d.plan });
     finishLogin(extra.toString());
     return true;
@@ -671,15 +662,13 @@
         const email = String($("#loginEmail")?.value || "").trim();
         const password = String($("#loginPass")?.value || "").trim();
 
-        
-        const remember = getRememberChoice();
-if (await tryDemoLogin(email, password)) {
+        if (await tryDemoLogin(email, password)) {
           // Demo login may redirect; keep spinner if so
           didNavigate = (window.location.href !== hrefBefore);
           return;
         }
 
-        const res = await callAPI("/api/auth/login", { email, password, remember });
+        const res = await callAPI("/api/auth/login", { email, password, remember: !!document.getElementById("rememberMe")?.checked });
         const offline = !!(res && (res.demo || res.status === 0));
         const ok = !!(res && (res.ok || offline));
         if (!ok) {
@@ -995,3 +984,76 @@ if (await tryDemoLogin(email, password)) {
 });
 
 })();
+
+
+  // --- Terms / Privacy modal ---
+  whenReady(() => {
+    const dlg = document.getElementById("dlgLegal");
+    const titleEl = document.getElementById("legalTitle");
+    const contentEl = document.getElementById("legalContent");
+    const tmplTerms = document.getElementById("tmplTerms");
+    const tmplPrivacy = document.getElementById("tmplPrivacy");
+    const btnCloseX = document.getElementById("btnCloseLegalX");
+    const btnCloseBottom = document.getElementById("btnCloseLegalBottom");
+
+    if (!dlg || !titleEl || !contentEl || (!tmplTerms && !tmplPrivacy)) return;
+    if (dlg.dataset.tmBound === "1") return;
+    dlg.dataset.tmBound = "1";
+
+    let lastFocus = null;
+
+    function setBodyFromTemplate(which){
+      const tpl = which === "privacy" ? tmplPrivacy : tmplTerms;
+      titleEl.textContent = which === "privacy" ? "Privacy Policy" : "Terms of Service";
+      contentEl.innerHTML = "";
+      if (tpl && tpl.content) {
+        contentEl.appendChild(tpl.content.cloneNode(true));
+      }
+      // Always scroll to top on open
+      contentEl.scrollTop = 0;
+    }
+
+    function openLegal(which){
+      lastFocus = document.activeElement;
+      setBodyFromTemplate(which);
+      try { dlg.showModal(); } catch { dlg.setAttribute("open", ""); }
+      // focus close button for accessibility
+      try { btnCloseX?.focus(); } catch {}
+    }
+
+    function closeLegal(){
+      try { dlg.close(); } catch { dlg.removeAttribute("open"); }
+      // restore focus
+      try { lastFocus?.focus(); } catch {}
+      lastFocus = null;
+    }
+
+    // open from links
+    document.body.addEventListener("click", (e) => {
+      const a = e.target.closest('a[data-legal]');
+      if (!a) return;
+      const which = a.getAttribute("data-legal");
+      if (which !== "terms" && which !== "privacy") return;
+      e.preventDefault();
+      openLegal(which);
+    });
+
+    btnCloseX?.addEventListener("click", closeLegal);
+    btnCloseBottom?.addEventListener("click", closeLegal);
+
+    // ESC closes (dialog cancel)
+    dlg.addEventListener("cancel", (e) => {
+      e.preventDefault();
+      closeLegal();
+    });
+
+    // click outside closes (only when dialog is open)
+    dlg.addEventListener("click", (e) => {
+      const rect = dlg.getBoundingClientRect();
+      const inDialog =
+        e.clientX >= rect.left && e.clientX <= rect.right &&
+        e.clientY >= rect.top && e.clientY <= rect.bottom;
+      if (!inDialog) closeLegal();
+    });
+  });
+

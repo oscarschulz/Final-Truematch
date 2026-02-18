@@ -92,7 +92,7 @@
                     <label for="loginPass">Password</label>
                   </div>
                   <div class="actions-row">
-                    <label class="remember-me"><input type="checkbox" id="rememberMe" name="remember" checked> <span>Remember me</span></label>
+                    <label class="remember-me"><input type="checkbox" id="rememberMe" checked> <span>Remember me</span></label>
                     <a href="#" class="forgot-link" id="btnOpenForgot">Forgot?</a>
                   </div>
                   <button type="submit" class="btn-primary neon-btn">Sign In</button>
@@ -128,7 +128,7 @@
                     <label for="signupPass">Create Password</label>
                   </div>
                   <button type="submit" class="btn-primary neon-btn">Create Account</button>
-                  <p class="terms-micro">By joining, you agree to our <a href="#">Terms</a> & <a href="#">Privacy</a>.</p>
+                  <p class="terms-micro">By joining, you agree to our <a href="#" data-legal="terms" class="legal-link">Terms</a> & <a href="#" data-legal="privacy" class="legal-link">Privacy</a>.</p>
                 </form>
                 <div class="switch-area">
                   <p>Already a member?</p>
@@ -312,5 +312,72 @@
 
   <script src="tm-loader.js"></script>
   <script type="module" src="auth.js"></script>
+
+  <!-- Legal modal -->
+  <dialog id="dlgLegal" class="modal modal--legal" aria-labelledby="legalTitle" aria-modal="true">
+    <button type="button" class="close-icon-btn" id="btnCloseLegalX" aria-label="Close">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    </button>
+    <div class="modal__body legal-body">
+      <h3 id="legalTitle">Legal</h3>
+      <div id="legalContent" class="legal-content"></div>
+      <div class="legal-actions">
+        <button type="button" class="btn-ghost" id="btnCloseLegalBottom">Close</button>
+      </div>
+    </div>
+  </dialog>
+
+  <template id="tmplTerms">
+    <p class="muted">Last updated: <strong>2026-01-01</strong></p>
+    <p>Welcome to iTRUEMATCH. By creating an account or using our services, you agree to these Terms of Service.</p>
+
+    <h4>1. Eligibility</h4>
+    <p>You must be at least 18 years old (or the legal age in your jurisdiction) to use iTRUEMATCH.</p>
+
+    <h4>2. Accounts and Security</h4>
+    <p>You are responsible for keeping your login credentials private. If you believe your account has been compromised, contact us immediately at <strong>[YOUR SUPPORT EMAIL]</strong>.</p>
+
+    <h4>3. Acceptable Use</h4>
+    <p>Do not impersonate others, harass users, or attempt to access areas you are not authorized to access. We may suspend or terminate accounts that violate these rules.</p>
+
+    <h4>4. Payments and Subscriptions</h4>
+    <p>If you purchase a subscription, you authorize us (and our payment providers) to charge the applicable fees. Subscription terms, renewals, and cancellations are shown at checkout and in your account settings.</p>
+
+    <h4>5. Content and Moderation</h4>
+    <p>You retain ownership of content you submit, but grant us a license to host and display it to operate the service. We may remove content that violates policy or law.</p>
+
+    <h4>6. Disclaimer</h4>
+    <p>The service is provided “as is” and “as available”. We do not guarantee matches or uninterrupted availability.</p>
+
+    <h4>7. Limitation of Liability</h4>
+    <p>To the maximum extent permitted by law, iTRUEMATCH will not be liable for indirect or consequential damages arising from your use of the service.</p>
+
+    <h4>8. Contact</h4>
+    <p>Questions about these Terms: <strong>[YOUR SUPPORT EMAIL]</strong></p>
+  </template>
+
+  <template id="tmplPrivacy">
+    <p class="muted">Last updated: <strong>2026-01-01</strong></p>
+    <p>This Privacy Policy explains how iTRUEMATCH collects, uses, and protects your information.</p>
+
+    <h4>1. Information We Collect</h4>
+    <p>We collect information you provide (e.g., name, email), profile data you submit, and basic usage data needed to operate and secure the platform.</p>
+
+    <h4>2. How We Use Information</h4>
+    <p>We use your information to provide the service, personalize your experience, prevent fraud, and communicate important updates (such as verification emails).</p>
+
+    <h4>3. Sharing</h4>
+    <p>We do not sell your personal information. We may share limited data with service providers (e.g., email delivery, hosting) strictly to operate iTRUEMATCH.</p>
+
+    <h4>4. Security</h4>
+    <p>We take reasonable measures to protect your information, but no system is 100% secure.</p>
+
+    <h4>5. Your Choices</h4>
+    <p>You can request access, correction, or deletion of certain data by contacting <strong>[YOUR SUPPORT EMAIL]</strong>, subject to legal and security requirements.</p>
+
+    <h4>6. Contact</h4>
+    <p>Privacy questions: <strong>[YOUR SUPPORT EMAIL]</strong></p>
+  </template>
+
 </body>
 </html>
