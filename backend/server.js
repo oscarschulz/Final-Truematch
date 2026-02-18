@@ -7612,61 +7612,92 @@ app.post('/api/creator/posts/comment/react', authMiddleware, async (req, res) =>
     const cid = safeStr(commentId || '').trim();
     const cleanReaction = (reaction === null || reaction === undefined) ? '' : safeStr(reaction).trim().toLowerCase();
 
-    if (!pid || !cid) return res.status(400).json({ ok: false, message: 'postId and commentId are required' });
-    if (cleanReaction && cleanReaction.length > 24) return res.status(400).json({ ok: false, message: 'Invalid reaction' });
+    if (!pid || !cid) {
+      return res.status(400).json({ ok: false, message: 'postId and commentId are required' });
+    }
+    if (!hasFirebase || !firestore) {
+      return res.status(503).json({ ok: false, message: 'Firestore not configured' });
+    }
 
     const meEmail = _getMeEmailNormalized(req);
     if (!meEmail) return res.status(401).json({ ok: false, message: 'Not authenticated' });
-    if (!hasFirebase || !firestore) return res.status(503).json({ ok: false, message: 'Firebase not configured' });
-
     const myKey = _reactionDocIdForUser(meEmail);
-    const postRef = _creatorPostsCol().doc(pid);
-    const commentRef = postRef.collection('comments').doc(cid);
     const nowMs = Date.now();
 
-    await firestore.runTransaction(async (t) => {
-      const cSnap = await t.get(commentRef);
+    const postRef = _creatorPostsCol().doc(pid);
+    const commentsCol = postRef.collection('comments');
+
+    const result = await firestore.runTransaction(async (t) => {
+      // 1) Try direct doc id match (newer comments use docId === comment.id)
+      let commentRef = commentsCol.doc(cid);
+      let cSnap = await t.get(commentRef);
+
+      // 2) Backward compatibility: older comments may have auto-generated doc IDs with an `id` field
       if (!cSnap.exists) {
-        const err = new Error('Comment not found');
-        err.status = 404;
-        throw err;
+        const qSnap = await t.get(commentsCol.where('id', '==', cid).limit(1));
+        const doc = (qSnap && qSnap.docs && qSnap.docs[0]) ? qSnap.docs[0] : null;
+        if (!doc) {
+          const err = new Error('Comment not found');
+          err.status = 404;
+          throw err;
+        }
+        commentRef = doc.ref;
+        cSnap = doc;
       }
 
+      // Read existing reaction
       const rRef = commentRef.collection('reactions').doc(myKey);
       const rSnap = await t.get(rRef);
-      const oldReaction = rSnap.exists ? safeStr((rSnap.data() || {}).reaction || '').trim().toLowerCase() : '';
+      const oldReaction = safeStr(rSnap.exists ? (rSnap.data() || {}).reaction : '').trim().toLowerCase();
 
-      // update reaction doc
+      // Normalize reactionCounts to a safe numeric map (avoid NaN writes)
+      const data = cSnap.data() || {};
+      const counts = {};
+      const rawCounts = (data.reactionCounts && typeof data.reactionCounts === 'object') ? data.reactionCounts : null;
+      if (rawCounts && !Array.isArray(rawCounts)) {
+        for (const [k, v] of Object.entries(rawCounts)) {
+          const kk = safeStr(k).trim().toLowerCase();
+          const nn = Number(v);
+          if (kk && Number.isFinite(nn) && nn > 0) counts[kk] = Math.floor(nn);
+        }
+      }
+
+      // Apply delta
+      if (oldReaction) _incMapCount(counts, oldReaction, -1);
+      if (cleanReaction) _incMapCount(counts, cleanReaction, +1);
+
+      // Persist my reaction doc
       if (!cleanReaction) {
         if (rSnap.exists) t.delete(rRef);
       } else {
-        t.set(rRef, { reaction: cleanReaction, createdAtMs: nowMs }, { merge: false });
+        t.set(rRef, { reaction: cleanReaction, updatedAtMs: nowMs }, { merge: true });
       }
 
-      // maintain aggregate counts on the comment doc
-      const data = cSnap.data() || {};
-      const counts = (data.reactionCounts && typeof data.reactionCounts === 'object') ? { ...data.reactionCounts } : {};
+      // Persist counts on the comment doc
+      const total = Object.values(counts).reduce((a, b) => a + (Number.isFinite(Number(b)) ? Number(b) : 0), 0);
+      const safeTotal = Number.isFinite(total) && total > 0 ? Math.floor(total) : 0;
 
-      if (oldReaction) {
-        const prev = Number(counts[oldReaction] || 0);
-        const next = Math.max(0, prev - 1);
-        if (next <= 0) delete counts[oldReaction];
-        else counts[oldReaction] = next;
-      }
-      if (cleanReaction) {
-        const prev = Number(counts[cleanReaction] || 0);
-        counts[cleanReaction] = prev + 1;
-      }
+      t.set(commentRef, { reactionCounts: counts, reactionCount: safeTotal, updatedAtMs: nowMs }, { merge: true });
 
-      const total = Object.values(counts).reduce((a, b) => a + Number(b || 0), 0);
-      t.set(commentRef, { reactionCounts: counts, reactionCount: total, updatedAtMs: nowMs }, { merge: true });
+      return { myReaction: cleanReaction, reactionCounts: counts, reactionCount: safeTotal, commentDocId: commentRef.id };
     });
 
-    return res.json({ ok: true, postId: pid, commentId: cid, myReaction: cleanReaction || null });
+    return res.json({
+      ok: true,
+      postId: pid,
+      commentId: cid,
+      myReaction: result.myReaction,
+      reactionCounts: result.reactionCounts,
+      reactionCount: result.reactionCount,
+      commentDocId: result.commentDocId
+    });
   } catch (e) {
     const status = e && e.status ? Number(e.status) : 500;
     console.error('POST /api/creator/posts/comment/react error', e);
-    return res.status(status).json({ ok: false, message: 'Failed to react to comment' });
+    return res.status(status).json({
+      ok: false,
+      message: (status === 404 ? 'Comment not found' : 'Failed to react to comment')
+    });
   }
 });
 
