@@ -7060,7 +7060,13 @@ function _creatorPostToClient(id, d) {
     quiz: d?.quiz || null,
     quizVotes: Array.isArray(d?.quizVotes) ? d.quizVotes : null,
     reactionCounts: (d && d.reactionCounts && typeof d.reactionCounts === 'object') ? d.reactionCounts : {},
-    reactionCount: Number.isFinite(d?.reactionCount) ? d.reactionCount : 0,
+    reactionCount: (() => {
+      const rc = Number.isFinite(d?.reactionCount) ? Number(d.reactionCount) : 0;
+      if (rc) return rc;
+      const counts = (d && d.reactionCounts && typeof d.reactionCounts === 'object') ? d.reactionCounts : {};
+      const total = Object.values(counts).reduce((a, b) => a + (Number(b) || 0), 0);
+      return Number.isFinite(total) ? total : 0;
+    })(),
     commentCount: Number.isFinite(d?.commentCount) ? d.commentCount : 0,
     timestamp: createdAtMs || Date.now(),
     updatedAt: updatedAtMs || null,
@@ -7376,9 +7382,9 @@ app.post('/api/creator/posts/vote', async (req, res) => {
 });
 
 // Mixed feed: prioritize subscribed creators (2:1 mix)
-app.get('/api/creators/feed', async (req, res) => {
+app.get('/api/creators/feed', authMiddleware, async (req, res) => {
   try {
-    const me = _normalizeEmail(getSessionEmail(req));
+    const me = _normalizeEmail((req.user && req.user.email) || '');
 
     const meEmail = me;
     if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
@@ -7725,27 +7731,155 @@ app.get('/api/creator/posts/comments', authMiddleware, async (req, res) => {
 
     if (!hasFirebase || !firestore) {
       DB.creatorPostComments = DB.creatorPostComments || {};
+      DB.creatorCommentReactions = DB.creatorCommentReactions || {};
+
       const list = Array.isArray(DB.creatorPostComments[postId]) ? DB.creatorPostComments[postId] : [];
-      return res.json({ ok: true, postId, comments: list.slice(0, limit) });
+      const sliced = list.slice(0, limit).map(c => {
+        const cid = safeStr((c && (c.id || c.commentId || c._id)) || '');
+        const key = `${postId}|${cid}|${email}`;
+        const myReaction = safeStr(DB.creatorCommentReactions[key] || '');
+        const reactionCounts = (c && c.reactionCounts && typeof c.reactionCounts === 'object') ? c.reactionCounts : {};
+        const reactionCount = Number.isFinite(c?.reactionCount) ? Number(c.reactionCount) : 0;
+        return { ...(c || {}), id: cid || safeStr(c?.id || ''), myReaction, reactionCounts, reactionCount };
+      });
+
+      return res.json({ ok: true, postId, comments: sliced });
     }
 
     const postRef = creatorPostsCollection.doc(postId);
     const snap = await postRef.collection('comments').orderBy('createdAtMs', 'desc').limit(limit).get();
-    const comments = snap.docs.map(d => {
+
+    // Attach my reaction for each comment (best-effort)
+    const rId = _reactionDocIdForUser(email);
+    const commentDocs = snap.docs;
+    const myMap = new Map();
+
+    if (rId && commentDocs.length) {
+      try {
+        const refs = commentDocs.map(d => postRef.collection('comments').doc(d.id).collection('reactions').doc(rId));
+        const rs = await firestore.getAll(...refs);
+        for (let i = 0; i < rs.length; i++) {
+          const rSnap = rs[i];
+          if (!rSnap || !rSnap.exists) continue;
+          const reaction = safeStr((rSnap.data() || {}).reaction || '');
+          if (reaction) myMap.set(commentDocs[i].id, reaction);
+        }
+      } catch (_) {}
+    }
+
+    const comments = commentDocs.map(d => {
       const x = d.data() || {};
+      const counts = (x && x.reactionCounts && typeof x.reactionCounts === 'object') ? x.reactionCounts : {};
+      const rc = Number.isFinite(x?.reactionCount) ? Number(x.reactionCount) : Object.values(counts).reduce((a, b) => a + (Number(b) || 0), 0);
+
       return {
         id: safeStr(x.id || d.id),
         postId: safeStr(x.postId || postId),
         text: safeStr(x.text || ''),
         authorEmail: safeStr(x.authorEmail || ''),
         authorName: safeStr(x.authorName || ''),
-        createdAtMs: Number(x.createdAtMs || 0)
+        authorAvatarUrl: safeStr(x.authorAvatarUrl || x.creatorAvatarUrl || ''),
+        authorHandle: safeStr(x.authorHandle || x.creatorHandle || ''),
+        createdAtMs: Number(x.createdAtMs || _tsToMs(x.createdAt) || 0),
+        reactionCounts: counts,
+        reactionCount: Number.isFinite(rc) ? rc : 0,
+        myReaction: safeStr(myMap.get(d.id) || '')
       };
     });
+
     return res.json({ ok: true, postId, comments });
   } catch (e) {
     console.error('GET /api/creator/posts/comments error', e);
     return res.status(500).json({ ok: false, message: 'Failed to load comments' });
+  }
+});
+
+
+// React on a creator post comment (persistent)
+app.post('/api/creator/posts/comment/react', authMiddleware, async (req, res) => {
+  try {
+    const email = _normalizeEmail((req.user && req.user.email) || '');
+    if (!email) return res.status(401).json({ ok: false, message: 'Not authenticated' });
+
+    const body = (req.body && typeof req.body === 'object') ? req.body : {};
+    const postId = safeStr(body.postId || body.id || '');
+    const commentId = safeStr(body.commentId || body.cid || body.comment_id || '');
+    const reactionIn = safeStr(body.reaction || body.type || body.reactionType || '');
+
+    if (!postId) return res.status(400).json({ ok: false, message: 'postId is required' });
+    if (!commentId) return res.status(400).json({ ok: false, message: 'commentId is required' });
+
+    const reaction = _cleanReactionType(reactionIn); // '' means clear
+    const nowMs = Date.now();
+    const rId = _reactionDocIdForUser(email);
+
+    if (!hasFirebase || !firestore) {
+      DB.creatorPostComments = DB.creatorPostComments || {};
+      DB.creatorCommentReactions = DB.creatorCommentReactions || {};
+
+      const list = Array.isArray(DB.creatorPostComments[postId]) ? DB.creatorPostComments[postId] : [];
+      const idx = list.findIndex(c => safeStr((c && (c.id || c.commentId || c._id)) || '') === commentId);
+      if (idx === -1) return res.status(404).json({ ok: false, message: 'Comment not found' });
+
+      const key = `${postId}|${commentId}|${email}`;
+      const prev = safeStr(DB.creatorCommentReactions[key] || '');
+
+      // Toggle off if same reaction clicked
+      const final = (reaction && prev === reaction) ? '' : reaction;
+
+      const c = list[idx] || {};
+      const counts = (c.reactionCounts && typeof c.reactionCounts === 'object') ? { ...c.reactionCounts } : {};
+
+      if (prev) _incMapCount(counts, prev, -1);
+      if (final) _incMapCount(counts, final, +1);
+
+      const total = Object.values(counts).reduce((a, b) => a + (Number(b) || 0), 0);
+
+      list[idx] = { ...c, reactionCounts: counts, reactionCount: total, updatedAtMs: nowMs };
+
+      if (final) DB.creatorCommentReactions[key] = final;
+      else delete DB.creatorCommentReactions[key];
+
+      return res.json({ ok: true, postId, commentId, myReaction: final, reactionCounts: counts, reactionCount: total });
+    }
+
+    if (!rId) return res.status(500).json({ ok: false, message: 'Reaction identity error' });
+
+    const postRef = creatorPostsCollection.doc(postId);
+    const cRef = postRef.collection('comments').doc(commentId);
+    const rRef = cRef.collection('reactions').doc(rId);
+
+    const out = await firestore.runTransaction(async (t) => {
+      const cSnap = await t.get(cRef);
+      if (!cSnap.exists) throw new Error('Comment not found');
+
+      const c = cSnap.data() || {};
+      const counts = (c.reactionCounts && typeof c.reactionCounts === 'object') ? { ...c.reactionCounts } : {};
+
+      const rSnap = await t.get(rRef);
+      const prev = rSnap.exists ? safeStr((rSnap.data() || {}).reaction || '') : '';
+
+      const final = (reaction && prev === reaction) ? '' : reaction;
+
+      if (prev) _incMapCount(counts, prev, -1);
+      if (final) _incMapCount(counts, final, +1);
+
+      const total = Object.values(counts).reduce((a, b) => a + (Number(b) || 0), 0);
+
+      t.update(cRef, { reactionCounts: counts, reactionCount: total, updatedAt: new Date(nowMs), updatedAtMs: nowMs });
+
+      if (final) t.set(rRef, { postId, commentId, reaction: final, updatedAt: new Date(nowMs) }, { merge: true });
+      else t.delete(rRef);
+
+      return { final, counts, total };
+    });
+
+    return res.json({ ok: true, postId, commentId, myReaction: out.final, reactionCounts: out.counts, reactionCount: out.total });
+  } catch (e) {
+    const msg = String(e && e.message ? e.message : '');
+    if (msg.includes('Comment not found')) return res.status(404).json({ ok: false, message: 'Comment not found' });
+    console.error('POST /api/creator/posts/comment/react error', e);
+    return res.status(500).json({ ok: false, message: 'Failed to react on comment' });
   }
 });
 
