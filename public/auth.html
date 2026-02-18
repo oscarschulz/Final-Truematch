@@ -1,114 +1,6 @@
 <!doctype html>
 <html lang="en" class="tm-home">
 <head>
-
-  <!-- Terms / Privacy Modal -->
-  <dialog id="dlgLegal" class="modal modal--legal">
-    <form method="dialog" class="modal__body modal__body--legal">
-      <button type="submit" class="close-icon-btn" id="btnCloseLegalX" aria-label="Close" value="close">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          <path d="M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        </svg>
-      </button>
-
-      <h3 id="legalTitle">Terms of Service</h3>
-      <div id="legalContent" class="legal-content"></div>
-
-      <button type="submit" class="btn-primary neon-btn legal-close-btn" id="btnCloseLegalBottom" value="close">Close</button>
-    </form>
-  </dialog>
-
-  <!-- Legal Content Templates (edit anytime) -->
-  <template id="tplLegalTerms">
-    <div class="legal-copy">
-      <h4>1. Acceptance</h4>
-      <p>By creating an account or using iTRUEMATCH (the “Service”), you agree to these Terms of Service. If you do not agree, do not use the Service.</p>
-
-      <h4>2. Eligibility</h4>
-      <p>You must be at least 18 years old (or the age of majority where you live) to use the Service. You agree that your information is accurate and that you will keep it updated.</p>
-
-      <h4>3. Accounts and Security</h4>
-      <p>You are responsible for keeping your login credentials confidential and for all activity that occurs under your account. If you suspect unauthorized access, change your password and notify us.</p>
-
-      <h4>4. Safety</h4>
-      <p>You are responsible for your interactions with other users. Use caution when meeting people offline. iTRUEMATCH does not conduct background checks and does not guarantee user identity, conduct, or compatibility.</p>
-
-      <h4>5. Community Rules</h4>
-      <ul>
-        <li>No harassment, hate, threats, or bullying.</li>
-        <li>No scams, impersonation, or fraudulent activity.</li>
-        <li>No sharing of illegal content or violating others’ rights.</li>
-        <li>Respect consent, privacy, and boundaries at all times.</li>
-      </ul>
-
-      <h4>6. User Content</h4>
-      <p>You retain ownership of content you submit (such as profile details, photos, and messages). You grant iTRUEMATCH a non exclusive, worldwide, royalty free license to host, store, display, and distribute your content as needed to operate and improve the Service. You confirm you have the rights to upload the content you submit.</p>
-
-      <h4>7. Subscriptions and Payments</h4>
-      <p>Some features may require payment. If you purchase a subscription, you authorize us (and our payment providers) to charge applicable fees, including recurring fees until you cancel. Pricing, renewal terms, and cancellation options are shown at checkout and in your account settings. Taxes may apply where required.</p>
-
-      <h4>8. Termination</h4>
-      <p>You may stop using the Service at any time. We may suspend or terminate your access if we reasonably believe you violated these Terms or if required for safety, security, or legal compliance.</p>
-
-      <h4>9. Disclaimers</h4>
-      <p>The Service is provided “as is” and “as available.” We do not guarantee uninterrupted operation, specific outcomes, or compatibility between users.</p>
-
-      <h4>10. Limitation of Liability</h4>
-      <p>To the maximum extent permitted by law, iTRUEMATCH will not be liable for indirect, incidental, special, consequential, or punitive damages, or for losses arising from user interactions, content, or misuse of the Service.</p>
-
-      <h4>11. Changes</h4>
-      <p>We may update these Terms from time to time. Continued use of the Service after updates means you accept the updated Terms.</p>
-
-      <h4>12. Contact</h4>
-      <p>For questions about these Terms, contact us via the support channel associated with iTRUEMATCH.</p>
-    </div>
-  </template>
-
-  <template id="tplLegalPrivacy">
-    <div class="legal-copy">
-      <h4>1. Overview</h4>
-      <p>This Privacy Policy explains how iTRUEMATCH collects, uses, and shares information when you use the Service.</p>
-
-      <h4>2. Information We Collect</h4>
-      <ul>
-        <li><strong>Account data:</strong> name, email, password hash, and basic profile details.</li>
-        <li><strong>Profile content:</strong> photos, bio, preferences, and optional information you choose to provide.</li>
-        <li><strong>Usage data:</strong> device information, log data, and interaction events (for security and product improvement).</li>
-        <li><strong>Messages:</strong> communications you send through the Service (used to deliver the Service and help keep the platform safe).</li>
-      </ul>
-
-      <h4>3. How We Use Information</h4>
-      <ul>
-        <li>To operate the Service, create accounts, and provide core features.</li>
-        <li>To personalize your experience and improve matchmaking and recommendations.</li>
-        <li>To maintain safety, prevent fraud, and enforce our policies.</li>
-        <li>To communicate with you about updates, security, and support requests.</li>
-      </ul>
-
-      <h4>4. Sharing</h4>
-      <p>We may share information with service providers that help us run the Service (for example hosting, analytics, email, and payments). We may also share information if required by law, to protect users, or to prevent abuse. Your public profile information is visible to other users as part of the Service.</p>
-
-      <h4>5. Cookies and Local Storage</h4>
-      <p>We may use cookies or local storage to keep you signed in, remember preferences, and support security features.</p>
-
-      <h4>6. Data Retention</h4>
-      <p>We keep your information as long as needed to provide the Service, comply with legal obligations, and enforce our agreements. You may request deletion where applicable.</p>
-
-      <h4>7. Security</h4>
-      <p>We use reasonable safeguards designed to protect your information. No method of transmission or storage is 100% secure.</p>
-
-      <h4>8. Your Choices</h4>
-      <p>You can update profile information in your account settings. Depending on your location, you may have rights to access, correct, or delete personal information.</p>
-
-      <h4>9. Changes</h4>
-      <p>We may update this Privacy Policy from time to time. Continued use after updates means you accept the updated policy.</p>
-
-      <h4>10. Contact</h4>
-      <p>For privacy questions, contact us via the support channel associated with iTRUEMATCH.</p>
-    </div>
-  </template>
-
   <script>window.API_BASE = '';</script>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
@@ -205,12 +97,9 @@
                   </div>
                   <button type="submit" class="btn-primary neon-btn">Sign In</button>
                   <div class="divider"><span>OR</span></div>
-                  <div class="oauth-wrap">
-                  <div id="googleBtnMount" class="google-btn-mount" aria-label="Continue with Google"></div>
-                  <button type="button" id="btnGoogleLoginFallback" class="btn-oauth">
+                  <button type="button" id="btnGoogleLogin" class="btn-oauth">
                     <img src="assets/images/google icon.png" alt="G"> Continue with Google
                   </button>
-                </div>
                 </form>
                 <div class="switch-area">
                   <p>Don't have an account?</p>
@@ -239,7 +128,7 @@
                     <label for="signupPass">Create Password</label>
                   </div>
                   <button type="submit" class="btn-primary neon-btn">Create Account</button>
-                  <p class="terms-micro">By joining, you agree to our <a href="#" data-legal="terms" class="legal-link">Terms</a> & <a href="#" data-legal="privacy" class="legal-link">Privacy</a>.</p>
+                  <p class="terms-micro">By joining, you agree to our <a href="#">Terms</a> & <a href="#">Privacy</a>.</p>
                 </form>
                 <div class="switch-area">
                   <p>Already a member?</p>
