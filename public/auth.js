@@ -696,20 +696,158 @@
   });
 
   whenReady(() => {
-    const googleBtn = $("#btnGoogleLogin");
-    if (!googleBtn || googleBtn.dataset.tmBound === "1") return;
-    googleBtn.dataset.tmBound = "1";
-    googleBtn.addEventListener("click", async (e) => {
-      e.preventDefault();
-      try { tmShowLoader('Signing in…','Opening Google'); } catch {}
+    const mount = document.getElementById("googleBtnMount");
+    const fallbackBtn = document.getElementById("btnGoogleLoginFallback");
+
+    // Ensure we always show *something* immediately.
+    if (mount) mount.style.display = "none";
+    if (fallbackBtn) fallbackBtn.style.display = "flex";
+
+    // Nothing to bind (older templates)
+    if (!mount && !fallbackBtn) return;
+
+    const getClientId = () => String(window.GOOGLE_CLIENT_ID || "").trim();
+
+    const waitForGsi = async (timeoutMs = 6000) => {
+      const start = Date.now();
+      while (Date.now() - start < timeoutMs) {
+        if (window.google && google.accounts && google.accounts.id) return true;
+        await new Promise(r => setTimeout(r, 100));
+      }
+      return false;
+    };
+
+    const setMountedVisible = () => {
+      if (mount) mount.style.display = "block";
+      if (fallbackBtn) fallbackBtn.style.display = "none";
+    };
+
+    const setFallbackVisible = () => {
+      if (mount) mount.style.display = "none";
+      if (fallbackBtn) fallbackBtn.style.display = "flex";
+    };
+
+    const handleGoogleIdToken = async (idToken) => {
+      if (!idToken) return;
+
+      try { tmShowLoader("Signing you in…", "Google"); } catch {}
       try {
-        const r = await callAPI("/api/auth/oauth/mock", { provider: "google" });
-        saveLocalUser(r?.user || { email: "google@demo.local", name: "Google User" });
-        const extra = new URLSearchParams();
-        if (r?.demo || r?.status === 0) extra.set("demo", "1");
-        finishLogin(extra.toString());
-      } finally { try { tmHideLoader(); } catch {} }
+        const out = await callAPI("/api/auth/oauth/google", { idToken });
+        const ok = !!(out && (out.ok || out.status === 200 || out.status === 201));
+        if (!ok) {
+          alert(out?.message || "Google sign-in failed. Please try again.");
+          return;
+        }
+
+        // Persist local profile (used by some UI before /api/me returns)
+        if (out.user) {
+          saveLocalUser(out.user);
+        } else {
+          // Minimal fallback
+          saveLocalUser({ email: out.email || "", name: out.name || "User" });
+        }
+
+        const email = String(out.user?.email || out.email || "").trim() || getEmailCandidate();
+        await finishLogin(email);
+      } catch (err) {
+        console.error("[auth] google sign-in error:", err);
+        alert("Google sign-in failed. Please try again.");
+      } finally {
+        try { tmHideLoader(); } catch {}
+      }
+    };
+
+    const renderGoogleButton = () => {
+      if (!mount) return false;
+
+      // Re-render to match container width (Google uses an iframe).
+      const width = Math.max(260, Math.min(520, mount.clientWidth || 360));
+      mount.innerHTML = "";
+      google.accounts.id.renderButton(mount, {
+        theme: "outline",
+        size: "large",
+        shape: "pill",
+        text: "continue_with",
+        width
+      });
+
+      return true;
+    };
+
+    const initGoogle = async () => {
+      const clientId = getClientId();
+      if (!clientId) return { ok: false, reason: "missing_client_id" };
+
+      const ready = await waitForGsi(6000);
+      if (!ready) return { ok: false, reason: "gsi_not_loaded" };
+
+      try {
+        // Initialize once. Callback provides a Google ID token (JWT) in resp.credential.
+        google.accounts.id.initialize({
+          client_id: clientId,
+          callback: (resp) => {
+            const idToken = resp && resp.credential;
+            handleGoogleIdToken(idToken);
+          },
+          auto_select: false,
+          cancel_on_tap_outside: true
+        });
+
+        const mounted = renderGoogleButton();
+        if (mounted) {
+          setMountedVisible();
+
+          // Keep width responsive
+          let t = null;
+          window.addEventListener("resize", () => {
+            if (!mount || mount.style.display === "none") return;
+            clearTimeout(t);
+            t = setTimeout(() => {
+              try { renderGoogleButton(); } catch {}
+            }, 150);
+          });
+        } else {
+          // No mount in HTML → keep fallback visible
+          setFallbackVisible();
+        }
+
+        return { ok: true };
+      } catch (err) {
+        console.error("[auth] google init/render error:", err);
+        return { ok: false, reason: "init_error" };
+      }
+    };
+
+    // Boot: try to init in the background.
+    initGoogle().then((r) => {
+      if (!r || !r.ok) setFallbackVisible();
     });
+
+    // Fallback click: explain what to configure (or re-try init after refresh)
+    if (fallbackBtn && fallbackBtn.dataset.tmBound !== "1") {
+      fallbackBtn.dataset.tmBound = "1";
+      fallbackBtn.addEventListener("click", async (e) => {
+        e.preventDefault();
+
+        const clientId = getClientId();
+        if (!clientId) {
+          alert(`Google sign-in isn’t configured yet.
+
+1) Create a Google OAuth Web Client ID.
+2) Set GOOGLE_CLIENT_ID in Railway (Backend).
+3) Set window.GOOGLE_CLIENT_ID in auth.html (Frontend) to the same value.
+
+After that, refresh this page.`);
+          return;
+        }
+
+        // Try again (useful after hard refresh if the GSI script was slow)
+        const r = await initGoogle();
+        if (!r || !r.ok) {
+          alert("Google sign-in isn’t ready yet. Please refresh and try again.");
+        }
+      });
+    }
   });
 
   whenReady(() => {
