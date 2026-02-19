@@ -11,146 +11,8 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://cdn.jsdelivr.net/npm/picmo@latest/dist/umd/index.js"></script>
   
-  <link rel="stylesheet" href="assets/css/creators/global.css" />
-  <style>
-    /* ===== Creators: Subscriptions view (production wiring) ===== */
-    #view-subscriptions .subs-search-row {
-      padding: 12px 15px;
-      border-bottom: 1px solid var(--border-color);
-      background: transparent;
-    }
-    #view-subscriptions .subs-search-wrap {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 12px;
-      border: 1px solid var(--border-color);
-      border-radius: 12px;
-      background: rgba(255,255,255,0.03);
-    }
-    #view-subscriptions .subs-search-wrap i { color: var(--muted); font-size: 14px; }
-    #view-subscriptions .subs-search-wrap input {
-      flex: 1;
-      background: transparent;
-      border: none;
-      outline: none;
-      color: var(--text);
-      font-size: 14px;
-      font-family: 'Montserrat', sans-serif;
-      min-width: 0;
-    }
-    #view-subscriptions .subs-search-clear {
-      border: none;
-      background: transparent;
-      color: var(--muted);
-      cursor: pointer;
-      padding: 6px 8px;
-      border-radius: 10px;
-    }
-    #view-subscriptions .subs-search-clear:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+  <link rel="stylesheet" href="creators.css" />
 
-    #view-subscriptions .subs-loading,
-    #view-subscriptions .subs-empty {
-      display: none;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 70px 15px;
-      color: var(--muted);
-      text-align: center;
-    }
-    #view-subscriptions .subs-loading.show,
-    #view-subscriptions .subs-empty.show { display: flex; }
-
-    #view-subscriptions .subs-spinner {
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      border: 3px solid rgba(255,255,255,0.12);
-      border-top-color: rgba(100,233,238,0.95);
-      animation: subsSpin 0.9s linear infinite;
-    }
-    @keyframes subsSpin { to { transform: rotate(360deg); } }
-
-    #view-subscriptions .subs-list {
-      padding: 10px 15px 25px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    #view-subscriptions .subs-user {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 14px;
-      padding: 12px 12px;
-      border: 1px solid var(--border-color);
-      border-radius: 14px;
-      background: rgba(255,255,255,0.02);
-      cursor: pointer;
-      transition: 0.18s ease;
-    }
-    #view-subscriptions .subs-user:hover { transform: translateY(-1px); background: rgba(255,255,255,0.04); }
-    #view-subscriptions .subs-user .left { display: flex; align-items: center; gap: 12px; min-width: 0; }
-    #view-subscriptions .subs-user img {
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
-      object-fit: cover;
-      background: #000;
-      flex-shrink: 0;
-    }
-    #view-subscriptions .subs-user .meta { min-width: 0; }
-    #view-subscriptions .subs-user .name {
-      color: var(--text);
-      font-weight: 800;
-      font-size: 13px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 190px;
-    }
-    #view-subscriptions .subs-user .handle {
-      color: var(--muted);
-      font-weight: 700;
-      font-size: 12px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 190px;
-      margin-top: 2px;
-    }
-    #view-subscriptions .subs-user .right {
-      display: flex;
-      align-items: flex-end;
-      flex-direction: column;
-      gap: 8px;
-      flex-shrink: 0;
-      text-align: right;
-    }
-    #view-subscriptions .subs-mini { color: var(--muted); font-size: 11px; font-weight: 700; }
-    #view-subscriptions .subs-badge {
-      padding: 6px 10px;
-      border-radius: 999px;
-      font-size: 11px;
-      font-weight: 900;
-      letter-spacing: 0.6px;
-      border: 1px solid var(--border-color);
-    }
-    #view-subscriptions .subs-badge.active { color: #64E9EE; }
-    #view-subscriptions .subs-badge.expired { color: #ff6384; }
-    #view-subscriptions .pill-count {
-      margin-left: 6px;
-      font-weight: 900;
-      opacity: 0.9;
-    }
-
-    @media (max-width: 480px) {
-      #view-subscriptions .subs-user { padding: 10px 10px; }
-      #view-subscriptions .subs-user .name,
-      #view-subscriptions .subs-user .handle { max-width: 150px; }
-    }
-  </style>
 </head>
 
 <body class="tm-dark">
@@ -807,7 +669,661 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <script type="module" src="assets/js/creators/app.js"></script>
+
+  <!-- =========================================================
+       Hard-consolidated VIEW TEMPLATES (no network fetch needed)
+       These replace assets/views/*.html
+       ========================================================= -->
+  <template data-view="assets/views/collections.html">
+<div id="view-collections" style="display: none;">
+    <div class="feed-top-header">
+      <div class="header-content" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+          <div style="display:flex; align-items:center; gap:15px;">
+              <i class="fa-solid fa-arrow-left back-btn" onclick="document.getElementById('nav-link-home').click()"></i>
+              <h2>COLLECTIONS</h2>
+          </div>
+          <div style="display:flex; gap:20px; font-size:1.1rem; color:var(--text);">
+              <i class="fa-solid fa-magnifying-glass" id="col-btn-search" style="cursor:pointer;" title="Search"></i>
+              
+              <i class="fa-solid fa-cloud-arrow-up" id="col-btn-upload" style="cursor:pointer; display:none;" title="Upload to Vault"></i>
+              
+              <i class="fa-solid fa-plus" id="col-btn-add" style="cursor:pointer;" title="New List"></i>
+          </div>
+      </div>
+
+      <div id="col-search-container" class="hidden" style="margin-top: 10px; padding-bottom:10px; border-bottom:var(--border);">
+          <div class="search-input-wrapper" style="background:var(--search-bg); border-radius:8px; padding:8px 12px; display:flex; align-items:center;">
+              <i class="fa-solid fa-magnifying-glass" style="color:var(--muted)"></i>
+              <input type="text" id="col-search-input" placeholder="Find..." style="background:transparent; border:none; color:var(--text); width:100%; margin-left:10px; outline:none;">
+              <i class="fa-solid fa-xmark" id="col-search-close" style="cursor:pointer; color:var(--muted);"></i>
+          </div>
+      </div>
+    </div>
+
+    <div class="collection-tabs-bar">
+        <div class="c-tab-item active" id="tab-col-users">LISTS</div>
+        <div class="c-tab-item" id="tab-col-vault">VAULT (MEDIA)</div>
+    </div>
+
+    <div id="vault-sub-tabs" class="hidden" style="padding: 10px 15px; display: flex; gap: 10px; border-bottom: 1px solid var(--border-color);">
+        <button class="n-pill active" data-type="all">All</button>
+        <button class="n-pill" data-type="image">Photos</button>
+        <button class="n-pill" data-type="video">Videos</button>
+    </div>
+
+    <input type="file" id="col-file-input" accept="image/*,video/*" hidden>
+
+    <div class="collection-list-container" id="collection-list-wrapper"></div>
+</div>
+  </template>
+
+  <template data-view="assets/views/message.html">
+<div id="view-messages" style="display: none; height: 100%;">
+    <div class="msg-container" style="display: flex; height: 100%; width: 100%; overflow: hidden; position: relative;">
+        
+        <div class="msg-sidebar" style="width: 320px; display: flex; flex-direction: column; border-right: var(--border); flex-shrink: 0;">
+            
+            <div class="msg-header-tools" style="padding: 15px;">
+                <div class="mh-top" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <i class="fa-solid fa-arrow-left back-btn" onclick="document.getElementById('nav-link-home').click()" style="cursor: pointer;"></i>
+                    <h3 style="margin: 0; font-size: 1.2rem;">MESSAGES</h3>
+                    <div class="mh-icons" style="display: flex; gap: 10px;">
+                        <i class="fa-solid fa-plus" id="btn-new-msg" title="New Message" style="cursor: pointer;"></i>
+                        <i class="fa-solid fa-magnifying-glass" id="trigger-msg-search" title="Search" style="cursor: pointer;"></i>
+                    </div>
+                </div>
+                <div class="msg-search-container hidden" id="msg-search-box" style="margin-bottom: 10px;">
+                    <div class="search-input-wrapper" style="display: flex; align-items: center; background: var(--search-bg); padding: 5px 10px; border-radius: 20px;">
+                        <i class="fa-solid fa-magnifying-glass" style="color: var(--muted);"></i>
+                        <input type="text" id="msg-search-input" placeholder="Search user..." style="background: transparent; border: none; color: #fff; margin-left: 10px; flex: 1; outline: none;">
+                        <i class="fa-solid fa-circle-xmark" id="close-msg-search" style="cursor: pointer;"></i>
+                    </div>
+                </div>
+                <div class="msg-tabs" id="msg-tabs" style="display: flex; gap: 5px; justify-content: space-between; border-bottom: var(--border); padding-bottom: 5px;">
+                    <span class="active">All</span>
+                    <span>Priority</span>
+                    <span>Unread</span>
+                    <span>$$$</span>
+                </div>
+            </div>
+            
+            <div class="msg-user-list" id="msg-user-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; justify-content: flex-start; padding-top: 10px;">
+                <div style="text-align:center; padding-top: 50px; color: var(--muted);">
+                     <i class="fa-solid fa-circle-notch fa-spin"></i> Loading...
+                </div>
+            </div>
+
+            <div class="new-msg-overlay hidden" id="new-msg-overlay">
+                <div class="new-msg-header">
+                    <i class="fa-solid fa-arrow-left" id="btn-close-new-msg"></i>
+                    <span>New Message</span>
+                </div>
+                <div class="new-msg-search">
+                    <span>To:</span>
+                    <input type="text" placeholder="Search people...">
+                </div>
+                <div class="nm-label">SUGGESTED</div>
+                <div class="new-msg-results" id="new-msg-results">
+                    </div>
+            </div>
+
+        </div>
+
+        <div class="msg-chat-area" style="flex: 1; display: flex; flex-direction: column; background: rgba(0,0,0,0.2);">
+            <div class="chat-header" style="padding: 15px; border-bottom: var(--border); display: flex; justify-content: space-between; align-items: center; position: relative;">
+                <div class="ch-user" style="display: flex; align-items: center; gap: 10px;">
+                    <img src="assets/images/truematch-mark.png" id="active-chat-avatar" class="c-avatar-small" style="width: 35px; height: 35px; border-radius: 50%; object-fit: cover; opacity: 0.5;">
+                    <span class="chat-user-name" id="active-chat-name" style="font-weight: bold; color: var(--muted);">Select a conversation</span>
+                </div>
+                <div class="ch-actions" style="display: flex; gap: 15px; font-size: 1.2rem; color: var(--primary-cyan); opacity: 0.3; pointer-events: none;">
+                    <i class="fa-solid fa-magnifying-glass" id="btn-chat-search"></i>
+                    <i class="fa-regular fa-image" id="btn-chat-media-top" style="cursor: pointer; pointer-events: auto;" title="View Gallery"></i>
+                    <i class="fa-regular fa-star" id="btn-chat-star"></i>
+                </div>
+            </div>
+            
+            <div class="chat-history" id="chat-history-container" style="flex: 1; overflow-y: auto; padding: 20px;">
+            </div>
+            
+            <div class="emoji-picker hidden" id="emoji-picker-container" style="position: absolute; bottom: 70px; right: 20px;"></div>
+            
+            <div class="chat-input-box" style="padding: 15px; display: flex; align-items: center; gap: 10px; border-top: var(--border);">
+                
+                <i class="fa-regular fa-image" id="btn-chat-media-bottom" style="font-size: 1.5rem; color: var(--primary-cyan); cursor: pointer;" title="View Gallery"></i>
+                
+                <input type="text" id="chat-message-input" placeholder="Start a conversation..." autocomplete="off" style="flex: 1; background: var(--hover-bg); border: none; padding: 10px 15px; border-radius: 20px; color: #fff; outline: none;">
+                <i class="fa-regular fa-face-smile" id="btn-emoji-trigger" style="font-size: 1.3rem; cursor: pointer;"></i>
+                <i class="fa-solid fa-dollar-sign" id="btn-ppv-trigger" style="font-size: 1.3rem; cursor: pointer;"></i>
+                <i class="fa-regular fa-paper-plane send-icon" id="btn-send-message" style="font-size: 1.3rem; color: var(--primary-cyan); cursor: pointer;"></i>
+            </div>
+        </div>
+
+        <div class="msg-info-panel" id="msg-info-panel" style="width: 250px; border-left: var(--border); padding: 20px; display: flex; flex-direction: column; gap: 20px;">
+            <div class="info-header" style="text-align: center;">
+                <div class="info-input-wrap"><input type="text" class="info-nickname-input" id="info-nickname" value="-" style="background: transparent; border: none; color: #fff; font-weight: bold; text-align: center; font-size: 1.1rem;" readonly></div>
+                <a href="#" class="info-profile-link" id="info-handle" style="color: var(--muted); font-size: 0.9rem;">-</a>
+            </div>
+            <div class="info-stats-grid" style="display: flex; gap: 10px;">
+                <div class="i-stat" style="flex: 1; background: var(--hover-bg); padding: 10px; border-radius: 8px; text-align: center;">
+                    <div class="stat-txt"><small style="color: var(--muted);">Subscribed</small><br><strong id="info-joined">-</strong></div>
+                </div>
+                <div class="i-stat" style="flex: 1; background: var(--hover-bg); padding: 10px; border-radius: 8px; text-align: center;">
+                    <div class="stat-txt"><small style="color: var(--muted);">Total Spent</small><br><strong id="info-spent">$0</strong></div>
+                </div>
+            </div>
+            <div class="info-form-group">
+                <label style="color: var(--muted); font-size: 0.8rem; font-weight: bold;">NOTES</label>
+                <textarea id="chat-user-note" placeholder="Add note (Auto-saved)..." style="width: 100%; background: var(--hover-bg); border: none; color: #fff; padding: 10px; margin-top: 5px; border-radius: 5px; height: 100px; resize: none;"></textarea>
+            </div>
+        </div>
+    </div>
+</div>
+  </template>
+
+  <template data-view="assets/views/notifications.html">
+<div id="view-notifications" style="display: none;">
+    <div class="feed-top-header notif-header-flex" style="flex-direction: column; align-items: stretch; gap: 0;">
+      
+      <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+          <div class="nh-left">
+               <div class="back-btn" onclick="document.getElementById('nav-link-home').click()"><i class="fa-solid fa-arrow-left"></i></div>
+               <h2>NOTIFICATIONS</h2>
+          </div>
+          <div class="nh-right">
+               <i class="fa-solid fa-magnifying-glass" id="notif-btn-search" style="cursor: pointer;"></i>
+               <i id="notif-btn-markall" class="fa-solid fa-check-double" title="Mark all as read" aria-label="Mark all as read" role="button" tabindex="0" style="cursor: pointer;"></i>
+              <i class="fa-solid fa-gear" id="notif-btn-settings" style="cursor: pointer;"></i>
+          </div>
+      </div>
+
+      <div id="notif-search-container" class="hidden" style="margin-top: 15px; animation: fadeIn 0.2s;">
+          <div class="search-input-wrapper" style="background:var(--search-bg); border-radius:8px; padding:8px 12px; display:flex; align-items:center;">
+              <i class="fa-solid fa-magnifying-glass" style="color:var(--muted)"></i>
+              <input type="text" id="notif-search-input" placeholder="Search notifications..." style="background:transparent; border:none; color:var(--text); width:100%; margin-left:10px; outline:none; font-family:'Montserrat', sans-serif;">
+          </div>
+      </div>
+
+    </div>
+    
+    <div class="notif-tabs-bar">
+       <button class="n-pill active">All</button>
+       <button class="n-pill">Tags</button>
+       <button class="n-pill">Comments</button>
+       <button class="n-pill">Mentions</button>
+       <button class="n-pill">Subscriptions</button>
+       <button class="n-pill">Promotions</button>
+    </div>
+
+    <div class="notif-list" style="padding: 40px 20px; text-align: center; color: var(--muted); display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 50vh;">
+        <i class="fa-regular fa-bell" style="font-size: 3rem; margin-bottom: 20px; opacity: 0.3;"></i>
+        <p>No notifications yet</p>
+    </div>
+</div>
+  </template>
+
+  <template data-view="assets/views/settings.html">
+<div id="view-settings" style="display: none;">
+    
+    
+
+    <div class="feed-top-header">
+      <div class="header-content" style="display:flex; align-items:center; gap:15px;">
+          <i class="fa-solid fa-arrow-left back-btn" onclick="document.getElementById('nav-link-home').click()" style="cursor:pointer; font-size:1.2rem;"></i>
+          <h2 style="margin:0; font-size:1.1rem;" data-lang="set_header">SETTINGS</h2>
+      </div>
+    </div>
+
+    <div class="settings-menu">
+        <div class="set-group-title">@username</div>
+        
+        <div class="set-item active" data-target="profile">
+            <div class="set-icon"><i class="fa-regular fa-user"></i></div>
+            <div class="set-info"><span data-lang="set_profile">Profile</span><small data-lang="set_profile_desc">Edit details, avatar, cover</small></div>
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+
+        <div class="set-item" data-target="account">
+            <div class="set-icon"><i class="fa-solid fa-at"></i></div>
+            <div class="set-info"><span data-lang="set_account">Account</span><small data-lang="set_account_desc">Username, email, phone</small></div>
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+
+        <div class="set-item" data-target="privacy">
+            <div class="set-icon"><i class="fa-solid fa-lock"></i></div>
+            <div class="set-info"><span data-lang="set_privacy">Privacy and safety</span><small data-lang="set_privacy_desc">Discoverability, message privacy</small></div>
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+
+        <div class="set-item" data-target="security">
+            <div class="set-icon"><i class="fa-solid fa-shield-halved"></i></div>
+            <div class="set-info"><span data-lang="set_security">Security</span><small data-lang="set_security_desc">Password, 2FA, Sessions</small></div>
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+
+        <div class="set-item" data-target="notifications">
+            <div class="set-icon"><i class="fa-regular fa-bell"></i></div>
+            <div class="set-info"><span data-lang="set_notif">Notifications</span><small data-lang="set_notif_desc">Push, Email, Telegram</small></div>
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+
+        <div class="set-item" data-target="subscription">
+            <div class="set-icon"><i class="fa-solid fa-tag"></i></div>
+            <div class="set-info"><span data-lang="set_sub">Subscription price</span><small data-lang="set_sub_desc">Bundles, promotions</small></div>
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+
+        <div class="set-group-title" data-lang="set_pay_title">Payments</div>
+
+        <div class="set-item" data-target="cards">
+            <div class="set-icon"><i class="fa-regular fa-credit-card"></i></div>
+            <div class="set-info"><span data-lang="set_cards">Payment Methods</span><small data-lang="set_cards_desc">Cards & Crypto</small></div>
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+
+        <div class="set-item" data-target="bank">
+            <div class="set-icon"><i class="fa-solid fa-building-columns"></i></div>
+            <div class="set-info"><span data-lang="set_bank">Bank details</span><small data-lang="set_bank_desc">Payouts & Earnings</small></div>
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+
+        <div class="set-group-title" data-lang="set_gen_title">General</div>
+
+        <div class="set-item" data-target="display">
+            <div class="set-icon"><i class="fa-solid fa-desktop"></i></div>
+            <div class="set-info"><span data-lang="set_display">Display</span><small data-lang="set_display_desc">Dark mode, language</small></div>
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+
+        <div class="set-item" data-target="help">
+            <div class="set-icon"><i class="fa-regular fa-circle-question"></i></div>
+            <div class="set-info"><span data-lang="set_help">Help and support</span><small data-lang="set_help_desc">FAQ, Support tickets</small></div>
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+    </div>
+    <!-- Mobile drill-down container (renders selected settings content as a "next page") -->
+    <div id="settings-mobile-detail" class="settings-mobile-detail hidden" aria-hidden="true"></div>
+</div>
+
+
+<div style="display:none;"> 
+    
+    <div id="set-content-profile-source">
+        <div class="rs-col-header" style="padding-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+            <h3 style="font-size:1.2rem;" data-lang="set_profile">EDIT PROFILE</h3>
+            <button class="btn-submit-card" style="width:auto; padding: 8px 20px; font-size:0.8rem; min-width:auto;" data-action="save-profile" type="button">SAVE</button>
+        </div>
+        
+        <div style="position:relative; margin-bottom:60px;">
+            <div data-role="profile-cover-preview" style="height:200px; background: linear-gradient(135deg, #1e1e1e 0%, #333 100%); border-radius:8px; position:relative; overflow:hidden;">
+                <div data-action="pick-cover" title="Change cover photo" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#fff; font-size:1.5rem; cursor:pointer; opacity:0.8;"><i class="fa-solid fa-camera"></i></div>
+            </div>
+            <div style="position:absolute; bottom:-40px; left:20px; width:80px; height:80px;">
+                <img data-role="profile-avatar-preview" src="assets/images/truematch-mark.png" style="width:100%; height:100%; border-radius:50%; border:3px solid var(--bg); object-fit:cover; background:#000;">
+                <div data-action="pick-avatar" title="Change profile photo" style="position:absolute; bottom:0; right:0; background:rgba(0,0,0,0.5); border-radius:50%; width:24px; height:24px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:0.8rem; cursor:pointer;"><i class="fa-solid fa-camera"></i></div>
+            </div>
+        </div>
+
+        <input type="file" accept="image/*" data-role="profile-cover-input" style="display:none" />
+        <input type="file" accept="image/*" data-role="profile-avatar-input" style="display:none" />
+
+        <div class="ac-section" style="max-width: 700px; margin: 0 auto;">
+            <div class="ac-group">
+                <label>Display Name</label>
+                <div class="input-with-icon" style="position:relative;">
+                    <input type="text" placeholder="Your Name" style="width:100%;" data-creator-key="Display name" maxlength="50">
+                    <span class="char-count">0/50</span>
+                </div>
+            </div>
+            <div class="ac-group">
+                <label>Bio</label>
+                <div style="position:relative;">
+                    <textarea style="width:100%; resize:none; height:120px;" placeholder="Describe yourself..." data-creator-key="Bio" maxlength="1000"></textarea>
+                    <span class="char-count" style="bottom:5px;">0/1000</span>
+                </div>
+            </div>
+            <div class="ac-group">
+                <label>Location</label>
+                <input type="text" placeholder="City, Country" data-creator-key="Location">
+            </div>
+            <div class="ac-group">
+                <label>Website URL</label>
+                <input type="text" placeholder="https://" data-creator-key="Website URL">
+            </div>
+
+            <div class="ac-group">
+                <div class="ac-label">LANGUAGES</div>
+                <input type="text" class="field-input" data-creator-key="Languages" placeholder="e.g., Filipino, English">
+            </div>
+
+            <div class="ac-group">
+                <div class="ac-label">CATEGORY</div>
+                <input type="text" class="field-input" data-creator-key="Category" placeholder="e.g., Gaming">
+            </div>
+
+            <div class="ac-group">
+                <div class="ac-label">NICHE</div>
+                <input type="text" class="field-input" data-creator-key="Niche" placeholder="e.g., ASMR, Yoga">
+            </div>
+
+            <div class="ac-group">
+                <div class="ac-label">POSTING SCHEDULE</div>
+                <input type="text" class="field-input" data-creator-key="Posting schedule" placeholder="e.g., 1 post per day">
+            </div>
+
+            <div class="ac-group">
+                <div class="ac-label">BOUNDARIES</div>
+                <input type="text" class="field-input" data-creator-key="Boundaries" placeholder="e.g., What you won’t do">
+            </div>
+
+            <div class="ac-group">
+                <div class="ac-label">STYLE NOTES</div>
+                <textarea class="field-input" data-creator-key="Style notes" placeholder="Any style notes..." maxlength="1000" style="min-height: 110px;"></textarea>
+                <div class="field-meta"><span></span><span>0/1000</span></div>
+            </div>
+
+        </div>
+    </div>
+
+    <div id="set-content-account-source">
+        <div class="rs-col-header"><h3 data-lang="set_account">ACCOUNT</h3></div>
+        <div class="ac-section" style="padding:20px; max-width: 700px; margin: 0 auto;">
+            <div class="ac-group"><label>Username</label><input type="text" placeholder="@username"></div>
+            <div class="ac-group"><label>Email</label><input type="email" placeholder="email@example.com"></div>
+            <div class="ac-group"><label>Phone Number</label><input type="text" placeholder="+1 234 567 8900"></div>
+            <div style="margin-top:20px; padding-top:20px; border-top:var(--border);">
+                 <h4 style="color:var(--text); font-size:0.9rem; margin-bottom:15px;">Linked Accounts</h4>
+                 <div class="set-link-row"><span><i class="fa-brands fa-google"></i> Google</span><span>Connect</span></div>
+                 <div class="set-link-row"><span><i class="fa-brands fa-twitter"></i> Twitter</span><span>Connect</span></div>
+            </div>
+            <div style="display:flex; justify-content:flex-end; margin-top:30px;">
+                <button class="btn-new-post" style="background:transparent; border:1px solid #ff4757; color:#ff4757; width:auto; padding: 10px 25px; font-size:0.85rem; border-radius:30px;">Delete Account</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="set-content-privacy-source">
+        <div class="rs-col-header"><h3 data-lang="set_privacy">PRIVACY & SAFETY</h3></div>
+        <div style="padding:20px;">
+            <div class="set-link-row toggle-row"><span>Show Activity Status</span><label class="switch"><input type="checkbox" checked><span class="slider round"></span></label></div>
+            <div class="set-link-row toggle-row"><span>Show Subscription Offers</span><label class="switch"><input type="checkbox" checked><span class="slider round"></span></label></div>
+            <div class="set-link-row"><span>Blocked Users</span><i class="fa-solid fa-chevron-right"></i></div>
+            <div class="set-link-row"><span>Restricted Users</span><i class="fa-solid fa-chevron-right"></i></div>
+        </div>
+    </div>
+
+    <div id="set-content-security-source">
+        <div class="rs-col-header"><h3 data-lang="set_security">SECURITY</h3></div>
+        <div style="padding:20px; max-width: 700px; margin: 0 auto;">
+            
+            <div class="set-section-header" style="margin-top:0;">CHANGE PASSWORD</div>
+            <div class="ac-group">
+                <label>Current Password</label>
+                <div class="input-with-icon">
+                    <input type="password" placeholder="••••••••">
+                    <i class="fa-regular fa-eye-slash" title="Toggle Visibility"></i>
+                </div>
+            </div>
+            <div class="ac-form-grid">
+                <div class="ac-group">
+                    <label>New Password</label>
+                    <div class="input-with-icon">
+                        <input type="password" placeholder="••••••••">
+                        <i class="fa-regular fa-eye-slash" title="Toggle Visibility"></i>
+                    </div>
+                </div>
+                <div class="ac-group">
+                    <label>Confirm Password</label>
+                    <div class="input-with-icon">
+                        <input type="password" placeholder="••••••••">
+                        <i class="fa-regular fa-eye-slash" title="Toggle Visibility"></i>
+                    </div>
+                </div>
+            </div>
+            <div style="display:flex; justify-content:flex-end;">
+                <button class="btn-submit-card" style="width:auto; min-width:auto; padding:10px 30px; font-size:0.9rem;">UPDATE PASSWORD</button>
+            </div>
+
+            <div style="height:1px; background:var(--border); margin:30px 0; opacity:0.3;"></div>
+
+            <div class="set-section-header">TWO-FACTOR AUTHENTICATION</div>
+            <div class="set-link-row toggle-row" style="background:rgba(255,255,255,0.03); border-radius:8px; padding:15px; border:var(--border);">
+                <div style="display:flex; flex-direction:column;">
+                    <span style="font-weight:700; font-size:0.95rem; color:var(--text);">Authenticator App</span>
+                    <small style="color:var(--muted); font-size:0.8rem; margin-top:4px;">Protect your account with an extra layer of security.</small>
+                </div>
+                <label class="switch"><input type="checkbox"><span class="slider round"></span></label>
+            </div>
+
+            <div class="set-section-header" style="margin-top:30px;">LOGIN ACTIVITY</div>
+            <div class="set-link-row" style="justify-content:space-between; border-bottom:none; background:transparent;">
+                <div style="display:flex; gap:15px; align-items:center;">
+                    <i class="fa-solid fa-mobile-screen-button" style="font-size:1.5rem; color:var(--muted);"></i>
+                    <div style="display:flex; flex-direction:column;">
+                        <span style="font-weight:700; color:var(--text);">Current Session</span>
+                        <small style="color:#46e85e;">Active now</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="set-content-notifications-source">
+        <div class="rs-col-header"><h3 data-lang="set_notif">NOTIFICATIONS</h3></div>
+        <div style="padding:20px;">
+            <div class="set-section-header">Push Notifications</div>
+            <div class="set-link-row toggle-row"><span>New Subscriber</span><label class="switch"><input type="checkbox" checked><span class="slider round"></span></label></div>
+            <div class="set-link-row toggle-row"><span>Tips</span><label class="switch"><input type="checkbox" checked><span class="slider round"></span></label></div>
+            <div class="set-link-row toggle-row"><span>Messages</span><label class="switch"><input type="checkbox" checked><span class="slider round"></span></label></div>
+            
+            <div class="set-section-header">Email Notifications</div>
+            <div class="set-link-row toggle-row"><span>New Login</span><label class="switch"><input type="checkbox" checked><span class="slider round"></span></label></div>
+        </div>
+    </div>
+
+    <div id="set-content-subscription-source">
+        <div class="rs-col-header"><h3 data-lang="set_sub">SUBSCRIPTION</h3></div>
+        <div style="padding:20px; max-width: 700px; margin: 0 auto;">
+            
+            <div class="set-section-header" style="margin-top:0;">PRICE</div>
+            <div class="ac-group">
+                <label>Price per month ($)</label>
+                <div class="input-with-icon">
+                    <input type="number" value="9.99">
+                    <i class="fa-solid fa-dollar-sign"></i>
+                </div>
+                <small style="color:var(--muted); font-size:0.75rem; margin-top:5px;">Minimum $4.99 USD. Cannot be free.</small>
+            </div>
+
+            <div class="set-section-header">PROMOTION</div>
+            <div style="background:rgba(255,255,255,0.03); border:var(--border); border-radius:8px; padding:20px; display:flex; flex-direction:column; gap:15px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <span style="font-weight:700; color:var(--text); font-size:0.95rem;">Limit Offer</span>
+                        <div style="font-size:0.8rem; color:var(--muted);">Discount for new subscribers</div>
+                    </div>
+                    <label class="switch"><input type="checkbox"><span class="slider round"></span></label>
+                </div>
+                <div style="display:flex; justify-content:flex-end;">
+                    <button class="btn-submit-card" style="width:auto; min-width:auto; padding:8px 20px; font-size:0.85rem;"><i class="fa-solid fa-bullhorn"></i> CREATE CAMPAIGN</button>
+                </div>
+            </div>
+
+            <div class="set-section-header">BUNDLES</div>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+                <div class="set-link-row toggle-row" style="background:rgba(255,255,255,0.03); border-radius:8px; padding:15px; border:var(--border);">
+                    <div style="display:flex; flex-direction:column;">
+                        <span style="font-weight:700; font-size:0.95rem; color:var(--text);">3 Months (15% OFF)</span>
+                    </div>
+                    <label class="switch"><input type="checkbox"><span class="slider round"></span></label>
+                </div>
+                <div class="set-link-row toggle-row" style="background:rgba(255,255,255,0.03); border-radius:8px; padding:15px; border:var(--border);">
+                    <div style="display:flex; flex-direction:column;">
+                        <span style="font-weight:700; font-size:0.95rem; color:var(--text);">6 Months (25% OFF)</span>
+                    </div>
+                    <label class="switch"><input type="checkbox"><span class="slider round"></span></label>
+                </div>
+                <div class="set-link-row toggle-row" style="background:rgba(255,255,255,0.03); border-radius:8px; padding:15px; border:var(--border);">
+                    <div style="display:flex; flex-direction:column;">
+                        <span style="font-weight:700; font-size:0.95rem; color:var(--text);">12 Months (35% OFF)</span>
+                    </div>
+                    <label class="switch"><input type="checkbox"><span class="slider round"></span></label>
+                </div>
+            </div>
+            
+            <div style="display:flex; justify-content:flex-end; margin-top:20px;">
+                <button class="btn-submit-card" style="width:auto; min-width:auto; padding:10px 30px; font-size:0.9rem;">SAVE CHANGES</button>
+            </div>
+
+        </div>
+    </div>
+
+    <div id="set-content-cards-source">
+        <div class="rs-col-header"><h3 data-lang="set_cards">PAYMENT METHODS</h3></div>
+        <div style="padding:20px; max-width: 700px; margin: 0 auto;">
+            
+            <div style="margin-bottom:20px; display:flex; flex-wrap:wrap; gap:10px; justify-content:center;">
+                <span class="crypto-pill"><i class="fa-brands fa-cc-visa" style="color:#fff;"></i> Cards</span>
+                <span class="crypto-pill"><i class="fa-brands fa-bitcoin" style="color:#F3BA2F;"></i> BTC</span>
+                <span class="crypto-pill"><i class="fa-brands fa-ethereum" style="color:#627EEA;"></i> ETH</span>
+                <span class="crypto-pill"><i class="fa-solid fa-circle-dollar-to-slot" style="color:#26A17B;"></i> USDT</span>
+            </div>
+
+            <div style="text-align: center; color: var(--muted); padding: 40px; background: rgba(255,255,255,0.02); border-radius: 8px;">
+                <i class="fa-regular fa-credit-card" style="font-size: 2rem; margin-bottom: 10px; opacity: 0.5;"></i>
+                <p>No payment methods added yet.</p>
+            </div>
+
+            <p style="text-align:center; color:var(--muted); font-size:0.8rem; margin-top:30px;">
+                <i class="fa-solid fa-lock"></i> Global payments are secure and encrypted.
+            </p>
+
+            <div style="display:flex; justify-content:flex-end; margin-top:20px;">
+                <button class="btn-add-payment-card" style="width:auto; min-width:auto; padding:8px 20px; font-size:0.85rem; background:var(--primary-cyan); color:#000; border:none; border-radius:20px; font-weight:700; cursor:pointer;">
+                    <i class="fa-solid fa-plus"></i> ADD NEW
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="set-content-bank-source">
+        <div class="rs-col-header"><h3 data-lang="set_bank">BANK DETAILS & EARNINGS</h3></div>
+        <div style="padding:20px; max-width: 700px; margin: 0 auto;">
+            
+            <div style="background:rgba(255, 71, 87, 0.1); color:#ff4757; padding:15px; border-radius:8px; border:1px solid rgba(255, 71, 87, 0.3); margin-bottom:25px; display:flex; align-items:center; gap:10px; font-size:0.9rem;">
+                 <i class="fa-solid fa-circle-exclamation"></i>
+                 <span>Action Required: Please verify your identity to receive international payouts.</span>
+            </div>
+
+            <div class="ac-form-grid">
+                <div class="ac-group">
+                    <label>Legal First Name</label>
+                    <input type="text" placeholder="As shown in Passport/ID">
+                </div>
+                <div class="ac-group">
+                    <label>Legal Last Name</label>
+                    <input type="text" placeholder="As shown in Passport/ID">
+                </div>
+            </div>
+            
+            <div class="ac-group">
+                <label>Payout Currency</label>
+                <div style="position:relative;">
+                    <select style="width:100%; appearance:none; cursor:pointer;">
+                        <option>USD - US Dollar</option>
+                        <option>EUR - Euro (CET)</option>
+                        <option>GBP - British Pound</option>
+                        <option>JPY - Japanese Yen</option>
+                        <option>PHP - Philippine Peso</option>
+                    </select>
+                    <i class="fa-solid fa-chevron-down" style="position:absolute; right:15px; top:50%; transform:translateY(-50%); color:var(--muted); pointer-events:none;"></i>
+                </div>
+            </div>
+
+            <div class="ac-group">
+                <label>Country of Residence</label>
+                <div style="position:relative;">
+                    <select style="width:100%; appearance:none; cursor:pointer;">
+                        <option value="" disabled selected>Select your country</option>
+                        <option>United States</option>
+                        <option>United Kingdom</option>
+                        <option>Germany</option>
+                        <option>France</option>
+                        <option>Spain</option>
+                        <option>Canada</option>
+                        <option>Australia</option>
+                        <option>Japan</option>
+                        <option>Philippines</option>
+                        <option>Others</option>
+                    </select>
+                    <i class="fa-solid fa-chevron-down" style="position:absolute; right:15px; top:50%; transform:translateY(-50%); color:var(--muted); pointer-events:none;"></i>
+                </div>
+            </div>
+
+            <div class="ac-group">
+                <label>Government ID Type</label>
+                 <div style="position:relative;">
+                    <select style="width:100%; appearance:none; cursor:pointer;">
+                        <option>Passport (Recommended)</option>
+                        <option>National ID / SSN</option>
+                        <option>Driver's License</option>
+                    </select>
+                    <i class="fa-solid fa-chevron-down" style="position:absolute; right:15px; top:50%; transform:translateY(-50%); color:var(--muted); pointer-events:none;"></i>
+                </div>
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+                <button class="btn-submit-card" style="width:auto; min-width:auto; padding:10px 30px; font-size:0.9rem;">VERIFY IDENTITY</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="set-content-display-source">
+        <div class="rs-col-header"><h3 data-lang="set_display">DISPLAY</h3></div>
+        <div style="padding:20px;">
+             <div class="set-link-row toggle-row"><span data-lang="lbl_dark">Dark Mode</span><label class="switch"><input type="checkbox" id="setting-theme-toggle" checked><span class="slider round"></span></label></div>
+             
+             <div class="ac-group" style="margin-top:20px;">
+                <label data-lang="lbl_lang">Language</label>
+                <div style="position:relative;">
+                    <select id="settings-lang-select" style="width:100%; appearance:none; cursor:pointer;">
+                        <option value="en">English</option>
+                        <option value="ph">Filipino (Tagalog)</option>
+                        <option value="es">Spanish (Español)</option>
+                        <option value="fr">French (Français)</option>
+                        <option value="de">German (Deutsch)</option>
+                        <option value="it">Italian (Italiano)</option>
+                        <option value="pt">Portuguese (Português)</option>
+                        <option value="ja">Japanese (日本語)</option>
+                        <option value="ko">Korean (한국어)</option>
+                        <option value="zh-CN">Chinese Simplified (简体中文)</option>
+                        <option value="zh-TW">Chinese Traditional (繁體中文)</option>
+                        <option value="ru">Russian (Русский)</option>
+                        <option value="ar">Arabic (العربية)</option>
+                        <option value="hi">Hindi (हिन्दी)</option>
+                        <option value="th">Thai (ไทย)</option>
+                        <option value="vi">Vietnamese (Tiếng Việt)</option>
+                        <option value="id">Indonesian (Bahasa Indonesia)</option>
+                    </select>
+                    <i class="fa-solid fa-chevron-down" style="position:absolute; right:15px; top:50%; transform:translateY(-50%); color:var(--muted); pointer-events:none;"></i>
+                </div>
+             </div>
+        </div>
+    </div>
+
+    <div id="set-content-help-source">
+        <div class="rs-col-header"><h3 data-lang="set_help">HELP & SUPPORT</h3></div>
+        <div style="padding:20px;">
+             <div class="set-link-row"><span>Help Center / FAQ</span><i class="fa-solid fa-chevron-right"></i></div>
+             <div class="set-link-row"><span>Submit a Ticket</span><i class="fa-solid fa-chevron-right"></i></div>
+             <div class="set-link-row"><span>Status</span><span style="color:#46e85e;">Operational</span></div>
+        </div>
+    </div>
+
+</div>
+  </template>
+
+
+  <script src="creators.js"></script>
   
   <script>
   // Background Animation
