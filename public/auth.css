@@ -212,13 +212,6 @@ form { display: flex; flex-direction: column; gap: 18px; width: 100%; }
 .btn-oauth { width: 100%; padding: 12px; border-radius: 50px; border: 1px solid rgba(255,255,255,0.15); background: #fff; color: #000; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer; }
 .btn-oauth img { width: 20px; }
 
-
-/* Google Sign-In mount (renders the official Google button) */
-.oauth-wrap { width: 100%; }
-.google-btn-mount { width: 100%; display: none; }
-.google-btn-mount > div { width: 100% !important; display: flex !important; justify-content: center; }
-.google-btn-mount iframe { width: 100% !important; }
-
 .switch-area { margin-top: 25px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.05); text-align: center; }
 .switch-area p { display: inline; color: #94a3b8; margin-right: 8px; font-size: 0.95rem; }
 .btn-switch { background: none; border: none; padding: 0; color: #64E9EE; font-weight: 800; cursor: pointer; }

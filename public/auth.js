@@ -696,6 +696,23 @@
   });
 
   whenReady(() => {
+    const googleBtn = $("#btnGoogleLogin");
+    if (!googleBtn || googleBtn.dataset.tmBound === "1") return;
+    googleBtn.dataset.tmBound = "1";
+    googleBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      try { tmShowLoader('Signing in…','Opening Google'); } catch {}
+      try {
+        const r = await callAPI("/api/auth/oauth/mock", { provider: "google" });
+        saveLocalUser(r?.user || { email: "google@demo.local", name: "Google User" });
+        const extra = new URLSearchParams();
+        if (r?.demo || r?.status === 0) extra.set("demo", "1");
+        finishLogin(extra.toString());
+      } finally { try { tmHideLoader(); } catch {} }
+    });
+  });
+
+  whenReady(() => {
   const btnOpenForgot   = document.getElementById('btnOpenForgot');
   const dlgForgot       = document.getElementById('dlgForgot');
   const step1           = document.getElementById('forgotStep1');
@@ -967,120 +984,60 @@
 });
 
 
-  // ---------------- Google "Continue with Google" (GIS) ----------------
-  // Notes:
-  // - You MUST set GOOGLE_CLIENT_ID in Railway env vars (same value as the Web client ID).
-  // - In Google Cloud Console OAuth client, add Authorized JavaScript origins:
-  //   http://localhost:5500, http://127.0.0.1:5500, https://itruematch.com
-  // - On OAuth consent screen: if App is in "Testing", only Test Users can sign in.
-  // --------------------------------------------------------------------
+  // --- Terms / Privacy modal (in-page) ---
   whenReady(() => {
-    const mount = document.getElementById("googleBtnMount");
-    const fallbackBtn =
-      document.getElementById("btnGoogleLoginFallback") ||
-      document.getElementById("btnGoogleLogin"); // backward compat if you still have the old id
+    const dlg = document.getElementById('dlgLegal');
+    const titleEl = document.getElementById('legalTitle');
+    const contentEl = document.getElementById('legalContent');
+    const tplTerms = document.getElementById('tplLegalTerms');
+    const tplPriv = document.getElementById('tplLegalPrivacy');
+    const btnCloseX = document.getElementById('btnCloseLegalX');
+    const btnCloseBottom = document.getElementById('btnCloseLegalBottom');
 
-    // If the UI doesn't have Google elements, do nothing.
-    if (!mount && !fallbackBtn) return;
+    if (!dlg || !titleEl || !contentEl || (!tplTerms && !tplPriv)) return;
+    if (dlg.dataset.tmBound === '1') return;
+    dlg.dataset.tmBound = '1';
 
-    const clientId = (window.GOOGLE_CLIENT_ID || "").toString().trim();
+    const setLegal = (type) => {
+      const kind = (type || '').toLowerCase() === 'privacy' ? 'privacy' : 'terms';
+      titleEl.textContent = kind === 'privacy' ? 'Privacy Policy' : 'Terms of Service';
 
-    const showFallback = () => {
-      if (fallbackBtn) fallbackBtn.style.display = "";
-      if (mount) mount.style.display = "none";
-    };
-
-    const showMount = () => {
-      if (mount) mount.style.display = "";
-      if (fallbackBtn) fallbackBtn.style.display = "none";
-    };
-
-    const handleGoogleCredential = async (idToken) => {
-      if (!idToken) return;
-      try { tmShowLoader("Signing in…", "Connecting your Google account"); } catch {}
-      try {
-        const r = await callAPI("/api/auth/oauth/google", { idToken }, { timeoutMs: 20000 });
-
-        if (!r || !r.ok) {
-          const msg =
-            r?.message === "missing_token_or_client_id"
-              ? "Google sign-in is not fully configured. Make sure GOOGLE_CLIENT_ID is set in Railway Variables and redeploy."
-              : (r?.message || r?.error || "Google sign-in failed.");
-          alert(msg);
-          return;
-        }
-
-        const email = (r?.user?.email || "").toString().trim().toLowerCase();
-        const name  = (r?.user?.name  || "").toString().trim();
-        if (email) saveLocalUser(r.user || { email, name: name || (email.split("@")[0] || "User") });
-
-        // If server already sent OTP on Google sign-in, don't send again here.
-        if (r.needVerification) {
-          await ensureVerifiedBeforeContinue(email, { ok: true, alreadySent: true });
-          return;
-        }
-
-        await finishLogin(email);
-      } catch (err) {
-        console.error("[auth] google oauth error:", err);
-        alert("Something went wrong while signing in with Google. Please try again.");
-      } finally {
-        try { tmHideLoader(); } catch {}
+      contentEl.innerHTML = '';
+      const tpl = kind === 'privacy' ? tplPriv : tplTerms;
+      if (tpl && tpl.content) {
+        contentEl.appendChild(tpl.content.cloneNode(true));
+      } else {
+        contentEl.textContent = kind === 'privacy' ? 'Privacy content unavailable.' : 'Terms content unavailable.';
       }
     };
 
-    // If GIS isn't loaded or clientId not set, keep fallback button (with a helpful message)
-    const gisReady = !!(window.google && google.accounts && google.accounts.id);
+    const openLegal = (type) => {
+      setLegal(type);
+      try { dlg.showModal(); } catch { dlg.setAttribute('open', ''); }
+    };
 
-    if (!clientId || !gisReady) {
-      showFallback();
-      if (fallbackBtn && fallbackBtn.dataset.tmBound !== "1") {
-        fallbackBtn.dataset.tmBound = "1";
-        fallbackBtn.addEventListener("click", (e) => {
-          e.preventDefault();
-          if (!clientId) {
-            alert("Missing GOOGLE_CLIENT_ID. Add it in auth.html (window.GOOGLE_CLIENT_ID) and also set it in Railway Variables, then redeploy.");
-            return;
-          }
-          alert("Google Sign-In library did not load. Check ad-blockers / CSP and refresh the page.");
-        });
-      }
-      return;
-    }
+    const closeLegal = () => safeDialogClose(dlg);
 
-    // Render the official Google button
-    try {
-      showMount();
-      google.accounts.id.initialize({
-        client_id: clientId,
-        callback: (resp) => handleGoogleCredential(resp && resp.credential),
-        auto_select: false,
-        cancel_on_tap_outside: true
-      });
+    // Open by clicking links with data-legal="terms|privacy"
+    document.body.addEventListener('click', (e) => {
+      const a = e.target && e.target.closest ? e.target.closest('a[data-legal]') : null;
+      if (!a) return;
+      e.preventDefault();
+      const type = a.getAttribute('data-legal') || 'terms';
+      openLegal(type);
+    });
 
-      // Clear old content and render
-      if (mount) mount.innerHTML = "";
-      google.accounts.id.renderButton(mount, {
-        theme: "outline",
-        size: "large",
-        shape: "pill",
-        width: mount ? Math.min(420, mount.clientWidth || 420) : 420,
-        text: "continue_with"
-      });
+    // Close buttons + backdrop click
+    if (btnCloseX) btnCloseX.addEventListener('click', () => closeLegal());
+    if (btnCloseBottom) btnCloseBottom.addEventListener('click', () => closeLegal());
 
-      // Backup: if fallback exists, let it trigger one-tap prompt
-      if (fallbackBtn && fallbackBtn.dataset.tmBound !== "1") {
-        fallbackBtn.dataset.tmBound = "1";
-        fallbackBtn.addEventListener("click", (e) => {
-          e.preventDefault();
-          try { google.accounts.id.prompt(); } catch {}
-        });
-      }
-    } catch (err) {
-      console.warn("[auth] google renderButton failed:", err);
-      showFallback();
-    }
+    dlg.addEventListener('click', (e) => {
+      if (e.target === dlg) closeLegal();
+    });
+
+    dlg.addEventListener('cancel', (e) => {
+      try { e.preventDefault(); } catch {}
+      closeLegal();
+    });
   });
-
-
 })();
