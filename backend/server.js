@@ -7733,18 +7733,30 @@ app.post('/api/creator/posts/comment/react', authMiddleware, async (req, res) =>
 
     const myKey = _reactionDocIdForUser(meEmail);
     const postRef = _creatorPostsCol().doc(pid);
-    const commentRef = postRef.collection('comments').doc(cid);
+    const commentsCol = postRef.collection('comments');
     const nowMs = Date.now();
 
     await firestore.runTransaction(async (t) => {
-      const cSnap = await t.get(commentRef);
+      // Primary path: commentId is the Firestore document id.
+      let commentDocRef = commentsCol.doc(cid);
+      let cSnap = await t.get(commentDocRef);
+
+      // Legacy fallback:
+      // Some older comments were saved with an auto-generated Firestore doc id, but a separate `id` field
+      // that the client uses. In that case, resolve by querying `where('id','==', cid)`.
       if (!cSnap.exists) {
-        const err = new Error('Comment not found');
-        err.status = 404;
-        throw err;
+        const qs = await t.get(commentsCol.where('id', '==', cid).limit(1));
+        if (!qs.empty) {
+          commentDocRef = qs.docs[0].ref;
+          cSnap = qs.docs[0];
+        } else {
+          const err = new Error('Comment not found');
+          err.status = 404;
+          throw err;
+        }
       }
 
-      const rRef = commentRef.collection('reactions').doc(myKey);
+      const rRef = commentDocRef.collection('reactions').doc(myKey);
       const rSnap = await t.get(rRef);
       const oldReaction = rSnap.exists ? safeStr((rSnap.data() || {}).reaction || '').trim().toLowerCase() : '';
 
@@ -7771,19 +7783,22 @@ app.post('/api/creator/posts/comment/react', authMiddleware, async (req, res) =>
       }
 
       const total = Object.values(counts).reduce((a, b) => a + Number(b || 0), 0);
-      t.set(commentRef, { reactionCounts: counts, reactionCount: total, updatedAtMs: nowMs }, { merge: true });
+      t.set(commentDocRef, { reactionCounts: counts, reactionCount: total, updatedAtMs: nowMs }, { merge: true });
     });
 
     return res.json({ ok: true, postId: pid, commentId: cid, myReaction: cleanReaction || null });
   } catch (e) {
-    const status = e && e.status ? Number(e.status) : 500;
+    const msg = String(e && e.message ? e.message : '');
+    const status = (e && e.status) ? Number(e.status) : (msg.includes('Comment not found') ? 404 : 500);
+
+    if (status === 404) {
+      return res.status(404).json({ ok: false, message: 'Comment not found' });
+    }
+
     console.error('POST /api/creator/posts/comment/react error', e);
-    return res.status(status).json({ ok: false, message: 'Failed to react to comment' });
+    return res.status(500).json({ ok: false, message: 'Failed to react to comment' });
   }
 });
-
-
-
 // Pin/unpin a creator post (creator only)
 app.post('/api/creator/posts/pin', authMiddleware, async (req, res) => {
   try {
