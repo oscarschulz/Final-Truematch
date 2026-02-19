@@ -1072,7 +1072,7 @@ export function initHome(TopToast) {
                     text: rawText,
                     timestamp: Date.now(),
                     authorEmail: me?.email || null,
-                    authorName: me?.name || 'You',
+                    authorName: (me?.name || me?.displayName || me?.creatorName || me?.username || (me?.email ? String(me.email).split('@')[0] : '') || 'Unknown'),
                     authorAvatarUrl: me?.avatarUrl || null,
                 };
 
@@ -1984,12 +1984,14 @@ function generateCommentHTML(textOrObj, timestampMaybe, opts = {}) {
         (!authorEmail && (authorNameRaw === 'You' || authorNameRaw === 'Me'));
 
     // Name: keep only the display name (strip " | Bio: ..." etc if present)
-    const rawName = (isMe ? safeStr(me.name || '').trim() : (authorNameRaw || 'Unknown'));
+    const emailPrefix = authorEmail ? safeStr(String(authorEmail).split('@')[0]).trim() : '';
+    const myName = safeStr(me.name || me.displayName || me.creatorName || me.username || '').trim();
+    const rawName = (isMe ? (myName || emailPrefix || 'Unknown') : (authorNameRaw || emailPrefix || 'Unknown'));
     const name = (rawName.split('|')[0] || rawName).trim() || 'Unknown';
 
     // Avatar
     const avatar =
-        (isMe ? safeStr(me.avatarUrl || '').trim()
+        (isMe ? safeStr(me.avatarUrl || me.creatorAvatarUrl || '').trim()
               : safeStr(c.authorAvatarUrl || c.creatorAvatarUrl || c.avatarUrl || '').trim())
         || 'assets/images/truematch-mark.png';
 
