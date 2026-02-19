@@ -16,10 +16,6 @@ const crypto = require('crypto');
 const { AsyncLocalStorage } = require('async_hooks');
 const IS_PROD = process.env.NODE_ENV === 'production';
 
-// Google OAuth token verifier (lazy)
-let OAuth2Client = null;
-try { OAuth2Client = require('google-auth-library').OAuth2Client; } catch (e) { OAuth2Client = null; }
-
 
 // Google Sheets (Opt-in) (lazy)
 let google = null;
@@ -9269,82 +9265,6 @@ const actionType = (action === 'super' || action === 'superlike') ? 'superlike' 
     res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
-// ---------------- Google Sign-In (GIS ID token) ----------------
-app.post('/api/auth/oauth/google', async (req, res) => {
-  try {
-    const idToken = (req.body && req.body.idToken) || '';
-    const clientId = process.env.GOOGLE_CLIENT_ID || '';
-    if (!idToken || !clientId) {
-      return res.status(400).json({ ok:false, message: 'missing_token_or_client_id' });
-    }
-    if (!OAuth2Client) {
-      return res.status(500).json({ ok:false, message: 'google_library_missing' });
-    }
-    const oclient = new OAuth2Client(clientId);
-    const ticket = await oclient.verifyIdToken({ idToken, audience: clientId });
-    const payload = ticket.getPayload() || {};
-    const email = String(payload.email || '').toLowerCase().trim();
-    const name  = payload.name || email.split('@')[0] || 'Google User';
-    const emailVerifiedClaim = !!payload.email_verified;
-
-    if (!email) {
-      return res.status(400).json({ ok:false, message:'no_email_in_token' });
-    }
-
-    // Find or create user
-    const emailNorm = email;
-    let userDoc = null;
-    if (hasFirebase) {
-      userDoc = await findUserByEmail(emailNorm);
-      if (!userDoc) {
-        userDoc = await createUserDoc({ email: emailNorm, name, emailVerified: false, provider: 'google' });
-      }
-    }
-
-    // Build in-memory user
-    DB.user = DB.user || {};
-    DB.user.email = emailNorm;
-    DB.user.name = name;
-    DB.user.emailVerified = Boolean((userDoc && userDoc.emailVerified) || (DB.users[emailNorm] && DB.users[emailNorm].emailVerified) || false);
-
-    // Cache user by email and set session cookie
-    DB.users[emailNorm] = { ...DB.user };
-    setSession(res, emailNorm, parseRememberFlag(req));
-
-    // Decide if OTP is needed (one-time verification)
-    let needVerification = !DB.user.emailVerified;
-    if (!needVerification && emailVerifiedClaim && !DB.user.emailVerified) {
-      // If Google's email_verified claim is true, you could trust it; but we stick to your own OTP policy.
-      needVerification = false;
-    }
-
-    if (needVerification) {
-      // Auto-send OTP code
-      const code = String(Math.floor(100000 + Math.random() * 900000));
-      const bcrypt = require('bcryptjs');
-      const codeHash = await bcrypt.hash(code, 10);
-      const now = Date.now();
-      const expiresAt = now + CODE_TTL_MS;
-
-      DB.emailVerify[emailNorm] = { codeHash, expiresAt, lastSentAt: now, attempts: 0 };
-
-      // mark user as not verified persistently
-      if (hasFirebase && userDoc) {
-        try { await updateUserByEmail(emailNorm, { emailVerified: false }); } catch {}
-      }
-
-      await sendVerificationEmail(emailNorm, code);
-
-      return res.json({ ok:true, user: publicUser(userDoc || DB.user), needVerification: true });
-    }
-
-    return res.json({ ok:true, user: publicUser(userDoc || DB.user), needVerification: false });
-  } catch (err) {
-    console.error('oauth/google error:', err && (err.message || err));
-    return res.status(500).json({ ok:false, message:'server_error' });
-  }
-});
-
 app.post('/api/auth/send-verification-code', async (req, res) => {
   try{
     const email = String(req.body?.email || getSessionEmail(req) || '').toLowerCase().trim();
