@@ -6,8 +6,8 @@ import {
     sendMessageTo,
     getMySubscriptions
 } from './data.js';
-import { apiGet, apiPost } from '../../../tm-api.js';
-import { getCurrentUserEmail, readJSON, writeJSON } from '../../../tm-session.js';
+import { apiGet, apiPost } from './tm-api.js';
+import { getCurrentUserEmail, readJSON, writeJSON } from './tm-session.js';
 
 
 // =============================================================
