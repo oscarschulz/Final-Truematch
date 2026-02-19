@@ -161,7 +161,7 @@ function ensureConciergeTab() {
   const panels = document.getElementById('panels') || document.querySelector('main.main-feed') || document.querySelector('.main-feed');
   if (!tabbar || !panels) return;
 
-  // --- Nav button (insert between Premium and Creators) ---
+  // --- Nav button (place Concierge between Creators and Premium when Premium exists) ---
   const existingBtn = tabbar.querySelector('.nav-btn[data-panel="concierge"]');
   if (!existingBtn) {
     const btn = document.createElement('button');
@@ -169,8 +169,13 @@ function ensureConciergeTab() {
     btn.setAttribute('data-panel', 'concierge');
     btn.innerHTML = '<i class="fa-solid fa-user-tie"></i><span>Concierge</span>';
 
+    const premiumBtn = tabbar.querySelector('.nav-btn[data-panel="premium"]');
     const creatorsBtn = tabbar.querySelector('.nav-btn[data-panel="creators"]');
-    if (creatorsBtn) {
+
+    // Current nav order has Creators before Premium. Insert Concierge before Premium so it sits between them.
+    if (premiumBtn) {
+      tabbar.insertBefore(btn, premiumBtn);
+    } else if (creatorsBtn) {
       tabbar.insertBefore(btn, creatorsBtn);
     } else {
       tabbar.appendChild(btn);
@@ -2621,8 +2626,25 @@ async function handlePremiumApplicationSubmit() {
   }
 
   const status = normalizeStatus(state.me.premiumStatus);
+
+  // If they’re already approved, don’t allow re-submitting.
+  if (status === 'approved') {
+    showToast('You are already a Premium Society member.', 'success');
+    if (DOM.dlgPremiumApply) DOM.dlgPremiumApply.close();
+    return;
+  }
+
   if (status === 'pending') {
     showToast('Premium Society application is already pending.', 'error');
+    return;
+  }
+
+  // Intentional product rule: only Elite (Tier 2) and Concierge (Tier 3) can apply from the dashboard.
+  const planKey = String(state.me.planKey || '').toLowerCase();
+  const isEligibleByUiRule = (planKey === 'tier2' || planKey === 'tier3');
+  if (!isEligibleByUiRule) {
+    showToast('Premium Society applications are available for Elite (Tier 2) and Concierge (Tier 3) members only.', 'error');
+    window.location.href = './tier.html?upgrade=1';
     return;
   }
 
@@ -2667,25 +2689,33 @@ async function handlePremiumApplicationSubmit() {
 
     if (!res || !res.ok) {
       const msg = (res && (res.message || res.error)) ? (res.message || res.error) : 'Failed to submit application.';
-      // If user is not eligible (not Elite/Concierge), guide them to upgrade.
-      if (res && (res.code === 'not_eligible' || /require/i.test(String(msg)))) {
-        showToast(msg, 'error');
-        // Optional convenience: open upgrade page
+      const msgStr = String(msg || '');
+
+      // Keep UX consistent with the intentional gating rule.
+      if (res && res.code === 'not_eligible') {
+        showToast('Premium Society applications are available for Elite (Tier 2) and Concierge (Tier 3) members only.', 'error');
         window.location.href = './tier.html?upgrade=1';
         return;
       }
-      throw new Error(msg);
+
+      // Common server-side eligibility failure (inactive plan, etc.)
+      if (/requires?\s+an\s+ACTIVE/i.test(msgStr) || (/plan/i.test(msgStr) && /active/i.test(msgStr))) {
+        showToast('Your plan must be active to submit a Premium Society application. Please upgrade/renew and try again.', 'error');
+        window.location.href = './tier.html?upgrade=1';
+        return;
+      }
+
+      throw new Error(msgStr || 'Failed to submit application.');
     }
 
     showToast('Premium Society application submitted. Status: pending.', 'success');
 
     // Update local state immediately so UI reflects pending and watcher can run.
     state.me.premiumStatus = 'pending';
+    state.me.premiumApplication = { ...payload, submittedAt: Date.now() };
+
     startPremiumApprovalWatcher();
     if (DOM.dlgPremiumApply) DOM.dlgPremiumApply.close();
-
-    state.me.premiumStatus = 'pending';
-    state.me.premiumApplication = { ...payload, submittedAt: Date.now() };
 
     renderCreatorPremiumEntryCards();
   } catch (err) {
