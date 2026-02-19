@@ -40,8 +40,17 @@ function tmGetCreatorIdentity() {
     const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const getPacked = (label) => {
         if (!contentStyle) return '';
-        const re = new RegExp(`(?:^|\n)\s*${escapeRe(label)}\s*:\s*(.+?)(?:\n|$)`, 'i');
-        const m = contentStyle.match(re);
+        // Support both pipe-packed ("A: 1 | B: 2") and newline-packed ("A: 1\nB: 2") formats.
+        // Also: we must escape backslashes properly in the RegExp string (use \\s not \s).
+        const normalized = String(contentStyle || '')
+            .replace(/\r\n/g, '\n')
+            .split('|')
+            .map((s) => String(s || '').trim())
+            .filter(Boolean)
+            .join('\n');
+
+        const re = new RegExp(`(?:^|\\n)\\s*${escapeRe(label)}\\s*:\\s*(.+?)(?:\\n|$)`, 'i');
+        const m = normalized.match(re);
         return m ? safeStr(m[1]) : '';
     };
 
