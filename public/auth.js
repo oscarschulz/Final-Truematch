@@ -696,23 +696,6 @@
   });
 
   whenReady(() => {
-    const googleBtn = $("#btnGoogleLogin");
-    if (!googleBtn || googleBtn.dataset.tmBound === "1") return;
-    googleBtn.dataset.tmBound = "1";
-    googleBtn.addEventListener("click", async (e) => {
-      e.preventDefault();
-      try { tmShowLoader('Signing in…','Opening Google'); } catch {}
-      try {
-        const r = await callAPI("/api/auth/oauth/mock", { provider: "google" });
-        saveLocalUser(r?.user || { email: "google@demo.local", name: "Google User" });
-        const extra = new URLSearchParams();
-        if (r?.demo || r?.status === 0) extra.set("demo", "1");
-        finishLogin(extra.toString());
-      } finally { try { tmHideLoader(); } catch {} }
-    });
-  });
-
-  whenReady(() => {
   const btnOpenForgot   = document.getElementById('btnOpenForgot');
   const dlgForgot       = document.getElementById('dlgForgot');
   const step1           = document.getElementById('forgotStep1');
