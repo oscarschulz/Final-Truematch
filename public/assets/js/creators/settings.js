@@ -1,5 +1,5 @@
 import { DOM } from './dom.js';
-import { apiMe, apiPost } from '/tm-api.js';
+import { apiMe, apiPost } from './tm-api.js';
 
 let __meCache = null;
 

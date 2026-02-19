@@ -71,10 +71,13 @@ function setupProfileLiveSync() {
     root.dataset.liveSyncBound = '1';
 
     // When Settings (or any other view) updates /api/me, we refresh profile UI instantly.
-    document.addEventListener('tm:me-updated', () => {
+    const onMeUpdated = () => {
         tmHydrateProfileHeader().catch(() => {});
         tmHydrateProfileAvatar().catch(() => {});
-    });
+    };
+    // tm-session.js dispatches this on window, so listen on window (keep document too for compatibility).
+    window.addEventListener('tm:me-updated', onMeUpdated);
+    document.addEventListener('tm:me-updated', onMeUpdated);
 }
 
 function tmGuessAvatarFromMe(me) {
@@ -375,10 +378,21 @@ function setupProfileTabs() {
     const root = document.getElementById('view-my-profile');
     if (root && root.dataset.tabsBound === '1') return;
     if (root) root.dataset.tabsBound = '1';
-    const btnPosts = document.getElementById('profile-tab-posts');
-    const btnMedia = document.getElementById('profile-tab-media');
-    const viewPosts = document.getElementById('profile-content-posts');
-    const viewMedia = document.getElementById('profile-content-media');
+    const pick = (...candidates) => {
+        for (const c of candidates) {
+            const el = (c && (c[0] === '#' || c[0] === '.' || c[0] === '['))
+                ? document.querySelector(c)
+                : document.getElementById(c);
+            if (el) return el;
+        }
+        return null;
+    };
+
+    // Support both old and new ID conventions (prevents “dead click” when IDs differ).
+    const btnPosts = pick('profile-tab-posts', 'tab-profile-posts', '[data-profile-tab="posts"]', '[data-tab="posts"]');
+    const btnMedia = pick('profile-tab-media', 'tab-profile-media', '[data-profile-tab="media"]', '[data-tab="media"]');
+    const viewPosts = pick('profile-content-posts', 'profile-panel-posts', '[data-profile-panel="posts"]', '[data-panel="posts"]');
+    const viewMedia = pick('profile-content-media', 'profile-panel-media', '[data-profile-panel="media"]', '[data-panel="media"]');
 
     if (!btnPosts || !btnMedia || !viewPosts || !viewMedia) return;
 
