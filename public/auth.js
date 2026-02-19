@@ -211,7 +211,7 @@
   async function callAPI(path, payload = {}) {
     try {
       const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), 1500);
+      const id = setTimeout(() => controller.abort(), 15000);
       const res = await fetch(API_BASE + path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -225,15 +225,18 @@
       let data = null;
       try { data = await res.json(); } catch {}
       return { ok, status, ...(data || {}) };
-    } catch {
-      return { ok: true, demo: true, status: 0 };
+    } catch (err) {
+      const msg = (err && err.name === 'AbortError')
+        ? 'Request timed out. Please try again.'
+        : (err && err.message ? err.message : 'Network error. Please try again.');
+      return { ok: false, status: 0, message: msg };
     }
   }
 
   async function apiGet(path) {
     try {
       const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), 1000);
+      const id = setTimeout(() => controller.abort(), 15000);
       const res = await fetch(API_BASE + path, { 
         credentials: "include",
         signal: controller.signal 
@@ -426,7 +429,7 @@
     saveLocalUser({ email, name: d.name, plan: d.plan });
     try { await callAPI("/api/auth/login", { email, password: pass, remember: true }); } catch {}
     const extra = new URLSearchParams({ demo: "1", prePlan: d.plan });
-    finishLogin(extra.toString());
+    await finishLogin((r && r.user && r.user.email) ? r.user.email : "google@demo.local");
     return true;
   }
 
@@ -671,7 +674,7 @@ if (await tryDemoLogin(email, password)) {
         }
 
         const res = await callAPI("/api/auth/login", { email, password, remember });
-        const offline = !!(res && (res.demo || res.status === 0));
+        const offline = !!(res && res.demo);
         const ok = !!(res && (res.ok || offline));
         if (!ok) {
           alert(res?.message || "Login failed.");
@@ -683,7 +686,7 @@ if (await tryDemoLogin(email, password)) {
         if (offline) extra.set("demo", "1");
 
         // finishLogin may either redirect OR open a verification dialog.
-        await finishLogin(extra.toString());
+        await finishLogin((res && res.user && res.user.email) ? res.user.email : email);
         didNavigate = (window.location.href !== hrefBefore);
       } catch (err) {
         console.error("[auth] login submit error:", err);
@@ -708,8 +711,8 @@ if (await tryDemoLogin(email, password)) {
         const r = await callAPI("/api/auth/oauth/mock", { provider: "google" });
         saveLocalUser(r?.user || { email: "google@demo.local", name: "Google User" });
         const extra = new URLSearchParams();
-        if (r?.demo || r?.status === 0) extra.set("demo", "1");
-        finishLogin(extra.toString());
+        if (r?.demo) extra.set("demo", "1");
+        await finishLogin((r && r.user && r.user.email) ? r.user.email : "google@demo.local");
       } finally { try { tmHideLoader(); } catch {} }
     });
   });
