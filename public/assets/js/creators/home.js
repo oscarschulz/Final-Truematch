@@ -40,15 +40,8 @@ function tmGetCreatorIdentity() {
     const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const getPacked = (label) => {
         if (!contentStyle) return '';
-        // Support both pipe-packed ("A: 1 | B: 2") and newline-packed ("A: 1\nB: 2") formats.
-        const normalized = String(contentStyle || '')
-            .replace(/\r\n/g, '\n')
-            .split('|')
-            .map((s) => String(s || '').trim())
-            .filter(Boolean)
-            .join('\n');
         const re = new RegExp(`(?:^|\n)\s*${escapeRe(label)}\s*:\s*(.+?)(?:\n|$)`, 'i');
-        const m = normalized.match(re);
+        const m = contentStyle.match(re);
         return m ? safeStr(m[1]) : '';
     };
 
@@ -233,6 +226,11 @@ function tmMergeComments(localComments, remoteComments) {
         text: String(c?.text || ''),
         timestamp: Number(c?.timestamp || c?.createdAtMs || c?.createdAt || Date.now()) || Date.now(),
 
+        // Reactions (preserve server-backed state)
+        myReaction: String(c?.myReaction || c?.reaction || c?.reactionType || '').trim(),
+        reactionCounts: (c?.reactionCounts && typeof c.reactionCounts === 'object') ? c.reactionCounts : {},
+        reactionCount: Number(c?.reactionCount || 0) || 0,
+
         // Back-compat + new fields
         creatorEmail: c?.creatorEmail || c?.authorEmail || null,
         creatorName: c?.creatorName || c?.authorName || null,
@@ -298,7 +296,47 @@ async function tmEnsureCommentsLoaded(postCard, TopToast) {
 
         // Rebuild list UI (keep the "no comments" element)
         const keepNo = emptyMsg ? emptyMsg.outerHTML : '<div class="no-comments-msg" style="text-align: center; font-size: 0.85rem; color: var(--muted);">No comments yet</div>';
-        list.innerHTML = keepNo + comments.map(c => generateCommentHTML(c)).join('');
+        // Build threaded comments: replies are stored as normal comments with a prefix tag:
+        //   [[replyTo:<parentCommentId>]] Your reply text
+        const byId = new Map();
+        for (const c of comments) {
+            const id = (c && (c.id || c._id)) ? String(c.id || c._id) : '';
+            if (id) byId.set(id, c);
+        }
+
+        const top = [];
+        const repliesByParent = new Map();
+
+        for (const c of comments) {
+            const meta = tmParseReplyTag(String(c?.text || ''));
+            if (meta.isReply && meta.parentId && byId.has(meta.parentId)) {
+                c.__replyTo = meta.parentId;
+                c.__cleanText = meta.cleanText;
+                const arr = repliesByParent.get(meta.parentId) || [];
+                arr.push(c);
+                repliesByParent.set(meta.parentId, arr);
+            } else {
+                c.__replyTo = '';
+                c.__cleanText = String(c?.text || '');
+                top.push(c);
+            }
+        }
+
+        // Deterministic ordering (oldest to newest) within each thread
+        top.sort((a, b) => (Number(a.timestamp || 0) - Number(b.timestamp || 0)));
+        for (const [pid, arr] of repliesByParent.entries()) {
+            arr.sort((a, b) => (Number(a.timestamp || 0) - Number(b.timestamp || 0)));
+            repliesByParent.set(pid, arr);
+        }
+
+        const threadHTML = top.map((c) => {
+            const id = String(c?.id || c?._id || '');
+            const replies = id ? (repliesByParent.get(id) || []) : [];
+            const repliesHtml = replies.map(r => generateCommentHTML(r, undefined, { isReply: true })).join('');
+            return generateCommentHTML(c, undefined, { repliesHtml });
+        }).join('');
+
+        list.innerHTML = keepNo + threadHTML;
 
         const has = comments.length > 0;
         const newEmpty = list.querySelector('.no-comments-msg');
@@ -1284,6 +1322,10 @@ if (commentLikeBtn) {
                 const commentBody = parentComment.querySelector('.comment-body');
                 if (!commentBody) return;
 
+                const postCard = parentComment.closest('.post-card');
+                const postId = postCard?.dataset?.postId || '';
+                const parentCommentId = parentComment?.dataset?.commentId || '';
+
                 // Toggle close if already open
                 const existing = commentBody.querySelector('.reply-input-row');
                 if (existing) {
@@ -1296,6 +1338,8 @@ if (commentLikeBtn) {
 
                 const inputRow = document.createElement('div');
                 inputRow.className = 'reply-input-row';
+                inputRow.dataset.postId = postId;
+                inputRow.dataset.parentCommentId = parentCommentId;
                 inputRow.innerHTML = `
                     <img src="${myAvatar}" class="comment-avatar" style="width:25px; height:25px;">
                     <input type="text" class="reply-input" placeholder="Write a reply...">
@@ -1321,7 +1365,7 @@ if (commentLikeBtn) {
         });
 
         // Enter Key Handlers
-        feed.addEventListener('keydown', (e) => {
+        feed.addEventListener('keydown', async (e) => {
             if (e.key === 'Enter') {
                 if (e.target.classList.contains('comment-input')) {
                     e.preventDefault();
@@ -1332,17 +1376,24 @@ if (commentLikeBtn) {
                 }
                 else if (e.target.classList.contains('reply-input')) {
                     e.preventDefault();
-                    const rawText = e.target.value.trim();
-                    if(rawText) {
-                        const text = tmEscapeHtml(rawText).replace(/\n/g, '<br>');
+                    const rawText = (e.target.value || '').trim();
+                    if (!rawText) return;
 
+                    const row = e.target.closest('.reply-input-row');
+                    const postCard = e.target.closest('.post-card');
+                    const postId = postCard?.dataset?.postId || row?.dataset?.postId || '';
+                    const parentCommentId = row?.dataset?.parentCommentId || '';
+
+                    // If we can't resolve ids, fallback to UI-only (demo mode)
+                    if (!postId || !parentCommentId) {
+                        const text = tmEscapeHtml(rawText).replace(/\n/g, '<br>');
                         const me = (typeof tmGetCreatorIdentity === 'function') ? tmGetCreatorIdentity() : {};
                         const myNameRaw = (me && me.name) ? String(me.name) : 'You';
                         const myName = tmEscapeHtml((myNameRaw.split('|')[0] || myNameRaw).trim() || 'You');
                         const myAvatar = tmEscapeHtml((me && me.avatarUrl) ? me.avatarUrl : 'assets/images/truematch-mark.png');
 
                         const replyHTML = `
-                            <div class="comment-item" style="margin-top:10px; padding-left:40px; animation:fadeIn 0.2s;">
+                            <div class="comment-item" style="margin-top:10px; padding-left:34px; animation:fadeIn 0.2s;">
                                 <img src="${myAvatar}" class="comment-avatar" style="width:25px; height:25px;">
                                 <div class="comment-body">
                                     <div class="comment-bubble">
@@ -1352,8 +1403,53 @@ if (commentLikeBtn) {
                                 </div>
                             </div>
                         `;
-                        e.target.closest('.reply-input-row').insertAdjacentHTML('beforebegin', replyHTML);
-                        e.target.closest('.reply-input-row').remove();
+                        row?.insertAdjacentHTML('beforebegin', replyHTML);
+                        row?.remove();
+                        return;
+                    }
+
+                    // Persisted reply: encode parent in text (server.js does not have a dedicated replies endpoint)
+                    const taggedText = `[[replyTo:${parentCommentId}]] ${rawText}`;
+
+                    // prevent double-submits
+                    e.target.disabled = true;
+
+                    try {
+                        const resp = await tmAddPostComment(postId, taggedText);
+                        if (!resp || !resp.ok || !resp.comment) throw new Error(resp?.message || 'Failed to send reply');
+
+                        // Best-effort local cache update
+                        try {
+                            updatePost(postId, (post) => {
+                                if (!post) return post;
+                                post.comments = Array.isArray(post.comments) ? post.comments : [];
+                                post.comments.push(resp.comment);
+                                if (resp.commentCount !== undefined && resp.commentCount !== null) {
+                                    post.commentCount = Number(resp.commentCount) || post.commentCount;
+                                }
+                                return post;
+                            });
+                        } catch (_) {}
+
+                        // Ensure "No comments yet" is hidden
+                        const list = postCard?.querySelector('.comment-list');
+                        const noMsg = list?.querySelector('.no-comments-msg');
+                        if (noMsg) noMsg.style.display = 'none';
+
+                        // Insert under the parent thread
+                        const parentEl = row?.closest('.comment-item');
+                        const repliesWrap = parentEl?.querySelector(':scope > .comment-body > .comment-replies') || parentEl?.querySelector('.comment-replies');
+
+                        const replyHTML = generateCommentHTML(resp.comment, undefined, { isReply: true });
+
+                        if (repliesWrap) repliesWrap.insertAdjacentHTML('beforeend', replyHTML);
+                        else row?.insertAdjacentHTML('beforebegin', replyHTML);
+
+                        row?.remove();
+                    } catch (err) {
+                        console.error('Reply send failed:', err);
+                        tmToast(TopToast, 'error', 'Failed to send reply');
+                        e.target.disabled = false;
                     }
                 }
             }
@@ -1851,8 +1947,18 @@ function tmTimeAgo(tsMs) {
   return fmt(y, 'y');
 }
 
-function generateCommentHTML(textOrObj, timestampMaybe) {
+function tmParseReplyTag(rawText = '') {
+    const raw = String(rawText || '');
+    const m = raw.match(/^\s*\[\[replyTo:([^\]]+)\]\]\s*/i);
+    if (!m) return { isReply: false, parentId: '', cleanText: raw };
+    const parentId = String(m[1] || '').trim();
+    const cleanText = raw.slice(m[0].length);
+    return { isReply: true, parentId, cleanText };
+}
+
+function generateCommentHTML(textOrObj, timestampMaybe, opts = {}) {
     const safeStr = (v) => (v === null || v === undefined) ? '' : String(v);
+    const options = (opts && typeof opts === 'object') ? opts : {};
 
     const c = (textOrObj && typeof textOrObj === 'object')
         ? textOrObj
@@ -1880,10 +1986,18 @@ function generateCommentHTML(textOrObj, timestampMaybe) {
 
     const avatarAttr = tmEscapeHtml(avatar);
 
-    const text = tmEscapeHtml(safeStr(c.text || '').trim()).replace(/\n/g, '<br>');
+    // Reply-tag parsing (stored in text as [[replyTo:<id>]] ...)
+    const originalText = safeStr(c.text || '').trim();
+    const meta = tmParseReplyTag(originalText);
+
+    const displayRaw = safeStr(
+        (c.__cleanText !== undefined && c.__cleanText !== null) ? c.__cleanText : meta.cleanText
+    ).trim();
+
+    const text = tmEscapeHtml(displayRaw).replace(/\n/g, '<br>');
     const commentId = safeStr(c.id || c.commentId || c._id || '').trim();
 
-    // Optional initial reaction (local-only for now)
+    // Optional initial reaction (server-backed via `myReaction`)
     const myReaction = safeStr(c.myReaction || c.reaction || c.reactionType || '').trim();
     const likeHtml = myReaction ? getEmojiIcon(myReaction) : 'Like';
     const likedClass = myReaction ? 'liked' : '';
@@ -1891,8 +2005,16 @@ function generateCommentHTML(textOrObj, timestampMaybe) {
 
     const idAttr = commentId ? ` data-comment-id="${tmEscapeHtml(commentId)}"` : '';
 
+    const isReply = !!options.isReply;
+    const itemStyle = isReply ? ' style="margin-top:10px; padding-left:34px; animation:fadeIn 0.2s;"' : '';
+
+    const repliesHtml = safeStr(options.repliesHtml || '').trim();
+    const repliesBlock = isReply ? '' : `<div class="comment-replies">${repliesHtml}</div>`;
+
+    const replyBtnHtml = isReply ? '' : '<span class="c-action action-reply-comment">Reply</span>';
+
     return `
-        <div class="comment-item"${idAttr}>
+        <div class="comment-item"${idAttr}${itemStyle}>
             <img class="comment-avatar" src="${avatarAttr}" alt="">
             <div class="comment-body">
                 <div class="comment-bubble">
@@ -1913,8 +2035,10 @@ function generateCommentHTML(textOrObj, timestampMaybe) {
                         </div>
                     </div>
 
-                    <span class="c-action action-reply-comment">Reply</span>
+                    ${replyBtnHtml}
                 </div>
+
+                ${repliesBlock}
             </div>
         </div>
     `;
