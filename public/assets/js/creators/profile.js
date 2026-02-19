@@ -75,7 +75,7 @@ function setupProfileLiveSync() {
         tmHydrateProfileHeader().catch(() => {});
         tmHydrateProfileAvatar().catch(() => {});
     };
-    // tm-session.js dispatches this on window, so listen on window (keep document too for compatibility).
+    // tm-session.js dispatches on window; keep document listener too for compatibility.
     window.addEventListener('tm:me-updated', onMeUpdated);
     document.addEventListener('tm:me-updated', onMeUpdated);
 }
@@ -388,7 +388,7 @@ function setupProfileTabs() {
         return null;
     };
 
-    // Support both old and new ID conventions (prevents “dead click” when IDs differ).
+    // Support multiple ID conventions to avoid “dead click” when HTML IDs differ.
     const btnPosts = pick('profile-tab-posts', 'tab-profile-posts', '[data-profile-tab="posts"]', '[data-tab="posts"]');
     const btnMedia = pick('profile-tab-media', 'tab-profile-media', '[data-profile-tab="media"]', '[data-tab="media"]');
     const viewPosts = pick('profile-content-posts', 'profile-panel-posts', '[data-profile-panel="posts"]', '[data-panel="posts"]');

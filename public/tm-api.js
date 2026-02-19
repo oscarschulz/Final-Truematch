@@ -154,10 +154,9 @@ export async function apiCreateCreatorPost(payload) {
 }
 
 export async function apiDeleteCreatorPost(postId) {
-  // server.js expects { id } (not { postId })
   return apiPost('/api/creator/posts/delete', { id: postId });
 }
 
 export async function apiReactToPost(postId, emoji = 'like') {
-  return apiPost('/api/creator/posts/react', { postId, emoji });
+  return apiPost('/api/creator/posts/react', { postId, reaction: emoji });
 }
