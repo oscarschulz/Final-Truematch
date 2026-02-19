@@ -349,6 +349,52 @@ app.get('/assets/js/creators/tm-api.js', (req, res, next) => {
   return next();
 });
 
+// Some Creators page modules also import "./tm-session.js" relative to /assets/js/creators/.
+// If tm-session.js is deployed elsewhere (shared /assets/js or root), the browser requests
+// /assets/js/creators/tm-session.js and gets 404. This alias serves the shared file.
+app.get('/assets/js/creators/tm-session.js', (req, res, next) => {
+  try {
+    const candidates = [
+      path.join(PUBLIC_DIR, 'assets', 'js', 'creators', 'tm-session.js'),
+      path.join(PUBLIC_DIR, 'assets', 'js', 'tm-session.js'),
+      path.join(PUBLIC_DIR, 'tm-session.js'),
+    ];
+
+    for (const f of candidates) {
+      try {
+        if (fs.existsSync(f)) {
+          res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+          res.setHeader('Cache-Control', 'no-store');
+          return res.sendFile(f);
+        }
+      } catch (_) {}
+    }
+  } catch (_) {}
+  return next();
+});
+
+// Optional: support absolute imports like "/tm-session.js" used by some pages/modules.
+app.get('/tm-session.js', (req, res, next) => {
+  try {
+    const candidates = [
+      path.join(PUBLIC_DIR, 'tm-session.js'),
+      path.join(PUBLIC_DIR, 'assets', 'js', 'tm-session.js'),
+      path.join(PUBLIC_DIR, 'assets', 'js', 'creators', 'tm-session.js'),
+    ];
+
+    for (const f of candidates) {
+      try {
+        if (fs.existsSync(f)) {
+          res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+          res.setHeader('Cache-Control', 'no-store');
+          return res.sendFile(f);
+        }
+      } catch (_) {}
+    }
+  } catch (_) {}
+  return next();
+});
+
 app.use(express.static(PUBLIC_DIR));
 app.use('/public', express.static(PUBLIC_DIR));
 
