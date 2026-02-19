@@ -123,6 +123,9 @@
   <link rel="stylesheet" href="animations.css">
   <link rel="stylesheet" href="responsive.css">
   <link rel="stylesheet" href="auth.css">
+
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script>window.GOOGLE_CLIENT_ID = "1021682895552-bo486h8qhdpgrpipnqh9bumcheub8cge.apps.googleusercontent.com";</script>
 </head>
 
 <body class="tm-dark">
@@ -197,7 +200,7 @@
                     <label for="loginPass">Password</label>
                   </div>
                   <div class="actions-row">
-                    <label class="remember-me"><input type="checkbox"> <span>Remember me</span></label>
+                    <label class="remember-me"><input type="checkbox" id="rememberMe" name="remember" checked> <span>Remember me</span></label>
                     <a href="#" class="forgot-link" id="btnOpenForgot">Forgot?</a>
                   </div>
                   <button type="submit" class="btn-primary neon-btn">Sign In</button>

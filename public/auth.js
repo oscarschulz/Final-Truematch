@@ -424,7 +424,7 @@
       return true;
     }
     saveLocalUser({ email, name: d.name, plan: d.plan });
-    try { await callAPI("/api/auth/login", { email, password: pass }); } catch {}
+    try { await callAPI("/api/auth/login", { email, password: pass, remember: true }); } catch {}
     const extra = new URLSearchParams({ demo: "1", prePlan: d.plan });
     finishLogin(extra.toString());
     return true;
@@ -662,13 +662,15 @@
         const email = String($("#loginEmail")?.value || "").trim();
         const password = String($("#loginPass")?.value || "").trim();
 
-        if (await tryDemoLogin(email, password)) {
+        
+        const remember = !!document.getElementById("rememberMe")?.checked;
+if (await tryDemoLogin(email, password)) {
           // Demo login may redirect; keep spinner if so
           didNavigate = (window.location.href !== hrefBefore);
           return;
         }
 
-        const res = await callAPI("/api/auth/login", { email, password });
+        const res = await callAPI("/api/auth/login", { email, password, remember });
         const offline = !!(res && (res.demo || res.status === 0));
         const ok = !!(res && (res.ok || offline));
         if (!ok) {
@@ -692,6 +694,23 @@
           tmSetButtonLoading(submitBtn, false);
         }
       }
+    });
+  });
+
+  whenReady(() => {
+    const googleBtn = $("#btnGoogleLogin");
+    if (!googleBtn || googleBtn.dataset.tmBound === "1") return;
+    googleBtn.dataset.tmBound = "1";
+    googleBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      try { tmShowLoader('Signing in…','Opening Google'); } catch {}
+      try {
+        const r = await callAPI("/api/auth/oauth/mock", { provider: "google" });
+        saveLocalUser(r?.user || { email: "google@demo.local", name: "Google User" });
+        const extra = new URLSearchParams();
+        if (r?.demo || r?.status === 0) extra.set("demo", "1");
+        finishLogin(extra.toString());
+      } finally { try { tmHideLoader(); } catch {} }
     });
   });
 
