@@ -578,9 +578,9 @@ return {
       return false;
     }
 
-    if (ageMin < 18 || ageMin > ageMax || ageMax > 70) {
+    if (ageMin < 18 || ageMin > ageMax || ageMax > 80) {
       toast(
-        'Please enter an age range between 18 and 70 where min is not greater than max.',
+        'Please enter an age range between 18 and 80 where min is not greater than max.',
         'error'
       );
       return false;
@@ -678,15 +678,19 @@ if (prefs.intent && qs('select[name="intent"]')) {
   }
 
   function toast(message, type) {
-    if (window.TM_TOAST && typeof window.TM_TOAST.show === 'function') {
-      window.TM_TOAST.show(message, type);
+    if (window.Swal) {
+      Swal.fire({
+        icon: type === 'error' ? 'error' : 'success',
+        title: type === 'error' ? 'Oops...' : 'Success',
+        text: message,
+        timer: type === 'error' ? undefined : 3000,
+        showConfirmButton: type === 'error'
+      });
       return;
     }
-
     // fallback
     alert(message);
   }
-
   function qs(selector) {
     return document.querySelector(selector);
   }
@@ -696,13 +700,25 @@ if (prefs.intent && qs('select[name="intent"]')) {
   }
 
   function showLoader() {
-    const el = qs('#prefs-loader');
-    if (el) el.classList.remove('hidden');
+    try {
+      let loader = document.getElementById('app-loader');
+      if (loader) {
+        loader.style.display = 'flex';
+        void loader.offsetWidth; 
+        loader.style.opacity = '1';
+        setTimeout(() => { hideLoader(); }, 1500); // Failsafe auto-hide
+      }
+    } catch (e) {}
   }
 
   function hideLoader() {
-    const el = qs('#prefs-loader');
-    if (el) el.classList.add('hidden');
+    try {
+      const loader = document.getElementById('app-loader');
+      if(loader) {
+        loader.style.opacity = '0';
+        setTimeout(() => { loader.style.display = 'none'; }, 400);
+      }
+    } catch (e) {}
   }
 
   function buildTierQS(opts) {
@@ -849,7 +865,7 @@ if (prefs.intent && qs('select[name="intent"]')) {
       // Preferences page should normally be protected by backend auth,
       // but keep a safe fallback just in case.
       logoutLink.textContent = 'LOG IN';
-      logoutLink.setAttribute('href', 'auth.html?mode=signin&return=/preferences.html');
+      logoutLink.setAttribute('href', 'auth.html?mode=signin&return=preferences.html');
       logoutLink.onclick = null;
     }
   }
@@ -909,7 +925,7 @@ if (prefs.intent && qs('select[name="intent"]')) {
         if (!user || !user.email) {
           console.warn('[prefs] No server session and no local user/email, redirecting to auth');
           try { syncTopNav(null, params); } catch {}
-          window.location.replace('/auth.html?mode=signin&return=/preferences.html');
+          window.location.replace('auth.html?mode=signin&return=preferences.html');
           hideLoader();
           return;
         }
@@ -1011,7 +1027,7 @@ if (prefs.intent && qs('select[name="intent"]')) {
               dest: 'dashboard'
             });
             window.location.replace(
-              `/dashboard.html${qsStr ? `?${qsStr}` : ''}`
+              `dashboard.html${qsStr ? `?${qsStr}` : ''}`
             );
             hideLoader();
             return;
@@ -1211,7 +1227,7 @@ if (prefs.intent && qs('select[name="intent"]')) {
           dest: 'dashboard'
         });
         didNavigate = true;
-        window.location.replace(`/dashboard.html${qsStr ? `?${qsStr}` : ''}`);
+        window.location.replace(`dashboard.html${qsStr ? `?${qsStr}` : ''}`);
       } catch (submitErr) {
         console.error('[prefs] unexpected submit error', submitErr);
         toast('Something went wrong while saving. Please try again.', 'error');

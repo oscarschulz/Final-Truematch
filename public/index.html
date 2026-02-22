@@ -421,47 +421,46 @@
   
   </main>
 
-  <footer class="site-footer">
+<footer class="site-footer" style="padding: 60px 0 20px; border-top: 1px solid rgba(255,255,255,0.05); background: #02040a;">
     <div class="footer-watermark">iTRUEMATCH</div>
 
     <div class="container">
       
-      <div class="footer-middle-content">
-        
-        <div class="footer-left-section">
+      <div class="footer-newsletter-col" style="display: flex; justify-content: center; margin-bottom: 50px;">
+        <div class="footer-newsletter-card" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); padding: 30px; border-radius: 16px; width: 100%; max-width: 450px; text-align: center;">
           
-          <div class="footer-split-brand">
-            <img src="assets/images/truematch-mark.png" alt="iTRUEMATCH" class="brand__logo" />
-            <span>iTRUEMATCH</span>
+          <div class="footer-split-brand" style="display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 20px;">
+            <img src="assets/images/truematch-mark.png" alt="iTRUEMATCH" class="brand__logo" style="width: 32px; height: 32px;" />
+            <span style="font-weight: 800; font-size: 1.2rem; letter-spacing: 1px;">iTRUEMATCH</span>
           </div>
 
-          <div class="footer-legal">
-            <a href="#" data-legal="privacy">Privacy Policy</a>
-            <a href="#" data-legal="terms">Terms of Service</a>
-            <a href="#" data-legal="cookies">Cookie Policy</a>
-          </div>
-
-        </div>
-
-                <div class="footer-newsletter-card">
-          <h3>Join the Inner Circle</h3>
-          <p class="muted tiny">
+          <h3 style="margin-top: 0; margin-bottom: 8px; font-size: 1.1rem;">Join the Inner Circle</h3>
+          <p class="muted tiny" style="margin-bottom: 5px;">
             Two ways in — <span class="inner-hint">Curated Service</span><span class="sep">•</span><span class="inner-hint">Get Featured</span>
           </p>
-          <p class="muted tiny">Drop your email and we’ll send you both options.</p>
+          <p class="muted tiny" style="margin-bottom: 20px;">Drop your email and we’ll send you both options.</p>
 
-          <form class="footer-form" id="innerCircleForm" autocomplete="on" novalidate>
-            <input type="email" placeholder="Enter your email" id="innerCircleEmail" name="email" required />
-            <button type="submit" class="btn primary small-btn" id="innerCircleBtn">Send options</button>
+          <form class="footer-form" id="innerCircleForm" autocomplete="on" novalidate style="display: flex; gap: 10px;">
+            <input type="email" placeholder="Enter your email" id="innerCircleEmail" name="email" required style="flex: 1; padding: 10px 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.5); color: #fff;" />
+            <button type="submit" class="btn primary small-btn" id="innerCircleBtn" style="padding: 10px 15px; border-radius: 8px;">Send</button>
           </form>
 
-          <div class="muted tiny inner-circle-msg" id="innerCircleMsg" role="status" aria-live="polite" style="display:none;"></div>
+          <div class="muted tiny inner-circle-msg" id="innerCircleMsg" role="status" aria-live="polite" style="display:none; margin-top: 10px;"></div>
         </div>
-
       </div>
 
-      <div class="footer-bottom-copyright">
-        <p class="muted tiny">© <span id="year"></span> iTRUEMATCH Inc. All rights reserved.</p>
+      <div class="footer-bottom-bar" style="display: flex; justify-content: space-between; align-items: center; padding-top: 20px; flex-wrap: wrap; gap: 15px;">
+        
+        <div class="footer-legal" style="display: flex; gap: 20px;">
+          <a href="#" data-legal="privacy" style="color: var(--muted); font-size: 0.8rem; text-decoration: none; transition: 0.2s;">Privacy Policy</a>
+          <a href="#" data-legal="terms" style="color: var(--muted); font-size: 0.8rem; text-decoration: none; transition: 0.2s;">Terms of Service</a>
+          <a href="#" data-legal="cookies" style="color: var(--muted); font-size: 0.8rem; text-decoration: none; transition: 0.2s;">Cookie Policy</a>
+        </div>
+
+        <div class="footer-bottom-copyright">
+          <p class="muted tiny" style="margin: 0;">© <span id="year"></span> iTRUEMATCH Inc. All rights reserved.</p>
+        </div>
+        
       </div>
 
     </div>

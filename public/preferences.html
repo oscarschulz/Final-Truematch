@@ -19,6 +19,12 @@
 </head>
 
 <body class="tm-dark">
+
+  <div id="app-loader">
+      <img src="assets/images/truematch-mark.png" class="loader-logo" alt="Loading...">
+      <div class="loader-text">iTRUEMATCH</div>
+  </div>
+
   <canvas id="tm-bg-canvas" aria-hidden="true"></canvas>
 
   <nav class="auth-top-nav">
@@ -35,7 +41,6 @@
   <div class="split-layout">
     <div class="unified-card pref-card-override">
 
-      <!-- LEFT: Timeline -->
       <div class="auth-visual-side pref-visual-side">
         <div class="timeline-wrapper">
           <h2 class="timeline-title">Setup Profile</h2>
@@ -67,7 +72,6 @@
         </div>
       </div>
 
-      <!-- RIGHT: Form -->
       <div class="auth-form-side pref-form-side">
         <div class="form-scroll-container">
 
@@ -78,7 +82,6 @@
 
           <form id="preferencesForm" autocomplete="on">
 
-            <!-- Your profile (required) -->
             <div class="profile-section stagger-0">
               <h3 class="section-label">Your profile</h3>
 
@@ -206,8 +209,6 @@
     </div>
   </div>
 
-  <div id="tm_loader_overlay" style="display:none;"><div class="loader-spinner"></div></div>
-
   <script>
     (() => {
       const canvas = document.getElementById('tm-bg-canvas');
@@ -267,12 +268,23 @@
       function loop() { draw(false); raf = requestAnimationFrame(loop); }
       window.addEventListener('resize', () => { cancelAnimationFrame(raf); resize(); if (!reduceMotion) loop(); }, {passive:true});
       window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true; });
+
+      /* BAGONG DAGDAG: Pang-pause ng canvas pag lumipat ng tab */
+      document.addEventListener("visibilitychange", () => {
+         if (document.hidden) {
+            cancelAnimationFrame(raf);
+         } else {
+            if (!reduceMotion) loop();
+         }
+      });
+
       resize(); if (!reduceMotion) loop();
     })();
   </script>
 
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  
   <script src="tm-loader.js"></script>
   <script type="module" src="preferences.js?v=3"></script>
 </body>
 </html>
-

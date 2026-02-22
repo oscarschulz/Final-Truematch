@@ -590,3 +590,48 @@ body.has-bg-canvas::before{ z-index: -2 !important; background: transparent !imp
   .tm-legal-modal__header { padding: 16px 14px 10px; }
   .tm-legal-modal__body { padding: 14px 14px 16px; max-height: 75vh; }
 }
+/* =========================================
+   MOBILE FOOTER FIX (Landing Page)
+   ========================================= */
+@media screen and (max-width: 768px) {
+  .site-footer {
+    padding: 40px 15px 20px !important;
+  }
+  
+  .footer-newsletter-card {
+    padding: 25px 15px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .footer-form {
+    flex-direction: column !important;
+    gap: 15px !important;
+  }
+
+  .footer-form input,
+  .footer-form button {
+    width: 100% !important;
+    flex: none !important;
+  }
+
+  .footer-bottom-bar {
+    flex-direction: column !important;
+    justify-content: center !important;
+    text-align: center !important;
+    gap: 20px !important;
+  }
+
+  .footer-legal {
+    justify-content: center !important;
+    flex-wrap: wrap !important;
+    gap: 15px !important;
+  }
+
+  /* ETO YUNG FIX PARA SA COPYRIGHT TEXT */
+  .footer-bottom-copyright p {
+    font-size: 10px !important; /* Liit na sakto para sa mobile */
+    letter-spacing: -0.2px !important; /* Siksik para hindi mag-wrap */
+    white-space: nowrap !important; /* Pinipilit na isang linya lang */
+  }
+}

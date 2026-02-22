@@ -1638,7 +1638,7 @@ div:where(.swal2-container) button:where(.swal2-styled).swal2-cancel { backgroun
   .of-layout-container { display: block; overflow: auto; }
   .left-sidebar, .right-sidebar { display: none !important; }
   .mobile-bottom-nav { display: flex; }
-  .main-feed-column { width: 100%; border: none; margin-bottom: 70px; height: auto; overflow: visible; }
+  .main-feed-column { width: 100%; border: none; margin-bottom: 0; height: auto; overflow: visible; }
   .feed-top-header { padding: 10px 15px; }
 }
 
@@ -4708,3 +4708,102 @@ select option { background-color: #1a1a1a; color: #fff; padding: 10px; }
     }
 
 /* ===== Creators: Subscription Detail (production wiring) ===== */
+/* ==========================================================
+   MOBILE VIEW (430px pababa) - COMPREHENSIVE FONT & LAYOUT SCALING
+   ========================================================== */
+@media (max-width: 430px) {
+    /* 1. Base Font Size */
+    html { font-size: 10px !important; } /* 🔥 Pinababa natin para lumiit lahat ng gumagamit ng 'rem' */
+
+    /* 2. FEED & POSTS */
+    .feed-top-header h2 { font-size: 1rem !important; }
+    .post-body { font-size: 0.9rem !important; }
+    .ph-name { font-size: 0.9rem !important; }
+    .ph-handle { font-size: 0.75rem !important; }
+
+    /* 3. SETTINGS MENU & LINKS */
+    .settings-mobile-back { font-size: 0.9rem !important; padding: 10px 15px !important; }
+    .set-group-title { font-size: 0.7rem !important; padding: 12px 15px 6px !important; }
+    .set-item { padding: 10px 15px !important; }
+    .set-icon { font-size: 0.9rem !important; width: 25px !important; }
+    .set-info span { font-size: 0.85rem !important; }
+    .set-info small { font-size: 0.65rem !important; }
+    .set-section-header { font-size: 0.8rem !important; }
+    .set-link-row { font-size: 0.85rem !important; padding: 10px !important; }
+
+    /* 4. PROFILE SETTINGS (Edit Profile, Bio, Account Forms) */
+    .info-nickname-input { font-size: 0.9rem !important; }
+    .info-profile-link { font-size: 0.7rem !important; }
+    .stat-txt strong { font-size: 0.8rem !important; }
+    .stat-txt small { font-size: 0.6rem !important; }
+    .icon-box { width: 24px !important; height: 24px !important; font-size: 0.75rem !important; }
+    .i-stat { padding: 6px !important; }
+
+    /* Form Labels & Inputs */
+    .info-form-group label, .ac-group label { font-size: 0.65rem !important; margin-bottom: 4px !important; }
+    .info-form-group input, .info-form-group textarea, .ac-group input, .ac-group textarea, .ac-group select { 
+        font-size: 0.8rem !important; padding: 8px 10px !important; min-height: 36px !important; 
+    }
+
+    /* Bio Wrapper */
+    .bio-wrapper textarea { font-size: 0.8rem !important; }
+    .bio-wrapper label { font-size: 0.8rem !important; top: 12px !important; }
+    .bio-wrapper textarea:focus + label, .bio-wrapper textarea:not(:placeholder-shown) + label { 
+        font-size: 0.65rem !important; top: 4px !important; 
+    }
+
+    /* Buttons */
+    .btn-save-setup, .btn-view-history, .ac-submit-row button, .btn-submit-card { 
+        font-size: 0.8rem !important; padding: 8px 16px !important; min-width: 100px !important; 
+    }
+
+    /* Info & Warning Boxes */
+    .of-warning-box, .of-info-box { font-size: 0.75rem !important; padding: 10px !important; }
+    .wb-text strong { font-size: 0.8rem !important; }
+
+    /* 5. SUBSCRIPTIONS */
+    #view-subscriptions .subs-search-wrap input { font-size: 12px !important; }
+    #view-subscriptions .subs-user .name { font-size: 11px !important; max-width: 130px !important; }
+    #view-subscriptions .subs-user .handle { font-size: 10px !important; max-width: 130px !important; }
+    #view-subscriptions .subs-mini { font-size: 9px !important; }
+    #view-subscriptions .subs-badge { font-size: 9px !important; padding: 3px 6px !important; }
+
+    /* 🔥 6. SPACE SAVER PARA SA PROFILE (Tanggal Dead Space sa Ilalim) 🔥 */
+    /* Tinaasan ang "specificity" (html body...) para sapilitang matalo yung nakatagong violet padding! */
+    /* 🔥 6. SPACE SAVER PARA SA PROFILE (Tanggal Dead Space sa Ilalim) 🔥 */
+    html body .settings-mobile-detail, 
+    html body .main-feed-column, 
+    html body .main-feed-column:not(.hidden),
+    html body #view-settings, 
+    html body #rs-settings-view {
+        margin-bottom: 0 !important; /* <--- ITO ANG DIRETSANG PAPATAY SA VIOLET SPACE */
+        padding-bottom: 80px !important; /* <--- Para hindi matakpan ng mobile nav menu */
+        min-height: 100dvh !important; /* <--- Para isagad pababa ang mismong layout */
+    }
+
+    html body .profile-setup-container { margin-bottom: 20px !important; } 
+
+    .ac-submit-row { margin-bottom: 10px !important; } 
+    .ac-section { margin-bottom: 10px !important; } 
+    .bio-input-group { margin-bottom: 10px !important; } 
+    
+    .setup-header-img { height: 150px !important; } 
+   
+}
+/* 🔥 8. PAMPATAY NG VIOLET SPACE SA TABLET VIEW (Hanggang 1024px) 🔥 */
+@media (max-width: 1024px) {
+    html body .settings-mobile-detail, 
+    html body .main-feed-column, 
+    html body .main-feed-column:not(.hidden),
+    html body #view-settings, 
+    html body #rs-settings-view,
+    html body .of-layout-container {
+        margin-bottom: 0 !important; /* Pinatay ang margin sa tablet */
+        min-height: 100dvh !important; /* Sinagad pababa ang layout */
+    }
+    
+    /* Sinigurado na dark ang background kahit may sumilip */
+    html, body {
+        background-color: var(--bg) !important;
+    }
+}

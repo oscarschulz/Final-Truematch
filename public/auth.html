@@ -2,7 +2,6 @@
 <html lang="en" class="tm-home">
 <head>
 
-  <!-- Terms / Privacy Modal -->
   <dialog id="dlgLegal" class="modal modal--legal">
     <form method="dialog" class="modal__body modal__body--legal">
       <button type="submit" class="close-icon-btn" id="btnCloseLegalX" aria-label="Close" value="close">
@@ -19,7 +18,6 @@
     </form>
   </dialog>
 
-  <!-- Legal Content Templates (edit anytime) -->
   <template id="tplLegalTerms">
     <div class="legal-copy">
       <h4>1. Acceptance</h4>
@@ -130,6 +128,25 @@
 
 <body class="tm-dark">
 
+  <div id="app-loader">
+      <img src="assets/images/truematch-mark.png" class="loader-logo" alt="Loading...">
+      <div class="loader-text">iTRUEMATCH</div>
+  </div>
+  
+  <script>
+    window.addEventListener('load', () => {
+        const appLoader = document.getElementById('app-loader');
+        if (appLoader) {
+            setTimeout(() => {
+                appLoader.style.opacity = '0';
+                setTimeout(() => {
+                    appLoader.style.display = 'none';
+                }, 500);
+            }, 500);
+        }
+    });
+  </script>
+
   <canvas id="tm-bg-canvas" aria-hidden="true"></canvas>
 
   <nav class="auth-top-nav">
@@ -198,6 +215,9 @@
                   <div class="input-group">
                     <input type="password" id="loginPass" name="password" required placeholder=" " minlength="6"/>
                     <label for="loginPass">Password</label>
+                    <button type="button" class="password-toggle" tabindex="-1" aria-label="Toggle password visibility">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                    </button>
                   </div>
                   <div class="actions-row">
                     <label class="remember-me"><input type="checkbox" id="rememberMe" name="remember" checked> <span>Remember me</span></label>
@@ -232,6 +252,9 @@
                   <div class="input-group">
                     <input type="password" id="signupPass" name="password" required placeholder=" " minlength="6"/>
                     <label for="signupPass">Create Password</label>
+                    <button type="button" class="password-toggle" tabindex="-1" aria-label="Toggle password visibility">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    </button>
                   </div>
                   <button type="submit" class="btn-primary neon-btn">Create Account</button>
                   <p class="terms-micro">By joining, you agree to our <a href="#" data-legal="terms" class="legal-link">Terms</a> & <a href="#" data-legal="privacy" class="legal-link">Privacy</a>.</p>
@@ -416,6 +439,8 @@
   })();
   </script>
 
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  
   <script src="tm-loader.js"></script>
   <script type="module" src="auth.js"></script>
 </body>

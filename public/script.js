@@ -20,6 +20,60 @@
     return Array.from((root || document).querySelectorAll(sel));
   }
 
+  // [NEW] Reusable function para sa smooth Exit Loader (Gamit ang MAIN LOGO LOADER)
+  function triggerExitLoader() {
+    let loader = document.getElementById('app-loader');
+    
+    // Kung sakaling nabura, gagawin ulit natin
+    if (!loader) {
+      loader = document.createElement('div');
+      loader.id = 'app-loader';
+      loader.innerHTML = '<img src="assets/images/truematch-mark.png" class="loader-logo" alt="Loading..."><div class="loader-text">iTRUEMATCH</div>';
+      document.body.appendChild(loader);
+    }
+    
+    loader.style.display = 'flex';
+    // Force reflow para gumana ang opacity transition
+    void loader.offsetWidth; 
+    loader.style.opacity = '1';
+  }
+
+  // ------------------------
+  // [NEW] Glassmorphism Header Scroll Effect
+  // ------------------------
+  function injectHeaderStyles() {
+    if (document.getElementById('tm-header-scroll-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'tm-header-scroll-styles';
+    style.textContent = `
+      .site-header {
+        transition: background-color 0.3s ease, backdrop-filter 0.3s ease, -webkit-backdrop-filter 0.3s ease, border-bottom 0.3s ease, box-shadow 0.3s ease !important;
+      }
+      .site-header.is-scrolled {
+        background-color: rgba(2, 4, 10, 0.85) !important;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.6) !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function initHeaderScroll() {
+    const header = document.querySelector('.site-header');
+    if (!header) return;
+    
+    window.addEventListener('scroll', () => {
+      // Kapag nag-scroll ng higit 50px pababa, i-apply ang blur effect
+      if (window.scrollY > 50) {
+        header.classList.add('is-scrolled');
+      } else {
+        header.classList.remove('is-scrolled');
+      }
+    }, { passive: true });
+  }
+
   // ------------------------
   // Smooth scroll for header/footer nav
   // ------------------------
@@ -52,18 +106,7 @@
     if (!btn) return;
 
     btn.addEventListener('click', () => {
-      // Optional loader while redirecting to sign-up
-      try {
-        if (window.TMLoader && typeof window.TMLoader.show === 'function') {
-          window.TMLoader.show(
-            'Setting things up…',
-            'Redirecting you to sign‑up',
-            'This only takes a moment.'
-          );
-        }
-      } catch (e) {
-        console.warn('[TM] loader error', e);
-      }
+      triggerExitLoader(); // Tawagin ang logo loader
 
       const params = new URLSearchParams();
       params.set('mode', 'signup');
@@ -71,16 +114,18 @@
 
       setTimeout(() => {
         window.location.href = `auth.html?${params.toString()}#signup`;
-      }, 120);
+      }, 400); // Sapat na oras para mag-fade in ang logo bago lumipat
     });
   }
 
-    // Pricing cards logic
+  // Pricing cards logic
   // - Works even if JS is disabled (href fallback in index.html)
   // - When JS is enabled, we normalize params and add onboarding context.
   qsa("a[data-plan]:not([data-action])").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.preventDefault();
+
+      triggerExitLoader(); // Tawagin ang logo loader
 
       const raw = (btn.getAttribute("data-plan") || "").trim().toLowerCase();
       const plan = (raw && raw !== "free") ? raw : "";
@@ -88,15 +133,34 @@
       const qs = buildQuery({
         mode: "signup",
         onboarding: 1,
-        // Use BOTH keys for compatibility across pages (some flows look for plan, others for prePlan)
+        // Use BOTH keys for compatibility across pages
         plan: plan || undefined,
         prePlan: plan || undefined,
       });
 
-      window.location.href = "auth.html" + (qs ? "?" + qs : "");
+      setTimeout(() => {
+        window.location.href = "auth.html" + (qs ? "?" + qs : "");
+      }, 400);
     });
   });
-// ------------------------
+
+  // [NEW] Standard Auth Links logic (Sign In / Sign Up buttons sa Navbar)
+  qsa('a[href^="auth.html"]').forEach((btn) => {
+    // Kung yung button ay part na ng pricing card, skip na natin dito
+    if (btn.hasAttribute("data-plan")) return;
+    
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      
+      triggerExitLoader(); // Tawagin ang logo loader
+      
+      setTimeout(() => {
+        window.location.href = btn.getAttribute("href");
+      }, 400);
+    });
+  });
+
+  // ------------------------
   // Mobile nav dropdown (hamburger)
   // ------------------------
   function initNavDropdown() {
@@ -390,8 +454,6 @@
     elements.forEach(el => observer.observe(el));
   }
 
-  
-
   // ------------------------
   // Legal modals (Privacy / Terms / Cookies) on landing page
   // ------------------------
@@ -496,6 +558,9 @@
   // Init on DOM ready
   // ------------------------
   function init() {
+    injectHeaderStyles(); // Injects the blur CSS
+    initHeaderScroll();   // Triggers blur on scroll
+    
     initSmoothAnchors();
     initNavDropdown();
     initGetStartedRouting();
@@ -508,14 +573,16 @@
     initScrollReveal();
 
     // ------------------------
-    // [ADDED] Loader Removal Logic
+    // [FIXED] Loader Removal Logic (Itatago lang para magamit ulit)
     // ------------------------
     window.addEventListener('load', () => {
         const loader = document.getElementById('app-loader');
         if (loader) {
             setTimeout(() => {
                 loader.style.opacity = '0';
-                setTimeout(() => loader.remove(), 500);
+                setTimeout(() => {
+                    loader.style.display = 'none'; // Imbes na .remove(), itatago lang
+                }, 500);
             }, 500);
         }
     });

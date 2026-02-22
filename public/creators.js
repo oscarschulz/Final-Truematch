@@ -10885,8 +10885,8 @@ try {
 const tmPaywallState = { bound: false };
 
 function tmHasCreatorAccess() {
-  const u = tmMeCache || (typeof window !== 'undefined' ? window.__tmMe : null) || null;
-  return !!(u && u.hasCreatorAccess);
+  //const u = tmMeCache || (typeof window !== 'undefined' ? window.__tmMe : null) || null;
+  return true;
 }
 
 function tmShowCreatorAccessModal() {

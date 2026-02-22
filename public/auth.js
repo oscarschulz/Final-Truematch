@@ -423,7 +423,7 @@
     const d = DEMO[key];
     if (!d) return false;
     if (String(pass || "") !== d.password) {
-      alert("Demo password mali.");
+      if(window.Swal) Swal.fire({ icon: 'error', title: 'Oops...', text: 'Mali ang Demo password.' });
       return true;
     }
     saveLocalUser({ email, name: d.name, plan: d.plan });
@@ -630,7 +630,7 @@
         const out = await callAPI("/api/auth/register", payload);
         const ok = !!(out?.ok || out?.created || out?.status === 200 || out?.status === 201 || out?.demo);
         if (!ok) {
-          alert(out?.message || "Signup failed.");
+          if(window.Swal) Swal.fire({ icon: 'error', title: 'Signup Failed', text: out?.message || "Signup failed." });
           return;
         }
         setActiveTab("login");
@@ -639,7 +639,7 @@
         if (email && $("#loginEmail")) $("#loginEmail").value = email;
       } catch (err) {
         console.error("[auth] signup submit error:", err);
-        alert("Something went wrong while creating your account. Please try again.");
+        if(window.Swal) Swal.fire({ icon: 'error', title: 'Error', text: 'Hindi makakonekta sa backend server.' });
       } finally {
         // No navigation here; always restore the button state
         tmSetButtonLoading(submitBtn, false);
@@ -677,7 +677,7 @@ if (await tryDemoLogin(email, password)) {
         const offline = !!(res && res.demo);
         const ok = !!(res && (res.ok || offline));
         if (!ok) {
-          alert(res?.message || "Login failed.");
+          if(window.Swal) Swal.fire({ icon: 'error', title: 'Login Failed', text: res?.message || "Invalid credentials." });
           return;
         }
         saveLocalUser(res.user || { email, name: email.split("@")[0] || "User" });
@@ -690,7 +690,7 @@ if (await tryDemoLogin(email, password)) {
         didNavigate = (window.location.href !== hrefBefore);
       } catch (err) {
         console.error("[auth] login submit error:", err);
-        alert("Something went wrong while signing in. Please try again.");
+        if(window.Swal) Swal.fire({ icon: 'error', title: 'Connection Refused', text: 'Siguraduhing naka-run ang backend server mo sa port 3000!' });
       } finally {
         // If we’re navigating, keep the spinner visible until the next page loads.
         if (!didNavigate) {
@@ -764,7 +764,7 @@ if (await tryDemoLogin(email, password)) {
       setText(pError, msg || 'Something went wrong.');
       pError.style.display = 'block';
     } else {
-      alert(msg || 'Something went wrong.');
+      if(window.Swal) Swal.fire({ icon: 'error', title: 'Oops...', text: msg || 'Something went wrong.' });
     }
   }
 
@@ -1043,6 +1043,32 @@ if (await tryDemoLogin(email, password)) {
     dlg.addEventListener('cancel', (e) => {
       try { e.preventDefault(); } catch {}
       closeLegal();
+    });
+  });
+
+  // --- Password Visibility Toggle Logic ---
+  whenReady(() => {
+    $$('.password-toggle').forEach(btn => {
+      btn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const input = this.parentElement.querySelector('input');
+        if(!input) return;
+
+        if (input.type === 'password') {
+          // GAGAWING VISIBLE (TEXT)
+          input.type = 'text';
+          input.classList.add('is-password'); 
+          // Palitan ng OPEN EYE (Visible na)
+          this.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+        } else {
+          // IHIHIDE ULIT (PASSWORD)
+          input.type = 'password';
+          // Ibalik sa SLASHED EYE (Nakatago)
+          this.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+        }
+      });
     });
   });
 })();
