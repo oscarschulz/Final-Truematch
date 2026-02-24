@@ -909,6 +909,56 @@ function tmToast(TopToast, icon, title) {
     } catch {}
 }
 
+function tmExtractApiMessage(data, fallback = '') {
+    try {
+        if (!data || typeof data !== 'object') return String(fallback || '');
+        return String(
+            data.message ||
+            data.error ||
+            data.err ||
+            data.code ||
+            data.reason ||
+            fallback ||
+            ''
+        ).trim();
+    } catch (_) {
+        return String(fallback || '').trim();
+    }
+}
+
+function tmRecordReactionDebug(kind, meta = {}) {
+    try {
+        const snapshot = {
+            kind: String(kind || 'reaction'),
+            at: new Date().toISOString(),
+            endpoint: meta.endpoint || meta.url || '',
+            method: meta.method || 'POST',
+            status: Number(meta.status || 0) || 0,
+            ok: !!meta.ok,
+            payload: (meta.payload && typeof meta.payload === 'object') ? meta.payload : null,
+            message: String(meta.message || '').trim(),
+            data: (meta.data && typeof meta.data === 'object') ? meta.data : meta.data ?? null,
+            rawText: meta.rawText ? String(meta.rawText).slice(0, 500) : '',
+            durationMs: Number(meta.durationMs || 0) || 0,
+            networkError: meta.error ? String(meta.error?.message || meta.error) : '',
+        };
+
+        if (typeof window !== 'undefined') {
+            window.__tmLastReactionDebug = snapshot;
+            const arr = Array.isArray(window.__tmReactionDebugLog) ? window.__tmReactionDebugLog : [];
+            arr.push(snapshot);
+            window.__tmReactionDebugLog = arr.slice(-20);
+        }
+
+        console.error('[TM Reaction Debug]', snapshot);
+        return snapshot;
+    } catch (err) {
+        try { console.error('[TM Reaction Debug] logger_failed', err, meta); } catch (_) {}
+        return null;
+    }
+}
+
+
 function tmNowId() {
     return String(Date.now()) + '-' + Math.random().toString(16).slice(2);
 }
@@ -919,28 +969,80 @@ function tmNowId() {
 // If server routes are not present yet, we fallback to existing local-only behavior.
 // ------------------------------
 async function tmFetchJson(url, opts = {}) {
+    const method = String(opts?.method || 'GET').toUpperCase();
+    const startedAt = Date.now();
     try {
         const res = await fetch(url, { credentials: 'include', ...opts });
-        const isJson = (res.headers.get('content-type') || '').includes('application/json');
-        const data = isJson ? await res.json().catch(() => null) : null;
-        return { res, data };
-    } catch (e) {
-        return { res: null, data: null };
+        const clone = res.clone();
+        const contentType = String(res.headers.get('content-type') || '');
+        const isJson = contentType.toLowerCase().includes('application/json');
+
+        let data = null;
+        let rawText = '';
+
+        if (isJson) {
+            data = await res.json().catch(() => null);
+            if (data == null) rawText = await clone.text().catch(() => '');
+        } else {
+            rawText = await clone.text().catch(() => '');
+        }
+
+        return {
+            res,
+            data,
+            rawText,
+            url,
+            method,
+            ok: !!res.ok,
+            status: Number(res.status || 0) || 0,
+            contentType,
+            durationMs: Date.now() - startedAt
+        };
+    } catch (error) {
+        return {
+            res: null,
+            data: null,
+            rawText: '',
+            url,
+            method,
+            ok: false,
+            status: 0,
+            contentType: '',
+            durationMs: Date.now() - startedAt,
+            error
+        };
     }
 }
 
 async function tmSetPostReaction(postId, reaction) {
     if (!postId) return null;
     const payload = { id: String(postId), reaction: reaction || null };
-    const { res, data } = await tmFetchJson(POST_REACT_ENDPOINT, {
+    const result = await tmFetchJson(POST_REACT_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
     });
+    const { res, data } = result;
 
-    // If endpoint doesn't exist yet, treat as not available
-    if (!res || res.status === 404) return null;
-    if (data && data.ok) return data;
+    // If endpoint doesn't exist yet, treat as not available (but keep diagnostics)
+    if (!res || res.status === 404) {
+        tmRecordReactionDebug('post', {
+            endpoint: POST_REACT_ENDPOINT,
+            payload,
+            ...result,
+            message: !res ? 'network_or_fetch_failed' : 'route_not_found'
+        });
+        return null;
+    }
+
+    if (res.ok && data && data.ok) return data;
+
+    tmRecordReactionDebug('post', {
+        endpoint: POST_REACT_ENDPOINT,
+        payload,
+        ...result,
+        message: tmExtractApiMessage(data, `post_reaction_failed_${res.status || 0}`)
+    });
     return null;
 }
 
@@ -949,14 +1051,39 @@ async function tmSetCommentReaction(postId, commentId, reaction) {
     try {
         if (!postId || !commentId) return null;
         const body = { postId: String(postId), commentId: String(commentId), reaction: reaction || null };
-        const { data } = await tmFetchJson(POST_COMMENT_REACT_ENDPOINT, {
+        const result = await tmFetchJson(POST_COMMENT_REACT_ENDPOINT, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
         });
-        if (data && data.ok) return data;
+        const { res, data } = result;
+
+        if (!res || res.status === 404) {
+            tmRecordReactionDebug('comment', {
+                endpoint: POST_COMMENT_REACT_ENDPOINT,
+                payload: body,
+                ...result,
+                message: !res ? 'network_or_fetch_failed' : 'route_not_found'
+            });
+            return null;
+        }
+
+        if (res.ok && data && data.ok) return data;
+
+        tmRecordReactionDebug('comment', {
+            endpoint: POST_COMMENT_REACT_ENDPOINT,
+            payload: body,
+            ...result,
+            message: tmExtractApiMessage(data, `comment_reaction_failed_${res.status || 0}`)
+        });
         return null;
     } catch (err) {
+        tmRecordReactionDebug('comment', {
+            endpoint: POST_COMMENT_REACT_ENDPOINT,
+            payload: { postId: String(postId || ''), commentId: String(commentId || ''), reaction: reaction || null },
+            error: err,
+            message: 'tmSetCommentReaction_exception'
+        });
         console.error('tmSetCommentReaction error:', err);
         return null;
     }
@@ -2018,8 +2145,11 @@ async function tmFetchCreatorsFeed(limit = 40) {
                             }
                         } catch (_) { /* ignore */ }
                     } catch (err) {
-                        console.error('Comment reaction failed:', err);
-                        tmToast(TopToast, 'error', 'Failed to react');
+                        console.error('Comment reaction failed:', err, (typeof window !== 'undefined' ? window.__tmLastReactionDebug : null));
+                        const __tmReactDbg = (typeof window !== 'undefined' && window.__tmLastReactionDebug) ? window.__tmLastReactionDebug : null;
+                        const __tmReactStatus = Number(__tmReactDbg?.status || 0) || 0;
+                        if (__tmReactDbg) console.error('Last reaction debug:', __tmReactDbg);
+                        tmToast(TopToast, 'error', __tmReactStatus ? `Failed to react (${__tmReactStatus})` : 'Failed to react');
                     } finally {
                         if (commentLikeBtn) commentLikeBtn.style.pointerEvents = '';
                     }
@@ -2113,8 +2243,11 @@ if (commentLikeBtn) {
             }
         } catch (_) { /* ignore */ }
     } catch (err) {
-        console.error('Comment like failed:', err);
-        tmToast(TopToast, 'error', 'Failed to react');
+        console.error('Comment like failed:', err, (typeof window !== 'undefined' ? window.__tmLastReactionDebug : null));
+        const __tmReactDbg = (typeof window !== 'undefined' && window.__tmLastReactionDebug) ? window.__tmLastReactionDebug : null;
+        const __tmReactStatus = Number(__tmReactDbg?.status || 0) || 0;
+        if (__tmReactDbg) console.error('Last reaction debug:', __tmReactDbg);
+        tmToast(TopToast, 'error', __tmReactStatus ? `Failed to react (${__tmReactStatus})` : 'Failed to react');
     } finally {
         btn.style.pointerEvents = '';
     }
@@ -8964,13 +9097,48 @@ async function tmDeleteCreatorPost(id) {
 // ==========================================
 
 async function tmFetchJson(url, opts = {}) {
+    const method = String(opts?.method || 'GET').toUpperCase();
+    const startedAt = Date.now();
     try {
         const res = await fetch(url, { credentials: 'include', ...opts });
-        const isJson = (res.headers.get('content-type') || '').includes('application/json');
-        const data = isJson ? await res.json().catch(() => null) : null;
-        return { res, data };
-    } catch (_) {
-        return { res: null, data: null };
+        const clone = res.clone();
+        const contentType = String(res.headers.get('content-type') || '');
+        const isJson = contentType.toLowerCase().includes('application/json');
+
+        let data = null;
+        let rawText = '';
+
+        if (isJson) {
+            data = await res.json().catch(() => null);
+            if (data == null) rawText = await clone.text().catch(() => '');
+        } else {
+            rawText = await clone.text().catch(() => '');
+        }
+
+        return {
+            res,
+            data,
+            rawText,
+            url,
+            method,
+            ok: !!res.ok,
+            status: Number(res.status || 0) || 0,
+            contentType,
+            durationMs: Date.now() - startedAt
+        };
+    } catch (error) {
+        return {
+            res: null,
+            data: null,
+            rawText: '',
+            url,
+            method,
+            ok: false,
+            status: 0,
+            contentType: '',
+            durationMs: Date.now() - startedAt,
+            error
+        };
     }
 }
 
@@ -8978,14 +9146,31 @@ async function tmSetPostReaction(postId, reaction) {
     if (!postId) return null;
 
     const payload = { id: String(postId), reaction: reaction || null };
-    const { res, data } = await tmFetchJson(POST_REACT_ENDPOINT, {
+    const result = await tmFetchJson(POST_REACT_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
     });
+    const { res, data } = result;
 
-    if (!res || res.status === 404) return null;
-    if (data && data.ok) return data;
+    if (!res || res.status === 404) {
+        tmRecordReactionDebug('post', {
+            endpoint: POST_REACT_ENDPOINT,
+            payload,
+            ...result,
+            message: !res ? 'network_or_fetch_failed' : 'route_not_found'
+        });
+        return null;
+    }
+
+    if (res.ok && data && data.ok) return data;
+
+    tmRecordReactionDebug('post', {
+        endpoint: POST_REACT_ENDPOINT,
+        payload,
+        ...result,
+        message: tmExtractApiMessage(data, `post_reaction_failed_${res.status || 0}`)
+    });
     return null;
 }
 
