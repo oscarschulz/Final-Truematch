@@ -3345,8 +3345,8 @@ app.get('/api/me/active-nearby', authMiddleware, async (req, res) => {
     }
 
     // Attach current user's reaction (cross-device)
-    await _attachMyReactionsToPosts(meEmail, subsPosts);
-    await _attachMyReactionsToPosts(meEmail, otherPosts);
+    await _attachMyReactionsToPosts(myEmail, subsPosts);
+    await _attachMyReactionsToPosts(myEmail, otherPosts);
 
     return res.json({ ok: true, items: out.slice(0, limit) });
   } catch (e) {

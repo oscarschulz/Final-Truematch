@@ -1024,13 +1024,26 @@ async function tmSetPostReaction(postId, reaction) {
     });
     const { res, data } = result;
 
-    // If endpoint doesn't exist yet, treat as not available (but keep diagnostics)
-    if (!res || res.status === 404) {
+    // Keep diagnostics, but don't assume every 404 means missing route.
+    if (!res) {
         tmRecordReactionDebug('post', {
             endpoint: POST_REACT_ENDPOINT,
             payload,
             ...result,
-            message: !res ? 'network_or_fetch_failed' : 'route_not_found'
+            message: 'network_or_fetch_failed'
+        });
+        return null;
+    }
+
+    if (res.status === 404) {
+        tmRecordReactionDebug('post', {
+            endpoint: POST_REACT_ENDPOINT,
+            payload,
+            ...result,
+            message: tmExtractApiMessage(
+                data,
+                (result && result.rawText ? String(result.rawText).trim().slice(0, 180) : '') || 'post_not_found_or_route_missing'
+            )
         });
         return null;
     }
@@ -1058,12 +1071,25 @@ async function tmSetCommentReaction(postId, commentId, reaction) {
         });
         const { res, data } = result;
 
-        if (!res || res.status === 404) {
+        if (!res) {
             tmRecordReactionDebug('comment', {
                 endpoint: POST_COMMENT_REACT_ENDPOINT,
                 payload: body,
                 ...result,
-                message: !res ? 'network_or_fetch_failed' : 'route_not_found'
+                message: 'network_or_fetch_failed'
+            });
+            return null;
+        }
+
+        if (res.status === 404) {
+            tmRecordReactionDebug('comment', {
+                endpoint: POST_COMMENT_REACT_ENDPOINT,
+                payload: body,
+                ...result,
+                message: tmExtractApiMessage(
+                    data,
+                    (result && result.rawText ? String(result.rawText).trim().slice(0, 180) : '') || 'comment_not_found_or_route_missing'
+                )
             });
             return null;
         }
@@ -9153,12 +9179,25 @@ async function tmSetPostReaction(postId, reaction) {
     });
     const { res, data } = result;
 
-    if (!res || res.status === 404) {
+    if (!res) {
         tmRecordReactionDebug('post', {
             endpoint: POST_REACT_ENDPOINT,
             payload,
             ...result,
-            message: !res ? 'network_or_fetch_failed' : 'route_not_found'
+            message: 'network_or_fetch_failed'
+        });
+        return null;
+    }
+
+    if (res.status === 404) {
+        tmRecordReactionDebug('post', {
+            endpoint: POST_REACT_ENDPOINT,
+            payload,
+            ...result,
+            message: tmExtractApiMessage(
+                data,
+                (result && result.rawText ? String(result.rawText).trim().slice(0, 180) : '') || 'post_not_found_or_route_missing'
+            )
         });
         return null;
     }
