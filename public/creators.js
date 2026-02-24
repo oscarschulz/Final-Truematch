@@ -2175,7 +2175,7 @@ async function tmFetchCreatorsFeed(limit = 40) {
                         const textEl = ownBody ? ownBody.querySelector('.comment-text') : null;
                         const tsRaw = Number(commentItem?.dataset?.commentTs || 0) || 0;
                         const isReply = String(commentItem?.dataset?.isReply || '') === '1';
-                        const parentCommentId = safeStr(commentItem?.dataset?.replyTo || '').trim();
+                        const parentCommentId = String((commentItem?.dataset?.replyTo ?? '')).trim();
 
                         const resp = await tmSetCommentReaction(postId, commentId, desired || null, {
                             commentText: textEl ? String(textEl.innerText || textEl.textContent || '').trim() : '',
