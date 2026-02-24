@@ -4807,3 +4807,69 @@ select option { background-color: #1a1a1a; color: #fff; padding: 10px; }
         background-color: var(--bg) !important;
     }
 }
+
+/* === HOTFIX: threaded comments layout === */
+.comment-item,
+.comment-list .comment {
+  align-items: flex-start;
+}
+
+.comment-body,
+.comment-content,
+.comment-list .comment .c-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.comment-bubble,
+.comment-list .comment .c-text {
+  max-width: 100%;
+}
+
+.comment-bubble p,
+.comment-list .comment .c-text,
+.comment-content p {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.comment-actions,
+.comment-list .comment .c-actions {
+  flex-wrap: wrap;
+}
+
+.comment-replies {
+  margin-top: 10px;
+  margin-left: 18px;
+  padding-left: 12px;
+  border-left: 1px solid rgba(255,255,255,0.10);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.comment-item.reply,
+.comment-list .comment.reply {
+  font-size: 0.88rem;
+}
+
+.comment-item.reply .comment-avatar,
+.comment-list .comment.reply .c-avatar {
+  width: 26px;
+  height: 26px;
+}
+
+.comment-item.reply .comment-bubble,
+.comment-list .comment.reply .c-text {
+  border-radius: 10px;
+}
+
+@media (max-width: 420px) {
+  .comment-replies {
+    margin-left: 12px;
+    padding-left: 8px;
+  }
+}
+/* === /HOTFIX === */

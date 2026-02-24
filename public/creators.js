@@ -14201,5 +14201,197 @@ function tmInitSuggestionsSidebar() {
 }
 
 
+
+/* === HOTFIX: recursive comment threading + reply-tag cleanup === */
+function __tmSafeString(v) {
+    try { return String(v == null ? '' : v); } catch { return ''; }
+}
+
+function __tmNormalizeThreadComment(raw) {
+    const c = raw && typeof raw === 'object' ? { ...raw } : {};
+    const rawContent = __tmSafeString(c.content || c.text || '');
+    const meta = (typeof tmParseReplyTag === 'function')
+        ? tmParseReplyTag(rawContent)
+        : { isReply: false, parentId: '', content: rawContent };
+
+    c.id = __tmSafeString(c.id || c.commentId || c.cid || c._id || '').trim();
+    c.content = __tmSafeString(meta && meta.content != null ? meta.content : rawContent);
+    c.__replyMeta = {
+        isReply: !!(meta && meta.isReply),
+        parentId: __tmSafeString(meta && meta.parentId || '').trim()
+    };
+    if (!Array.isArray(c.replies)) c.replies = [];
+    return c;
+}
+
+function __tmBuildNestedCommentTree(list) {
+    const input = Array.isArray(list) ? list : [];
+    const nodes = input.map(__tmNormalizeThreadComment);
+    const byId = new Map();
+    nodes.forEach(n => {
+        if (n.id && !byId.has(n.id)) byId.set(n.id, n);
+    });
+
+    const roots = [];
+    nodes.forEach(n => {
+        n.replies = Array.isArray(n.replies) ? n.replies : [];
+    });
+
+    for (const n of nodes) {
+        const pid = n.__replyMeta && n.__replyMeta.isReply ? n.__replyMeta.parentId : '';
+        if (pid && pid !== n.id && byId.has(pid)) {
+            const parent = byId.get(pid);
+            parent.replies = Array.isArray(parent.replies) ? parent.replies : [];
+            parent.replies.push(n);
+        } else {
+            roots.push(n);
+        }
+    }
+    return roots;
+}
+
+function __tmRenderCommentTreeHTML(list) {
+    const tree = __tmBuildNestedCommentTree(list);
+    return tree.map(node => {
+        if (typeof generateCommentHTML === 'function') return generateCommentHTML(node, false);
+        return createCommentHTML(node);
+    }).join('');
+}
+
+// Override legacy single-comment renderer so hidden reply tags never leak into UI.
+function createCommentHTML(comment) {
+    const c = __tmNormalizeThreadComment(comment || {});
+    const avatar = __tmSafeString(c.avatar || c.photoURL || c.profilePic || '/assets/images/default-avatar.png');
+    const name = __tmSafeString(c.userName || c.username || c.displayName || 'User');
+    const handle = __tmSafeString(c.userHandle || c.handle || '');
+    const time = __tmSafeString(c.timeAgo || c.createdAtLabel || c.createdAt || 'now');
+    const text = __tmSafeString(c.content || '');
+    const liked = !!c.liked;
+    const likeCount = Number(c.likes || c.likeCount || 0) || 0;
+
+    if (typeof generateCommentHTML === 'function') {
+        return generateCommentHTML({
+            ...c,
+            avatar,
+            userName: name,
+            userHandle: handle,
+            timeAgo: time,
+            content: text,
+            liked,
+            likes: likeCount,
+            replies: Array.isArray(c.replies) ? c.replies : []
+        }, !!(c.__replyMeta && c.__replyMeta.isReply));
+    }
+
+    return `
+        <div class="comment-item ${c.__replyMeta && c.__replyMeta.isReply ? 'reply' : ''}" data-comment-id="${escapeHtml(c.id || '')}">
+            <img src="${escapeHtml(avatar)}" class="comment-avatar" alt="${escapeHtml(name)}">
+            <div class="comment-body">
+                <div class="comment-bubble">
+                    <strong>${escapeHtml(name)}</strong> ${handle ? `<span class="comment-handle">@${escapeHtml(handle)}</span>` : ''}
+                    <p>${escapeHtml(text)}</p>
+                </div>
+                <div class="comment-actions">
+                    <span class="c-action c-like ${liked ? 'liked' : ''}" data-action="like-comment">Like${likeCount > 0 ? ` (${likeCount})` : ''}</span>
+                    <span class="c-action action-reply-comment" data-action="reply-comment" data-comment-id="${escapeHtml(c.id || '')}" data-user-name="${escapeHtml(name)}">Reply</span>
+                    <span class="c-action c-time">${escapeHtml(time)}</span>
+                </div>
+            </div>
+        </div>`;
+}
+
+// Final override: use recursive tree rendering and keep merge/cache behavior.
+async function tmEnsureCommentsLoaded(postCard) {
+    if (!postCard) return;
+    const postId = postCard.dataset.postId;
+    if (!postId) return;
+
+    const commentsSection = postCard.querySelector('.comments-section');
+    const list = commentsSection?.querySelector('.comments-list');
+    const countEl = postCard.querySelector('.comment-count');
+    if (!commentsSection || !list) return;
+
+    if (postCard.dataset.commentsLoaded === 'true' && list.children.length > 0) {
+        return;
+    }
+
+    try {
+        list.innerHTML = '<div class="comment-loading">Loading comments...</div>';
+
+        const [remoteComments, localComments] = await Promise.all([
+            (async () => {
+                try {
+                    if (typeof apiGet === 'function') {
+                        const r = await apiGet(`/api/creator/posts/comments?postId=${encodeURIComponent(postId)}`);
+                        return Array.isArray(r?.comments) ? r.comments : [];
+                    }
+                    const r = await fetch(`/api/creator/posts/comments?postId=${encodeURIComponent(postId)}`);
+                    if (!r.ok) return [];
+                    const data = await r.json().catch(() => ({}));
+                    return Array.isArray(data?.comments) ? data.comments : [];
+                } catch {
+                    return [];
+                }
+            })(),
+            (async () => {
+                try {
+                    return (typeof tmGetLocalComments === 'function') ? (tmGetLocalComments(postId) || []) : [];
+                } catch {
+                    return [];
+                }
+            })()
+        ]);
+
+        const mergedMap = new Map();
+        for (const c of (remoteComments || [])) {
+            if (!c) continue;
+            const id = __tmSafeString(c.id || c.commentId || '').trim();
+            if (id) mergedMap.set(id, { ...c, _localOnly: false });
+        }
+        for (const c of (localComments || [])) {
+            if (!c) continue;
+            const id = __tmSafeString(c.id || c.commentId || '').trim();
+            if (!id) continue;
+            if (!mergedMap.has(id)) {
+                mergedMap.set(id, { ...c, _localOnly: true });
+            }
+        }
+
+        const merged = Array.from(mergedMap.values());
+
+        if (typeof tmSaveCommentCache === 'function') {
+            try { tmSaveCommentCache(postId, merged); } catch {}
+        }
+
+        list.innerHTML = merged.length
+            ? __tmRenderCommentTreeHTML(merged)
+            : '<div class="comment-empty">No comments yet.</div>';
+
+        if (countEl) {
+            if (typeof tmCountTotalComments === 'function') {
+                countEl.textContent = tmCountTotalComments(merged);
+            } else {
+                countEl.textContent = String(merged.length);
+            }
+        }
+
+        postCard.dataset.commentsLoaded = 'true';
+    } catch (err) {
+        console.error('Failed to load comments:', err);
+        const cached = (typeof tmGetCachedComments === 'function') ? (tmGetCachedComments(postId) || []) : [];
+        list.innerHTML = Array.isArray(cached) && cached.length
+            ? __tmRenderCommentTreeHTML(cached)
+            : '<div class="comment-error">Failed to load comments.</div>';
+        if (countEl) {
+            if (typeof tmCountTotalComments === 'function') {
+                countEl.textContent = tmCountTotalComments(Array.isArray(cached) ? cached : []);
+            } else {
+                countEl.textContent = String(Array.isArray(cached) ? cached.length : 0);
+            }
+        }
+    }
+}
+/* === /HOTFIX === */
+
 document.addEventListener('DOMContentLoaded', init);
 })();
