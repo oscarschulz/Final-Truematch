@@ -4873,3 +4873,36 @@ select option { background-color: #1a1a1a; color: #fff; padding: 10px; }
   }
 }
 /* === /HOTFIX === */
+
+
+/* ===== Threaded comments hotfix overrides (latest) ===== */
+.comment-item .comment-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Recursive thread indentation/connector for unlimited nested replies */
+.comment-item .comment-replies {
+  margin-left: 16px;
+  padding-left: 12px;
+  border-left: 1px solid rgba(122, 146, 185, 0.22);
+}
+
+.comment-item .comment-replies .comment-item {
+  margin-top: 8px;
+}
+
+/* Keep reply action visible and aligned on every depth */
+.comment-item .action-reply-comment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+@media (max-width: 640px) {
+  .comment-item .comment-replies {
+    margin-left: 12px;
+    padding-left: 10px;
+  }
+}

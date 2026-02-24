@@ -2946,9 +2946,11 @@ function tmTimeAgo(tsMs) {
 
 function tmParseReplyTag(rawText = '') {
     const raw = String(rawText || '');
-    const m = raw.match(/^\s*\[\[replyTo:([^\]]+)\]\]\s*/i);
+    // Support both legacy single-bracket and current double-bracket tags
+    // [replyTo:<id>] and [[replyTo:<id>]]
+    const m = raw.match(/^\s*(?:\[\[replyTo:([^\]]+)\]\]|\[replyTo:([^\]]+)\])\s*/i);
     if (!m) return { isReply: false, parentId: '', cleanText: raw };
-    const parentId = String(m[1] || '').trim();
+    const parentId = String((m[1] || m[2] || '')).trim();
     const cleanText = raw.slice(m[0].length);
     return { isReply: true, parentId, cleanText };
 }
@@ -3015,9 +3017,9 @@ function generateCommentHTML(textOrObj, timestampMaybe, opts = {}) {
     const replyToAttr = replyParentId ? ` data-reply-to="${tmEscapeHtml(replyParentId)}"` : '';
 
     const repliesHtml = safeStr(options.repliesHtml || '').trim();
-    const repliesBlock = isReply ? '' : `<div class="comment-replies">${repliesHtml}</div>`;
+    const repliesBlock = `<div class="comment-replies">${repliesHtml}</div>`;
 
-    const replyBtnHtml = isReply ? '' : '<span class="c-action action-reply-comment">Reply</span>';
+    const replyBtnHtml = '<span class="c-action action-reply-comment">Reply</span>';
 
     return `
         <div class="comment-item"${idAttr}${commentTsAttr}${authorNameAttr}${isReplyAttr}${replyToAttr}${itemStyle}>
