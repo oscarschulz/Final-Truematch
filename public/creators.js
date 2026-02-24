@@ -1060,10 +1060,26 @@ async function tmSetPostReaction(postId, reaction) {
 }
 
 
-async function tmSetCommentReaction(postId, commentId, reaction) {
+async function tmSetCommentReaction(postId, commentId, reaction, extraMeta = null) {
     try {
         if (!postId || !commentId) return null;
+
+        const meta = (extraMeta && typeof extraMeta === 'object') ? extraMeta : null;
         const body = { postId: String(postId), commentId: String(commentId), reaction: reaction || null };
+
+        if (meta) {
+            const text = (meta.commentText === null || meta.commentText === undefined) ? '' : String(meta.commentText).trim();
+            const authorName = (meta.commentAuthorName === null || meta.commentAuthorName === undefined) ? '' : String(meta.commentAuthorName).trim();
+            const ts = Number(meta.commentTimestamp || 0) || 0;
+            const parentCommentId = (meta.parentCommentId === null || meta.parentCommentId === undefined) ? '' : String(meta.parentCommentId).trim();
+
+            if (text) body.commentText = text;
+            if (authorName) body.commentAuthorName = authorName;
+            if (ts > 0) body.commentTimestamp = ts;
+            if (parentCommentId) body.parentCommentId = parentCommentId;
+            if (meta.isReply !== undefined) body.isReply = !!meta.isReply;
+        }
+
         const result = await tmFetchJson(POST_COMMENT_REACT_ENDPOINT, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -2154,7 +2170,20 @@ async function tmFetchCreatorsFeed(limit = 40) {
                     if (commentLikeBtn) commentLikeBtn.style.pointerEvents = 'none';
 
                     try {
-                        const resp = await tmSetCommentReaction(postId, commentId, desired || null);
+                        const ownBody = (commentItem && commentItem.querySelector(':scope > .comment-body')) || (commentItem && commentItem.querySelector('.comment-body'));
+                        const authorEl = ownBody ? ownBody.querySelector('.comment-author') : null;
+                        const textEl = ownBody ? ownBody.querySelector('.comment-text') : null;
+                        const tsRaw = Number(commentItem?.dataset?.commentTs || 0) || 0;
+                        const isReply = String(commentItem?.dataset?.isReply || '') === '1';
+                        const parentCommentId = safeStr(commentItem?.dataset?.replyTo || '').trim();
+
+                        const resp = await tmSetCommentReaction(postId, commentId, desired || null, {
+                            commentText: textEl ? String(textEl.innerText || textEl.textContent || '').trim() : '',
+                            commentAuthorName: authorEl ? String(authorEl.textContent || '').trim() : '',
+                            commentTimestamp: tsRaw,
+                            isReply,
+                            parentCommentId
+                        });
                         if (!resp || !resp.ok) throw new Error(resp?.message || 'Failed');
 
                         const finalReaction = (resp.myReaction || '').toString().trim().toLowerCase();
@@ -2978,13 +3007,20 @@ function generateCommentHTML(textOrObj, timestampMaybe, opts = {}) {
     const isReply = !!options.isReply;
     const itemStyle = isReply ? ' style="margin-top:10px; padding-left:34px; animation:fadeIn 0.2s;"' : '';
 
+    const commentTsVal = Number(c.timestamp || c.createdAtMs || c.updatedAtMs || 0) || 0;
+    const commentTsAttr = commentTsVal > 0 ? ` data-comment-ts="${commentTsVal}"` : '';
+    const authorNameAttr = name ? ` data-comment-author="${tmEscapeHtml(name)}"` : '';
+    const replyParentId = (isReply && meta && meta.parentId) ? safeStr(meta.parentId).trim() : '';
+    const isReplyAttr = ` data-is-reply="${isReply ? '1' : '0'}"`;
+    const replyToAttr = replyParentId ? ` data-reply-to="${tmEscapeHtml(replyParentId)}"` : '';
+
     const repliesHtml = safeStr(options.repliesHtml || '').trim();
     const repliesBlock = isReply ? '' : `<div class="comment-replies">${repliesHtml}</div>`;
 
     const replyBtnHtml = isReply ? '' : '<span class="c-action action-reply-comment">Reply</span>';
 
     return `
-        <div class="comment-item"${idAttr}${itemStyle}>
+        <div class="comment-item"${idAttr}${commentTsAttr}${authorNameAttr}${isReplyAttr}${replyToAttr}${itemStyle}>
             <img class="comment-avatar" src="${avatarAttr}" alt="">
             <div class="comment-body">
                 <div class="comment-bubble">
