@@ -13944,267 +13944,227 @@ function tmInitSuggestionsSidebar() {
 document.addEventListener('DOMContentLoaded', init);
 })();
 
-/* === FINAL HOTFIX: vertical threaded comments + latest-5 collapsers + clean display names/text === */
-(function () {
-  if (window.__tmVerticalThreadHotfixApplied) return;
-  window.__tmVerticalThreadHotfixApplied = true;
 
-  function __tmSafeString2(v) {
-    try { return String(v == null ? '' : v); } catch (_) { return ''; }
-  }
+/* === TM PATCH: threaded-viewmore-config (reveal-all, 3/10) === */
+(function(){
+  try {
+    if (window.__tmThreadViewMoreConfigPatchApplied) return;
+    window.__tmThreadViewMoreConfigPatchApplied = true;
 
-  function __tmStripReplyTag(rawText) {
-    const raw = __tmSafeString2(rawText);
-    if (typeof tmParseReplyTag === 'function') {
+    // Defaults requested: comments=3, replies=10 (change anytime)
+    const TM_THREAD_DEFAULT_VISIBLE_COMMENTS = 3;
+    const TM_THREAD_DEFAULT_VISIBLE_REPLIES  = 10;
+    const TM_THREAD_VIEW_MORE_REVEALS_ALL    = true;
+
+    window.__tmThreadUiByPost = window.__tmThreadUiByPost || {};
+    window.__tmCommentsByPost = window.__tmCommentsByPost || {};
+
+    const toStr = (v) => (v == null ? '' : String(v));
+    const escHtml = (s) => toStr(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+    const escAttr = (s) => escHtml(s);
+
+    function tmGetUiState(postId){
+      const key = toStr(postId || '');
+      if (!window.__tmThreadUiByPost[key]) {
+        window.__tmThreadUiByPost[key] = {
+          commentsExpanded: false,
+          repliesExpanded: {} // parentId -> true
+        };
+      }
+      return window.__tmThreadUiByPost[key];
+    }
+
+    function tmReplyTagInfoFromText(rawText){
+      const raw = toStr(rawText);
+      const m = raw.match(/\[\[replyTo:([^\]]+)\]\]/i);
+      const replyTo = m ? toStr(m[1]).trim() : '';
+      const cleaned = raw.replace(/\s*\[\[replyTo:[^\]]+\]\]\s*/gi, ' ').replace(/\s{2,}/g, ' ').trim();
+      return { replyTo, cleaned };
+    }
+
+    function tmCommentTimestamp(c){
+      const v = c && (c.createdAt || c.timestamp || c.date || c.time || c.updatedAt);
+      const t = v ? new Date(v).getTime() : NaN;
+      return Number.isFinite(t) ? t : 0;
+    }
+
+    function tmBuildThreadTree(rawList){
+      const list = Array.isArray(rawList) ? rawList : [];
+      const byId = new Map();
+      const children = new Map();
+      const roots = [];
+
+      for (const item of list) {
+        if (!item) continue;
+        const id = toStr(item.id || item.commentId || item._id || item.createdAt || Math.random());
+        const tagInfo = tmReplyTagInfoFromText(item.text);
+        const explicitParent = toStr(item.replyTo || item.replyToId || item.parentId || '').trim();
+        const parentId = explicitParent || tagInfo.replyTo || '';
+        const node = {
+          ...item,
+          id,
+          __parentId: parentId,
+          __cleanText: tagInfo.cleaned || toStr(item.text || '').trim()
+        };
+        byId.set(id, node);
+      }
+
+      // keep chronological order for thread readability (oldest -> newest)
+      const ordered = Array.from(byId.values()).sort((a,b) => tmCommentTimestamp(a) - tmCommentTimestamp(b));
+      for (const node of ordered) {
+        const pid = toStr(node.__parentId || '').trim();
+        if (pid && byId.has(pid) && pid !== node.id) {
+          if (!children.has(pid)) children.set(pid, []);
+          children.get(pid).push(node.id);
+        } else {
+          roots.push(node.id);
+        }
+      }
+
+      return { byId, children, roots };
+    }
+
+    function tmMoreButtonHtml(kind, hiddenCount, postId, parentId){
+      const labelBase = kind === 'comments' ? 'comments' : 'replies';
+      const count = Math.max(0, Number(hiddenCount) || 0);
+      if (!count) return '';
+      return `
+        <button type="button" class="tm-comment-more-btn"
+          data-tm-more-kind="${escAttr(kind)}"
+          data-post-id="${escAttr(postId)}"
+          ${parentId ? `data-parent-id="${escAttr(parentId)}"` : ''}
+          aria-label="View ${count} more ${labelBase}">
+          View ${count} more ${labelBase}
+        </button>
+      `;
+    }
+
+    function tmRenderThreadList(tree, ids, postId, ui, parentId){
+      const arr = Array.isArray(ids) ? ids.slice() : [];
+      const isRoot = !parentId;
+      const defaultVisible = isRoot ? TM_THREAD_DEFAULT_VISIBLE_COMMENTS : TM_THREAD_DEFAULT_VISIBLE_REPLIES;
+      const expanded = isRoot ? !!ui.commentsExpanded : !!ui.repliesExpanded[toStr(parentId)];
+      const total = arr.length;
+      const visibleIds = (expanded || total <= defaultVisible)
+        ? arr
+        : arr.slice(-defaultVisible);
+      const hiddenCount = total - visibleIds.length;
+
+      let html = '';
+      if (hiddenCount > 0) {
+        html += tmMoreButtonHtml(isRoot ? 'comments' : 'replies', hiddenCount, postId, parentId || '');
+      }
+
+      for (const id of visibleIds) {
+        const node = tree.byId.get(id);
+        if (!node) continue;
+        const childIds = tree.children.get(id) || [];
+        const repliesHtml = childIds.length
+          ? `<div class="comment-replies">${tmRenderThreadList(tree, childIds, postId, ui, id)}</div>`
+          : '';
+
+        const cleanNode = { ...node, text: node.__cleanText };
+        try {
+          html += (typeof generateCommentHTML === 'function')
+            ? generateCommentHTML(cleanNode, 0, repliesHtml)
+            : '';
+        } catch (e) {
+          // fallback minimal renderer if generateCommentHTML errors
+          html += `
+            <div class="comment-item" data-comment-id="${escAttr(cleanNode.id)}">
+              <div class="comment-body"><strong>${escHtml(cleanNode.name || cleanNode.username || 'User')}</strong> ${escHtml(cleanNode.text || '')}</div>
+              ${repliesHtml}
+            </div>`;
+        }
+      }
+      return html;
+    }
+
+    async function tmEnsureCommentsLoadedPatched(postCard, postId, force = false) {
+      if (!postCard || !postId) return [];
+      const commentsWrap = postCard.querySelector('.post-comments');
+      const commentsList = postCard.querySelector('.comments-list');
+      if (!commentsWrap || !commentsList) return [];
+
+      const key = toStr(postId);
+      let comments = [];
+
       try {
-        const meta = tmParseReplyTag(raw);
-        if (meta && typeof meta.cleanText === 'string') return meta.cleanText.trim();
+        if (!force && typeof tmLoadComments === 'function') {
+          comments = await tmLoadComments(key);
+        }
       } catch (_) {}
+
+      if (!Array.isArray(comments) || !comments.length || force) {
+        try {
+          const remote = (typeof tmFetchPostComments === 'function') ? await tmFetchPostComments(key) : [];
+          comments = Array.isArray(remote) ? remote : [];
+          if (typeof tmNormalizeCommentItem === 'function') {
+            comments = comments.map(tmNormalizeCommentItem).filter(Boolean);
+          }
+          if (typeof tmSaveComments === 'function') {
+            try { await tmSaveComments(key, comments); } catch (_) {}
+          }
+        } catch (_) {
+          comments = Array.isArray(comments) ? comments : [];
+        }
+      }
+
+      comments = Array.isArray(comments) ? comments.filter(Boolean) : [];
+      window.__tmCommentsByPost[key] = comments.slice();
+
+      const tree = tmBuildThreadTree(comments);
+      const ui = tmGetUiState(key);
+      const html = tmRenderThreadList(tree, tree.roots, key, ui, '');
+
+      commentsList.innerHTML = html || '';
+      commentsWrap.dataset.commentsLoaded = 'true';
+      return comments;
     }
-    return raw.replace(/^\s*\[\[replyTo:[^\]]+\]\]\s*/i, '').trim();
-  }
 
-  function __tmParseReplyTagId(rawText) {
-    const raw = __tmSafeString2(rawText);
-    if (typeof tmParseReplyTag === 'function') {
-      try {
-        const meta = tmParseReplyTag(raw);
-        if (meta && meta.replyToId) return String(meta.replyToId);
-      } catch (_) {}
+    // Override the active loader used by comment toggles / posting flows
+    try { tmEnsureCommentsLoaded = tmEnsureCommentsLoadedPatched; } catch (_) {}
+    try { window.tmEnsureCommentsLoaded = tmEnsureCommentsLoadedPatched; } catch (_) {}
+
+    if (!window.__tmThreadViewMoreHandlerBound) {
+      window.__tmThreadViewMoreHandlerBound = true;
+      document.addEventListener('click', function(e){
+        const btn = e.target && e.target.closest ? e.target.closest('.tm-comment-more-btn') : null;
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        const kind = toStr(btn.getAttribute('data-tm-more-kind')).trim();
+        const postId = toStr(btn.getAttribute('data-post-id')).trim() || toStr(btn.closest('.post-card')?.dataset?.postId || '').trim();
+        const parentId = toStr(btn.getAttribute('data-parent-id')).trim();
+        if (!postId) return;
+
+        const ui = tmGetUiState(postId);
+        if (kind === 'comments') {
+          ui.commentsExpanded = TM_THREAD_VIEW_MORE_REVEALS_ALL ? true : ui.commentsExpanded;
+        } else if (kind === 'replies' && parentId) {
+          ui.repliesExpanded[parentId] = TM_THREAD_VIEW_MORE_REVEALS_ALL ? true : true;
+        }
+
+        const postCard = btn.closest('.post-card');
+        if (postCard) {
+          Promise.resolve(tmEnsureCommentsLoadedPatched(postCard, postId, false)).catch(()=>{});
+        }
+      }, true);
     }
-    const m = raw.match(/^\s*\[\[replyTo:([^\]]+)\]\]/i);
-    return m ? String(m[1]).trim() : '';
-  }
 
-  function __tmNormalizeThreadCommentV2(raw) {
-    const c = (raw && typeof raw === 'object') ? { ...raw } : {};
-    const id = __tmSafeString2(c.id || c.commentId || c._id || c.cid || c.ts || ('c_' + Math.random().toString(36).slice(2)));
-    const rawContent = __tmSafeString2(c.content || c.text || '');
-    const cleanText = __tmStripReplyTag(rawContent);
-
-    // Keep server parentId first. If missing, infer from inline reply tag.
-    let parentId = __tmSafeString2(c.parentId || c.parentCommentId || c.replyTo || c.replyToCommentId || '').trim();
-    if (!parentId) parentId = __tmParseReplyTagId(rawContent);
-
-    const displayName = __tmSafeString2(
-      c.displayName || c.name || c.authorName || c.userDisplayName || c.username || c.handle || 'User'
-    ).trim() || 'User';
-
-    const username = __tmSafeString2(c.username || c.handle || c.userName || c.userHandle || '').trim();
-
-    return {
-      ...c,
-      id,
-      parentId: parentId || '',
-      content: cleanText,
-      text: cleanText,
-      __cleanText: cleanText,
-      displayName,
-      username,
-      __children: Array.isArray(c.__children) ? c.__children : []
+    // Optional helpers for quick future tuning from console without editing code
+    window.__tmThreadViewMoreConfig = {
+      commentsDefaultVisible: TM_THREAD_DEFAULT_VISIBLE_COMMENTS,
+      repliesDefaultVisible: TM_THREAD_DEFAULT_VISIBLE_REPLIES,
+      revealAllOnViewMore: TM_THREAD_VIEW_MORE_REVEALS_ALL
     };
+  } catch (err) {
+    console.warn('[TM PATCH] threaded-viewmore-config failed', err);
   }
-
-  // Unlimited nesting support via parentId chain; falls back to inline [[replyTo:...]] tags.
-  window.__tmBuildNestedCommentTree = function __tmBuildNestedCommentTree(list) {
-    const arr = Array.isArray(list) ? list : [];
-    const norm = arr.map(__tmNormalizeThreadCommentV2);
-
-    const byId = new Map();
-    norm.forEach(c => {
-      c.__children = [];
-      byId.set(String(c.id), c);
-    });
-
-    const roots = [];
-    for (const c of norm) {
-      const pid = __tmSafeString2(c.parentId).trim();
-      if (pid && byId.has(pid) && pid !== String(c.id)) {
-        byId.get(pid).__children.push(c);
-      } else {
-        roots.push(c);
-      }
-    }
-
-    // preserve original chronological order as received
-    return roots;
-  };
-
-  function __tmSanitizedNodeHTML(node) {
-    const base = {
-      ...node,
-      content: __tmStripReplyTag(node && (node.__cleanText || node.content || node.text || '')),
-      text: __tmStripReplyTag(node && (node.__cleanText || node.content || node.text || '')),
-      __cleanText: __tmStripReplyTag(node && (node.__cleanText || node.content || node.text || '')),
-      username: '',
-      handle: '',
-      userName: '',
-      userHandle: '',
-      __children: [],
-      __depth: 0
-    };
-
-    let html = '';
-    try {
-      if (typeof generateCommentHTML === 'function') {
-        html = generateCommentHTML(base, !!base.parentId);
-      } else if (typeof createCommentHTML === 'function') {
-        html = createCommentHTML(base);
-      }
-    } catch (e) {
-      console.warn('[TM comments hotfix] base renderer failed:', e);
-      html = '';
-    }
-
-    html = __tmSafeString2(html);
-
-    // Force vertical / no diagonal inline indent from old renderer.
-    html = html.replace(/\sstyle=(["'])[^"']*margin-left\s*:\s*[^;"']+;?[^"']*\1/gi, '');
-    html = html.replace(/\sstyle=(["'])\s*\1/gi, '');
-
-    // Normalize level class so CSS doesn't inherit staggered margins.
-    html = html.replace(/\bcomment-level-\d+\b/g, 'comment-level-0');
-
-    // Defensive cleanup in case renderer still used raw text.
-    html = html.replace(/\[\[replyTo:[^\]]+\]\]\s*/gi, '');
-
-    return html;
-  }
-
-  function __tmCountAllNodes(list) {
-    let total = 0;
-    for (const n of (Array.isArray(list) ? list : [])) {
-      total += 1;
-      if (n && Array.isArray(n.__children) && n.__children.length) total += __tmCountAllNodes(n.__children);
-    }
-    return total;
-  }
-
-  function __tmRenderThreadList(list, kind) {
-    const items = Array.isArray(list) ? list : [];
-    if (!items.length) return '';
-
-    const initialVisible = 5;
-    const hiddenCount = Math.max(0, items.length - initialVisible);
-    let html = `<div class="tm-thread-list-wrap" data-kind="${kind}">`;
-
-    if (hiddenCount > 0) {
-      const label = hiddenCount === 1
-        ? `View 1 more ${kind === 'replies' ? 'reply' : 'comment'}`
-        : `View ${hiddenCount} more ${kind === 'replies' ? 'replies' : 'comments'}`;
-      html += `<button type="button" class="tm-view-more-thread-btn" data-kind="${kind}">${label}</button>`;
-    }
-
-    html += `<div class="tm-thread-list tm-thread-list--${kind}">`;
-
-    items.forEach((node, idx) => {
-      const hidden = idx < hiddenCount;
-      html += `<div class="tm-thread-item ${hidden ? 'tm-thread-item--hidden' : ''}" data-hidden="${hidden ? '1' : '0'}">`;
-      html += __tmSanitizedNodeHTML(node);
-
-      if (node && Array.isArray(node.__children) && node.__children.length) {
-        html += `<div class="tm-thread-children-vertical" data-parent-id="${String(node.id || '')}">`;
-        html += __tmRenderThreadList(node.__children, 'replies');
-        html += `</div>`;
-      }
-
-      html += `</div>`;
-    });
-
-    html += `</div></div>`;
-    return html;
-  }
-
-  window.__tmRenderCommentTreeHTML = function __tmRenderCommentTreeHTML(list) {
-    const tree = (typeof window.__tmBuildNestedCommentTree === 'function')
-      ? window.__tmBuildNestedCommentTree(list)
-      : (Array.isArray(list) ? list : []);
-    return __tmRenderThreadList(tree, 'comments');
-  };
-  try { __tmBuildNestedCommentTree = window.__tmBuildNestedCommentTree; } catch (_) {}
-  try { __tmRenderCommentTreeHTML = window.__tmRenderCommentTreeHTML; } catch (_) {}
-
-  // Delegated "View more comments/replies" behavior (reveals 5 older each click)
-  if (!window.__tmThreadViewMoreBound) {
-    window.__tmThreadViewMoreBound = true;
-    document.addEventListener('click', function (e) {
-      const btn = e.target && e.target.closest ? e.target.closest('.tm-view-more-thread-btn') : null;
-      if (!btn) return;
-      const wrap = btn.closest('.tm-thread-list-wrap');
-      const listEl = wrap ? wrap.querySelector(':scope > .tm-thread-list') : null;
-      if (!listEl) return;
-
-      const hiddenItems = Array.from(listEl.querySelectorAll(':scope > .tm-thread-item.tm-thread-item--hidden'));
-      if (!hiddenItems.length) return;
-
-      const revealCount = 5;
-      hiddenItems.slice(0, revealCount).forEach(el => {
-        el.classList.remove('tm-thread-item--hidden');
-        el.setAttribute('data-hidden', '0');
-      });
-
-      const remaining = Math.max(0, hiddenItems.length - Math.min(revealCount, hiddenItems.length));
-      const kind = btn.getAttribute('data-kind') || 'comments';
-
-      if (remaining <= 0) {
-        btn.remove();
-      } else {
-        btn.textContent = remaining === 1
-          ? `View 1 more ${kind === 'replies' ? 'reply' : 'comment'}`
-          : `View ${remaining} more ${kind === 'replies' ? 'replies' : 'comments'}`;
-      }
-    });
-  }
-
-  // Re-override ensure loader so all callers use latest renderer + cleaned cache
-  window.tmEnsureCommentsLoaded = async function tmEnsureCommentsLoaded(postId, force) {
-    const key = String(postId || '').trim();
-    if (!key) return [];
-    if (!force && window.tmCommentsCache && Array.isArray(window.tmCommentsCache[key])) {
-      return window.tmCommentsCache[key];
-    }
-
-    const wrap = document.querySelector(`[data-post-id="${key}"]`);
-    const listEl = wrap && wrap.querySelector ? wrap.querySelector('.comment-list') : null;
-
-    try {
-      if (listEl) listEl.innerHTML = '<div class="comment-loading">Loading comments...</div>';
-
-      const items = await apiRequest(`/api/creator/posts/comments?postId=${encodeURIComponent(key)}`, { method: 'GET' });
-      const incoming = Array.isArray(items) ? items : [];
-
-      // Merge with local optimistic cache, dedupe by id.
-      const localExisting = (window.tmCommentsCache && Array.isArray(window.tmCommentsCache[key])) ? window.tmCommentsCache[key] : [];
-      const mergedMap = new Map();
-
-      for (const src of localExisting) {
-        const n = __tmNormalizeThreadCommentV2(src);
-        mergedMap.set(String(n.id), n);
-      }
-      for (const src of incoming) {
-        const n = __tmNormalizeThreadCommentV2(src);
-        const prev = mergedMap.get(String(n.id)) || {};
-        mergedMap.set(String(n.id), { ...prev, ...n });
-      }
-
-      const merged = Array.from(mergedMap.values());
-      if (!window.tmCommentsCache) window.tmCommentsCache = {};
-      window.tmCommentsCache[key] = merged;
-
-      if (listEl) {
-        const treeHtml = window.__tmRenderCommentTreeHTML(merged);
-        listEl.innerHTML = treeHtml || '';
-        if (!treeHtml) listEl.innerHTML = '<div class="comment-empty">No comments yet.</div>';
-      }
-      return merged;
-    } catch (err) {
-      console.error('[TM comments hotfix] load failed:', err);
-      if (listEl) {
-        listEl.innerHTML = '<div class="comment-error">Failed to load comments.</div>';
-      }
-      return [];
-    }
-  };
-  try { tmEnsureCommentsLoaded = window.tmEnsureCommentsLoaded; } catch (_) {}
 })();
- /* === /FINAL HOTFIX === */

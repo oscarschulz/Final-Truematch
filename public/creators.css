@@ -4808,77 +4808,25 @@ select option { background-color: #1a1a1a; color: #fff; padding: 10px; }
     }
 }
 
-/* === FINAL HOTFIX: vertical threaded comments UI (no diagonal overlap) === */
-.tm-thread-list-wrap {
-  display: block;
-  width: 100%;
-}
-
-.tm-thread-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-}
-
-.tm-thread-list > .tm-thread-item {
-  display: block;
-  width: 100%;
-}
-
-.tm-thread-item--hidden {
-  display: none !important;
-}
-
-.tm-view-more-thread-btn {
+/* === TM PATCH: threaded-viewmore-config styles === */
+.tm-comment-more-btn {
   appearance: none;
-  border: none;
+  -webkit-appearance: none;
+  border: 0;
   background: transparent;
-  color: #9fb2cc;
+  color: #9fb2d8;
   font-size: 12px;
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 1.2;
+  padding: 6px 0 8px 0;
+  margin: 2px 0 6px 42px;
   cursor: pointer;
-  padding: 2px 0 6px;
   text-align: left;
 }
-
-.tm-view-more-thread-btn:hover {
-  color: #c7d6ea;
+.tm-comment-more-btn:hover {
+  color: #c8d8ff;
   text-decoration: underline;
 }
-
-.tm-thread-children-vertical {
-  display: block;
-  width: 100%;
-  margin: 4px 0 0 0;
-  padding-left: 14px;
-  border-left: 1px solid rgba(124, 154, 193, 0.22);
+.comment-replies .tm-comment-more-btn {
+  margin-left: 0;
 }
-
-/* Flatten old diagonal/nesting offsets from legacy classes */
-.tm-thread-list .comment-wrapper,
-.tm-thread-list .comment-item,
-.tm-thread-list [class*="comment-level-"] {
-  margin-left: 0 !important;
-  transform: none !important;
-  max-width: 100%;
-}
-
-.tm-thread-list .comment-item {
-  width: 100%;
-}
-
-.tm-thread-list .comment-bubble {
-  max-width: min(100%, 680px);
-  word-break: break-word;
-  overflow-wrap: anywhere;
-}
-
-/* Make action row stable under vertical threads */
-.tm-thread-list .comment-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-/* === /FINAL HOTFIX === */
