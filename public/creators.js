@@ -909,56 +909,6 @@ function tmToast(TopToast, icon, title) {
     } catch {}
 }
 
-function tmExtractApiMessage(data, fallback = '') {
-    try {
-        if (!data || typeof data !== 'object') return String(fallback || '');
-        return String(
-            data.message ||
-            data.error ||
-            data.err ||
-            data.code ||
-            data.reason ||
-            fallback ||
-            ''
-        ).trim();
-    } catch (_) {
-        return String(fallback || '').trim();
-    }
-}
-
-function tmRecordReactionDebug(kind, meta = {}) {
-    try {
-        const snapshot = {
-            kind: String(kind || 'reaction'),
-            at: new Date().toISOString(),
-            endpoint: meta.endpoint || meta.url || '',
-            method: meta.method || 'POST',
-            status: Number(meta.status || 0) || 0,
-            ok: !!meta.ok,
-            payload: (meta.payload && typeof meta.payload === 'object') ? meta.payload : null,
-            message: String(meta.message || '').trim(),
-            data: (meta.data && typeof meta.data === 'object') ? meta.data : meta.data ?? null,
-            rawText: meta.rawText ? String(meta.rawText).slice(0, 500) : '',
-            durationMs: Number(meta.durationMs || 0) || 0,
-            networkError: meta.error ? String(meta.error?.message || meta.error) : '',
-        };
-
-        if (typeof window !== 'undefined') {
-            window.__tmLastReactionDebug = snapshot;
-            const arr = Array.isArray(window.__tmReactionDebugLog) ? window.__tmReactionDebugLog : [];
-            arr.push(snapshot);
-            window.__tmReactionDebugLog = arr.slice(-20);
-        }
-
-        console.error('[TM Reaction Debug]', snapshot);
-        return snapshot;
-    } catch (err) {
-        try { console.error('[TM Reaction Debug] logger_failed', err, meta); } catch (_) {}
-        return null;
-    }
-}
-
-
 function tmNowId() {
     return String(Date.now()) + '-' + Math.random().toString(16).slice(2);
 }
@@ -969,163 +919,44 @@ function tmNowId() {
 // If server routes are not present yet, we fallback to existing local-only behavior.
 // ------------------------------
 async function tmFetchJson(url, opts = {}) {
-    const method = String(opts?.method || 'GET').toUpperCase();
-    const startedAt = Date.now();
     try {
         const res = await fetch(url, { credentials: 'include', ...opts });
-        const clone = res.clone();
-        const contentType = String(res.headers.get('content-type') || '');
-        const isJson = contentType.toLowerCase().includes('application/json');
-
-        let data = null;
-        let rawText = '';
-
-        if (isJson) {
-            data = await res.json().catch(() => null);
-            if (data == null) rawText = await clone.text().catch(() => '');
-        } else {
-            rawText = await clone.text().catch(() => '');
-        }
-
-        return {
-            res,
-            data,
-            rawText,
-            url,
-            method,
-            ok: !!res.ok,
-            status: Number(res.status || 0) || 0,
-            contentType,
-            durationMs: Date.now() - startedAt
-        };
-    } catch (error) {
-        return {
-            res: null,
-            data: null,
-            rawText: '',
-            url,
-            method,
-            ok: false,
-            status: 0,
-            contentType: '',
-            durationMs: Date.now() - startedAt,
-            error
-        };
+        const isJson = (res.headers.get('content-type') || '').includes('application/json');
+        const data = isJson ? await res.json().catch(() => null) : null;
+        return { res, data };
+    } catch (e) {
+        return { res: null, data: null };
     }
 }
 
 async function tmSetPostReaction(postId, reaction) {
     if (!postId) return null;
     const payload = { id: String(postId), reaction: reaction || null };
-    const result = await tmFetchJson(POST_REACT_ENDPOINT, {
+    const { res, data } = await tmFetchJson(POST_REACT_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
     });
-    const { res, data } = result;
 
-    // Keep diagnostics, but don't assume every 404 means missing route.
-    if (!res) {
-        tmRecordReactionDebug('post', {
-            endpoint: POST_REACT_ENDPOINT,
-            payload,
-            ...result,
-            message: 'network_or_fetch_failed'
-        });
-        return null;
-    }
-
-    if (res.status === 404) {
-        tmRecordReactionDebug('post', {
-            endpoint: POST_REACT_ENDPOINT,
-            payload,
-            ...result,
-            message: tmExtractApiMessage(
-                data,
-                (result && result.rawText ? String(result.rawText).trim().slice(0, 180) : '') || 'post_not_found_or_route_missing'
-            )
-        });
-        return null;
-    }
-
-    if (res.ok && data && data.ok) return data;
-
-    tmRecordReactionDebug('post', {
-        endpoint: POST_REACT_ENDPOINT,
-        payload,
-        ...result,
-        message: tmExtractApiMessage(data, `post_reaction_failed_${res.status || 0}`)
-    });
+    // If endpoint doesn't exist yet, treat as not available
+    if (!res || res.status === 404) return null;
+    if (data && data.ok) return data;
     return null;
 }
 
 
-async function tmSetCommentReaction(postId, commentId, reaction, extraMeta = null) {
+async function tmSetCommentReaction(postId, commentId, reaction) {
     try {
         if (!postId || !commentId) return null;
-
-        const meta = (extraMeta && typeof extraMeta === 'object') ? extraMeta : null;
         const body = { postId: String(postId), commentId: String(commentId), reaction: reaction || null };
-
-        if (meta) {
-            const text = (meta.commentText === null || meta.commentText === undefined) ? '' : String(meta.commentText).trim();
-            const authorName = (meta.commentAuthorName === null || meta.commentAuthorName === undefined) ? '' : String(meta.commentAuthorName).trim();
-            const ts = Number(meta.commentTimestamp || 0) || 0;
-            const parentCommentId = (meta.parentCommentId === null || meta.parentCommentId === undefined) ? '' : String(meta.parentCommentId).trim();
-
-            if (text) body.commentText = text;
-            if (authorName) body.commentAuthorName = authorName;
-            if (ts > 0) body.commentTimestamp = ts;
-            if (parentCommentId) body.parentCommentId = parentCommentId;
-            if (meta.isReply !== undefined) body.isReply = !!meta.isReply;
-        }
-
-        const result = await tmFetchJson(POST_COMMENT_REACT_ENDPOINT, {
+        const { data } = await tmFetchJson(POST_COMMENT_REACT_ENDPOINT, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
         });
-        const { res, data } = result;
-
-        if (!res) {
-            tmRecordReactionDebug('comment', {
-                endpoint: POST_COMMENT_REACT_ENDPOINT,
-                payload: body,
-                ...result,
-                message: 'network_or_fetch_failed'
-            });
-            return null;
-        }
-
-        if (res.status === 404) {
-            tmRecordReactionDebug('comment', {
-                endpoint: POST_COMMENT_REACT_ENDPOINT,
-                payload: body,
-                ...result,
-                message: tmExtractApiMessage(
-                    data,
-                    (result && result.rawText ? String(result.rawText).trim().slice(0, 180) : '') || 'comment_not_found_or_route_missing'
-                )
-            });
-            return null;
-        }
-
-        if (res.ok && data && data.ok) return data;
-
-        tmRecordReactionDebug('comment', {
-            endpoint: POST_COMMENT_REACT_ENDPOINT,
-            payload: body,
-            ...result,
-            message: tmExtractApiMessage(data, `comment_reaction_failed_${res.status || 0}`)
-        });
+        if (data && data.ok) return data;
         return null;
     } catch (err) {
-        tmRecordReactionDebug('comment', {
-            endpoint: POST_COMMENT_REACT_ENDPOINT,
-            payload: { postId: String(postId || ''), commentId: String(commentId || ''), reaction: reaction || null },
-            error: err,
-            message: 'tmSetCommentReaction_exception'
-        });
         console.error('tmSetCommentReaction error:', err);
         return null;
     }
@@ -2170,20 +2001,7 @@ async function tmFetchCreatorsFeed(limit = 40) {
                     if (commentLikeBtn) commentLikeBtn.style.pointerEvents = 'none';
 
                     try {
-                        const ownBody = (commentItem && commentItem.querySelector(':scope > .comment-body')) || (commentItem && commentItem.querySelector('.comment-body'));
-                        const authorEl = ownBody ? ownBody.querySelector('.comment-author') : null;
-                        const textEl = ownBody ? ownBody.querySelector('.comment-text') : null;
-                        const tsRaw = Number(commentItem?.dataset?.commentTs || 0) || 0;
-                        const isReply = String(commentItem?.dataset?.isReply || '') === '1';
-                        const parentCommentId = String((commentItem?.dataset?.replyTo ?? '')).trim();
-
-                        const resp = await tmSetCommentReaction(postId, commentId, desired || null, {
-                            commentText: textEl ? String(textEl.innerText || textEl.textContent || '').trim() : '',
-                            commentAuthorName: authorEl ? String(authorEl.textContent || '').trim() : '',
-                            commentTimestamp: tsRaw,
-                            isReply,
-                            parentCommentId
-                        });
+                        const resp = await tmSetCommentReaction(postId, commentId, desired || null);
                         if (!resp || !resp.ok) throw new Error(resp?.message || 'Failed');
 
                         const finalReaction = (resp.myReaction || '').toString().trim().toLowerCase();
@@ -2200,11 +2018,8 @@ async function tmFetchCreatorsFeed(limit = 40) {
                             }
                         } catch (_) { /* ignore */ }
                     } catch (err) {
-                        console.error('Comment reaction failed:', err, (typeof window !== 'undefined' ? window.__tmLastReactionDebug : null));
-                        const __tmReactDbg = (typeof window !== 'undefined' && window.__tmLastReactionDebug) ? window.__tmLastReactionDebug : null;
-                        const __tmReactStatus = Number(__tmReactDbg?.status || 0) || 0;
-                        if (__tmReactDbg) console.error('Last reaction debug:', __tmReactDbg);
-                        tmToast(TopToast, 'error', __tmReactStatus ? `Failed to react (${__tmReactStatus})` : 'Failed to react');
+                        console.error('Comment reaction failed:', err);
+                        tmToast(TopToast, 'error', 'Failed to react');
                     } finally {
                         if (commentLikeBtn) commentLikeBtn.style.pointerEvents = '';
                     }
@@ -2298,11 +2113,8 @@ if (commentLikeBtn) {
             }
         } catch (_) { /* ignore */ }
     } catch (err) {
-        console.error('Comment like failed:', err, (typeof window !== 'undefined' ? window.__tmLastReactionDebug : null));
-        const __tmReactDbg = (typeof window !== 'undefined' && window.__tmLastReactionDebug) ? window.__tmLastReactionDebug : null;
-        const __tmReactStatus = Number(__tmReactDbg?.status || 0) || 0;
-        if (__tmReactDbg) console.error('Last reaction debug:', __tmReactDbg);
-        tmToast(TopToast, 'error', __tmReactStatus ? `Failed to react (${__tmReactStatus})` : 'Failed to react');
+        console.error('Comment like failed:', err);
+        tmToast(TopToast, 'error', 'Failed to react');
     } finally {
         btn.style.pointerEvents = '';
     }
@@ -2946,11 +2758,9 @@ function tmTimeAgo(tsMs) {
 
 function tmParseReplyTag(rawText = '') {
     const raw = String(rawText || '');
-    // Support both legacy single-bracket and current double-bracket tags
-    // [replyTo:<id>] and [[replyTo:<id>]]
-    const m = raw.match(/^\s*(?:\[\[replyTo:([^\]]+)\]\]|\[replyTo:([^\]]+)\])\s*/i);
+    const m = raw.match(/^\s*\[\[replyTo:([^\]]+)\]\]\s*/i);
     if (!m) return { isReply: false, parentId: '', cleanText: raw };
-    const parentId = String((m[1] || m[2] || '')).trim();
+    const parentId = String(m[1] || '').trim();
     const cleanText = raw.slice(m[0].length);
     return { isReply: true, parentId, cleanText };
 }
@@ -3009,20 +2819,13 @@ function generateCommentHTML(textOrObj, timestampMaybe, opts = {}) {
     const isReply = !!options.isReply;
     const itemStyle = isReply ? ' style="margin-top:10px; padding-left:34px; animation:fadeIn 0.2s;"' : '';
 
-    const commentTsVal = Number(c.timestamp || c.createdAtMs || c.updatedAtMs || 0) || 0;
-    const commentTsAttr = commentTsVal > 0 ? ` data-comment-ts="${commentTsVal}"` : '';
-    const authorNameAttr = name ? ` data-comment-author="${tmEscapeHtml(name)}"` : '';
-    const replyParentId = (isReply && meta && meta.parentId) ? safeStr(meta.parentId).trim() : '';
-    const isReplyAttr = ` data-is-reply="${isReply ? '1' : '0'}"`;
-    const replyToAttr = replyParentId ? ` data-reply-to="${tmEscapeHtml(replyParentId)}"` : '';
-
     const repliesHtml = safeStr(options.repliesHtml || '').trim();
-    const repliesBlock = `<div class="comment-replies">${repliesHtml}</div>`;
+    const repliesBlock = isReply ? '' : `<div class="comment-replies">${repliesHtml}</div>`;
 
-    const replyBtnHtml = '<span class="c-action action-reply-comment">Reply</span>';
+    const replyBtnHtml = isReply ? '' : '<span class="c-action action-reply-comment">Reply</span>';
 
     return `
-        <div class="comment-item"${idAttr}${commentTsAttr}${authorNameAttr}${isReplyAttr}${replyToAttr}${itemStyle}>
+        <div class="comment-item"${idAttr}${itemStyle}>
             <img class="comment-avatar" src="${avatarAttr}" alt="">
             <div class="comment-body">
                 <div class="comment-bubble">
@@ -9161,48 +8964,13 @@ async function tmDeleteCreatorPost(id) {
 // ==========================================
 
 async function tmFetchJson(url, opts = {}) {
-    const method = String(opts?.method || 'GET').toUpperCase();
-    const startedAt = Date.now();
     try {
         const res = await fetch(url, { credentials: 'include', ...opts });
-        const clone = res.clone();
-        const contentType = String(res.headers.get('content-type') || '');
-        const isJson = contentType.toLowerCase().includes('application/json');
-
-        let data = null;
-        let rawText = '';
-
-        if (isJson) {
-            data = await res.json().catch(() => null);
-            if (data == null) rawText = await clone.text().catch(() => '');
-        } else {
-            rawText = await clone.text().catch(() => '');
-        }
-
-        return {
-            res,
-            data,
-            rawText,
-            url,
-            method,
-            ok: !!res.ok,
-            status: Number(res.status || 0) || 0,
-            contentType,
-            durationMs: Date.now() - startedAt
-        };
-    } catch (error) {
-        return {
-            res: null,
-            data: null,
-            rawText: '',
-            url,
-            method,
-            ok: false,
-            status: 0,
-            contentType: '',
-            durationMs: Date.now() - startedAt,
-            error
-        };
+        const isJson = (res.headers.get('content-type') || '').includes('application/json');
+        const data = isJson ? await res.json().catch(() => null) : null;
+        return { res, data };
+    } catch (_) {
+        return { res: null, data: null };
     }
 }
 
@@ -9210,44 +8978,14 @@ async function tmSetPostReaction(postId, reaction) {
     if (!postId) return null;
 
     const payload = { id: String(postId), reaction: reaction || null };
-    const result = await tmFetchJson(POST_REACT_ENDPOINT, {
+    const { res, data } = await tmFetchJson(POST_REACT_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
     });
-    const { res, data } = result;
 
-    if (!res) {
-        tmRecordReactionDebug('post', {
-            endpoint: POST_REACT_ENDPOINT,
-            payload,
-            ...result,
-            message: 'network_or_fetch_failed'
-        });
-        return null;
-    }
-
-    if (res.status === 404) {
-        tmRecordReactionDebug('post', {
-            endpoint: POST_REACT_ENDPOINT,
-            payload,
-            ...result,
-            message: tmExtractApiMessage(
-                data,
-                (result && result.rawText ? String(result.rawText).trim().slice(0, 180) : '') || 'post_not_found_or_route_missing'
-            )
-        });
-        return null;
-    }
-
-    if (res.ok && data && data.ok) return data;
-
-    tmRecordReactionDebug('post', {
-        endpoint: POST_REACT_ENDPOINT,
-        payload,
-        ...result,
-        message: tmExtractApiMessage(data, `post_reaction_failed_${res.status || 0}`)
-    });
+    if (!res || res.status === 404) return null;
+    if (data && data.ok) return data;
     return null;
 }
 
@@ -14203,197 +13941,270 @@ function tmInitSuggestionsSidebar() {
 }
 
 
+document.addEventListener('DOMContentLoaded', init);
+})();
 
-/* === HOTFIX: recursive comment threading + reply-tag cleanup === */
-function __tmSafeString(v) {
-    try { return String(v == null ? '' : v); } catch { return ''; }
-}
+/* === FINAL HOTFIX: vertical threaded comments + latest-5 collapsers + clean display names/text === */
+(function () {
+  if (window.__tmVerticalThreadHotfixApplied) return;
+  window.__tmVerticalThreadHotfixApplied = true;
 
-function __tmNormalizeThreadComment(raw) {
-    const c = raw && typeof raw === 'object' ? { ...raw } : {};
-    const rawContent = __tmSafeString(c.content || c.text || '');
-    const meta = (typeof tmParseReplyTag === 'function')
-        ? tmParseReplyTag(rawContent)
-        : { isReply: false, parentId: '', content: rawContent };
+  function __tmSafeString2(v) {
+    try { return String(v == null ? '' : v); } catch (_) { return ''; }
+  }
 
-    c.id = __tmSafeString(c.id || c.commentId || c.cid || c._id || '').trim();
-    c.content = __tmSafeString(meta && meta.content != null ? meta.content : rawContent);
-    c.__replyMeta = {
-        isReply: !!(meta && meta.isReply),
-        parentId: __tmSafeString(meta && meta.parentId || '').trim()
+  function __tmStripReplyTag(rawText) {
+    const raw = __tmSafeString2(rawText);
+    if (typeof tmParseReplyTag === 'function') {
+      try {
+        const meta = tmParseReplyTag(raw);
+        if (meta && typeof meta.cleanText === 'string') return meta.cleanText.trim();
+      } catch (_) {}
+    }
+    return raw.replace(/^\s*\[\[replyTo:[^\]]+\]\]\s*/i, '').trim();
+  }
+
+  function __tmParseReplyTagId(rawText) {
+    const raw = __tmSafeString2(rawText);
+    if (typeof tmParseReplyTag === 'function') {
+      try {
+        const meta = tmParseReplyTag(raw);
+        if (meta && meta.replyToId) return String(meta.replyToId);
+      } catch (_) {}
+    }
+    const m = raw.match(/^\s*\[\[replyTo:([^\]]+)\]\]/i);
+    return m ? String(m[1]).trim() : '';
+  }
+
+  function __tmNormalizeThreadCommentV2(raw) {
+    const c = (raw && typeof raw === 'object') ? { ...raw } : {};
+    const id = __tmSafeString2(c.id || c.commentId || c._id || c.cid || c.ts || ('c_' + Math.random().toString(36).slice(2)));
+    const rawContent = __tmSafeString2(c.content || c.text || '');
+    const cleanText = __tmStripReplyTag(rawContent);
+
+    // Keep server parentId first. If missing, infer from inline reply tag.
+    let parentId = __tmSafeString2(c.parentId || c.parentCommentId || c.replyTo || c.replyToCommentId || '').trim();
+    if (!parentId) parentId = __tmParseReplyTagId(rawContent);
+
+    const displayName = __tmSafeString2(
+      c.displayName || c.name || c.authorName || c.userDisplayName || c.username || c.handle || 'User'
+    ).trim() || 'User';
+
+    const username = __tmSafeString2(c.username || c.handle || c.userName || c.userHandle || '').trim();
+
+    return {
+      ...c,
+      id,
+      parentId: parentId || '',
+      content: cleanText,
+      text: cleanText,
+      __cleanText: cleanText,
+      displayName,
+      username,
+      __children: Array.isArray(c.__children) ? c.__children : []
     };
-    if (!Array.isArray(c.replies)) c.replies = [];
-    return c;
-}
+  }
 
-function __tmBuildNestedCommentTree(list) {
-    const input = Array.isArray(list) ? list : [];
-    const nodes = input.map(__tmNormalizeThreadComment);
+  // Unlimited nesting support via parentId chain; falls back to inline [[replyTo:...]] tags.
+  window.__tmBuildNestedCommentTree = function __tmBuildNestedCommentTree(list) {
+    const arr = Array.isArray(list) ? list : [];
+    const norm = arr.map(__tmNormalizeThreadCommentV2);
+
     const byId = new Map();
-    nodes.forEach(n => {
-        if (n.id && !byId.has(n.id)) byId.set(n.id, n);
+    norm.forEach(c => {
+      c.__children = [];
+      byId.set(String(c.id), c);
     });
 
     const roots = [];
-    nodes.forEach(n => {
-        n.replies = Array.isArray(n.replies) ? n.replies : [];
+    for (const c of norm) {
+      const pid = __tmSafeString2(c.parentId).trim();
+      if (pid && byId.has(pid) && pid !== String(c.id)) {
+        byId.get(pid).__children.push(c);
+      } else {
+        roots.push(c);
+      }
+    }
+
+    // preserve original chronological order as received
+    return roots;
+  };
+
+  function __tmSanitizedNodeHTML(node) {
+    const base = {
+      ...node,
+      content: __tmStripReplyTag(node && (node.__cleanText || node.content || node.text || '')),
+      text: __tmStripReplyTag(node && (node.__cleanText || node.content || node.text || '')),
+      __cleanText: __tmStripReplyTag(node && (node.__cleanText || node.content || node.text || '')),
+      username: '',
+      handle: '',
+      userName: '',
+      userHandle: '',
+      __children: [],
+      __depth: 0
+    };
+
+    let html = '';
+    try {
+      if (typeof generateCommentHTML === 'function') {
+        html = generateCommentHTML(base, !!base.parentId);
+      } else if (typeof createCommentHTML === 'function') {
+        html = createCommentHTML(base);
+      }
+    } catch (e) {
+      console.warn('[TM comments hotfix] base renderer failed:', e);
+      html = '';
+    }
+
+    html = __tmSafeString2(html);
+
+    // Force vertical / no diagonal inline indent from old renderer.
+    html = html.replace(/\sstyle=(["'])[^"']*margin-left\s*:\s*[^;"']+;?[^"']*\1/gi, '');
+    html = html.replace(/\sstyle=(["'])\s*\1/gi, '');
+
+    // Normalize level class so CSS doesn't inherit staggered margins.
+    html = html.replace(/\bcomment-level-\d+\b/g, 'comment-level-0');
+
+    // Defensive cleanup in case renderer still used raw text.
+    html = html.replace(/\[\[replyTo:[^\]]+\]\]\s*/gi, '');
+
+    return html;
+  }
+
+  function __tmCountAllNodes(list) {
+    let total = 0;
+    for (const n of (Array.isArray(list) ? list : [])) {
+      total += 1;
+      if (n && Array.isArray(n.__children) && n.__children.length) total += __tmCountAllNodes(n.__children);
+    }
+    return total;
+  }
+
+  function __tmRenderThreadList(list, kind) {
+    const items = Array.isArray(list) ? list : [];
+    if (!items.length) return '';
+
+    const initialVisible = 5;
+    const hiddenCount = Math.max(0, items.length - initialVisible);
+    let html = `<div class="tm-thread-list-wrap" data-kind="${kind}">`;
+
+    if (hiddenCount > 0) {
+      const label = hiddenCount === 1
+        ? `View 1 more ${kind === 'replies' ? 'reply' : 'comment'}`
+        : `View ${hiddenCount} more ${kind === 'replies' ? 'replies' : 'comments'}`;
+      html += `<button type="button" class="tm-view-more-thread-btn" data-kind="${kind}">${label}</button>`;
+    }
+
+    html += `<div class="tm-thread-list tm-thread-list--${kind}">`;
+
+    items.forEach((node, idx) => {
+      const hidden = idx < hiddenCount;
+      html += `<div class="tm-thread-item ${hidden ? 'tm-thread-item--hidden' : ''}" data-hidden="${hidden ? '1' : '0'}">`;
+      html += __tmSanitizedNodeHTML(node);
+
+      if (node && Array.isArray(node.__children) && node.__children.length) {
+        html += `<div class="tm-thread-children-vertical" data-parent-id="${String(node.id || '')}">`;
+        html += __tmRenderThreadList(node.__children, 'replies');
+        html += `</div>`;
+      }
+
+      html += `</div>`;
     });
 
-    for (const n of nodes) {
-        const pid = n.__replyMeta && n.__replyMeta.isReply ? n.__replyMeta.parentId : '';
-        if (pid && pid !== n.id && byId.has(pid)) {
-            const parent = byId.get(pid);
-            parent.replies = Array.isArray(parent.replies) ? parent.replies : [];
-            parent.replies.push(n);
-        } else {
-            roots.push(n);
-        }
+    html += `</div></div>`;
+    return html;
+  }
+
+  window.__tmRenderCommentTreeHTML = function __tmRenderCommentTreeHTML(list) {
+    const tree = (typeof window.__tmBuildNestedCommentTree === 'function')
+      ? window.__tmBuildNestedCommentTree(list)
+      : (Array.isArray(list) ? list : []);
+    return __tmRenderThreadList(tree, 'comments');
+  };
+  try { __tmBuildNestedCommentTree = window.__tmBuildNestedCommentTree; } catch (_) {}
+  try { __tmRenderCommentTreeHTML = window.__tmRenderCommentTreeHTML; } catch (_) {}
+
+  // Delegated "View more comments/replies" behavior (reveals 5 older each click)
+  if (!window.__tmThreadViewMoreBound) {
+    window.__tmThreadViewMoreBound = true;
+    document.addEventListener('click', function (e) {
+      const btn = e.target && e.target.closest ? e.target.closest('.tm-view-more-thread-btn') : null;
+      if (!btn) return;
+      const wrap = btn.closest('.tm-thread-list-wrap');
+      const listEl = wrap ? wrap.querySelector(':scope > .tm-thread-list') : null;
+      if (!listEl) return;
+
+      const hiddenItems = Array.from(listEl.querySelectorAll(':scope > .tm-thread-item.tm-thread-item--hidden'));
+      if (!hiddenItems.length) return;
+
+      const revealCount = 5;
+      hiddenItems.slice(0, revealCount).forEach(el => {
+        el.classList.remove('tm-thread-item--hidden');
+        el.setAttribute('data-hidden', '0');
+      });
+
+      const remaining = Math.max(0, hiddenItems.length - Math.min(revealCount, hiddenItems.length));
+      const kind = btn.getAttribute('data-kind') || 'comments';
+
+      if (remaining <= 0) {
+        btn.remove();
+      } else {
+        btn.textContent = remaining === 1
+          ? `View 1 more ${kind === 'replies' ? 'reply' : 'comment'}`
+          : `View ${remaining} more ${kind === 'replies' ? 'replies' : 'comments'}`;
+      }
+    });
+  }
+
+  // Re-override ensure loader so all callers use latest renderer + cleaned cache
+  window.tmEnsureCommentsLoaded = async function tmEnsureCommentsLoaded(postId, force) {
+    const key = String(postId || '').trim();
+    if (!key) return [];
+    if (!force && window.tmCommentsCache && Array.isArray(window.tmCommentsCache[key])) {
+      return window.tmCommentsCache[key];
     }
-    return roots;
-}
 
-function __tmRenderCommentTreeHTML(list) {
-    const tree = __tmBuildNestedCommentTree(list);
-    return tree.map(node => {
-        if (typeof generateCommentHTML === 'function') return generateCommentHTML(node, false);
-        return createCommentHTML(node);
-    }).join('');
-}
-
-// Override legacy single-comment renderer so hidden reply tags never leak into UI.
-function createCommentHTML(comment) {
-    const c = __tmNormalizeThreadComment(comment || {});
-    const avatar = __tmSafeString(c.avatar || c.photoURL || c.profilePic || '/assets/images/default-avatar.png');
-    const name = __tmSafeString(c.userName || c.username || c.displayName || 'User');
-    const handle = __tmSafeString(c.userHandle || c.handle || '');
-    const time = __tmSafeString(c.timeAgo || c.createdAtLabel || c.createdAt || 'now');
-    const text = __tmSafeString(c.content || '');
-    const liked = !!c.liked;
-    const likeCount = Number(c.likes || c.likeCount || 0) || 0;
-
-    if (typeof generateCommentHTML === 'function') {
-        return generateCommentHTML({
-            ...c,
-            avatar,
-            userName: name,
-            userHandle: handle,
-            timeAgo: time,
-            content: text,
-            liked,
-            likes: likeCount,
-            replies: Array.isArray(c.replies) ? c.replies : []
-        }, !!(c.__replyMeta && c.__replyMeta.isReply));
-    }
-
-    return `
-        <div class="comment-item ${c.__replyMeta && c.__replyMeta.isReply ? 'reply' : ''}" data-comment-id="${escapeHtml(c.id || '')}">
-            <img src="${escapeHtml(avatar)}" class="comment-avatar" alt="${escapeHtml(name)}">
-            <div class="comment-body">
-                <div class="comment-bubble">
-                    <strong>${escapeHtml(name)}</strong> ${handle ? `<span class="comment-handle">@${escapeHtml(handle)}</span>` : ''}
-                    <p>${escapeHtml(text)}</p>
-                </div>
-                <div class="comment-actions">
-                    <span class="c-action c-like ${liked ? 'liked' : ''}" data-action="like-comment">Like${likeCount > 0 ? ` (${likeCount})` : ''}</span>
-                    <span class="c-action action-reply-comment" data-action="reply-comment" data-comment-id="${escapeHtml(c.id || '')}" data-user-name="${escapeHtml(name)}">Reply</span>
-                    <span class="c-action c-time">${escapeHtml(time)}</span>
-                </div>
-            </div>
-        </div>`;
-}
-
-// Final override: use recursive tree rendering and keep merge/cache behavior.
-async function tmEnsureCommentsLoaded(postCard) {
-    if (!postCard) return;
-    const postId = postCard.dataset.postId;
-    if (!postId) return;
-
-    const commentsSection = postCard.querySelector('.comments-section');
-    const list = commentsSection?.querySelector('.comments-list');
-    const countEl = postCard.querySelector('.comment-count');
-    if (!commentsSection || !list) return;
-
-    if (postCard.dataset.commentsLoaded === 'true' && list.children.length > 0) {
-        return;
-    }
+    const wrap = document.querySelector(`[data-post-id="${key}"]`);
+    const listEl = wrap && wrap.querySelector ? wrap.querySelector('.comment-list') : null;
 
     try {
-        list.innerHTML = '<div class="comment-loading">Loading comments...</div>';
+      if (listEl) listEl.innerHTML = '<div class="comment-loading">Loading comments...</div>';
 
-        const [remoteComments, localComments] = await Promise.all([
-            (async () => {
-                try {
-                    if (typeof apiGet === 'function') {
-                        const r = await apiGet(`/api/creator/posts/comments?postId=${encodeURIComponent(postId)}`);
-                        return Array.isArray(r?.comments) ? r.comments : [];
-                    }
-                    const r = await fetch(`/api/creator/posts/comments?postId=${encodeURIComponent(postId)}`);
-                    if (!r.ok) return [];
-                    const data = await r.json().catch(() => ({}));
-                    return Array.isArray(data?.comments) ? data.comments : [];
-                } catch {
-                    return [];
-                }
-            })(),
-            (async () => {
-                try {
-                    return (typeof tmGetLocalComments === 'function') ? (tmGetLocalComments(postId) || []) : [];
-                } catch {
-                    return [];
-                }
-            })()
-        ]);
+      const items = await apiRequest(`/api/creator/posts/comments?postId=${encodeURIComponent(key)}`, { method: 'GET' });
+      const incoming = Array.isArray(items) ? items : [];
 
-        const mergedMap = new Map();
-        for (const c of (remoteComments || [])) {
-            if (!c) continue;
-            const id = __tmSafeString(c.id || c.commentId || '').trim();
-            if (id) mergedMap.set(id, { ...c, _localOnly: false });
-        }
-        for (const c of (localComments || [])) {
-            if (!c) continue;
-            const id = __tmSafeString(c.id || c.commentId || '').trim();
-            if (!id) continue;
-            if (!mergedMap.has(id)) {
-                mergedMap.set(id, { ...c, _localOnly: true });
-            }
-        }
+      // Merge with local optimistic cache, dedupe by id.
+      const localExisting = (window.tmCommentsCache && Array.isArray(window.tmCommentsCache[key])) ? window.tmCommentsCache[key] : [];
+      const mergedMap = new Map();
 
-        const merged = Array.from(mergedMap.values());
+      for (const src of localExisting) {
+        const n = __tmNormalizeThreadCommentV2(src);
+        mergedMap.set(String(n.id), n);
+      }
+      for (const src of incoming) {
+        const n = __tmNormalizeThreadCommentV2(src);
+        const prev = mergedMap.get(String(n.id)) || {};
+        mergedMap.set(String(n.id), { ...prev, ...n });
+      }
 
-        if (typeof tmSaveCommentCache === 'function') {
-            try { tmSaveCommentCache(postId, merged); } catch {}
-        }
+      const merged = Array.from(mergedMap.values());
+      if (!window.tmCommentsCache) window.tmCommentsCache = {};
+      window.tmCommentsCache[key] = merged;
 
-        list.innerHTML = merged.length
-            ? __tmRenderCommentTreeHTML(merged)
-            : '<div class="comment-empty">No comments yet.</div>';
-
-        if (countEl) {
-            if (typeof tmCountTotalComments === 'function') {
-                countEl.textContent = tmCountTotalComments(merged);
-            } else {
-                countEl.textContent = String(merged.length);
-            }
-        }
-
-        postCard.dataset.commentsLoaded = 'true';
+      if (listEl) {
+        const treeHtml = window.__tmRenderCommentTreeHTML(merged);
+        listEl.innerHTML = treeHtml || '';
+        if (!treeHtml) listEl.innerHTML = '<div class="comment-empty">No comments yet.</div>';
+      }
+      return merged;
     } catch (err) {
-        console.error('Failed to load comments:', err);
-        const cached = (typeof tmGetCachedComments === 'function') ? (tmGetCachedComments(postId) || []) : [];
-        list.innerHTML = Array.isArray(cached) && cached.length
-            ? __tmRenderCommentTreeHTML(cached)
-            : '<div class="comment-error">Failed to load comments.</div>';
-        if (countEl) {
-            if (typeof tmCountTotalComments === 'function') {
-                countEl.textContent = tmCountTotalComments(Array.isArray(cached) ? cached : []);
-            } else {
-                countEl.textContent = String(Array.isArray(cached) ? cached.length : 0);
-            }
-        }
+      console.error('[TM comments hotfix] load failed:', err);
+      if (listEl) {
+        listEl.innerHTML = '<div class="comment-error">Failed to load comments.</div>';
+      }
+      return [];
     }
-}
-/* === /HOTFIX === */
-
-document.addEventListener('DOMContentLoaded', init);
+  };
+  try { tmEnsureCommentsLoaded = window.tmEnsureCommentsLoaded; } catch (_) {}
 })();
+ /* === /FINAL HOTFIX === */

@@ -4808,66 +4808,77 @@ select option { background-color: #1a1a1a; color: #fff; padding: 10px; }
     }
 }
 
-
-/* ===== Threaded comments UI (straight nesting + reply count toggles) ===== */
-.comments-list .comment-item.thread-node {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    width: 100%;
+/* === FINAL HOTFIX: vertical threaded comments UI (no diagonal overlap) === */
+.tm-thread-list-wrap {
+  display: block;
+  width: 100%;
 }
 
-.comments-list .comment-item.thread-node .comment-body {
-    flex: 1;
-    min-width: 0;
+.tm-thread-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
 }
 
-.comments-list .comment-item.thread-node.is-reply {
-    margin-left: 0 !important;
+.tm-thread-list > .tm-thread-item {
+  display: block;
+  width: 100%;
 }
 
-.comments-list .comment-replies.threaded-replies {
-    margin-top: 6px;
-    margin-left: 8px;
-    padding-left: 12px;
-    border-left: 1px solid rgba(120, 160, 220, 0.25);
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+.tm-thread-item--hidden {
+  display: none !important;
 }
 
-.comments-list .comment-thread-group {
-    margin-top: 6px;
+.tm-view-more-thread-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: #9fb2cc;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  cursor: pointer;
+  padding: 2px 0 6px;
+  text-align: left;
 }
 
-.comments-list .comment-thread-summary {
-    cursor: pointer;
-    user-select: none;
-    color: rgba(141, 166, 255, 0.92);
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1.3;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    list-style: none;
+.tm-view-more-thread-btn:hover {
+  color: #c7d6ea;
+  text-decoration: underline;
 }
 
-.comments-list .comment-thread-summary::-webkit-details-marker {
-    display: none;
+.tm-thread-children-vertical {
+  display: block;
+  width: 100%;
+  margin: 4px 0 0 0;
+  padding-left: 14px;
+  border-left: 1px solid rgba(124, 154, 193, 0.22);
 }
 
-.comments-list .comment-thread-summary::before {
-    content: "›";
-    display: inline-block;
-    opacity: 0.9;
+/* Flatten old diagonal/nesting offsets from legacy classes */
+.tm-thread-list .comment-wrapper,
+.tm-thread-list .comment-item,
+.tm-thread-list [class*="comment-level-"] {
+  margin-left: 0 !important;
+  transform: none !important;
+  max-width: 100%;
 }
 
-.comments-list .comment-thread-group[open] > .comment-thread-summary::before {
-    content: "⌄";
+.tm-thread-list .comment-item {
+  width: 100%;
 }
 
-.comments-list .comment-bubble .comment-text {
-    word-break: break-word;
+.tm-thread-list .comment-bubble {
+  max-width: min(100%, 680px);
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
+/* Make action row stable under vertical threads */
+.tm-thread-list .comment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+/* === /FINAL HOTFIX === */
