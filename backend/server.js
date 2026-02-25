@@ -7980,7 +7980,206 @@ app.post('/api/creator/posts/comment', authMiddleware, async (req, res) => {
     return res.status(500).json({ ok: false, message: 'Failed to comment' });
   }
 });
+// ===============================
+// Creator comment/reply delete (recursive subtree)
+// Exact insertion block only
+// ===============================
+function __tmSafeStr(v) {
+  try { return (typeof safeStr === 'function') ? safeStr(v) : String(v ?? ''); }
+  catch (_) { return String(v ?? ''); }
+}
 
+function __creatorReplyTargetIdFromComment(data) {
+  const d = data || {};
+  const direct = __tmSafeStr(d.parentId || d.replyTo || '').trim();
+  if (direct) return direct;
+
+  const text = __tmSafeStr(d.text || '');
+  const m = text.match(/^\s*\[\[replyTo:([^\]]+)\]\]\s*/i);
+  return m ? __tmSafeStr(m[1]).trim() : '';
+}
+
+function __creatorCommentAllIds(docSnap) {
+  const d = (docSnap && typeof docSnap.data === 'function') ? (docSnap.data() || {}) : {};
+  const ids = new Set();
+  if (docSnap && docSnap.id) ids.add(__tmSafeStr(docSnap.id).trim());
+  if (d && d.id) ids.add(__tmSafeStr(d.id).trim());
+  return Array.from(ids).filter(Boolean);
+}
+
+async function __creatorResolveCommentDocById(commentsCol, rawCommentId) {
+  const cid = __tmSafeStr(rawCommentId).trim();
+  if (!cid) return null;
+
+  // 1) direct doc id
+  let snap = await commentsCol.doc(cid).get();
+  if (snap.exists) return snap;
+
+  // 2) legacy/custom "id" field fallback
+  const qs = await commentsCol.where('id', '==', cid).limit(1).get();
+  if (!qs.empty) return qs.docs[0];
+
+  return null;
+}
+
+async function __creatorDeleteCommentHandler(req, res) {
+  try {
+    const body = req.body || {};
+    const postId = __tmSafeStr(body.postId || req.query?.postId || '').trim();
+    const commentId = __tmSafeStr(body.commentId || req.query?.commentId || '').trim();
+
+    if (!postId || !commentId) {
+      return res.status(400).json({ ok: false, message: 'postId and commentId are required' });
+    }
+
+    const firebaseReady = (typeof hasFirebase === 'function') ? hasFirebase() : !!hasFirebase;
+    if (!firebaseReady || !firestore) {
+      return res.status(503).json({ ok: false, message: 'Firebase not configured' });
+    }
+
+    const uid = __tmSafeStr(req?.user?.uid || '').trim();
+    if (!uid) {
+      return res.status(401).json({ ok: false, message: 'Not authenticated' });
+    }
+
+    const postRef = creatorsPostsCollection().doc(postId);
+    const postSnap = await postRef.get();
+    if (!postSnap.exists) {
+      return res.status(404).json({ ok: false, message: 'Post not found' });
+    }
+
+    const commentsCol = postRef.collection('comments');
+    const targetSnap = await __creatorResolveCommentDocById(commentsCol, commentId);
+
+    if (!targetSnap || !targetSnap.exists) {
+      return res.status(404).json({ ok: false, message: 'Comment not found' });
+    }
+
+    const targetData = targetSnap.data() || {};
+    const postData = postSnap.data() || {};
+    const isTargetOwner = __tmSafeStr(targetData.userId || '').trim() === uid;
+    const isPostOwner = __tmSafeStr(postData.userId || '').trim() === uid;
+
+    if (!isTargetOwner && !isPostOwner) {
+      return res.status(403).json({ ok: false, message: 'Not allowed to delete this comment' });
+    }
+
+    // Load all comments once, then find descendants recursively
+    const allSnap = await commentsCol.get();
+    const allDocs = allSnap.docs || [];
+
+    const byDocId = new Map();
+    const byAnyId = new Map(); // doc.id and data.id -> docSnap
+    for (const ds of allDocs) {
+      byDocId.set(ds.id, ds);
+      for (const k of __creatorCommentAllIds(ds)) {
+        if (!byAnyId.has(k)) byAnyId.set(k, ds);
+      }
+    }
+
+    const toDeleteDocIds = new Set();
+    const queueKeys = [...__creatorCommentAllIds(targetSnap)];
+
+    toDeleteDocIds.add(targetSnap.id);
+
+    // Build parentTarget -> child docs index
+    const childrenByTarget = new Map();
+    for (const ds of allDocs) {
+      const d = ds.data() || {};
+      const parentTarget = __creatorReplyTargetIdFromComment(d);
+      if (!parentTarget) continue;
+      if (!childrenByTarget.has(parentTarget)) childrenByTarget.set(parentTarget, []);
+      childrenByTarget.get(parentTarget).push(ds);
+    }
+
+    // BFS over all ids (supports doc.id or custom data.id references)
+    const seenKeys = new Set(queueKeys);
+    while (queueKeys.length) {
+      const key = queueKeys.shift();
+      const children = childrenByTarget.get(key) || [];
+      for (const child of children) {
+        if (!toDeleteDocIds.has(child.id)) {
+          toDeleteDocIds.add(child.id);
+          for (const childKey of __creatorCommentAllIds(child)) {
+            if (!seenKeys.has(childKey)) {
+              seenKeys.add(childKey);
+              queueKeys.push(childKey);
+            }
+          }
+        }
+      }
+    }
+
+    const deleteDocs = Array.from(toDeleteDocIds).map(id => byDocId.get(id)).filter(Boolean);
+    const deleteCount = deleteDocs.length;
+
+    if (!deleteCount) {
+      return res.status(404).json({ ok: false, message: 'Nothing to delete' });
+    }
+
+    // Delete comment docs + best-effort delete their reactions subcollection docs
+    // (chunked batches to stay safe)
+    const CHUNK = 200;
+    for (let i = 0; i < deleteDocs.length; i += CHUNK) {
+      const chunk = deleteDocs.slice(i, i + CHUNK);
+      const batch = firestore.batch();
+
+      for (const ds of chunk) {
+        const cRef = ds.ref;
+
+        // Best effort: delete comment reaction docs too (orphans otherwise)
+        try {
+          const reactionDocs = await cRef.collection('reactions').listDocuments();
+          for (const rRef of reactionDocs) batch.delete(rRef);
+        } catch (_) {
+          // ignore if listDocuments is unavailable in env
+        }
+
+        batch.delete(cRef);
+      }
+
+      await batch.commit();
+    }
+
+    // Fix post commentCount (clamped >= 0)
+    try {
+      await firestore.runTransaction(async (t) => {
+        const ps = await t.get(postRef);
+        if (!ps.exists) return;
+        const pd = ps.data() || {};
+        const curr = Number(pd.commentCount || 0);
+        const next = Math.max(0, curr - deleteCount);
+        t.update(postRef, { commentCount: next, updatedAt: firestore.FieldValue.serverTimestamp() });
+      });
+    } catch (_) {
+      // fallback best-effort decrement
+      try {
+        await postRef.update({
+          commentCount: firestore.FieldValue.increment(-deleteCount),
+          updatedAt: firestore.FieldValue.serverTimestamp()
+        });
+      } catch (__e) {}
+    }
+
+    return res.json({
+      ok: true,
+      deletedCount,
+      deletedCommentIds: Array.from(toDeleteDocIds)
+    });
+  } catch (err) {
+    console.error('creator comment delete error:', err);
+    return res.status(err?.status || 500).json({
+      ok: false,
+      message: err?.message || 'Failed to delete comment'
+    });
+  }
+}
+
+// Primary endpoint used by patched creators.js
+app.post('/api/creator/posts/comment/delete', authMiddleware, __creatorDeleteCommentHandler);
+
+// Optional alias (DELETE method support)
+app.delete('/api/creator/posts/comment', authMiddleware, __creatorDeleteCommentHandler);
 // Fetch comments for a creator post
 app.get('/api/creator/posts/comments', authMiddleware, async (req, res) => {
   try {
