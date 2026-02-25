@@ -3344,6 +3344,10 @@ app.get('/api/me/active-nearby', authMiddleware, async (req, res) => {
       }
     }
 
+    // Attach current user's reaction (cross-device)
+    await _attachMyReactionsToPosts(meEmail, subsPosts);
+    await _attachMyReactionsToPosts(meEmail, otherPosts);
+
     return res.json({ ok: true, items: out.slice(0, limit) });
   } catch (e) {
     console.error('GET /api/me/active-nearby error:', e);
@@ -7715,29 +7719,10 @@ app.post('/api/creator/posts/react', authMiddleware, async (req, res) => {
 // React to a comment (persisted)
 app.post('/api/creator/posts/comment/react', authMiddleware, async (req, res) => {
   try {
-    const body = (req.body && typeof req.body === 'object') ? req.body : {};
-    const { postId, commentId, reaction } = body || {};
+    const { postId, commentId, reaction } = req.body || {};
     const pid = safeStr(postId || '').trim();
     const cid = safeStr(commentId || '').trim();
     const cleanReaction = (reaction === null || reaction === undefined) ? '' : safeStr(reaction).trim().toLowerCase();
-
-    // Optional client hints (helps resolve stale/local-only ids on replies/comments)
-    const hintTextRaw = safeStr(body.commentText || body.text || '').trim();
-    const hintAuthorName = safeStr(body.commentAuthorName || body.authorName || '').trim();
-    const hintParentCommentId = safeStr(body.parentCommentId || '').trim();
-    const hintIsReply = !!body.isReply || !!hintParentCommentId;
-    const hintCommentTs = Number(body.commentTimestamp || body.timestamp || 0) || 0;
-
-    const _parseReplyMetaFromText = (v) => {
-      const raw = safeStr(v || '');
-      const m = raw.match(/^\s*\[\[replyTo:([^\]]+)\]\]\s*/i);
-      if (!m) return { parentId: '', visibleText: _cleanCommentText(raw) };
-      return {
-        parentId: safeStr(m[1] || '').trim(),
-        visibleText: _cleanCommentText(raw.slice(m[0].length))
-      };
-    };
-    const _rxNormText = (v) => safeStr(v || '').replace(/\s+/g, ' ').trim().toLowerCase();
 
     if (!pid || !cid) return res.status(400).json({ ok: false, message: 'postId and commentId are required' });
     if (cleanReaction && cleanReaction.length > 24) return res.status(400).json({ ok: false, message: 'Invalid reaction' });
@@ -7751,92 +7736,38 @@ app.post('/api/creator/posts/comment/react', authMiddleware, async (req, res) =>
     const commentsCol = postRef.collection('comments');
     const nowMs = Date.now();
 
-    let resolvedCommentId = cid;
-    let resolvedBy = 'docId';
-
     await firestore.runTransaction(async (t) => {
+      // Primary path: commentId is the Firestore document id.
       let commentDocRef = commentsCol.doc(cid);
       let cSnap = await t.get(commentDocRef);
 
+      // Legacy fallback:
+      // Some older comments were saved with an auto-generated Firestore doc id, but a separate `id` field
+      // that the client uses. In that case, resolve by querying `where('id','==', cid)`.
       if (!cSnap.exists) {
         const qs = await t.get(commentsCol.where('id', '==', cid).limit(1));
         if (!qs.empty) {
           commentDocRef = qs.docs[0].ref;
           cSnap = qs.docs[0];
-          resolvedBy = 'fieldId';
+        } else {
+          const err = new Error('Comment not found');
+          err.status = 404;
+          throw err;
         }
       }
-
-      if (!cSnap.exists && hintTextRaw) {
-        let scan;
-        try { scan = await t.get(commentsCol.orderBy('createdAtMs', 'desc').limit(300)); }
-        catch (_) { scan = await t.get(commentsCol.limit(300)); }
-
-        const targetTextNorm = _rxNormText(hintTextRaw);
-        let bestDoc = null;
-        let bestScore = -Infinity;
-
-        for (const ds of (scan?.docs || [])) {
-          const row = ds.data() || {};
-          const parsed = _parseReplyMetaFromText(row.text || '');
-          const candTextNorm = _rxNormText(parsed.visibleText || '');
-          if (!candTextNorm || candTextNorm !== targetTextNorm) continue;
-
-          const candParent = safeStr(parsed.parentId || '').trim();
-          const candIsReply = !!candParent;
-
-          if (hintIsReply) {
-            if (!candIsReply) continue;
-            if (hintParentCommentId && candParent !== hintParentCommentId) continue;
-          } else {
-            if (candIsReply) continue;
-          }
-
-          let score = 0;
-          if (hintParentCommentId && candParent === hintParentCommentId) score += 200;
-
-          const candAuthor = safeStr(row.authorName || row.creatorName || '').trim();
-          if (hintAuthorName && candAuthor && candAuthor.toLowerCase() === hintAuthorName.toLowerCase()) score += 50;
-
-          const candTs = Number(row.createdAtMs || _tsToMs(row.createdAt) || 0) || 0;
-          if (hintCommentTs > 0 && candTs > 0) {
-            const diffSec = Math.floor(Math.abs(candTs - hintCommentTs) / 1000);
-            score += Math.max(0, 40 - Math.min(40, diffSec));
-          }
-
-          if (candTs > 0) score += Math.min(10, Math.floor(candTs / 1e11)); // mild recency tie-breaker
-
-          if (score > bestScore) {
-            bestScore = score;
-            bestDoc = ds;
-          }
-        }
-
-        if (bestDoc) {
-          commentDocRef = bestDoc.ref;
-          cSnap = bestDoc;
-          resolvedBy = 'contentHint';
-        }
-      }
-
-      if (!cSnap.exists) {
-        const err = new Error('Comment not found');
-        err.status = 404;
-        throw err;
-      }
-
-      resolvedCommentId = String(commentDocRef.id || cid || '');
 
       const rRef = commentDocRef.collection('reactions').doc(myKey);
       const rSnap = await t.get(rRef);
       const oldReaction = rSnap.exists ? safeStr((rSnap.data() || {}).reaction || '').trim().toLowerCase() : '';
 
+      // update reaction doc
       if (!cleanReaction) {
         if (rSnap.exists) t.delete(rRef);
       } else {
         t.set(rRef, { reaction: cleanReaction, createdAtMs: nowMs }, { merge: false });
       }
 
+      // maintain aggregate counts on the comment doc
       const data = cSnap.data() || {};
       const counts = _sanitizeCountMap(data.reactionCounts, { lowerKeys: true });
 
@@ -7855,12 +7786,14 @@ app.post('/api/creator/posts/comment/react', authMiddleware, async (req, res) =>
       t.set(commentDocRef, { reactionCounts: counts, reactionCount: total, updatedAtMs: nowMs }, { merge: true });
     });
 
-    return res.json({ ok: true, postId: pid, commentId: cid, resolvedCommentId, resolvedBy, myReaction: cleanReaction || null });
+    return res.json({ ok: true, postId: pid, commentId: cid, myReaction: cleanReaction || null });
   } catch (e) {
     const msg = String(e && e.message ? e.message : '');
     const status = (e && e.status) ? Number(e.status) : (msg.includes('Comment not found') ? 404 : 500);
 
-    if (status === 404) return res.status(404).json({ ok: false, message: 'Comment not found' });
+    if (status === 404) {
+      return res.status(404).json({ ok: false, message: 'Comment not found' });
+    }
 
     console.error('POST /api/creator/posts/comment/react error', e);
     return res.status(500).json({ ok: false, message: 'Failed to react to comment' });
@@ -9916,3 +9849,52 @@ app.get('/api/ig/avatar/:username', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`TrueMatch server running at ${APP_BASE_URL}`);
 });
+
+
+// === CREATOR: COMMENT DELETE (soft delete, keeps thread metadata) ===
+app.post('/api/creator/posts/comment/delete', requireAuth, async (req, res) => {
+  try {
+    const userId = String(req.user?.id || '').trim();
+    const commentId = String(req.body?.commentId || req.body?.id || '').trim();
+    const postIdInBody = String(req.body?.postId || '').trim();
+    if (!userId) return res.status(401).json({ ok: false, message: 'Unauthorized' });
+    if (!commentId) return res.status(400).json({ ok: false, message: 'commentId_required' });
+
+    const existing = await dbGet(DB_TABLES.CREATOR_POST_COMMENTS, commentId);
+    if (!existing) return res.status(404).json({ ok: false, message: 'Comment not found' });
+
+    const postId = String(existing.postId || postIdInBody || '').trim();
+    let post = null;
+    if (postId) {
+      try { post = await dbGet(DB_TABLES.CREATOR_POSTS, postId); } catch {}
+    }
+
+    const isCommentOwner = String(existing.userId || '') === userId;
+    const isPostOwner = String(post?.userId || '') === userId;
+    if (!isCommentOwner && !isPostOwner) {
+      return res.status(403).json({ ok: false, message: 'forbidden' });
+    }
+
+    const rawText = String(existing.text || '');
+    const metaMatch = rawText.match(/^\s*(\[\[replyTo:[^\]]+\]\])\s*/i);
+    const replyMetaPrefix = metaMatch ? String(metaMatch[1]) : '';
+    const deletedText = `${replyMetaPrefix}${replyMetaPrefix ? ' ' : ''}[deleted]`;
+
+    const nowIso = new Date().toISOString();
+    const nextComment = {
+      ...existing,
+      text: deletedText,
+      deleted: true,
+      deletedAt: nowIso,
+      deletedBy: userId,
+      updatedAt: nowIso,
+    };
+
+    await dbPut(DB_TABLES.CREATOR_POST_COMMENTS, commentId, nextComment);
+    return res.json({ ok: true, comment: nextComment });
+  } catch (e) {
+    console.error('Delete creator comment error:', e);
+    return res.status(500).json({ ok: false, message: 'Failed to delete comment' });
+  }
+});
+

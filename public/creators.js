@@ -13945,226 +13945,323 @@ document.addEventListener('DOMContentLoaded', init);
 })();
 
 
-/* === TM PATCH: threaded-viewmore-config (reveal-all, 3/10) === */
+/* === TM FINAL COMMENT THREAD UI PATCH v2 === */
 (function(){
   try {
-    if (window.__tmThreadViewMoreConfigPatchApplied) return;
-    window.__tmThreadViewMoreConfigPatchApplied = true;
+    const TM_COMMENT_DEFAULT_VISIBLE = 3;
+    const TM_REPLY_DEFAULT_VISIBLE = 10;
+    const uiState = (window.__tmCommentThreadUiStateV2 = window.__tmCommentThreadUiStateV2 || {
+      expandedCommentsByPost: {},
+      expandedRepliesByParent: {}
+    });
 
-    // Defaults requested: comments=3, replies=10 (change anytime)
-    const TM_THREAD_DEFAULT_VISIBLE_COMMENTS = 3;
-    const TM_THREAD_DEFAULT_VISIBLE_REPLIES  = 10;
-    const TM_THREAD_VIEW_MORE_REVEALS_ALL    = true;
-
-    window.__tmThreadUiByPost = window.__tmThreadUiByPost || {};
-    window.__tmCommentsByPost = window.__tmCommentsByPost || {};
-
-    const toStr = (v) => (v == null ? '' : String(v));
-    const escHtml = (s) => toStr(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-    const escAttr = (s) => escHtml(s);
-
-    function tmGetUiState(postId){
-      const key = toStr(postId || '');
-      if (!window.__tmThreadUiByPost[key]) {
-        window.__tmThreadUiByPost[key] = {
-          commentsExpanded: false,
-          repliesExpanded: {} // parentId -> true
-        };
-      }
-      return window.__tmThreadUiByPost[key];
-    }
-
-    function tmReplyTagInfoFromText(rawText){
-      const raw = toStr(rawText);
-      const m = raw.match(/\[\[replyTo:([^\]]+)\]\]/i);
-      const replyTo = m ? toStr(m[1]).trim() : '';
-      const cleaned = raw.replace(/\s*\[\[replyTo:[^\]]+\]\]\s*/gi, ' ').replace(/\s{2,}/g, ' ').trim();
-      return { replyTo, cleaned };
-    }
-
-    function tmCommentTimestamp(c){
-      const v = c && (c.createdAt || c.timestamp || c.date || c.time || c.updatedAt);
-      const t = v ? new Date(v).getTime() : NaN;
-      return Number.isFinite(t) ? t : 0;
-    }
-
-    function tmBuildThreadTree(rawList){
-      const list = Array.isArray(rawList) ? rawList : [];
-      const byId = new Map();
-      const children = new Map();
-      const roots = [];
-
-      for (const item of list) {
-        if (!item) continue;
-        const id = toStr(item.id || item.commentId || item._id || item.createdAt || Math.random());
-        const tagInfo = tmReplyTagInfoFromText(item.text);
-        const explicitParent = toStr(item.replyTo || item.replyToId || item.parentId || '').trim();
-        const parentId = explicitParent || tagInfo.replyTo || '';
-        const node = {
-          ...item,
-          id,
-          __parentId: parentId,
-          __cleanText: tagInfo.cleaned || toStr(item.text || '').trim()
-        };
-        byId.set(id, node);
-      }
-
-      // keep chronological order for thread readability (oldest -> newest)
-      const ordered = Array.from(byId.values()).sort((a,b) => tmCommentTimestamp(a) - tmCommentTimestamp(b));
-      for (const node of ordered) {
-        const pid = toStr(node.__parentId || '').trim();
-        if (pid && byId.has(pid) && pid !== node.id) {
-          if (!children.has(pid)) children.set(pid, []);
-          children.get(pid).push(node.id);
-        } else {
-          roots.push(node.id);
-        }
-      }
-
-      return { byId, children, roots };
-    }
-
-    function tmMoreButtonHtml(kind, hiddenCount, postId, parentId){
-      const labelBase = kind === 'comments' ? 'comments' : 'replies';
-      const count = Math.max(0, Number(hiddenCount) || 0);
-      if (!count) return '';
-      return `
-        <button type="button" class="tm-comment-more-btn"
-          data-tm-more-kind="${escAttr(kind)}"
-          data-post-id="${escAttr(postId)}"
-          ${parentId ? `data-parent-id="${escAttr(parentId)}"` : ''}
-          aria-label="View ${count} more ${labelBase}">
-          View ${count} more ${labelBase}
-        </button>
-      `;
-    }
-
-    function tmRenderThreadList(tree, ids, postId, ui, parentId){
-      const arr = Array.isArray(ids) ? ids.slice() : [];
-      const isRoot = !parentId;
-      const defaultVisible = isRoot ? TM_THREAD_DEFAULT_VISIBLE_COMMENTS : TM_THREAD_DEFAULT_VISIBLE_REPLIES;
-      const expanded = isRoot ? !!ui.commentsExpanded : !!ui.repliesExpanded[toStr(parentId)];
-      const total = arr.length;
-      const visibleIds = (expanded || total <= defaultVisible)
-        ? arr
-        : arr.slice(-defaultVisible);
-      const hiddenCount = total - visibleIds.length;
-
-      let html = '';
-      if (hiddenCount > 0) {
-        html += tmMoreButtonHtml(isRoot ? 'comments' : 'replies', hiddenCount, postId, parentId || '');
-      }
-
-      for (const id of visibleIds) {
-        const node = tree.byId.get(id);
-        if (!node) continue;
-        const childIds = tree.children.get(id) || [];
-        const repliesHtml = childIds.length
-          ? `<div class="comment-replies">${tmRenderThreadList(tree, childIds, postId, ui, id)}</div>`
-          : '';
-
-        const cleanNode = { ...node, text: node.__cleanText };
-        try {
-          html += (typeof generateCommentHTML === 'function')
-            ? generateCommentHTML(cleanNode, 0, repliesHtml)
-            : '';
-        } catch (e) {
-          // fallback minimal renderer if generateCommentHTML errors
-          html += `
-            <div class="comment-item" data-comment-id="${escAttr(cleanNode.id)}">
-              <div class="comment-body"><strong>${escHtml(cleanNode.name || cleanNode.username || 'User')}</strong> ${escHtml(cleanNode.text || '')}</div>
-              ${repliesHtml}
-            </div>`;
-        }
-      }
-      return html;
-    }
-
-    async function tmEnsureCommentsLoadedPatched(postCard, postId, force = false) {
-      if (!postCard || !postId) return [];
-      const commentsWrap = postCard.querySelector('.post-comments');
-      const commentsList = postCard.querySelector('.comments-list');
-      if (!commentsWrap || !commentsList) return [];
-
-      const key = toStr(postId);
-      let comments = [];
-
+    const esc = (v) => {
+      const s = String(v ?? '');
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    };
+    const asMs = (v) => {
+      const n = Number(v);
+      if (Number.isFinite(n) && n > 0) return n;
+      const t = Date.parse(String(v || ''));
+      return Number.isFinite(t) ? t : Date.now();
+    };
+    const getMe = () => {
       try {
-        if (!force && typeof tmLoadComments === 'function') {
-          comments = await tmLoadComments(key);
-        }
-      } catch (_) {}
+        if (typeof tmGetCreatorIdentity === 'function') return tmGetCreatorIdentity() || {};
+      } catch {}
+      return {};
+    };
+    const currentUserCanDelete = (c, postOwnerId) => {
+      const me = getMe() || {};
+      const myId = String(me.id || me.userId || '').trim();
+      const myEmail = String(me.email || '').trim().toLowerCase();
+      const cid = String(c.userId || c.authorId || '').trim();
+      const cemail = String(c.authorEmail || c.email || '').trim().toLowerCase();
+      if (myId && cid && myId === cid) return true;
+      if (myEmail && cemail && myEmail === cemail) return true;
+      if (myId && postOwnerId && myId === String(postOwnerId)) return true;
+      return false;
+    };
+    const extractReplyMeta = (txt) => {
+      try {
+        if (typeof tmExtractReplyMetaFromBody === 'function') return tmExtractReplyMetaFromBody(txt || '');
+      } catch {}
+      const m = String(txt || '').match(/^\s*\[\[replyTo:([^\]]+)\]\]\s*/i);
+      return { parentId: m ? String(m[1]).trim() : null };
+    };
+    const cleanText = (txt) => {
+      try {
+        if (typeof tmCleanCommentDisplayText === 'function') return tmCleanCommentDisplayText(txt || '');
+      } catch {}
+      return String(txt || '').replace(/^\s*\[\[replyTo:[^\]]+\]\]\s*/i, '').trim();
+    };
+    const preserveReplyMetaPrefix = (txt) => {
+      const m = String(txt || '').match(/^\s*(\[\[replyTo:[^\]]+\]\])\s*/i);
+      return m ? String(m[1]) : '';
+    };
 
-      if (!Array.isArray(comments) || !comments.length || force) {
-        try {
-          const remote = (typeof tmFetchPostComments === 'function') ? await tmFetchPostComments(key) : [];
-          comments = Array.isArray(remote) ? remote : [];
-          if (typeof tmNormalizeCommentItem === 'function') {
-            comments = comments.map(tmNormalizeCommentItem).filter(Boolean);
-          }
-          if (typeof tmSaveComments === 'function') {
-            try { await tmSaveComments(key, comments); } catch (_) {}
-          }
-        } catch (_) {
-          comments = Array.isArray(comments) ? comments : [];
-        }
+    function normalizeCommentsToTree(rawComments){
+      const list = Array.isArray(rawComments) ? rawComments.slice() : [];
+      const nodeMap = new Map();
+      list.forEach((c, idx) => {
+        const id = String(c?.id || c?._id || c?.commentId || `c_${idx}_${Date.now()}`);
+        const meta = extractReplyMeta(c?.text || c?.message || '');
+        const node = {
+          id,
+          parentId: meta && meta.parentId ? String(meta.parentId) : null,
+          text: cleanText(c?.text || c?.message || ''),
+          rawText: String(c?.text || c?.message || ''),
+          reaction: c?.reaction || null,
+          userId: c?.userId || c?.authorId || null,
+          authorEmail: c?.authorEmail || c?.email || null,
+          authorName: c?.authorName || c?.name || c?.displayName || c?.creatorName || null,
+          authorAvatarUrl: c?.authorAvatarUrl || c?.avatarUrl || c?.photoURL || null,
+          timestamp: asMs(c?.timestamp || c?.createdAtMs || c?.createdAt || c?.updatedAt),
+          deleted: !!c?.deleted,
+          children: [],
+          raw: c
+        };
+        nodeMap.set(id, node);
+      });
+      const roots = [];
+      for (const node of nodeMap.values()) {
+        if (node.parentId && nodeMap.has(node.parentId)) nodeMap.get(node.parentId).children.push(node);
+        else roots.push(node);
       }
-
-      comments = Array.isArray(comments) ? comments.filter(Boolean) : [];
-      window.__tmCommentsByPost[key] = comments.slice();
-
-      const tree = tmBuildThreadTree(comments);
-      const ui = tmGetUiState(key);
-      const html = tmRenderThreadList(tree, tree.roots, key, ui, '');
-
-      commentsList.innerHTML = html || '';
-      commentsWrap.dataset.commentsLoaded = 'true';
-      return comments;
+      const sortNodes = (arr) => {
+        arr.sort((a,b)=> (a.timestamp - b.timestamp) || String(a.id).localeCompare(String(b.id)));
+        arr.forEach(n => sortNodes(n.children));
+      };
+      sortNodes(roots);
+      return roots;
     }
 
-    // Override the active loader used by comment toggles / posting flows
-    try { tmEnsureCommentsLoaded = tmEnsureCommentsLoadedPatched; } catch (_) {}
-    try { window.tmEnsureCommentsLoaded = tmEnsureCommentsLoadedPatched; } catch (_) {}
+    function commentActionRow(node, postId, canDelete){
+      const reaction = node.reaction ? esc(node.reaction) : '';
+      const reactionBtn = `
+        <button class="comment-reaction" data-comment-id="${esc(node.id)}" title="React">${reaction || '😀'}</button>
+        <div class="comment-reaction-picker">
+          <span class="react-emoji" data-reaction="💙" data-type="comment">💙</span>
+          <span class="react-emoji" data-reaction="❤️" data-type="comment">❤️</span>
+          <span class="react-emoji" data-reaction="😂" data-type="comment">😂</span>
+          <span class="react-emoji" data-reaction="😮" data-type="comment">😮</span>
+          <span class="react-emoji" data-reaction="😢" data-type="comment">😢</span>
+          <span class="react-emoji" data-reaction="🔥" data-type="comment">🔥</span>
+        </div>`;
+      const replyBtn = `<button class="comment-reply" data-comment-id="${esc(node.id)}">Reply</button>`;
+      const delBtn = canDelete ? `<button class="comment-delete" data-comment-id="${esc(node.id)}" data-post-id="${esc(postId)}">Delete</button>` : '';
+      return `${reactionBtn}${replyBtn}${delBtn}`;
+    }
 
-    if (!window.__tmThreadViewMoreHandlerBound) {
-      window.__tmThreadViewMoreHandlerBound = true;
-      document.addEventListener('click', function(e){
-        const btn = e.target && e.target.closest ? e.target.closest('.tm-comment-more-btn') : null;
-        if (!btn) return;
-        e.preventDefault();
-        e.stopPropagation();
+    function renderThreadNode(node, opts){
+      const { postId, postOwnerId, depth } = opts;
+      const author = String(node.authorName || 'User');
+      const avatar = String(node.authorAvatarUrl || getUserInfo(author)?.avatar);
+      const safeText = esc(node.deleted ? '[deleted]' : (node.text || ''));
+      const canDelete = !node.deleted && currentUserCanDelete(node, postOwnerId);
 
-        const kind = toStr(btn.getAttribute('data-tm-more-kind')).trim();
-        const postId = toStr(btn.getAttribute('data-post-id')).trim() || toStr(btn.closest('.post-card')?.dataset?.postId || '').trim();
-        const parentId = toStr(btn.getAttribute('data-parent-id')).trim();
+      const children = Array.isArray(node.children) ? node.children.slice() : [];
+      const expanded = !!uiState.expandedRepliesByParent[node.id];
+      const hiddenCount = expanded ? 0 : Math.max(0, children.length - TM_REPLY_DEFAULT_VISIBLE);
+      const visibleChildren = hiddenCount > 0 ? children.slice(hiddenCount) : children;
+      const viewMoreReplies = hiddenCount > 0
+        ? `<button class="tm-view-more-replies" data-post-id="${esc(postId)}" data-parent-id="${esc(node.id)}">View ${hiddenCount} more repl${hiddenCount===1?'y':'ies'}</button>`
+        : '';
+      const repliesHtml = children.length
+        ? `<div class="comment-replies">${viewMoreReplies}${visibleChildren.map(ch => renderThreadNode(ch, { postId, postOwnerId, depth: depth + 1 })).join('')}</div>`
+        : '<div class="comment-replies"></div>';
+
+      return `
+        <div class="comment-item ${depth > 0 ? 'reply-item' : ''}" data-comment-id="${esc(node.id)}" data-post-id="${esc(postId)}" data-depth="${depth > 0 ? 1 : 0}">
+          <img src="${esc(avatar)}" alt="${esc(author)}" class="comment-avatar" loading="lazy" />
+          <div class="comment-body">
+            <div class="comment-bubble">
+              <strong>${esc(author)}</strong>
+              <p>${safeText}</p>
+            </div>
+            <div class="comment-actions">${commentActionRow(node, postId, canDelete)}</div>
+            ${repliesHtml}
+          </div>
+        </div>`;
+    }
+
+    async function renderThreadedCommentsForPost(postCard, postId, toastEl){
+      const listEl = postCard?.querySelector?.('.comment-list');
+      if (!postCard || !postId || !listEl) return;
+
+      let post = null;
+      try {
+        post = (typeof getAllPosts === 'function') ? (getAllPosts() || []).find(p => String(p.id) === String(postId)) : null;
+      } catch {}
+
+      const needFetch = !post || !post.__commentsLoaded;
+      if (needFetch && typeof tmApi === 'function') {
+        try {
+          const data = await tmApi(`/api/creator/posts/comments?postId=${encodeURIComponent(postId)}`);
+          const fetched = Array.isArray(data?.comments) ? data.comments : [];
+          if (typeof updatePost === 'function') {
+            updatePost(postId, (p) => {
+              const next = p || {};
+              next.comments = fetched.slice();
+              next.__commentsLoaded = true;
+              return next;
+            });
+          }
+        } catch (err) {
+          const msg = String(err?.message || err || 'Failed to load comments');
+          listEl.innerHTML = `<div class="no-comments-msg" style="display:block;">${esc(msg)}</div>`;
+          if (typeof tmToast === 'function' && toastEl) tmToast(toastEl, 'error', 'Failed to load comments');
+          return;
+        }
+        try { post = (typeof getAllPosts === 'function') ? (getAllPosts() || []).find(p => String(p.id) === String(postId)) : post; } catch {}
+      }
+
+      const rawComments = Array.isArray(post?.comments) ? post.comments : [];
+      const postOwnerId = String(post?.userId || '');
+      if (!rawComments.length) {
+        listEl.innerHTML = `<div class="no-comments-msg" style="display:block;">No comments yet</div>`;
+        return;
+      }
+
+      const roots = normalizeCommentsToTree(rawComments);
+      const expandedTop = !!uiState.expandedCommentsByPost[postId];
+      const hiddenTop = expandedTop ? 0 : Math.max(0, roots.length - TM_COMMENT_DEFAULT_VISIBLE);
+      const visibleRoots = hiddenTop > 0 ? roots.slice(hiddenTop) : roots;
+      const viewMoreTop = hiddenTop > 0
+        ? `<button class="tm-view-more-comments" data-post-id="${esc(postId)}">View ${hiddenTop} more comment${hiddenTop===1?'':'s'}</button>`
+        : '';
+
+      listEl.innerHTML = `${viewMoreTop}${visibleRoots.map(n => renderThreadNode(n, { postId, postOwnerId, depth: 0 })).join('')}`;
+      const noMsg = listEl.querySelector('.no-comments-msg');
+      if (noMsg) noMsg.style.display = 'none';
+    }
+
+    // Keep original reference if needed
+    if (!window.__origTmEnsureCommentsLoadedPatchedV2 && typeof window.tmEnsureCommentsLoaded === 'function') {
+      window.__origTmEnsureCommentsLoadedPatchedV2 = window.tmEnsureCommentsLoaded;
+    }
+
+    // Override comment loader so threaded rendering + visibility works on open/load
+    const patchedEnsure = async function(postCard, toastEl){
+      try {
+        const postId = postCard?.dataset?.postId;
         if (!postId) return;
+        await renderThreadedCommentsForPost(postCard, postId, toastEl);
+      } catch (e) {
+        console.error('[TM Patch] tmEnsureCommentsLoaded failed:', e);
+        try {
+          if (typeof window.__origTmEnsureCommentsLoadedPatchedV2 === 'function') {
+            return await window.__origTmEnsureCommentsLoadedPatchedV2(postCard, toastEl);
+          }
+        } catch {}
+      }
+    };
+    window.tmEnsureCommentsLoaded = patchedEnsure;
+    try { tmEnsureCommentsLoaded = patchedEnsure; } catch {}
 
-        const ui = tmGetUiState(postId);
-        if (kind === 'comments') {
-          ui.commentsExpanded = TM_THREAD_VIEW_MORE_REVEALS_ALL ? true : ui.commentsExpanded;
-        } else if (kind === 'replies' && parentId) {
-          ui.repliesExpanded[parentId] = TM_THREAD_VIEW_MORE_REVEALS_ALL ? true : true;
+    // Override generateCommentHTML for optimistic comment/reply insertion (clean display text + actions)
+    const patchedGenerateCommentHTML = function(comment, isReply = false){
+      const c = comment || {};
+      const id = c.id || c.commentId || c._id || '';
+      const author = c.authorName || c.name || c.displayName || c.creatorName || 'User';
+      const avatar = c.authorAvatarUrl || c.avatarUrl || getUserInfo(author)?.avatar;
+      const displayText = cleanText(c.text || c.message || '');
+      const canDelete = !c.deleted && currentUserCanDelete(c, '');
+      return `
+        <div class="comment-item ${isReply ? 'reply-item' : ''}" data-comment-id="${esc(id)}">
+          <img src="${esc(avatar)}" alt="${esc(author)}" class="comment-avatar" loading="lazy">
+          <div class="comment-body">
+            <div class="comment-bubble">
+              <strong>${esc(author)}</strong>
+              <p>${esc(c.deleted ? '[deleted]' : displayText)}</p>
+            </div>
+            <div class="comment-actions">${commentActionRow({ id, reaction: c.reaction || null, deleted: !!c.deleted }, '', canDelete)}</div>
+            <div class="comment-replies"></div>
+          </div>
+        </div>`;
+    };
+    window.generateCommentHTML = patchedGenerateCommentHTML;
+    try { generateCommentHTML = patchedGenerateCommentHTML; } catch {}
+
+    if (!window.__tmCommentPatchV2DelegatedClicksBound) {
+      window.__tmCommentPatchV2DelegatedClicksBound = true;
+      document.addEventListener('click', async function(e){
+        const moreCommentsBtn = e.target.closest('.tm-view-more-comments');
+        if (moreCommentsBtn) {
+          e.preventDefault();
+          const postId = String(moreCommentsBtn.dataset.postId || '');
+          if (!postId) return;
+          uiState.expandedCommentsByPost[postId] = true;
+          const postCard = moreCommentsBtn.closest('.post-card');
+          if (postCard) await patchedEnsure(postCard, window.TopToast || null);
+          return;
         }
 
-        const postCard = btn.closest('.post-card');
-        if (postCard) {
-          Promise.resolve(tmEnsureCommentsLoadedPatched(postCard, postId, false)).catch(()=>{});
+        const moreRepliesBtn = e.target.closest('.tm-view-more-replies');
+        if (moreRepliesBtn) {
+          e.preventDefault();
+          const parentId = String(moreRepliesBtn.dataset.parentId || '');
+          uiState.expandedRepliesByParent[parentId] = true;
+          const postCard = moreRepliesBtn.closest('.post-card');
+          if (postCard) await patchedEnsure(postCard, window.TopToast || null);
+          return;
+        }
+
+        const deleteBtn = e.target.closest('.comment-delete');
+        if (deleteBtn) {
+          e.preventDefault();
+          const commentItem = deleteBtn.closest('.comment-item');
+          const postCard = deleteBtn.closest('.post-card');
+          const postId = String(deleteBtn.dataset.postId || commentItem?.dataset?.postId || postCard?.dataset?.postId || '');
+          const commentId = String(deleteBtn.dataset.commentId || commentItem?.dataset?.commentId || '');
+          if (!commentId) return;
+          if (!confirm('Delete this comment/reply?')) return;
+          deleteBtn.disabled = true;
+          let remoteOk = false;
+          try {
+            if (typeof tmApi === 'function') {
+              const res = await tmApi('/api/creator/posts/comment/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ commentId, postId })
+              });
+              remoteOk = !!(res && (res.ok === true || res.success === true));
+            }
+          } catch (err) {
+            // Endpoint might not be deployed yet; fallback to local UI update still applies
+            console.warn('[TM Patch] delete endpoint unavailable:', err);
+          }
+
+          try {
+            if (typeof updatePost === 'function' && postId) {
+              updatePost(postId, (p) => {
+                const next = p || {};
+                next.comments = (Array.isArray(next.comments) ? next.comments : []).map((c) => {
+                  const cid = String(c?.id || c?._id || c?.commentId || '');
+                  if (cid !== commentId) return c;
+                  const raw = String(c?.text || c?.message || '');
+                  const prefix = preserveReplyMetaPrefix(raw);
+                  const deletedText = `${prefix}${prefix ? ' ' : ''}[deleted]`;
+                  return { ...c, text: deletedText, deleted: true, updatedAt: new Date().toISOString() };
+                });
+                return next;
+              });
+            }
+          } catch {}
+
+          if (postCard) await patchedEnsure(postCard, window.TopToast || null);
+          try {
+            if (typeof tmToast === 'function') {
+              tmToast(window.TopToast || null, remoteOk ? 'success' : 'info', remoteOk ? 'Comment deleted' : 'Deleted locally (deploy server patch for persistent delete)');
+            }
+          } catch {}
+          return;
         }
       }, true);
     }
 
-    // Optional helpers for quick future tuning from console without editing code
-    window.__tmThreadViewMoreConfig = {
-      commentsDefaultVisible: TM_THREAD_DEFAULT_VISIBLE_COMMENTS,
-      repliesDefaultVisible: TM_THREAD_DEFAULT_VISIBLE_REPLIES,
-      revealAllOnViewMore: TM_THREAD_VIEW_MORE_REVEALS_ALL
-    };
-  } catch (err) {
-    console.warn('[TM PATCH] threaded-viewmore-config failed', err);
+    console.log('[TM Patch] Comment thread UI v2 loaded (vertical + latest 3/10 + delete action)');
+  } catch (e) {
+    console.error('[TM Patch] Failed to load comment UI patch v2:', e);
   }
 })();
