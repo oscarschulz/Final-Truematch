@@ -14265,3 +14265,388 @@ document.addEventListener('DOMContentLoaded', init);
     console.error('[TM Patch] Failed to load comment UI patch v2:', e);
   }
 })();
+/* === TM COMMENTS THREAD PATCH V3 (append-only, scope-safe) === */
+(() => {
+  if (window.__tmCommentThreadPatchV3Loaded) return;
+  window.__tmCommentThreadPatchV3Loaded = true;
+
+  const TM3 = (window.__tm3 = window.__tm3 || {});
+  TM3.state = TM3.state || { byPost: {}, refreshTimers: {} };
+
+  const esc = (s) => String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  const api = async (url, options) => {
+    if (typeof window.tmApi === 'function') return window.tmApi(url, options);
+    const res = await fetch(url, {
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) },
+      method: options?.method || 'GET',
+      body: options?.body ? JSON.stringify(options.body) : undefined
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.ok === false) throw new Error(json?.message || `HTTP ${res.status}`);
+    return json;
+  };
+
+  const parseReplyTag = (txt) => {
+    const raw = String(txt || '');
+    const m = raw.match(/^\s*\[\[replyTo:([^\]]+)\]\]\s*/i);
+    return {
+      replyToId: m ? String(m[1]).trim() : '',
+      clean: raw.replace(/^\s*\[\[replyTo:[^\]]+\]\]\s*/i, '')
+    };
+  };
+
+  const pick = (obj, keys) => {
+    for (const k of keys) {
+      if (obj && obj[k] != null && obj[k] !== '') return obj[k];
+    }
+    return '';
+  };
+
+  const normalizeComment = (c) => {
+    const rawText = String(pick(c, ['text', 'message', 'body', 'content']) || '');
+    const tag = parseReplyTag(rawText);
+
+    const id = String(pick(c, ['id', '_id', 'commentId']) || '');
+    const parent = String(
+      pick(c, ['parentId', 'parent_id', 'replyToId', 'reply_to_id', 'replyTo']) || tag.replyToId || ''
+    ).trim();
+
+    const authorName = String(
+      pick(c, ['displayName', 'display_name', 'name', 'fullName', 'username', 'userName', 'handle']) || 'User'
+    ).trim();
+
+    return {
+      raw: c,
+      id,
+      parentId: parent,
+      postId: String(pick(c, ['postId', 'post_id']) || ''),
+      authorName,
+      authorHandle: String(pick(c, ['handle', 'username', 'userName']) || '').replace(/^@+/, '').trim(),
+      avatarUrl: String(pick(c, ['avatar', 'avatarUrl', 'avatar_url', 'photoURL', 'photoUrl', 'image']) || ''),
+      text: tag.clean, // ✅ strips [[replyTo:...]]
+      reactions: c?.reactions && typeof c.reactions === 'object' ? c.reactions : {},
+      createdAt: Number(pick(c, ['createdAt', 'created_at', 'ts', 'timestamp']) || 0) || 0,
+    };
+  };
+
+  const getPostState = (postId) => {
+    const key = String(postId || '');
+    const root = TM3.state.byPost;
+    if (!root[key]) root[key] = { commentsExpanded: false, repliesExpanded: {}, comments: [] };
+    return root[key];
+  };
+
+  const buildTree = (comments) => {
+    const nodes = comments.map(normalizeComment).filter(c => c.id);
+    const map = new Map(nodes.map(n => [n.id, { ...n, children: [] }]));
+    const roots = [];
+
+    for (const n of map.values()) {
+      if (n.parentId && map.has(n.parentId) && n.parentId !== n.id) {
+        map.get(n.parentId).children.push(n);
+      } else {
+        roots.push(n);
+      }
+    }
+
+    const sortRec = (arr) => {
+      arr.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)); // oldest -> latest
+      for (const n of arr) sortRec(n.children);
+    };
+    sortRec(roots);
+
+    return roots;
+  };
+
+  const emojiCount = (reactionsObj) => {
+    const entries = Object.entries(reactionsObj || {}).filter(([, v]) => Number(v) > 0);
+    return entries
+      .slice(0, 3)
+      .map(([k, v]) => `<button type="button" class="tm3-react-btn" data-tm3-action="react" data-emoji="${esc(k)}">${esc(k)} ${Number(v)}</button>`)
+      .join(' ');
+  };
+
+  const renderActionRow = (node) => {
+    return `
+      <div class="tm3-actions-row" data-node-id="${esc(node.id)}">
+        <button type="button" class="tm3-text-btn" data-tm3-action="reply-toggle">Reply</button>
+        <button type="button" class="tm3-text-btn tm3-danger" data-tm3-action="delete-comment">Delete</button>
+        <button type="button" class="tm3-emoji-btn" data-tm3-action="react" data-emoji="❤️" title="React">❤️</button>
+        <button type="button" class="tm3-emoji-btn" data-tm3-action="react" data-emoji="👍" title="React">👍</button>
+        ${emojiCount(node.reactions)}
+      </div>
+      <div class="tm3-reply-form-slot" data-node-id="${esc(node.id)}"></div>
+    `;
+  };
+
+  const renderNodes = (arr, depth, postId, st, kind) => {
+    const initial = kind === 'root' ? 3 : 10; // ✅ default visible count = 3 / 10
+    const expanded = kind === 'root'
+      ? !!st.commentsExpanded
+      : !!st.repliesExpanded[`${postId}:${arr.__parentId || ''}`];
+
+    const hiddenCount = Math.max(0, arr.length - initial);
+    const visible = (expanded || hiddenCount === 0) ? arr : arr.slice(arr.length - initial); // latest N only
+
+    let html = '';
+
+    if (hiddenCount > 0 && !expanded) {
+      const label = kind === 'root'
+        ? `View more comments (${hiddenCount})`
+        : `View more replies (${hiddenCount})`;
+
+      const attrs = kind === 'root'
+        ? `data-tm3-action="view-more-comments"`
+        : `data-tm3-action="view-more-replies" data-parent-id="${esc(arr.__parentId || '')}"`;
+
+      html += `<button type="button" class="tm3-view-more" ${attrs}>${label}</button>`;
+    }
+
+    for (const node of visible) {
+      const replies = Array.isArray(node.children) ? node.children : [];
+      replies.__parentId = node.id;
+      const indent = Math.min(depth, 8);
+
+      html += `
+        <div class="tm3-node tm3-depth-${indent}" data-comment-id="${esc(node.id)}" data-post-id="${esc(postId)}">
+          <div class="tm3-row">
+            <div class="tm3-avatar">${node.avatarUrl ? `<img src="${esc(node.avatarUrl)}" alt="">` : ''}</div>
+            <div class="tm3-body">
+              <div class="tm3-bubble">
+                <div class="tm3-name">${esc(node.authorName || 'User')}</div>
+                <div class="tm3-text">${esc(node.text || '')}</div>
+              </div>
+              ${renderActionRow(node)}
+              ${replies.length ? `<div class="tm3-children">${renderNodes(replies, depth + 1, postId, st, 'reply')}</div>` : ''}
+            </div>
+          </div>
+        </div>`;
+    }
+
+    return html;
+  };
+
+  const renderThreadHTML = (comments, postId) => {
+    const st = getPostState(postId);
+    st.comments = Array.isArray(comments) ? comments : [];
+    const roots = buildTree(st.comments);
+    return `<div class="tm3-thread" data-post-id="${esc(postId)}">${renderNodes(roots, 0, postId, st, 'root')}</div>`;
+  };
+
+  const fetchComments = async (postId) => {
+    const data = await api(`/api/creator/posts/comments?postId=${encodeURIComponent(postId)}`);
+    return Array.isArray(data?.comments) ? data.comments : [];
+  };
+
+  const findCommentList = (postId) => {
+    const safe = (window.CSS && typeof CSS.escape === 'function') ? CSS.escape(String(postId)) : String(postId).replace(/"/g, '\\"');
+    return document.querySelector(`.comments-box[data-post-id="${safe}"] .comment-list`);
+  };
+
+  const refreshPostComments = async (postId, opts = {}) => {
+    const pid = String(postId || '');
+    if (!pid) return;
+
+    const list = findCommentList(pid);
+    if (!list) return;
+
+    const box = list.closest('.comments-box');
+    if (!box) return;
+
+    if (box.dataset.commentsLoaded !== '1' && !opts.force) return;
+    if (box.dataset.tm3Refreshing === '1') return;
+
+    box.dataset.tm3Refreshing = '1';
+    try {
+      const comments = await fetchComments(pid);
+      list.innerHTML = renderThreadHTML(comments, pid);
+      box.dataset.tm3Patched = '1';
+    } catch (err) {
+      console.warn('[TM Patch V3] refresh comments failed', err);
+    } finally {
+      box.dataset.tm3Refreshing = '0';
+    }
+  };
+
+  const scheduleRefresh = (postId, delay = 180) => {
+    const pid = String(postId || '');
+    if (!pid) return;
+    clearTimeout(TM3.state.refreshTimers[pid]);
+    TM3.state.refreshTimers[pid] = setTimeout(() => refreshPostComments(pid), delay);
+  };
+
+  const postIdFromNode = (el) => {
+    const p = el?.closest?.('[data-post-id]');
+    return String(p?.dataset?.postId || '');
+  };
+
+  // Observe comment box open/load changes and repaint with threaded UI.
+  const mo = new MutationObserver((muts) => {
+    const touched = new Set();
+
+    for (const m of muts) {
+      const el = m.target && m.target.nodeType === 1 ? m.target : null;
+      const box = el?.closest?.('.comments-box[data-post-id]') || null;
+      if (box?.dataset?.postId) touched.add(String(box.dataset.postId));
+
+      for (const n of (m.addedNodes || [])) {
+        if (!(n instanceof Element)) continue;
+        if (n.matches?.('.comments-box[data-post-id]')) touched.add(String(n.dataset.postId || ''));
+        n.querySelectorAll?.('.comments-box[data-post-id]').forEach((b) => touched.add(String(b.dataset.postId || '')));
+      }
+    }
+
+    touched.forEach((pid) => scheduleRefresh(pid, 120));
+  });
+
+  mo.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['data-comments-loaded']
+  });
+
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-tm3-action]');
+    if (!btn) return;
+
+    const action = btn.dataset.tm3Action;
+    const nodeEl = btn.closest('.tm3-node');
+    const postId = String(nodeEl?.dataset?.postId || btn.closest('.tm3-thread')?.dataset?.postId || postIdFromNode(btn) || '');
+    const commentId = String(nodeEl?.dataset?.commentId || '');
+
+    if (!postId) return;
+
+    if (action === 'view-more-comments') {
+      e.preventDefault();
+      getPostState(postId).commentsExpanded = true; // ✅ reveal all
+      await refreshPostComments(postId, { force: true });
+      return;
+    }
+
+    if (action === 'view-more-replies') {
+      e.preventDefault();
+      const parentId = String(btn.dataset.parentId || '');
+      getPostState(postId).repliesExpanded[`${postId}:${parentId}`] = true; // ✅ reveal all
+      await refreshPostComments(postId, { force: true });
+      return;
+    }
+
+    if (action === 'reply-toggle') {
+      e.preventDefault();
+      if (!nodeEl || !commentId) return;
+
+      const safe = (window.CSS && typeof CSS.escape === 'function') ? CSS.escape(commentId) : commentId.replace(/"/g, '\\"');
+      const slot = nodeEl.querySelector(`.tm3-reply-form-slot[data-node-id="${safe}"]`);
+      if (!slot) return;
+
+      if (slot.children.length) {
+        slot.innerHTML = '';
+        return;
+      }
+
+      slot.innerHTML = `
+        <form class="tm3-inline-reply-form" data-post-id="${esc(postId)}" data-parent-id="${esc(commentId)}">
+          <input class="tm3-reply-input" name="reply" type="text" maxlength="1000" placeholder="Write a reply..." required>
+          <button class="tm3-send" type="submit">↗</button>
+        </form>`;
+      slot.querySelector('input')?.focus();
+      return;
+    }
+
+    if (action === 'delete-comment') {
+      e.preventDefault();
+      if (!commentId) return;
+      if (!confirm('Delete this comment/reply?')) return;
+
+      try {
+        await api('/api/creator/posts/comment/delete', {
+          method: 'POST',
+          body: { postId, commentId }
+        });
+        scheduleRefresh(postId, 50);
+      } catch (err) {
+        alert(err?.message || 'Delete failed');
+      }
+      return;
+    }
+
+    if (action === 'react') {
+      e.preventDefault();
+      if (!commentId) return;
+
+      try {
+        await api('/api/creator/posts/comment/react', {
+          method: 'POST',
+          body: { postId, commentId, emoji: String(btn.dataset.emoji || '❤️') }
+        });
+        scheduleRefresh(postId, 50);
+      } catch (err) {
+        console.warn('[TM Patch V3] react failed', err);
+      }
+      return;
+    }
+  }, true);
+
+  document.addEventListener('submit', async (e) => {
+    const form = e.target;
+    if (!(form instanceof HTMLFormElement)) return;
+
+    // Inline reply form (our patch)
+    if (form.matches('.tm3-inline-reply-form')) {
+      e.preventDefault();
+
+      const postId = String(form.dataset.postId || '');
+      const parentId = String(form.dataset.parentId || '');
+      const input = form.querySelector('.tm3-reply-input');
+      const text = String(input?.value || '').trim();
+
+      if (!postId || !parentId || !text) return;
+
+      try {
+        await api('/api/creator/posts/comment', {
+          method: 'POST',
+          body: { postId, text: `[[replyTo:${parentId}]] ${text}` }
+        });
+
+        form.reset();
+        form.closest('.tm3-reply-form-slot')?.replaceChildren();
+        getPostState(postId).repliesExpanded[`${postId}:${parentId}`] = true;
+        scheduleRefresh(postId, 50);
+      } catch (err) {
+        alert(err?.message || 'Reply failed');
+      }
+      return;
+    }
+
+    // Base comment form (let existing code submit first, then repaint)
+    const commentsBox = form.closest?.('.comments-box[data-post-id]');
+    if (commentsBox?.dataset?.postId) {
+      setTimeout(() => scheduleRefresh(String(commentsBox.dataset.postId), 140), 140);
+    }
+  }, true);
+
+  // Fallback refresh when comment panel is toggled/opened
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('.action-comment, [data-action="comment"], .comment-toggle');
+    if (!t) return;
+    const postId = postIdFromNode(t);
+    if (postId) setTimeout(() => scheduleRefresh(postId, 220), 220);
+  }, true);
+
+  // Initial pass (if comments are already open)
+  setTimeout(() => {
+    document.querySelectorAll('.comments-box[data-post-id][data-comments-loaded="1"]').forEach((b) => {
+      scheduleRefresh(String(b.dataset.postId || ''), 10);
+    });
+  }, 300);
+
+  console.log('[TM Patch V3] threaded comments enabled (vertical + latest 3/10 + delete actions).');
+})();
