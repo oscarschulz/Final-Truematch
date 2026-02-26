@@ -9560,6 +9560,21 @@ app.get('/api/swipe/candidates', async (req, res) => {
 
     const isPremium = (planKey !== 'free') && (planActive !== false);
 
+    // ✅ Gender filter (based on my preferences: lookingFor women|men)
+    // If prefs are missing/unsaved, wantGender becomes '' and we don't filter by gender.
+    let meDocForPrefs = null;
+    if (hasFirebase) {
+      try { meDocForPrefs = await findUserByEmail(myEmail); } catch {}
+    }
+    const prefsSource =
+      (meDocForPrefs && meDocForPrefs.prefs && typeof meDocForPrefs.prefs === 'object') ? meDocForPrefs.prefs :
+      (userDoc && userDoc.prefs && typeof userDoc.prefs === 'object') ? userDoc.prefs :
+      (DB.prefsByEmail && DB.prefsByEmail[myEmail]) ? DB.prefsByEmail[myEmail] :
+      (DB.prefs && typeof DB.prefs === 'object') ? DB.prefs :
+      null;
+    const wantGender = _getWantGenderFromPrefs(prefsSource);
+
+
     // ✅ Cap: free only; premium unlimited
     const cap = isPremium ? null : STRICT_DAILY_LIMIT;
 
