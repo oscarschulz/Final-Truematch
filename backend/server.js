@@ -8138,7 +8138,17 @@ async function __creatorDeleteCommentHandler(req, res) {
 
     const nowMs = Date.now();
 
-    if (hasChildren) {
+    // IMPORTANT UX RULE:
+    // - Root comments should NOT be hard-deleted (otherwise replies can "disappear" in UIs that only render replies under a parent).
+    // - If a node has children, soft-delete it to avoid orphaning.
+    const targetParent = __creatorReplyTargetIdFromComment(targetData);
+    const isRootNode = !targetParent;
+
+    // Helpful trace to verify the deployed code path in Railway logs
+    try { console.log('[TM] creator comment delete (single-node)', { postId, commentId, isRootNode, hasChildren }); } catch (_) {}
+    try { res.setHeader('X-TM-Comment-Delete', 'single-node-v2'); } catch (_) {}
+
+    if (isRootNode || hasChildren) {
       // Preserve replyTo meta prefix if it exists (so nested threading keeps working)
       const raw = __tmSafeStr(targetData.text || '').trim();
       const m = raw.match(/^\s*(\[\[replyTo:[^\]]+\]\])\s*/i);
@@ -8250,6 +8260,7 @@ app.get('/api/creator/posts/comments', authMiddleware, async (req, res) => {
         id: safeStr(x.id || d.id),
         postId: safeStr(x.postId || postId),
         text: safeStr(x.text || ''),
+        deleted: !!x.deleted,
         authorEmail: safeStr(x.authorEmail || ''),
         authorName: safeStr(x.authorName || ''),
         createdAtMs: Number(x.createdAtMs || 0),
