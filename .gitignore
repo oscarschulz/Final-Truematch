@@ -57,3 +57,10 @@ backend/*service*account*.json
 service_account.json
 *.pem
 *.key
+
+# secrets
+.env
+firebase-service-account.json
+service_account.json
+backend/firebase-service-account.json
+backend/service_account.json
