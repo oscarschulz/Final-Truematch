@@ -2820,9 +2820,34 @@ function generateCommentHTML(textOrObj, timestampMaybe, opts = {}) {
     const itemStyle = isReply ? ' style="margin-top:10px; padding-left:34px; animation:fadeIn 0.2s;"' : '';
 
     const repliesHtml = safeStr(options.repliesHtml || '').trim();
-    const repliesBlock = isReply ? '' : `<div class="comment-replies">${repliesHtml}</div>`;
+    const repliesBlock = `<div class="comment-replies">${repliesHtml}</div>`;
 
-    const replyBtnHtml = isReply ? '' : '<span class="c-action action-reply-comment">Reply</span>';
+    const replyBtnHtml = '<span class="c-action action-reply-comment">Reply</span>';
+
+    // Delete action: commenter/replier OR post owner can delete (server also enforces)
+    let deleteBtnHtml = '';
+    try {
+        const meEmailLower = safeStr((me && me.email) ? me.email : tmGetMeEmail()).trim().toLowerCase();
+        const authorLower = safeStr(authorEmail).trim().toLowerCase();
+        let ownerLower = safeStr(options.postOwnerEmail || options.creatorEmail || '').trim().toLowerCase();
+
+        // Best-effort: infer owner email from post cache if not provided
+        if (!ownerLower) {
+            const pid = safeStr(c.postId || options.postId || '').trim();
+            if (pid) {
+                const all = (typeof getAllPosts === 'function') ? (getAllPosts() || []) : ((typeof getPosts === 'function') ? (getPosts() || []) : []);
+                const p = Array.isArray(all) ? all.find(x => String(x?.id || '') === String(pid)) : null;
+                ownerLower = safeStr(p?.creatorEmail || p?.email || p?.ownerEmail || p?.authorEmail || '').trim().toLowerCase();
+            }
+        }
+
+        const allowDelete = !!(commentId && meEmailLower && ((authorLower && meEmailLower === authorLower) || (ownerLower && meEmailLower === ownerLower)));
+        if (allowDelete) {
+            deleteBtnHtml = `<span class="c-action action-delete-comment" data-comment-id="${tmEscapeHtml(commentId)}">Delete</span>`;
+        }
+    } catch (_) {
+        deleteBtnHtml = '';
+    }
 
     return `
         <div class="comment-item"${idAttr}${itemStyle}>
@@ -2847,6 +2872,7 @@ function generateCommentHTML(textOrObj, timestampMaybe, opts = {}) {
                     </div>
 
                     ${replyBtnHtml}
+                    ${deleteBtnHtml}
                 </div>
 
                 ${repliesBlock}
@@ -12212,12 +12238,11 @@ function closeComposeSheet() {
 function setupGlobalEvents() {
     document.addEventListener('click', (e) => {
         const toggleBtn = e.target.closest('.header-toggle-btn');
-        const moreBtn = e.target.closest('#trigger-more-btn');
-        if (toggleBtn && !moreBtn) {
+        if (toggleBtn) {
             e.stopPropagation();
             e.preventDefault();
             const popover = document.getElementById('settings-popover');
-            if (popover) popover.classList.toggle('is-open');
+            if (popover) popover.classList.add('is-open');
         }
     });
 
@@ -12249,14 +12274,6 @@ function setupGlobalEvents() {
             if (!popover.contains(e.target) && !toggleBtn && !moreBtn) {
                 popover.classList.remove('is-open');
             }
-        }
-    });
-
-
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            const popover = document.getElementById('settings-popover');
-            if (popover) popover.classList.remove('is-open');
         }
     });
 
@@ -12524,11 +12541,6 @@ function switchView(viewName) {
     
   // Close transient overlays when changing views
   try { tmCloseStatusMenu(); } catch {}
-  // Close settings popover on navigation
-  try {
-      const popover = document.getElementById('settings-popover');
-      if (popover) popover.classList.remove('is-open');
-  } catch (_) {}
 try { localStorage.setItem('tm_last_view', viewName); } catch (_) {}
 
     // Close mobile settings drill-down (if open)
@@ -12634,16 +12646,16 @@ try { localStorage.setItem('tm_last_view', viewName); } catch (_) {}
         if (DOM.rsSettingsView) DOM.rsSettingsView.classList.remove('hidden'); 
         updateActiveNav(null, null); 
     }
-    if (viewName === 'add-card') {
+    else if (viewName === 'add-card') {
         targetView = DOM.viewAddCard;
         if(DOM.rsWalletView) DOM.rsWalletView.classList.remove('hidden');
         updateActiveNav('nav-link-add-card', 'mob-nav-add-card');
     }
-    if (viewName === 'your-cards') {
+    else if (viewName === 'your-cards') {
         targetView = DOM.viewYourCards;
         if(DOM.rsWalletView) DOM.rsWalletView.classList.remove('hidden');
     }
-    if (viewName === 'become-creator') {
+    else if (viewName === 'become-creator') {
         targetView = DOM.viewBecomeCreator;
         const bankingSidebar = document.getElementById('rs-banking-view');
         if(bankingSidebar) bankingSidebar.classList.remove('hidden');
@@ -14670,7 +14682,7 @@ document.addEventListener('DOMContentLoaded', init);
   window.__tmCommentThreadPatchV4 = true;
 
   const TOP_VISIBLE = 3;
-  const REPLIES_VISIBLE = 3;
+  const REPLIES_VISIBLE = 10;
 
   const ui = (window.__tmCommentThreadPatchV4State = window.__tmCommentThreadPatchV4State || {
     expandedTopByPost: {},
@@ -14727,7 +14739,7 @@ document.addEventListener('DOMContentLoaded', init);
     // allow post owner (if available)
     const p = postObj || {};
     const postOwnerId = String(p.userId || p.ownerId || '').trim();
-    const postOwnerEmail = String(p.creatorEmail || p.email || p.ownerEmail || p.userEmail || p.authorEmail || p.postEmail || '').trim().toLowerCase();
+    const postOwnerEmail = String(p.email || p.ownerEmail || '').trim().toLowerCase();
     if (meId && postOwnerId && meId === postOwnerId) return true;
     if (meEmail && postOwnerEmail && meEmail === postOwnerEmail) return true;
 
@@ -14860,7 +14872,7 @@ document.addEventListener('DOMContentLoaded', init);
     // fetch only once per open session
     if (commentSection.dataset.loaded !== '1') {
       try {
-        const remote = (typeof tmFetchPostComments === 'function') ? await tmFetchPostComments(postId, 500) : null;
+        const remote = (typeof tmFetchPostComments === 'function') ? await tmFetchPostComments(postId, 200) : null;
         if (remote) {
           try {
             updatePost(postId, (post) => {
