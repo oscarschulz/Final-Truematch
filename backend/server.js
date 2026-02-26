@@ -8025,6 +8025,7 @@ app.post('/api/creator/posts/comment', authMiddleware, async (req, res) => {
       postId,
       text,
       authorEmail: email,
+      userId: __tmSafeStr(req?.user?.uid || req?.user?.id || req?.user?.userId || '').trim() || null,
       authorName,
       creatorName: authorName,
       authorAvatarUrl,
@@ -8128,9 +8129,9 @@ async function __creatorDeleteCommentHandler(req, res) {
     if (!firebaseReady || !firestore) {
       return res.status(503).json({ ok: false, message: 'Firebase not configured' });
     }
-
     const uid = __tmSafeStr(req?.user?.uid || '').trim();
-    if (!uid) {
+    const meEmail = _normalizeEmail((req.user && req.user.email) || '');
+    if (!uid && !meEmail) {
       return res.status(401).json({ ok: false, message: 'Not authenticated' });
     }
 
@@ -8146,11 +8147,17 @@ async function __creatorDeleteCommentHandler(req, res) {
     if (!targetSnap || !targetSnap.exists) {
       return res.status(404).json({ ok: false, message: 'Comment not found' });
     }
-
     const targetData = targetSnap.data() || {};
     const postData = postSnap.data() || {};
-    const isTargetOwner = __tmSafeStr(targetData.userId || '').trim() === uid;
-    const isPostOwner = __tmSafeStr(postData.userId || '').trim() === uid;
+
+    const targetUid = __tmSafeStr(targetData.userId || '').trim();
+    const postUid = __tmSafeStr(postData.userId || '').trim();
+
+    const targetEmail = _normalizeEmail(targetData.authorEmail || targetData.creatorEmail || targetData.email || '');
+    const postEmail = _normalizeEmail(postData.creatorEmail || postData.email || postData.ownerEmail || '');
+
+    const isTargetOwner = (uid && targetUid && targetUid === uid) || (meEmail && targetEmail && targetEmail === meEmail);
+    const isPostOwner = (uid && postUid && postUid === uid) || (meEmail && postEmail && postEmail === meEmail);
 
     if (!isTargetOwner && !isPostOwner) {
       return res.status(403).json({ ok: false, message: 'Not allowed to delete this comment' });
@@ -8279,7 +8286,7 @@ app.get('/api/creator/posts/comments', authMiddleware, async (req, res) => {
     if (!email) return res.status(401).json({ ok: false, message: 'Not authenticated' });
 
     const postId = safeStr(req.query.postId || req.query.id || '');
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit || 50)));
     if (!postId) return res.status(400).json({ ok: false, message: 'postId is required' });
 
     if (!hasFirebase || !firestore) {

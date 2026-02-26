@@ -12634,16 +12634,16 @@ try { localStorage.setItem('tm_last_view', viewName); } catch (_) {}
         if (DOM.rsSettingsView) DOM.rsSettingsView.classList.remove('hidden'); 
         updateActiveNav(null, null); 
     }
-    else if (viewName === 'add-card') {
+    if (viewName === 'add-card') {
         targetView = DOM.viewAddCard;
         if(DOM.rsWalletView) DOM.rsWalletView.classList.remove('hidden');
         updateActiveNav('nav-link-add-card', 'mob-nav-add-card');
     }
-    else if (viewName === 'your-cards') {
+    if (viewName === 'your-cards') {
         targetView = DOM.viewYourCards;
         if(DOM.rsWalletView) DOM.rsWalletView.classList.remove('hidden');
     }
-    else if (viewName === 'become-creator') {
+    if (viewName === 'become-creator') {
         targetView = DOM.viewBecomeCreator;
         const bankingSidebar = document.getElementById('rs-banking-view');
         if(bankingSidebar) bankingSidebar.classList.remove('hidden');
@@ -14670,7 +14670,7 @@ document.addEventListener('DOMContentLoaded', init);
   window.__tmCommentThreadPatchV4 = true;
 
   const TOP_VISIBLE = 3;
-  const REPLIES_VISIBLE = 10;
+  const REPLIES_VISIBLE = 3;
 
   const ui = (window.__tmCommentThreadPatchV4State = window.__tmCommentThreadPatchV4State || {
     expandedTopByPost: {},
@@ -14727,7 +14727,7 @@ document.addEventListener('DOMContentLoaded', init);
     // allow post owner (if available)
     const p = postObj || {};
     const postOwnerId = String(p.userId || p.ownerId || '').trim();
-    const postOwnerEmail = String(p.email || p.ownerEmail || '').trim().toLowerCase();
+    const postOwnerEmail = String(p.creatorEmail || p.email || p.ownerEmail || p.userEmail || p.authorEmail || p.postEmail || '').trim().toLowerCase();
     if (meId && postOwnerId && meId === postOwnerId) return true;
     if (meEmail && postOwnerEmail && meEmail === postOwnerEmail) return true;
 
@@ -14860,7 +14860,7 @@ document.addEventListener('DOMContentLoaded', init);
     // fetch only once per open session
     if (commentSection.dataset.loaded !== '1') {
       try {
-        const remote = (typeof tmFetchPostComments === 'function') ? await tmFetchPostComments(postId, 200) : null;
+        const remote = (typeof tmFetchPostComments === 'function') ? await tmFetchPostComments(postId, 500) : null;
         if (remote) {
           try {
             updatePost(postId, (post) => {
