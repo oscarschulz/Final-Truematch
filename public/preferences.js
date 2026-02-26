@@ -356,15 +356,15 @@
     }
 
     const hasNewFile = !!profile.file;
-    const hasExisting = !!EXISTING_AVATAR_URL;
+const hasNewDataUrl = !!AVATAR_DATA_URL_FOR_UPLOAD;
+const hasExisting = !!EXISTING_AVATAR_URL;
 
-    if (requireAll && !hasNewFile && !hasExisting) {
-      showAvatarRequiredNotice();
-      toast('Please upload a profile picture.', 'error');
-      scrollToAvatarSection();
-      return false;
-    }
-
+if (requireAll && !(hasNewFile || hasNewDataUrl) && !hasExisting) {
+  showAvatarRequiredNotice();
+  toast('Please upload a profile picture.', 'error');
+  scrollToAvatarSection();
+  return false;
+}
     return true;
   }
 
