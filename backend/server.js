@@ -1362,6 +1362,113 @@ const MATCHES_COLLECTION = process.env.MATCHES_COLLECTION || 'iTrueMatchMatches'
 const PS_SWIPES_COLLECTION = process.env.PS_SWIPES_COLLECTION || 'iTrueMatchPSSwipes';
 const PS_MATCHES_COLLECTION = process.env.PS_MATCHES_COLLECTION || 'iTrueMatchPSMatches';
 
+// ---------------- Seed Profiles (Swipe deck filler) ----------------
+const SEED_PROFILES_COLLECTION = process.env.SEED_PROFILES_COLLECTION || 'seedProfiles';
+const ENABLE_SEED_PROFILES = (process.env.ENABLE_SEED_PROFILES || '1') !== '0'; // default ON
+const SEEDS_FOR_PREMIUM = (process.env.SEEDS_FOR_PREMIUM || '0') === '1'; // default OFF
+const SEED_MIN_DECK = Math.max(0, Number(process.env.SEED_MIN_DECK || '20')); // aim: at least 20 cards
+const SEED_FETCH_LIMIT = Math.max(10, Number(process.env.SEED_FETCH_LIMIT || '140')); // fetch extra for filtering
+const SEED_ID_PREFIX = 'seed:'; // IMPORTANT: seeds use this id prefix in swipes
+const SEED_PHOTO_BASE_URL = String(process.env.SEED_PHOTO_BASE_URL || '').replace(/\/+$/, '');
+
+// Gender normalization helpers (for swipe deck filtering)
+function _normGender(v) {
+  const s = String(v || '').trim().toLowerCase();
+  if (!s) return '';
+  if (s === 'women' || s === 'woman' || s === 'female' || s === 'f') return 'women';
+  if (s === 'men' || s === 'man' || s === 'male' || s === 'm') return 'men';
+  return '';
+}
+function _oppositeGender(g) {
+  const n = _normGender(g);
+  if (n === 'women') return 'men';
+  if (n === 'men') return 'women';
+  return '';
+}
+function _getWantGenderFromPrefs(prefs) {
+  if (!prefs || typeof prefs !== 'object') return '';
+  let lf = prefs.lookingFor;
+  if (Array.isArray(lf)) lf = lf[0];
+  return _normGender(lf);
+}
+function _getProfileGenderFromUserDoc(u) {
+  if (!u || typeof u !== 'object') return '';
+  // Prefer explicit fields if you add them later
+  let g =
+    _normGender(u.gender) ||
+    _normGender(u.profileGender) ||
+    _normGender(u.sex) ||
+    (u.prefs && (_normGender(u.prefs.gender) || _normGender(u.prefs.profileGender) || _normGender(u.prefs.sex)));
+
+  if (g) return g;
+
+  // Fallback heuristic: infer from their own lookingFor (hetero assumption)
+  const theirWant = _getWantGenderFromPrefs(u.prefs || u.preferences || null);
+  return _oppositeGender(theirWant);
+}
+
+function _shuffleInPlace(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+async function _fetchSeedProfiles(limit) {
+  if (!hasFirebase || !firestore) return [];
+  try {
+    const snap = await firestore.collection(SEED_PROFILES_COLLECTION).limit(limit).get();
+    const out = [];
+    snap.forEach(doc => out.push({ _docId: doc.id, ...(doc.data() || {}) }));
+    return out;
+  } catch (e) {
+    console.warn('[seedProfiles] fetch failed:', e.message);
+    return [];
+  }
+}
+
+function _seedDocToCandidate(s) {
+  const seedId = String(s.id || s._docId || '').trim();
+  const id = `${SEED_ID_PREFIX}${seedId}`;
+
+  const photoUrl =
+    s.photoUrl ||
+    ((s.photoKey && SEED_PHOTO_BASE_URL) ? `${SEED_PHOTO_BASE_URL}/${s.photoKey}` : '') ||
+    'assets/images/truematch-mark.png';
+
+  // Default: women (because your current seed pack is women),
+  // but if you later add men seeds, just store s.gender = "men".
+  let gender = _normGender(s.gender || s.sex || s.profileGender || '');
+  if (!gender) {
+    const sid = seedId.toLowerCase();
+    if (/^seed_w_\d{4}$/.test(sid) || sid.includes('woman') || sid.includes('female')) gender = 'women';
+    else if (/^seed_m_\d{4}$/.test(sid) || sid.includes('man') || sid.includes('male')) gender = 'men';
+  }
+
+  return {
+    id,
+    isSeed: true,
+    seedId,
+    gender: gender || 'women',
+    seedLabel: s.seedLabel || 'Sample profile (Beta)',
+    name: s.name || 'Sample Profile',
+    age: s.age || 25,
+    city: s.city || s.location || 'Global',
+    photoUrl,
+    country: s.country || null,
+    bio: s.bio || null,
+    interests: Array.isArray(s.interests) ? s.interests : null,
+    jobTitle: s.jobTitle || null
+  };
+}
+
+function _isSeedTargetId(tId) {
+  const s = String(tId || '').toLowerCase();
+  return s.startsWith(SEED_ID_PREFIX) || /^seed_w_\d{4}$/.test(s) || /^seed_m_\d{4}$/.test(s) || /^seed:seed_w_\d{4}$/.test(s) || /^seed:seed_m_\d{4}$/.test(s);
+}
+
+
 function _b64url(str) {
   return Buffer.from(String(str || ''), 'utf8')
     .toString('base64')
@@ -3325,6 +3432,22 @@ app.get('/api/me/active-nearby', authMiddleware, async (req, res) => {
                       : true;
 
     const isPremium = (planKey !== 'free') && (planActive !== false);
+
+    // Gender filter (based on my preferences: lookingFor men|women)
+    // NOTE: preferences.html currently only collects "lookingFor" (men/women).
+    // We treat that as the target gender to show in Swipe.
+    let meDocForPrefs = null;
+    if (hasFirebase) {
+      try { meDocForPrefs = await findUserByEmail(myEmail); } catch {}
+    }
+    const prefsSource =
+      (meDocForPrefs && meDocForPrefs.prefs && typeof meDocForPrefs.prefs === 'object') ? meDocForPrefs.prefs :
+      (userDoc && userDoc.prefs && typeof userDoc.prefs === 'object') ? userDoc.prefs :
+      (DB.prefsByEmail && DB.prefsByEmail[myEmail]) ? DB.prefsByEmail[myEmail] :
+      (DB.prefs && typeof DB.prefs === 'object') ? DB.prefs :
+      null;
+
+    const wantGender = _getWantGenderFromPrefs(prefsSource);
 
     const myCity = String(userDoc.city || userDoc.location || '').trim();
     const out = [];
@@ -9495,6 +9618,13 @@ app.get('/api/swipe/candidates', async (req, res) => {
         // ✅ Premium-to-premium only
         if (isPremium && !isPremiumCandidate(u)) return;
 
+        // ✅ Gender filter (based on my lookingFor)
+        const candGender = _getProfileGenderFromUserDoc(u);
+        if (wantGender) {
+          if (!candGender) return;
+          if (candGender !== wantGender) return;
+        }
+
         candidates.push({
           id: candEmail,
           name: u.name || 'Member',
@@ -9527,6 +9657,13 @@ app.get('/api/swipe/candidates', async (req, res) => {
           // ✅ Premium-to-premium only
           if (isPremium && !isPremiumCandidate(u)) return false;
 
+          // ✅ Gender filter (based on my lookingFor)
+          const candGender = _getProfileGenderFromUserDoc(u);
+          if (wantGender) {
+            if (!candGender) return false;
+            if (candGender !== wantGender) return false;
+          }
+
           return true;
         })
         .map(u => ({
@@ -9536,6 +9673,60 @@ app.get('/api/swipe/candidates', async (req, res) => {
           city: u.city || 'Global',
           photoUrl: u.avatarUrl || 'assets/images/truematch-mark.png'
         }));
+    }
+
+
+    // ---------------- Seed merge (deck filler) ----------------
+    if (ENABLE_SEED_PROFILES && (SEEDS_FOR_PREMIUM || !isPremium) && SEED_MIN_DECK > 0) {
+      try {
+        const targetMin = (cap !== null && typeof remaining === 'number')
+          ? Math.min(SEED_MIN_DECK, remaining)
+          : SEED_MIN_DECK;
+
+        if (targetMin > 0 && candidates.length < targetMin) {
+          const need = targetMin - candidates.length;
+
+          // fetch extra so we can filter out already-swiped seeds
+          const fetchN = Math.min(SEED_FETCH_LIMIT, Math.max(need * 4, need + 20));
+          let seeds = await _fetchSeedProfiles(fetchN);
+          _shuffleInPlace(seeds);
+
+          const add = [];
+          for (const s of seeds) {
+            const cand = _seedDocToCandidate(s);
+
+            // ✅ Gender filter for seeds too
+            if (wantGender) {
+              const sg = _normGender(cand.gender);
+              if (!sg || sg !== wantGender) continue;
+            }
+
+            // Same PASS-only re-serve rule (+ cooldown)
+            const prev = mySwipes[cand.id];
+            if (prev) {
+              const t = String(prev.type || '').toLowerCase();
+              if (t && t !== 'pass') continue; // like/superlike removed from deck
+              if (t === 'pass') {
+                const minMs = PASS_RESHOW_AFTER_HOURS * 60 * 60 * 1000;
+                const lastTs = Number(prev.ts) || 0;
+                if (minMs > 0 && lastTs && (Date.now() - lastTs) < minMs) continue;
+              }
+            }
+
+            add.push(cand);
+            if (add.length >= need) break;
+          }
+
+          if (add.length) candidates = candidates.concat(add);
+        }
+      } catch (e) {
+        console.warn('[seedProfiles] merge failed:', e.message);
+      }
+    }
+
+    // Optional: shuffle deck so it doesn't feel static
+    if (Array.isArray(candidates) && candidates.length > 1) {
+      _shuffleInPlace(candidates);
     }
 
     // ✅ If capped (free), slice candidates to remaining swipes
@@ -9575,6 +9766,9 @@ app.post('/api/swipe/action', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'Invalid swipe payload' });
     }
 
+    // Detect seed targets (demo profiles) so we don't enforce premium gating or matching on them
+    const isSeedTarget = _isSeedTargetId(tId);
+
     // Plan-gated daily swipe cap:
     // - free: 20/day (server-side enforced)
     // - tier1+: unlimited
@@ -9584,7 +9778,7 @@ app.post('/api/swipe/action', async (req, res) => {
     const planActive = (typeof userDoc.planActive === 'boolean') ? userDoc.planActive : true;
     const isPremium = (planKey !== 'free') && (planActive !== false);
 
-  if (isPremium) {
+  if (isPremium && !isSeedTarget) {
   // prevent premium users from swiping on non-premium targets (extra safety)
   let other = null;
   if (hasFirebase) other = await findUserByEmail(tId);
@@ -9624,6 +9818,11 @@ const actionType = (action === 'super' || action === 'superlike') ? 'superlike' 
 // If pass: no match check needed
     if (!_isPositiveSwipe(actionType)) {
       return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: false });
+    }
+
+    // Seed targets never create matches (deck filler only)
+    if (isSeedTarget) {
+      return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: false, seed: true });
     }
 
     // Check reciprocal swipe and create match if mutual positive
