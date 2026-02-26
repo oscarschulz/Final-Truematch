@@ -5055,3 +5055,53 @@ select option { background-color: #1a1a1a; color: #fff; padding: 10px; }
     margin-left:34px;
   }
 }
+/* === TM COMMENT THREAD PATCH v4 CSS (general, works even if wrapper class changes) === */
+.comment-list .comment-replies {
+  margin-left: 0 !important;
+  padding-left: 0 !important;
+  border-left: none !important;
+}
+
+.comment-list .comment-item {
+  transform: none !important;
+  clear: both;
+  width: 100%;
+  max-width: 100%;
+}
+
+.comment-list .comment-item[style*="padding-left"] {
+  /* keep nesting vertical: constant indent only */
+  padding-left: 14px !important;
+}
+
+.comment-list .comment-bubble {
+  max-width: min(520px, calc(100% - 48px));
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.tm-view-more-comments,
+.tm-view-more-replies {
+  background: transparent;
+  border: none;
+  padding: 6px 0;
+  margin: 4px 0 8px 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--primary, #64E9EE);
+  cursor: pointer;
+  text-align: left;
+}
+
+.comment-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.comment-actions .action-delete-comment {
+  color: #ff6b6b;
+  font-weight: 800;
+  cursor: pointer;
+}

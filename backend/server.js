@@ -394,7 +394,41 @@ app.get('/tm-session.js', (req, res, next) => {
   } catch (_) {}
   return next();
 });
+// === TM: Force no-store for Creators core assets (fix incognito vs normal mismatch) ===
+// Paste ABOVE: app.use(express.static(PUBLIC_DIR));
+app.get(['/creators.js', '/creators.css'], (req, res, next) => {
+  try {
+    const isJs = req.path.endsWith('.js');
+    const candidates = isJs
+      ? [
+          path.join(PUBLIC_DIR, 'creators.js'),
+          path.join(PUBLIC_DIR, 'assets', 'js', 'creators.js'),
+          path.join(PUBLIC_DIR, 'assets', 'js', 'creators', 'creators.js'),
+        ]
+      : [
+          path.join(PUBLIC_DIR, 'creators.css'),
+          path.join(PUBLIC_DIR, 'assets', 'css', 'creators.css'),
+          path.join(PUBLIC_DIR, 'assets', 'css', 'creators', 'creators.css'),
+        ];
 
+    for (const f of candidates) {
+      try {
+        if (fs.existsSync(f)) {
+          res.setHeader('Content-Type', isJs
+            ? 'application/javascript; charset=utf-8'
+            : 'text/css; charset=utf-8'
+          );
+          // Hard-disable caching so incognito + normal always match
+          res.setHeader('Cache-Control', 'no-store, no-cache, max-age=0, must-revalidate');
+          res.setHeader('Pragma', 'no-cache');
+          res.setHeader('Expires', '0');
+          return res.sendFile(f);
+        }
+      } catch (_) {}
+    }
+  } catch (_) {}
+  return next();
+});
 app.use(express.static(PUBLIC_DIR));
 app.use('/public', express.static(PUBLIC_DIR));
 

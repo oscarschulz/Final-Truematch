@@ -14650,3 +14650,408 @@ document.addEventListener('DOMContentLoaded', init);
 
   console.log('[TM Patch V3] threaded comments enabled (vertical + latest 3/10 + delete actions).');
 })();
+/* === TM COMMENT THREAD PATCH v4 (reply anywhere + unlimited nesting + 3/10 + view more + delete) === */
+(function () {
+  if (window.__tmCommentThreadPatchV4) return;
+  window.__tmCommentThreadPatchV4 = true;
+
+  const TOP_VISIBLE = 3;
+  const REPLIES_VISIBLE = 10;
+
+  const ui = (window.__tmCommentThreadPatchV4State = window.__tmCommentThreadPatchV4State || {
+    expandedTopByPost: {},
+    expandedByParent: {}
+  });
+
+  const esc = (v) => {
+    const s = String(v ?? '');
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  };
+
+  const parseReplyTag = (rawText = '') => {
+    try {
+      if (typeof tmParseReplyTag === 'function') return tmParseReplyTag(rawText);
+    } catch {}
+    const raw = String(rawText || '');
+    const m = raw.match(/^\s*\[\[replyTo:([^\]]+)\]\]\s*/i);
+    if (!m) return { isReply: false, parentId: '', cleanText: raw };
+    return { isReply: true, parentId: String(m[1] || '').trim(), cleanText: raw.slice(m[0].length) };
+  };
+
+  const cleanDisplayText = (rawText = '') => {
+    try {
+      if (typeof tmCleanCommentDisplayText === 'function') return tmCleanCommentDisplayText(rawText);
+    } catch {}
+    return String(rawText || '').replace(/^\s*\[\[replyTo:[^\]]+\]\]\s*/i, '').trim();
+  };
+
+  const getMe = () => {
+    let me = {};
+    try { if (typeof tmGetCreatorIdentity === 'function') me = tmGetCreatorIdentity() || {}; } catch {}
+    // strengthen identity for delete checks
+    try {
+      const m = window.__tmMe || {};
+      if (!me.email && m.email) me.email = m.email;
+      if (!me.id && (m.id || m.uid || m.userId)) me.id = (m.id || m.uid || m.userId);
+      if (!me.userId && (m.userId || m.uid || m.id)) me.userId = (m.userId || m.uid || m.id);
+    } catch {}
+    return me || {};
+  };
+
+  const canDelete = (commentObj, postObj) => {
+    const me = getMe();
+    const meEmail = String(me.email || '').trim().toLowerCase();
+    const meId = String(me.id || me.userId || '').trim();
+
+    const c = commentObj || {};
+    const cEmail = String(c.authorEmail || c.creatorEmail || c.email || '').trim().toLowerCase();
+    const cId = String(c.userId || c.authorId || '').trim();
+
+    if (meEmail && cEmail && meEmail === cEmail) return true;
+    if (meId && cId && meId === cId) return true;
+
+    // allow post owner (if available)
+    const p = postObj || {};
+    const postOwnerId = String(p.userId || p.ownerId || '').trim();
+    const postOwnerEmail = String(p.email || p.ownerEmail || '').trim().toLowerCase();
+    if (meId && postOwnerId && meId === postOwnerId) return true;
+    if (meEmail && postOwnerEmail && meEmail === postOwnerEmail) return true;
+
+    return false;
+  };
+
+  // ---------- Patch generateCommentHTML ----------
+  const __origGenerate = (typeof generateCommentHTML === 'function') ? generateCommentHTML : null;
+
+  function generateCommentHTML_v4(textOrObj, timestampMaybe, opts = {}) {
+    const options = (opts && typeof opts === 'object') ? opts : {};
+    const c = (textOrObj && typeof textOrObj === 'object')
+      ? textOrObj
+      : { text: textOrObj, timestamp: timestampMaybe };
+
+    const me = getMe();
+    const safeStr = (v) => (v === null || v === undefined) ? '' : String(v);
+
+    const authorEmail = safeStr(c.authorEmail || c.creatorEmail || c.email || '').trim();
+    const authorNameRaw = safeStr(c.authorName || c.creatorName || c.name || '').trim();
+
+    const meEmail = safeStr(me.email || '').trim();
+    const isMe = (authorEmail && meEmail && authorEmail.toLowerCase() === meEmail.toLowerCase());
+
+    const emailPrefix = authorEmail ? safeStr(String(authorEmail).split('@')[0]).trim() : '';
+    const myName = safeStr(me.name || me.displayName || me.creatorName || me.username || '').trim();
+    const rawName = (isMe ? (myName || emailPrefix || 'Unknown') : (authorNameRaw || emailPrefix || 'Unknown'));
+    const name = (rawName.split('|')[0] || rawName).trim() || 'Unknown';
+
+    const avatar =
+      (isMe ? safeStr(me.avatarUrl || me.creatorAvatarUrl || '').trim()
+            : safeStr(c.authorAvatarUrl || c.creatorAvatarUrl || c.avatarUrl || '').trim())
+      || 'assets/images/truematch-mark.png';
+
+    const originalText = safeStr(c.text || '').trim();
+    const meta = parseReplyTag(originalText);
+    const displayRaw = safeStr(
+      (c.__cleanText !== undefined && c.__cleanText !== null) ? c.__cleanText : meta.cleanText
+    ).trim();
+
+    const displayText = cleanDisplayText(displayRaw);
+    const textHtml = (typeof tmEscapeHtml === 'function')
+      ? tmEscapeHtml(displayText).replace(/\n/g, '<br>')
+      : esc(displayText).replace(/\n/g, '<br>');
+
+    const commentId = safeStr(c.id || c.commentId || c._id || '').trim();
+    const idAttr = commentId ? ` data-comment-id="${esc(commentId)}"` : '';
+
+    const isReply = !!options.isReply;
+    // IMPORTANT: constant indent for ANY depth (no diagonal/slant)
+    const itemStyle = isReply ? ' style="margin-top:10px; padding-left:14px; animation:fadeIn 0.2s;"' : '';
+
+    const repliesHtml = safeStr(options.repliesHtml || '').trim();
+
+    // Always allow Reply + always allow replies block (unlimited nesting)
+    const replyBtnHtml = '<span class="c-action action-reply-comment">Reply</span>';
+
+    // Delete action (visible if allowed OR if you want it always visible, change condition to `true`)
+    const allowDelete = canDelete(c, options.__postObj || null);
+    const deleteBtnHtml = allowDelete
+      ? `<span class="c-action action-delete-comment" data-comment-id="${esc(commentId)}">Delete</span>`
+      : '';
+
+    const repliesBlock = `<div class="comment-replies">${repliesHtml}</div>`;
+
+    // Use original Like reaction UI if present (keep your existing logic)
+    let likeBlock = '';
+    try {
+      const myReaction = safeStr(c.myReaction || c.reaction || c.reactionType || '').trim();
+      const likeHtml = (typeof getEmojiIcon === 'function' && myReaction) ? getEmojiIcon(myReaction) : 'Like';
+      const likedClass = myReaction ? 'liked' : '';
+      const likeColorStyle = (typeof getEmojiColor === 'function' && myReaction)
+        ? `style="color:${getEmojiColor(myReaction)}; font-weight:700;"`
+        : 'style="font-weight:600;"';
+
+      likeBlock = `
+        <div class="comment-reaction-wrapper">
+          <span class="c-action c-like action-comment-like ${likedClass}" data-current-reaction="${esc(myReaction || '')}" ${likeColorStyle}>${likeHtml}</span>
+          <div class="comment-reaction-picker">
+            <span class="react-emoji" data-type="comment" data-reaction="like">👍</span>
+            <span class="react-emoji" data-type="comment" data-reaction="love">❤️</span>
+            <span class="react-emoji" data-type="comment" data-reaction="haha">😆</span>
+            <span class="react-emoji" data-type="comment" data-reaction="wow">😮</span>
+            <span class="react-emoji" data-type="comment" data-reaction="sad">😢</span>
+            <span class="react-emoji" data-type="comment" data-reaction="angry">😡</span>
+          </div>
+        </div>`;
+    } catch {
+      likeBlock = '';
+    }
+
+    const avatarAttr = (typeof tmEscapeHtml === 'function') ? tmEscapeHtml(avatar) : esc(avatar);
+
+    return `
+      <div class="comment-item"${idAttr}${itemStyle}>
+        <img class="comment-avatar" src="${avatarAttr}" alt="">
+        <div class="comment-body">
+          <div class="comment-bubble">
+            <div class="comment-author" style="font-weight:700; font-size:0.85rem;">${(typeof tmEscapeHtml==='function') ? tmEscapeHtml(name) : esc(name)}</div>
+            <div class="comment-text">${textHtml}</div>
+          </div>
+
+          <div class="comment-actions">
+            ${likeBlock}
+            ${replyBtnHtml}
+            ${deleteBtnHtml}
+          </div>
+
+          ${repliesBlock}
+        </div>
+      </div>
+    `;
+  }
+
+  // Override (so even old render paths get fixed)
+  window.generateCommentHTML = generateCommentHTML_v4;
+  try { generateCommentHTML = generateCommentHTML_v4; } catch {}
+
+  // ---------- Threaded renderer (unlimited nesting + 3/10 + View more reveal-all) ----------
+  async function renderThreaded(postCard, TopToast) {
+    if (!postCard) return;
+    const postId = postCard?.dataset?.postId || postCard?.id?.replace('post-', '');
+    if (!postId) return;
+
+    const commentSection = postCard.querySelector('.post-comments-section');
+    const list = postCard.querySelector('.comment-list');
+    const emptyMsg = postCard.querySelector('.no-comments-msg');
+    if (!commentSection || !list) return;
+
+    // fetch only once per open session
+    if (commentSection.dataset.loaded !== '1') {
+      try {
+        const remote = (typeof tmFetchPostComments === 'function') ? await tmFetchPostComments(postId, 200) : null;
+        if (remote) {
+          try {
+            updatePost(postId, (post) => {
+              if (!post) return post;
+              post.comments = (typeof tmMergeComments === 'function') ? tmMergeComments(post.comments, remote) : remote;
+              return post;
+            });
+          } catch {}
+        }
+      } catch {}
+      commentSection.dataset.loaded = '1';
+    }
+
+    let postObj = null;
+    try {
+      postObj = (typeof getAllPosts === 'function')
+        ? (getAllPosts() || []).find(p => String(p.id) === String(postId))
+        : null;
+    } catch {}
+
+    const comments = Array.isArray(postObj?.comments) ? postObj.comments : [];
+
+    const keepNo = emptyMsg ? emptyMsg.outerHTML : '<div class="no-comments-msg" style="text-align:center; font-size:0.85rem; color: var(--muted);">No comments yet</div>';
+
+    if (!comments.length) {
+      list.innerHTML = keepNo;
+      const no = list.querySelector('.no-comments-msg');
+      if (no) no.style.display = 'block';
+      return;
+    }
+
+    // index by id
+    const byId = new Map();
+    for (const c of comments) {
+      const id = (c && (c.id || c._id || c.commentId)) ? String(c.id || c._id || c.commentId) : '';
+      if (id) byId.set(id, c);
+    }
+
+    // group replies by parent (works for reply->reply too)
+    const top = [];
+    const repliesByParent = new Map();
+
+    for (const c of comments) {
+      const txt = String(c?.text || '');
+      const meta = parseReplyTag(txt);
+      const cid = (c && (c.id || c._id || c.commentId)) ? String(c.id || c._id || c.commentId) : '';
+      if (!cid) continue;
+
+      if (meta.isReply && meta.parentId && byId.has(meta.parentId)) {
+        c.__replyTo = meta.parentId;
+        c.__cleanText = meta.cleanText;
+        const arr = repliesByParent.get(meta.parentId) || [];
+        arr.push(c);
+        repliesByParent.set(meta.parentId, arr);
+      } else {
+        c.__replyTo = '';
+        c.__cleanText = String(c?.text || '');
+        top.push(c);
+      }
+    }
+
+    const asTs = (c) => Number(c?.timestamp || c?.createdAtMs || c?.createdAt || 0) || 0;
+    top.sort((a, b) => asTs(a) - asTs(b));
+    for (const [pid, arr] of repliesByParent.entries()) {
+      arr.sort((a, b) => asTs(a) - asTs(b));
+      repliesByParent.set(pid, arr);
+    }
+
+    const expandedTop = !!ui.expandedTopByPost[postId];
+    const hiddenTop = expandedTop ? 0 : Math.max(0, top.length - TOP_VISIBLE);
+    const visibleTop = hiddenTop > 0 ? top.slice(hiddenTop) : top;
+
+    const viewMoreTopBtn = hiddenTop > 0
+      ? `<button class="tm-view-more-comments" data-post-id="${esc(postId)}">View ${hiddenTop} more comment${hiddenTop === 1 ? '' : 's'}</button>`
+      : '';
+
+    function renderNode(c, depth) {
+      const cid = String(c?.id || c?._id || c?.commentId || '').trim();
+      const children = cid ? (repliesByParent.get(cid) || []) : [];
+
+      const expanded = !!ui.expandedByParent[cid];
+      const hidden = expanded ? 0 : Math.max(0, children.length - REPLIES_VISIBLE);
+      const visibleChildren = hidden > 0 ? children.slice(hidden) : children;
+
+      const viewMoreRepliesBtn = hidden > 0
+        ? `<button class="tm-view-more-replies" data-post-id="${esc(postId)}" data-parent-id="${esc(cid)}">View ${hidden} more repl${hidden === 1 ? 'y' : 'ies'}</button>`
+        : '';
+
+      const nested = visibleChildren.map(ch => renderNode(ch, depth + 1)).join('');
+      const repliesHtml = `${viewMoreRepliesBtn}${nested}`;
+
+      return generateCommentHTML_v4(c, undefined, {
+        isReply: depth > 0,
+        repliesHtml,
+        __postObj: postObj || null
+      });
+    }
+
+    const threadHTML = visibleTop.map(c => renderNode(c, 0)).join('');
+    list.innerHTML = `${keepNo}${viewMoreTopBtn}${threadHTML}`;
+
+    const no = list.querySelector('.no-comments-msg');
+    if (no) no.style.display = 'none';
+  }
+
+  // Override tmEnsureCommentsLoaded (so the threaded renderer is the source of truth)
+  const __origEnsure = (typeof tmEnsureCommentsLoaded === 'function') ? tmEnsureCommentsLoaded : null;
+  async function tmEnsureCommentsLoaded_v4(postCard, TopToast) {
+    try {
+      await renderThreaded(postCard, TopToast);
+    } catch (e) {
+      // fallback to original if anything goes wrong
+      try { if (__origEnsure) return await __origEnsure(postCard, TopToast); } catch {}
+    }
+  }
+  window.tmEnsureCommentsLoaded = tmEnsureCommentsLoaded_v4;
+  try { tmEnsureCommentsLoaded = tmEnsureCommentsLoaded_v4; } catch {}
+
+  // Click handlers: view more (reveal all) + delete
+  if (!window.__tmCommentThreadPatchV4ClicksBound) {
+    window.__tmCommentThreadPatchV4ClicksBound = true;
+
+    document.addEventListener('click', async (e) => {
+      const btnMoreC = e.target.closest('.tm-view-more-comments');
+      if (btnMoreC) {
+        e.preventDefault();
+        const postId = String(btnMoreC.dataset.postId || '');
+        ui.expandedTopByPost[postId] = true;
+        const postCard = btnMoreC.closest('.post-card');
+        if (postCard) await renderThreaded(postCard, window.TopToast || null);
+        return;
+      }
+
+      const btnMoreR = e.target.closest('.tm-view-more-replies');
+      if (btnMoreR) {
+        e.preventDefault();
+        const parentId = String(btnMoreR.dataset.parentId || '');
+        ui.expandedByParent[parentId] = true;
+        const postCard = btnMoreR.closest('.post-card');
+        if (postCard) await renderThreaded(postCard, window.TopToast || null);
+        return;
+      }
+
+      const del = e.target.closest('.action-delete-comment');
+      if (del) {
+        e.preventDefault();
+        const commentId = String(del.dataset.commentId || '').trim();
+        if (!commentId) return;
+
+        const postCard = del.closest('.post-card');
+        const postId = postCard?.dataset?.postId || '';
+        if (!postId) return;
+
+        if (!confirm('Delete this comment/reply?')) return;
+
+        del.style.pointerEvents = 'none';
+        let ok = false;
+
+        try {
+          // Prefer your existing helper
+          if (typeof tmFetchJson === 'function') {
+            const { res, data } = await tmFetchJson('/api/creator/posts/comment/delete', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ postId, commentId })
+            });
+            ok = !!(data && (data.ok === true || data.success === true));
+            if (res && res.status === 404) ok = false;
+          } else {
+            const r = await fetch('/api/creator/posts/comment/delete', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ postId, commentId })
+            });
+            const data = await r.json().catch(() => null);
+            ok = !!(data && (data.ok === true || data.success === true));
+          }
+        } catch {}
+
+        // optimistic local mark as deleted
+        try {
+          updatePost(postId, (p) => {
+            if (!p) return p;
+            p.comments = (Array.isArray(p.comments) ? p.comments : []).map((c) => {
+              const cid = String(c?.id || c?._id || c?.commentId || '');
+              if (cid !== commentId) return c;
+              const raw = String(c?.text || '');
+              const prefix = raw.match(/^\s*(\[\[replyTo:[^\]]+\]\])\s*/i);
+              const keepPrefix = prefix ? String(prefix[1]) : '';
+              return { ...c, text: `${keepPrefix}${keepPrefix ? ' ' : ''}[deleted]`, deleted: true, updatedAt: new Date().toISOString() };
+            });
+            return p;
+          });
+        } catch {}
+
+        if (postCard) await renderThreaded(postCard, window.TopToast || null);
+
+        try {
+          if (typeof tmToast === 'function') tmToast(window.TopToast || null, ok ? 'success' : 'info', ok ? 'Deleted' : 'Deleted (local)');
+        } catch {}
+
+        del.style.pointerEvents = '';
+        return;
+      }
+    }, true);
+  }
+})();
