@@ -12212,11 +12212,12 @@ function closeComposeSheet() {
 function setupGlobalEvents() {
     document.addEventListener('click', (e) => {
         const toggleBtn = e.target.closest('.header-toggle-btn');
-        if (toggleBtn) {
+        const moreBtn = e.target.closest('#trigger-more-btn');
+        if (toggleBtn && !moreBtn) {
             e.stopPropagation();
             e.preventDefault();
             const popover = document.getElementById('settings-popover');
-            if (popover) popover.classList.add('is-open');
+            if (popover) popover.classList.toggle('is-open');
         }
     });
 
@@ -12248,6 +12249,14 @@ function setupGlobalEvents() {
             if (!popover.contains(e.target) && !toggleBtn && !moreBtn) {
                 popover.classList.remove('is-open');
             }
+        }
+    });
+
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            const popover = document.getElementById('settings-popover');
+            if (popover) popover.classList.remove('is-open');
         }
     });
 
@@ -12494,12 +12503,11 @@ function setupNavigation() {
     const mobCollections = document.getElementById('mob-nav-collections');
     const mobNotif = document.getElementById('mob-nav-notif');
 
-    if (mobHome) mobHome.addEventListener('click', (e) => { try { e.preventDefault(); } catch(_) {} switchView('home'); });
-    if (mobAddCard) mobAddCard.addEventListener('click', (e) => { try { e.preventDefault(); } catch(_) {} switchView('add-card'); });
-    if (mobCollections) mobCollections.addEventListener('click', (e) => { try { e.preventDefault(); } catch(_) {} switchView('collections'); });
-    if (mobNotif) mobNotif.addEventListener('click', (e) => { try { e.preventDefault(); } catch(_) {} switchView('notifications'); });
-    if (mobAdd) mobAdd.addEventListener('click', (e) => {
-        try { e.preventDefault(); } catch(_) {}
+    if (mobHome) mobHome.addEventListener('click', () => switchView('home'));
+    if (mobAddCard) mobAddCard.addEventListener('click', () => switchView('add-card'));
+    if (mobCollections) mobCollections.addEventListener('click', () => switchView('collections'));
+    if (mobNotif) mobNotif.addEventListener('click', () => switchView('notifications'));
+    if (mobAdd) mobAdd.addEventListener('click', () => {
         // Mobile: open compose sheet. (Desktop/tablet shouldn't hit this because
         // bottom nav is hidden in CSS.)
         openComposeSheet();
@@ -12516,6 +12524,11 @@ function switchView(viewName) {
     
   // Close transient overlays when changing views
   try { tmCloseStatusMenu(); } catch {}
+  // Close settings popover on navigation
+  try {
+      const popover = document.getElementById('settings-popover');
+      if (popover) popover.classList.remove('is-open');
+  } catch (_) {}
 try { localStorage.setItem('tm_last_view', viewName); } catch (_) {}
 
     // Close mobile settings drill-down (if open)
