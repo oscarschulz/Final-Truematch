@@ -5105,3 +5105,45 @@ select option { background-color: #1a1a1a; color: #fff; padding: 10px; }
   font-weight: 800;
   cursor: pointer;
 }
+/* =========================================================
+   Mobile/Tablet: Persistent Menu button (opens settings drawer)
+   ========================================================= */
+.tm-mobile-menu-fab {
+  display: none !important;
+}
+
+@media (max-width: 1024px) {
+  .tm-mobile-menu-fab {
+    display: flex !important;
+    position: fixed;
+    top: calc(env(safe-area-inset-top) + 12px);
+    right: 12px;
+
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(2, 4, 10, 0.72);
+    backdrop-filter: blur(10px);
+
+    align-items: center;
+    justify-content: center;
+
+    color: var(--text);
+    z-index: 2147483646;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+  }
+
+  .tm-mobile-menu-fab:hover {
+    background: rgba(100,233,238,0.10);
+    border-color: rgba(100,233,238,0.35);
+  }
+
+  .tm-mobile-menu-fab i { font-size: 18px; }
+}
+
+/* Hide when compose sheet is open (para di mag-overlap) */
+body.compose-sheet-open .tm-mobile-menu-fab {
+  display: none !important;
+}
