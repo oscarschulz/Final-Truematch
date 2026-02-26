@@ -145,6 +145,187 @@
     return out;
   }
 
+  // ---- Manual Avatar Crop (Cropper.js modal) ----
+  // This lets the user choose the crop region manually before we upload.
+  // Fallback: if Cropper fails to load, we keep the old auto-center-crop flow.
+  let _tmAvatarCropper = null;
+  let _tmAvatarCropObjectUrl = '';
+  let _tmCropKeyHandler = null;
+
+  function _tmGetCropEls() {
+    const modal = document.getElementById('tmCropModal');
+    if (!modal) return null;
+
+    const img = document.getElementById('tmCropImg');
+    const zoom = document.getElementById('tmCropZoom');
+    const btnCancel = document.getElementById('tmCropCancel');
+    const btnApply = document.getElementById('tmCropApply');
+
+    if (!img || !zoom || !btnCancel || !btnApply) return null;
+
+    const closeEls = Array.from(modal.querySelectorAll('[data-crop-close]')) || [];
+    return { modal, img, zoom, btnCancel, btnApply, closeEls };
+  }
+
+  function _tmDestroyCropper() {
+    try { if (_tmAvatarCropper) _tmAvatarCropper.destroy(); } catch {}
+    _tmAvatarCropper = null;
+
+    if (_tmAvatarCropObjectUrl) {
+      try { URL.revokeObjectURL(_tmAvatarCropObjectUrl); } catch {}
+      _tmAvatarCropObjectUrl = '';
+    }
+  }
+
+  function _tmCloseCropModal() {
+    const els = _tmGetCropEls();
+    // Clear UI handlers to avoid stacking listeners
+    try {
+      if (els) {
+        if (els.zoom) els.zoom.oninput = null;
+        if (els.btnCancel) els.btnCancel.onclick = null;
+        if (els.btnApply) els.btnApply.onclick = null;
+        (els.closeEls || []).forEach((el) => { try { el.onclick = null; } catch {} });
+      }
+    } catch {}
+    if (els && els.modal) {
+      els.modal.classList.remove('is-open');
+      els.modal.setAttribute('aria-hidden', 'true');
+    }
+    try { if (els && els.img) els.img.removeAttribute('src'); } catch {}
+    try { document.body.style.overflow = ''; } catch {}
+    _tmDestroyCropper();
+
+    if (_tmCropKeyHandler) {
+      try { window.removeEventListener('keydown', _tmCropKeyHandler); } catch {}
+      _tmCropKeyHandler = null;
+    }
+  }
+
+  function cropAvatarWithModal(file, opts = {}) {
+    const maxSize = Number(opts.maxSize || 768);
+    const quality = Number(opts.quality || 0.82);
+
+    return new Promise((resolve, reject) => {
+      try {
+        const CropperCtor = window.Cropper;
+        const els = _tmGetCropEls();
+
+        if (!CropperCtor || !els) {
+          return reject(new Error('cropper_unavailable'));
+        }
+
+        // reset any previous
+        _tmCloseCropModal();
+
+        els.modal.classList.add('is-open');
+        els.modal.setAttribute('aria-hidden', 'false');
+        try { document.body.style.overflow = 'hidden'; } catch {}
+
+        // Load the image via object URL (faster + memory-friendly)
+        _tmAvatarCropObjectUrl = URL.createObjectURL(file);
+        els.img.src = _tmAvatarCropObjectUrl;
+
+        const onImgLoad = () => {
+          try { if (_tmAvatarCropper) _tmAvatarCropper.destroy(); } catch {}
+
+          _tmAvatarCropper = new CropperCtor(els.img, {
+            aspectRatio: 1,
+            viewMode: 1,
+            dragMode: 'move',
+            autoCropArea: 1,
+            background: false,
+            responsive: true,
+            guides: false,
+            center: true,
+            highlight: false,
+            movable: true,
+            zoomable: true,
+            rotatable: false,
+            scalable: false
+          });
+
+          // Reset zoom slider
+          try { els.zoom.value = '1'; } catch {}
+        };
+
+        // Must wait for the image element to load before init Cropper
+        els.img.addEventListener('load', onImgLoad, { once: true });
+
+        const cleanupAndReject = (reason) => {
+          _tmCloseCropModal();
+          reject(new Error(reason || 'crop_cancelled'));
+        };
+
+        const cleanupAndResolve = (dataUrl) => {
+          _tmCloseCropModal();
+          resolve(String(dataUrl || ''));
+        };
+
+        // Close handlers (backdrop or X)
+        const onCloseClick = (e) => {
+          e.preventDefault();
+          cleanupAndReject('crop_cancelled');
+        };
+        els.closeEls.forEach((el) => { try { el.onclick = onCloseClick; } catch {} });
+
+        // Cancel button
+        const onCancel = (e) => {
+          e.preventDefault();
+          cleanupAndReject('crop_cancelled');
+        };
+        try { els.btnCancel.onclick = onCancel; } catch {}
+
+        // Apply button
+        const onApply = (e) => {
+          e.preventDefault();
+          try {
+            if (!_tmAvatarCropper) throw new Error('cropper_not_ready');
+
+            const canvas = _tmAvatarCropper.getCroppedCanvas({
+              width: maxSize,
+              height: maxSize,
+              imageSmoothingEnabled: true,
+              imageSmoothingQuality: 'high'
+            });
+
+            const out = canvas.toDataURL('image/jpeg', quality);
+            cleanupAndResolve(out);
+          } catch (err) {
+            cleanupAndReject(err && err.message ? err.message : 'crop_failed');
+          }
+        };
+        try { els.btnApply.onclick = onApply; } catch {}
+
+        // Zoom slider
+        const onZoom = () => {
+          try {
+            if (!_tmAvatarCropper) return;
+            const v = Number(els.zoom.value);
+            if (!Number.isFinite(v)) return;
+            // Clamp: Cropper zoomTo wants a scale ratio (1 = original)
+            const z = Math.max(0.5, Math.min(3, v));
+            _tmAvatarCropper.zoomTo(z);
+          } catch {}
+        };
+        try { els.zoom.oninput = onZoom; } catch {}
+
+        // ESC closes
+        _tmCropKeyHandler = (ev) => {
+          if (ev && ev.key === 'Escape') cleanupAndReject('crop_cancelled');
+        };
+        window.addEventListener('keydown', _tmCropKeyHandler);
+
+        // If user cancels/resets before image loads, Cropper init may still run;
+        // we rely on _tmCloseCropModal() to destroy safely.
+      } catch (e) {
+        _tmCloseCropModal();
+        reject(e);
+      }
+    });
+  }
+
+
   function getProfileValues() {
     const ageInput = qs('input[name="profileAge"]');
     const cityInput = qs('input[name="profileCity"]');
@@ -292,8 +473,33 @@ function updateAvatarRequiredNotice() {
         updateAvatarRequiredNotice();
         return;
       }
-
       setAvatarFileName(f.name);
+
+      // Prefer manual crop UI (Cropper.js). If Cropper is unavailable or fails, fallback to auto-center-crop.
+      try {
+        const cropped = await cropAvatarWithModal(f, { maxSize: 768, quality: 0.82 });
+
+        AVATAR_DATA_URL_FOR_UPLOAD = cropped;
+        setAvatarPreview(AVATAR_DATA_URL_FOR_UPLOAD);
+        updateAvatarRequiredNotice();
+
+        // Clear the native file input so the user can re-pick the same file if needed.
+        try { fileInput.value = ''; } catch {}
+        setAvatarFileName('Cropped photo');
+        return;
+      } catch (err) {
+        const msg = String(err && err.message ? err.message : err || '');
+        if (msg.includes('crop_cancelled')) {
+          // User cancelled crop -> revert UI + clear file selection
+          AVATAR_DATA_URL_FOR_UPLOAD = '';
+          setAvatarPreview(EXISTING_AVATAR_URL || '');
+          setAvatarFileName('');
+          updateAvatarRequiredNotice();
+          try { fileInput.value = ''; } catch {}
+          return;
+        }
+        // cropper_unavailable -> continue to fallback below
+      }
 
       try {
         AVATAR_DATA_URL_FOR_UPLOAD = await fileToOptimizedSquareDataUrl(f, {
@@ -311,7 +517,7 @@ function updateAvatarRequiredNotice() {
         // Reset input to force re-pick
         try { fileInput.value = ''; } catch {}
       }
-    });
+});
   }
 
 

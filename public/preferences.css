@@ -761,3 +761,143 @@ select option{ background:#02040a; color:#fff; padding:10px; }
     bottom: 0 !important;
   }
 }
+
+/* --- Avatar Crop Modal (manual crop for profile picture) --- */
+
+.tm-crop-modal{
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: none;
+}
+.tm-crop-modal.is-open{ display:block; }
+
+.tm-crop-backdrop{
+  position:absolute;
+  inset:0;
+  background: rgba(0,0,0,0.78);
+  backdrop-filter: blur(6px);
+}
+
+.tm-crop-panel{
+  position: relative;
+  width: min(820px, calc(100vw - 28px));
+  max-height: calc(100vh - 28px);
+  margin: 14px auto;
+  background: rgba(5,10,18,0.92);
+  border: 1px solid rgba(100,233,238,0.22);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 30px 90px rgba(0,0,0,0.55);
+}
+
+.tm-crop-header{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.tm-crop-title{
+  font-weight:900;
+  color:#fff;
+  font-size: 1rem;
+  letter-spacing: .2px;
+}
+
+.tm-crop-sub{
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: rgba(210,245,249,0.70);
+}
+
+.tm-crop-x{
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  color:#fff;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  cursor:pointer;
+}
+.tm-crop-x:hover{
+  border-color:#64E9EE;
+  color:#64E9EE;
+  box-shadow: 0 0 18px rgba(100,233,238,0.18);
+}
+
+.tm-crop-body{
+  padding: 14px 18px 18px;
+  display:flex;
+  flex-direction:column;
+  gap: 14px;
+}
+
+.tm-crop-stage{
+  width:100%;
+  height: min(520px, 55vh);
+  background: rgba(0,0,0,0.35);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 14px;
+  overflow:hidden;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+.tm-crop-stage img{
+  max-width: 100%;
+  max-height: 100%;
+  display:block;
+}
+
+.tm-crop-controls{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.tm-crop-control{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  color: rgba(210,245,249,0.78);
+  font-size: 0.8rem;
+}
+
+.tm-crop-control span{
+  font-weight: 700;
+  color: rgba(100,233,238,0.90);
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+  font-size: 0.65rem;
+}
+
+.tm-crop-control input[type="range"]{
+  width: 240px;
+}
+
+.tm-crop-actions{
+  display:flex;
+  gap: 10px;
+}
+
+@media (max-width: 560px){
+  .tm-crop-control{
+    width: 100%;
+    justify-content: space-between;
+  }
+  .tm-crop-control input[type="range"]{
+    width: 60%;
+  }
+  .tm-crop-actions{
+    width: 100%;
+  }
+  .tm-crop-actions .btn{
+    flex: 1;
+  }
+}

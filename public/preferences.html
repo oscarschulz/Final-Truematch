@@ -12,8 +12,9 @@
 
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="auth.css">
-  <link rel="stylesheet" href="preferences.css?v=6">
-  <link rel="stylesheet" href="responsive.css">
+  <link rel="stylesheet" href="preferences.css?v=7">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css">
+<link rel="stylesheet" href="responsive.css">
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -110,7 +111,7 @@
                     <input type="file" id="avatarFile" name="avatarFile" accept="image/*" required />
                     <label class="btn btn-secondary avatar-btn" for="avatarFile" id="avatarBtn">Choose photo</label>
                     <div class="file-name" id="avatarFileName">No file chosen</div>
-                    <div class="hint">JPG/PNG. We&apos;ll auto-crop and compress.</div>
+                    <div class="hint">JPG/PNG. Crop it, then we&apos;ll compress.</div>
                   </div>
                 </div>
               </div>
@@ -282,9 +283,44 @@
     })();
   </script>
 
+
+  <!-- Avatar Crop Modal -->
+  <div id="tmCropModal" class="tm-crop-modal" aria-hidden="true">
+    <div class="tm-crop-backdrop" data-crop-close></div>
+
+    <div class="tm-crop-panel" role="dialog" aria-modal="true" aria-labelledby="tmCropTitle">
+      <div class="tm-crop-header">
+        <div>
+          <div id="tmCropTitle" class="tm-crop-title">Crop your photo</div>
+          <div class="tm-crop-sub">Drag to reposition. Pinch/scroll to zoom.</div>
+        </div>
+        <button type="button" class="tm-crop-x" data-crop-close aria-label="Close">✕</button>
+      </div>
+
+      <div class="tm-crop-body">
+        <div class="tm-crop-stage">
+          <img id="tmCropImg" alt="Crop preview" />
+        </div>
+
+        <div class="tm-crop-controls">
+          <label class="tm-crop-control" for="tmCropZoom">
+            <span>Zoom</span>
+            <input id="tmCropZoom" type="range" min="0.5" max="3" step="0.01" value="1">
+          </label>
+
+          <div class="tm-crop-actions">
+            <button type="button" class="btn btn-secondary tm-crop-cancel" id="tmCropCancel">Cancel</button>
+            <button type="button" class="btn btn-primary tm-crop-apply" id="tmCropApply">Use photo</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  
+  <script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
+
   <script src="tm-loader.js"></script>
-  <script type="module" src="preferences.js?v=3"></script>
+  <script type="module" src="preferences.js?v=4"></script>
 </body>
 </html>
