@@ -7659,7 +7659,83 @@ app.get('/api/creators/feed', async (req, res) => {
     });} catch (e) {
     return res.status(400).json({ ok: false, error: String(e?.message || e) });
   }
+});// Creators-only suggestions (for creators.html right sidebar)
+// Returns only users who have been approved as creators (excludes normal members + swipe seed profiles)
+app.get('/api/creators/suggestions', authMiddleware, async (req, res) => {
+  try {
+    const meEmail = _normalizeEmail((req.user && req.user.email) || getSessionEmail(req) || '');
+    if (!meEmail) return res.status(401).json({ ok: false, error: 'Not authenticated' });
+
+    const limit = Math.max(1, Math.min(30, parseInt(req.query?.limit || '12', 10) || 12));
+
+    const normalizeCreatorApproved = (u) => {
+      const cs = String(u?.creatorStatus || '').toLowerCase().trim();
+      const cas = String(u?.creatorApplication?.status || '').toLowerCase().trim();
+      return cs === 'approved' || cas === 'approved';
+    };
+
+    const out = [];
+
+    if (hasFirebase && usersCollection) {
+      // Fast path: query creatorStatus == approved
+      let snap = null;
+      try {
+        snap = await usersCollection.where('creatorStatus', '==', 'approved').limit(200).get();
+      } catch (_) {
+        // Fallback if index/rules block the query: scan a bounded set and filter in memory
+        snap = await usersCollection.limit(300).get();
+      }
+
+      (snap?.docs || []).forEach((doc) => {
+        const u = doc.data() || {};
+        if (!normalizeCreatorApproved(u)) return;
+
+        const email = _normalizeEmail(u.email || '');
+        if (!email || email === meEmail) return;
+
+        out.push({
+          id: email,
+          name: u.name || 'Creator',
+          age: u.age || 25,
+          city: u.city || 'Global',
+          badge: 'CREATOR',
+          photoUrl: u.avatarUrl || u.photoUrl || 'assets/images/truematch-mark.png'
+        });
+      });
+    } else {
+      // In-memory fallback
+      const list = Object.values(DB.users || {}).filter((u) => u && normalizeCreatorApproved(u));
+      for (const u of list) {
+        const email = _normalizeEmail(u.email || '');
+        if (!email || email === meEmail) continue;
+
+        out.push({
+          id: email,
+          name: u.name || 'Creator',
+          age: u.age || 25,
+          city: u.city || 'Global',
+          badge: 'CREATOR',
+          photoUrl: u.avatarUrl || u.photoUrl || 'assets/images/truematch-mark.png'
+        });
+      }
+    }
+
+    // Shuffle + slice
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = out[i];
+      out[i] = out[j];
+      out[j] = tmp;
+    }
+
+    return res.json({ ok: true, items: out.slice(0, limit) });
+  } catch (err) {
+    console.error('creators/suggestions error:', err);
+    return res.status(500).json({ ok: false, message: 'Server error' });
+  }
 });
+
+
 
 
 // ---- Creator post interactions (reactions + comments) ----
@@ -8163,98 +8239,83 @@ async function __creatorDeleteCommentHandler(req, res) {
       return res.status(403).json({ ok: false, message: 'Not allowed to delete this comment' });
     }
 
-    // Load all comments once, then find descendants recursively
+    // Load all comments once so we can decide whether to hard-delete or soft-delete.
+    // UX goal: deleting ONE comment/reply should NOT wipe the whole thread.
+    // If the node has children, we soft-delete (keep doc, replace text with [deleted]) to avoid orphaning replies.
     const allSnap = await commentsCol.get();
     const allDocs = allSnap.docs || [];
 
-    const byDocId = new Map();
-    const byAnyId = new Map(); // doc.id and data.id -> docSnap
+    const targetKeys = new Set();
+    try {
+      for (const k of __creatorCommentAllIds(targetSnap)) targetKeys.add(String(k));
+    } catch (_) {}
+    targetKeys.add(String(targetSnap.id));
+
+    let hasChildren = false;
     for (const ds of allDocs) {
-      byDocId.set(ds.id, ds);
-      for (const k of __creatorCommentAllIds(ds)) {
-        if (!byAnyId.has(k)) byAnyId.set(k, ds);
-      }
-    }
-
-    const toDeleteDocIds = new Set();
-    const queueKeys = [...__creatorCommentAllIds(targetSnap)];
-
-    toDeleteDocIds.add(targetSnap.id);
-
-    // Build parentTarget -> child docs index
-    const childrenByTarget = new Map();
-    for (const ds of allDocs) {
+      if (!ds || ds.id === targetSnap.id) continue;
       const d = ds.data() || {};
       const parentTarget = __creatorReplyTargetIdFromComment(d);
       if (!parentTarget) continue;
-      if (!childrenByTarget.has(parentTarget)) childrenByTarget.set(parentTarget, []);
-      childrenByTarget.get(parentTarget).push(ds);
+      if (targetKeys.has(String(parentTarget))) { hasChildren = true; break; }
     }
 
-    // BFS over all ids (supports doc.id or custom data.id references)
-    const seenKeys = new Set(queueKeys);
-    while (queueKeys.length) {
-      const key = queueKeys.shift();
-      const children = childrenByTarget.get(key) || [];
-      for (const child of children) {
-        if (!toDeleteDocIds.has(child.id)) {
-          toDeleteDocIds.add(child.id);
-          for (const childKey of __creatorCommentAllIds(child)) {
-            if (!seenKeys.has(childKey)) {
-              seenKeys.add(childKey);
-              queueKeys.push(childKey);
-            }
-          }
-        }
+    const nowMs = Date.now();
+
+    if (hasChildren) {
+      // Preserve replyTo meta prefix if it exists (so nested threading keeps working)
+      const raw = __tmSafeStr(targetData.text || '').trim();
+      const m = raw.match(/^\s*(\[\[replyTo:[^\]]+\]\])\s*/i);
+      const prefix = m ? String(m[1] || '') : '';
+      const nextText = `${prefix}${prefix ? ' ' : ''}[deleted]`;
+
+      await targetSnap.ref.set({
+        text: nextText,
+        deleted: true,
+        updatedAt: new Date(nowMs),
+        updatedAtMs: nowMs
+      }, { merge: true });
+
+      return res.json({
+        ok: true,
+        deletedCount: 1,
+        softDeleted: true,
+        deletedCommentIds: [targetSnap.id]
+      });
+    }
+
+    // Hard delete only THIS node (no cascade)
+    try {
+      // Best effort: delete reaction docs too (orphans otherwise)
+      const reactionDocs = await targetSnap.ref.collection('reactions').listDocuments();
+      if (Array.isArray(reactionDocs) && reactionDocs.length) {
+        const batch = firestore.batch();
+        for (const rRef of reactionDocs) batch.delete(rRef);
+        batch.delete(targetSnap.ref);
+        await batch.commit();
+      } else {
+        await targetSnap.ref.delete();
       }
+    } catch (_) {
+      // ignore if listDocuments is unavailable in env
+      try { await targetSnap.ref.delete(); } catch {}
     }
 
-    const deleteDocs = Array.from(toDeleteDocIds).map(id => byDocId.get(id)).filter(Boolean);
-    const deleteCount = deleteDocs.length;
-
-    if (!deleteCount) {
-      return res.status(404).json({ ok: false, message: 'Nothing to delete' });
-    }
-
-    // Delete comment docs + best-effort delete their reactions subcollection docs
-    // (chunked batches to stay safe)
-    const CHUNK = 200;
-    for (let i = 0; i < deleteDocs.length; i += CHUNK) {
-      const chunk = deleteDocs.slice(i, i + CHUNK);
-      const batch = firestore.batch();
-
-      for (const ds of chunk) {
-        const cRef = ds.ref;
-
-        // Best effort: delete comment reaction docs too (orphans otherwise)
-        try {
-          const reactionDocs = await cRef.collection('reactions').listDocuments();
-          for (const rRef of reactionDocs) batch.delete(rRef);
-        } catch (_) {
-          // ignore if listDocuments is unavailable in env
-        }
-
-        batch.delete(cRef);
-      }
-
-      await batch.commit();
-    }
-
-    // Fix post commentCount (clamped >= 0)
+    // Fix post commentCount (clamped >= 0) for hard delete only
     try {
       await firestore.runTransaction(async (t) => {
         const ps = await t.get(postRef);
         if (!ps.exists) return;
         const pd = ps.data() || {};
         const curr = Number(pd.commentCount || 0);
-        const next = Math.max(0, curr - deleteCount);
+        const next = Math.max(0, curr - 1);
         t.update(postRef, { commentCount: next, updatedAt: firestore.FieldValue.serverTimestamp() });
       });
     } catch (_) {
       // fallback best-effort decrement
       try {
         await postRef.update({
-          commentCount: firestore.FieldValue.increment(-deleteCount),
+          commentCount: firestore.FieldValue.increment(-1),
           updatedAt: firestore.FieldValue.serverTimestamp()
         });
       } catch (__e) {}
@@ -8262,10 +8323,11 @@ async function __creatorDeleteCommentHandler(req, res) {
 
     return res.json({
       ok: true,
-      deletedCount,
-      deletedCommentIds: Array.from(toDeleteDocIds)
+      deletedCount: 1,
+      softDeleted: false,
+      deletedCommentIds: [targetSnap.id]
     });
-  } catch (err) {
+} catch (err) {
     console.error('creator comment delete error:', err);
     return res.status(err?.status || 500).json({
       ok: false,

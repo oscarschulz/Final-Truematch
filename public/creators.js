@@ -13756,7 +13756,7 @@ function tmBindPopoverCollections() {
 
 // =============================================================
 // RIGHT SIDEBAR: SUGGESTIONS (Data #4)
-// - Uses GET /api/swipe/candidates as a simple source of accounts
+// - Uses GET /api/creators/suggestions as a simple source of accounts
 // - Renders cards in #rs-suggestions-view .suggestion-list
 // - Refresh icon rotates + refetches
 // - "Hide suggestion" stored in localStorage
@@ -13783,20 +13783,20 @@ function tmGetSuggEls() {
 }
 
 function tmGetHiddenSuggestions() {
-  try { return JSON.parse(localStorage.getItem('tm_hidden_suggestions') || '[]') || []; }
+  try { return JSON.parse(localStorage.getItem('tm_hidden_creator_suggestions') || '[]') || []; }
   catch { return []; }
 }
 
 function tmSetHiddenSuggestions(arr) {
-  try { localStorage.setItem('tm_hidden_suggestions', JSON.stringify(arr || [])); } catch {}
+  try { localStorage.setItem('tm_hidden_creator_suggestions', JSON.stringify(arr || [])); } catch {}
 }
 
 function tmSetSuggestionsCache(payload) {
-  try { localStorage.setItem('tm_suggestions_cache', JSON.stringify(payload)); } catch {}
+  try { localStorage.setItem('tm_creator_suggestions_cache', JSON.stringify(payload)); } catch {}
 }
 
 function tmGetSuggestionsCache() {
-  try { return JSON.parse(localStorage.getItem('tm_suggestions_cache') || 'null'); }
+  try { return JSON.parse(localStorage.getItem('tm_creator_suggestions_cache') || 'null'); }
   catch { return null; }
 }
 
@@ -13910,7 +13910,7 @@ function tmRenderSuggestions(items, meta = {}) {
 }
 
 async function tmFetchSuggestionsFromApi() {
-  const res = await fetch('/api/swipe/candidates', { method: 'GET', credentials: 'include' });
+  const res = await fetch('/api/creators/suggestions', { method: 'GET', credentials: 'include' });
   const data = await res.json().catch(() => null);
   if (!data || data.ok === false) {
     const err = (data && (data.error || data.message)) || (res.status === 401 ? 'Not authenticated' : 'Unable to load suggestions');
@@ -13939,7 +13939,7 @@ async function tmRefreshSuggestions(opts = { force: false }) {
 
   try {
     const payload = await tmFetchSuggestionsFromApi();
-    const items = Array.isArray(payload.candidates) ? payload.candidates : [];
+    const items = Array.isArray(payload.items) ? payload.items : (Array.isArray(payload.creators) ? payload.creators : (Array.isArray(payload.candidates) ? payload.candidates : []));
     const meta = { message: payload.message || '' };
 
     tmSetSuggestionsCache({ ts: Date.now(), items, meta });
