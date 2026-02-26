@@ -12494,11 +12494,12 @@ function setupNavigation() {
     const mobCollections = document.getElementById('mob-nav-collections');
     const mobNotif = document.getElementById('mob-nav-notif');
 
-    if (mobHome) mobHome.addEventListener('click', () => switchView('home'));
-    if (mobAddCard) mobAddCard.addEventListener('click', () => switchView('your-cards'));
-    if (mobCollections) mobCollections.addEventListener('click', () => switchView('collections'));
-    if (mobNotif) mobNotif.addEventListener('click', () => switchView('notifications'));
-    if (mobAdd) mobAdd.addEventListener('click', () => {
+    if (mobHome) mobHome.addEventListener('click', (e) => { try { e.preventDefault(); } catch(_) {} switchView('home'); });
+    if (mobAddCard) mobAddCard.addEventListener('click', (e) => { try { e.preventDefault(); } catch(_) {} switchView('add-card'); });
+    if (mobCollections) mobCollections.addEventListener('click', (e) => { try { e.preventDefault(); } catch(_) {} switchView('collections'); });
+    if (mobNotif) mobNotif.addEventListener('click', (e) => { try { e.preventDefault(); } catch(_) {} switchView('notifications'); });
+    if (mobAdd) mobAdd.addEventListener('click', (e) => {
+        try { e.preventDefault(); } catch(_) {}
         // Mobile: open compose sheet. (Desktop/tablet shouldn't hit this because
         // bottom nav is hidden in CSS.)
         openComposeSheet();
@@ -12619,26 +12620,16 @@ try { localStorage.setItem('tm_last_view', viewName); } catch (_) {}
         if (DOM.rightSidebar) DOM.rightSidebar.classList.add('wide-view');
         if (DOM.rsSettingsView) DOM.rsSettingsView.classList.remove('hidden'); 
         updateActiveNav(null, null); 
+    }
     else if (viewName === 'add-card') {
-    // UX: unify "Add card" flow -> show Cards hub + open Add Card modal.
-    targetView = DOM.viewYourCards || DOM.viewAddCard;
-    if(DOM.rsWalletView) DOM.rsWalletView.classList.remove('hidden');
-    updateActiveNav('nav-link-add-card', 'mob-nav-add-card');
-
-    // Auto-open Add Card modal (safe even if wallet sidebar isn't visible on mobile)
-    try {
-        const modal = document.getElementById('add-card-modal');
-        if (modal) {
-            modal.classList.remove('hidden');
-            setTimeout(() => modal.classList.add('open'), 10);
-        }
-    } catch (_) {}
-}
+        targetView = DOM.viewAddCard;
+        if(DOM.rsWalletView) DOM.rsWalletView.classList.remove('hidden');
+        updateActiveNav('nav-link-add-card', 'mob-nav-add-card');
+    }
     else if (viewName === 'your-cards') {
-    targetView = DOM.viewYourCards;
-    if(DOM.rsWalletView) DOM.rsWalletView.classList.remove('hidden');
-    updateActiveNav('nav-link-add-card', 'mob-nav-add-card');
-}
+        targetView = DOM.viewYourCards;
+        if(DOM.rsWalletView) DOM.rsWalletView.classList.remove('hidden');
+    }
     else if (viewName === 'become-creator') {
         targetView = DOM.viewBecomeCreator;
         const bankingSidebar = document.getElementById('rs-banking-view');
