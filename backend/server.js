@@ -9670,6 +9670,8 @@ app.post('/api/swipe/action', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'Invalid swipe payload' });
     }
 
+
+    const isSeedTarget = _isSeedTargetId(tId);
     // Plan-gated daily swipe cap:
     // - free: 20/day (server-side enforced)
     // - tier1+: unlimited
@@ -9679,7 +9681,7 @@ app.post('/api/swipe/action', async (req, res) => {
     const planActive = (typeof userDoc.planActive === 'boolean') ? userDoc.planActive : true;
     const isPremium = (planKey !== 'free') && (planActive !== false);
 
-  if (isPremium) {
+  if (isPremium && !isSeedTarget) {
   // prevent premium users from swiping on non-premium targets (extra safety)
   let other = null;
   if (hasFirebase) other = await findUserByEmail(tId);
@@ -9719,6 +9721,12 @@ const actionType = (action === 'super' || action === 'superlike') ? 'superlike' 
 // If pass: no match check needed
     if (!_isPositiveSwipe(actionType)) {
       return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: false });
+    }
+
+
+    // Seed targets never create matches (deck filler only)
+    if (isSeedTarget) {
+      return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: false, seed: true });
     }
 
     // Check reciprocal swipe and create match if mutual positive
