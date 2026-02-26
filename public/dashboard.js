@@ -510,6 +510,7 @@ function renderCreatorEntryCard() {
     btnApply.textContent = 'Apply';
     btnApply.style.opacity = '1';
     btnApply.style.display = 'inline-flex';
+    btnApply.style.cursor = '';
   }
 
   if (status === 'pending') {
@@ -520,6 +521,7 @@ function renderCreatorEntryCard() {
       btnApply.disabled = true;
       btnApply.textContent = 'Application Pending';
       btnApply.style.opacity = '0.6';
+      btnApply.style.cursor = 'not-allowed';
     }
   } else if (status === 'rejected') {
     if (row) row.style.display = 'flex';
@@ -529,6 +531,7 @@ function renderCreatorEntryCard() {
       btnApply.disabled = false;
       btnApply.textContent = 'Re-Apply';
       btnApply.style.opacity = '1';
+      btnApply.style.cursor = 'pointer';
     }
   } else if (status === 'approved') {
     // In case user lands here (e.g., deep link / back button), show a go button.
@@ -538,8 +541,18 @@ function renderCreatorEntryCard() {
     if (btnApply) btnApply.style.display = 'none';
     if (btnGo) btnGo.style.display = 'inline-flex';
   } else {
-    // no status yet
-    if (btnApply) btnApply.style.display = 'inline-flex';
+    // no status yet (not applied yet) — show Coming Soon
+    if (row) row.style.display = 'flex';
+    if (chip) chip.textContent = 'Coming Soon';
+    if (hint) hint.textContent = 'Creator applications are opening soon.';
+
+    if (btnApply) {
+      btnApply.disabled = true;
+      btnApply.textContent = 'Coming Soon';
+      btnApply.style.opacity = '0.6';
+      btnApply.style.display = 'inline-flex';
+      btnApply.style.cursor = 'not-allowed';
+    }
   }
 }
 
