@@ -8,6 +8,9 @@ import { apiGet, apiPost, apiUpdateProfile, apiSavePrefs } from './tm-api.js';
 
 const DAILY_SWIPE_LIMIT = 20; 
 
+// Feature flag: set to true kapag bukas na ulit ang Creators application.
+const CREATOR_APPLICATION_OPEN = false;
+
 // --- Email helper: shorten + mask to avoid UI overlap (Settings header) ---
 function maskEmail(email) {
   if (!email || typeof email !== 'string') return '';
@@ -502,6 +505,8 @@ function renderCreatorEntryCard() {
   const btnApply = DOM.btnOpenCreatorApply;
   const btnGo = DOM.btnGoCreatorsPage;
 
+  const appsOpen = !!CREATOR_APPLICATION_OPEN;
+
   // Defaults
   if (row) row.style.display = 'none';
   if (btnGo) btnGo.style.display = 'none';
@@ -526,12 +531,23 @@ function renderCreatorEntryCard() {
   } else if (status === 'rejected') {
     if (row) row.style.display = 'flex';
     if (chip) chip.textContent = 'Rejected';
-    if (hint) hint.textContent = 'You can edit and re-apply anytime.';
-    if (btnApply) {
-      btnApply.disabled = false;
-      btnApply.textContent = 'Re-Apply';
-      btnApply.style.opacity = '1';
-      btnApply.style.cursor = 'pointer';
+
+    if (appsOpen) {
+      if (hint) hint.textContent = 'You can edit and re-apply anytime.';
+      if (btnApply) {
+        btnApply.disabled = false;
+        btnApply.textContent = 'Re-Apply';
+        btnApply.style.opacity = '1';
+        btnApply.style.cursor = 'pointer';
+      }
+    } else {
+      if (hint) hint.textContent = 'Re-apply when Creator applications reopen.';
+      if (btnApply) {
+        btnApply.disabled = true;
+        btnApply.textContent = 'Closed';
+        btnApply.style.opacity = '0.6';
+        btnApply.style.cursor = 'not-allowed';
+      }
     }
   } else if (status === 'approved') {
     // In case user lands here (e.g., deep link / back button), show a go button.
@@ -541,20 +557,34 @@ function renderCreatorEntryCard() {
     if (btnApply) btnApply.style.display = 'none';
     if (btnGo) btnGo.style.display = 'inline-flex';
   } else {
-    // no status yet (not applied yet) — show Coming Soon
-    if (row) row.style.display = 'flex';
-    if (chip) chip.textContent = 'Coming Soon';
-    if (hint) hint.textContent = 'Creator applications are opening soon.';
+    // no status yet
+    if (!appsOpen) {
+      if (row) row.style.display = 'flex';
+      if (chip) chip.textContent = 'Coming Soon';
+      if (hint) hint.textContent = 'Creator applications are opening soon.';
 
-    if (btnApply) {
-      btnApply.disabled = true;
-      btnApply.textContent = 'Coming Soon';
-      btnApply.style.opacity = '0.6';
-      btnApply.style.display = 'inline-flex';
-      btnApply.style.cursor = 'not-allowed';
+      if (btnApply) {
+        btnApply.disabled = true;
+        btnApply.textContent = 'Coming Soon';
+        btnApply.style.opacity = '0.6';
+        btnApply.style.display = 'inline-flex';
+        btnApply.style.cursor = 'not-allowed';
+      }
+    } else {
+      // Applications open: show normal Apply CTA
+      if (row) row.style.display = 'none';
+      if (btnApply) {
+        btnApply.disabled = false;
+        btnApply.textContent = 'Apply';
+        btnApply.style.opacity = '1';
+        btnApply.style.display = 'inline-flex';
+        btnApply.style.cursor = 'pointer';
+      }
+      if (btnGo) btnGo.style.display = 'none';
     }
   }
 }
+
 
 function renderPremiumEntryCard() {
   if (!DOM.premiumEntryCard) return;
@@ -1022,6 +1052,12 @@ if (DOM.frmPassword) DOM.frmPassword.addEventListener('submit', async (e) => {
     }
 
     const cs = normalizeStatus(state.me && state.me.creatorStatus);
+
+    // Feature flag: kapag sarado ang applications, huwag mag-open ng apply modal (except pending/approved)
+    if (!CREATOR_APPLICATION_OPEN && cs !== 'pending' && cs !== 'approved') {
+      showToast('Creator applications are currently closed.', 'info');
+      return;
+    }
 
     // If already approved, go straight to Creators
     if (cs === 'approved') {
