@@ -977,3 +977,77 @@ dialog::backdrop { background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-in
     font-size: 16px; /* avoid iOS zoom */
   }
 }
+
+
+/* =========================================================
+   MOBILE: "Swipes Left" widget inside Swipe panel
+   - shows only on mobile, hides on desktop (right sidebar already shows it)
+   ========================================================= */
+.swipe-mobile-stats{
+  display:none;
+}
+
+@media (max-width: 768px){
+  .swipe-mobile-stats{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+
+    width:min(420px, 100%);
+    margin: 14px auto 6px;
+    padding: 12px 14px;
+
+    background: rgba(20, 20, 25, 0.55);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 16px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .swipe-mobile-stats .sms-left{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+    min-width: 0;
+  }
+
+  .swipe-mobile-stats .sms-title{
+    font-weight: 900;
+    letter-spacing: 0.3px;
+    font-size: 0.95rem;
+  }
+
+  .swipe-mobile-stats .sms-sub{
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.70);
+  }
+
+  .swipe-mobile-stats .sms-ring{
+    position: relative;
+    width: 46px;
+    height: 46px;
+    flex: 0 0 46px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+
+  .swipe-mobile-stats .sms-ring svg{
+    position:absolute;
+    inset:0;
+    transform: rotate(-90deg);
+  }
+
+  .swipe-mobile-stats .sms-count{
+    position: relative;
+    font-weight: 900;
+    font-size: 0.98rem;
+    line-height: 1;
+    color: #fff;
+  }
+
+  /* reuse ring styling */
+  .swipe-mobile-stats circle.bg { stroke: rgba(255,255,255,0.10); fill:none; stroke-width:8; stroke-linecap:round; }
+  .swipe-mobile-stats circle.fg { stroke: var(--brand-color); fill:none; stroke-width:8; stroke-linecap:round; transition: stroke-dashoffset 0.5s; }
+}

@@ -322,7 +322,9 @@ DOM.inpName = document.getElementById('inpName');
   DOM.statsRingCircle = document.getElementById('statsRingCircle');
   DOM.statsCountDisplay = document.getElementById('statsCountDisplay');
   
-  // Panel Bodies
+    DOM.mobileStatsRingCircle = document.getElementById('mobileStatsRingCircle');
+  DOM.mobileStatsCountDisplay = document.getElementById('mobileStatsCountDisplay');
+// Panel Bodies
   DOM.panelShortlistBody = document.getElementById('panel-shortlist');
   DOM.panelConciergeBody = document.getElementById('panel-concierge');
   DOM.panelCreatorsBody = document.getElementById('panel-creators');
@@ -642,11 +644,20 @@ function getRandomColor() {
 }
 
 function updateSwipeStats(current, max) {
-    if(DOM.statsCountDisplay) DOM.statsCountDisplay.textContent = current;
-    if(DOM.statsRingCircle) {
-        const percent = current / max; 
+    // Desktop widget
+    if (DOM.statsCountDisplay) DOM.statsCountDisplay.textContent = current;
+    if (DOM.statsRingCircle) {
+        const percent = current / max;
         const offset = 251 - (251 * percent);
         DOM.statsRingCircle.style.strokeDashoffset = offset;
+    }
+
+    // Mobile widget (Swipe panel)
+    if (DOM.mobileStatsCountDisplay) DOM.mobileStatsCountDisplay.textContent = current;
+    if (DOM.mobileStatsRingCircle) {
+        const percent = current / max;
+        const offset = 251 - (251 * percent);
+        DOM.mobileStatsRingCircle.style.strokeDashoffset = offset;
     }
 }
 
@@ -2962,11 +2973,15 @@ const SwipeController = (() => {
     lastRemaining = (remaining === null || typeof remaining === 'undefined') ? null : Number(remaining);
 
     // Update ring/counter UI (if present)
-    if (lastLimit === null) {
-      if (DOM.statsCountDisplay) DOM.statsCountDisplay.textContent = '∞';
-      if (DOM.statsRingCircle) DOM.statsRingCircle.style.strokeDashoffset = 0;
-      return;
-    }
+    
+if (lastLimit === null) {
+  if (DOM.statsCountDisplay) DOM.statsCountDisplay.textContent = '∞';
+  if (DOM.statsRingCircle) DOM.statsRingCircle.style.strokeDashoffset = 0;
+
+  if (DOM.mobileStatsCountDisplay) DOM.mobileStatsCountDisplay.textContent = '∞';
+  if (DOM.mobileStatsRingCircle) DOM.mobileStatsRingCircle.style.strokeDashoffset = 0;
+  return;
+}
 
     const safeLimit = Number.isFinite(lastLimit) && lastLimit > 0 ? lastLimit : DAILY_SWIPE_LIMIT;
     const safeRemaining = Number.isFinite(lastRemaining) ? Math.max(0, Math.min(safeLimit, lastRemaining)) : safeLimit;

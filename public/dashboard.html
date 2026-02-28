@@ -82,6 +82,22 @@
 
       <section class="panel" data-panel="swipe">
         <div class="feed-header">Discover</div>
+
+<!-- Mobile-only: Swipes Left widget (mirrors right sidebar KPI) -->
+<div class="swipe-mobile-stats" id="mobileSwipeStats" aria-label="Swipes left today">
+  <div class="sms-left">
+    <div class="sms-title">Swipes Left</div>
+    <div class="sms-sub">Resets Daily</div>
+  </div>
+  <div class="sms-ring">
+    <svg width="46" height="46" viewBox="0 0 100 100" aria-hidden="true">
+      <circle class="bg" cx="50" cy="50" r="40"></circle>
+      <circle class="fg" id="mobileStatsRingCircle" cx="50" cy="50" r="40" style="stroke-dasharray: 251; stroke-dashoffset: 0;"></circle>
+    </svg>
+    <div class="sms-count" id="mobileStatsCountDisplay">-</div>
+  </div>
+</div>
+
         <div class="swipe-layout">
           <div class="swipe-empty" id="swipeEmpty" hidden>
             <div style="font-size:3rem;">✨</div>
