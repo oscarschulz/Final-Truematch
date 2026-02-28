@@ -1415,15 +1415,66 @@ function _shuffleInPlace(arr) {
   return arr;
 }
 
-async function _fetchSeedProfiles(limit) {
-  if (!hasFirebase || !firestore) return [];
+// local seed cache fallback (works even when Firebase isn't configured in Railway)
+let _SEED_CACHE = null;
+
+function _loadSeedCacheOnce() {
+  if (_SEED_CACHE) return _SEED_CACHE;
+  const out = [];
+
+  // Put these JSON files beside server.js (project root) OR adjust paths if you placed them elsewhere
+  // - seed_women_profiles_500.json
+  // - seed_men_profiles_500.json
   try {
-    const snap = await firestore.collection(SEED_PROFILES_COLLECTION).limit(limit).get();
-    const out = [];
-    snap.forEach(doc => out.push({ _docId: doc.id, ...(doc.data() || {}) }));
-    return out;
+    const women = require('./seed_women_profiles_500.json');
+    if (Array.isArray(women)) out.push(...women);
+  } catch {}
+  try {
+    const men = require('./seed_men_profiles_500.json');
+    if (Array.isArray(men)) out.push(...men);
+  } catch {}
+
+  _SEED_CACHE = out;
+  return _SEED_CACHE;
+}
+
+async function _fetchSeedProfiles(limit, wantGender) {
+  // 1) Firestore path (preferred)
+  if (hasFirebase && firestore) {
+    try {
+      let q = firestore.collection(SEED_PROFILES_COLLECTION);
+
+      // gender filter if available
+      if (wantGender === 'women' || wantGender === 'men') {
+        q = q.where('gender', '==', wantGender);
+      }
+
+      const snap = await q.limit(limit).get();
+      const out = [];
+      snap.forEach(doc => out.push({ _docId: doc.id, ...(doc.data() || {}) }));
+      return out;
+    } catch (e) {
+      console.warn('[seedProfiles] firestore fetch failed:', e.message);
+      // fall through to local cache
+    }
+  }
+
+  // 2) Local JSON fallback (no Firebase required)
+  try {
+    const cache = _loadSeedCacheOnce();
+    if (!Array.isArray(cache) || cache.length === 0) return [];
+
+    let filtered = cache;
+    if (wantGender === 'women' || wantGender === 'men') {
+      filtered = cache.filter(s => String(s.gender || '').toLowerCase() === wantGender);
+    }
+
+    // shuffle then slice
+    const copy = filtered.slice();
+    _shuffleInPlace(copy);
+    return copy.slice(0, limit);
   } catch (e) {
-    console.warn('[seedProfiles] fetch failed:', e.message);
+    console.warn('[seedProfiles] local cache failed:', e.message);
     return [];
   }
 }
@@ -9761,7 +9812,19 @@ app.get('/api/swipe/candidates', async (req, res) => {
 
           // fetch extra so we can filter out already-swiped seeds
           const fetchN = Math.min(SEED_FETCH_LIMIT, Math.max(need * 4, need + 20));
-          let seeds = await _fetchSeedProfiles(fetchN);
+          const wantGender = (() => {
+          const lf =
+            (userDoc && userDoc.prefs && Array.isArray(userDoc.prefs.lookingFor) && userDoc.prefs.lookingFor[0]) ||
+            userDoc.lookingFor ||
+          userDoc.looking_for ||
+          '';
+        const s = String(lf).toLowerCase();
+          if (s === 'men' || s === 'man' || s === 'male') return 'men';
+        if (s === 'women' || s === 'woman' || s === 'female') return 'women';
+      return null;
+      })();
+
+let seeds = await _fetchSeedProfiles(fetchN, wantGender);
           _shuffleInPlace(seeds);
 
           const add = [];
