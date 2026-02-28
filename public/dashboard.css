@@ -740,6 +740,29 @@ dialog::backdrop { background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-in
 .delay-3 { animation-delay: 0.3s; }
 @keyframes slideUpFade { to { opacity: 1; transform: translateY(0); } }
 
+
+/* =========================================
+   HOME (MOBILE): Right-sidebar widgets mirrored inside Home
+   ========================================= */
+.home-mobile-widgets { display: none; }
+
+@media (max-width: 768px) {
+  /* Hide desktop right sidebar completely on mobile (we render widgets inside Home) */
+  .right-sidebar { display: none !important; }
+
+  .home-mobile-widgets {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-top: 18px;
+  }
+
+  /* Slightly tighter cards so they feel native on mobile */
+  .home-mobile-widgets .glass-card { margin-bottom: 0; }
+  .home-mobile-widgets .progress-ring { transform: scale(0.92); }
+  .home-mobile-widgets .premium-card { margin-top: 0; }
+}
+
 /* =========================================
    RESPONSIVE (MOBILE VIEW WITH POPUP MENU)
    ========================================= */

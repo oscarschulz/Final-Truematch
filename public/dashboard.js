@@ -326,6 +326,12 @@ DOM.inpName = document.getElementById('inpName');
   
     DOM.mobileStatsRingCircle = document.getElementById('mobileStatsRingCircle');
   DOM.mobileStatsCountDisplay = document.getElementById('mobileStatsCountDisplay');
+
+  // Home (mobile) widgets (mirrors right sidebar)
+  DOM.homeStatsRingCircle = document.getElementById('homeStatsRingCircle');
+  DOM.homeStatsCountDisplay = document.getElementById('homeStatsCountDisplay');
+  DOM.homeActiveNearbyContainer = document.getElementById('homeActiveNearbyContainer');
+  DOM.btnSidebarSubscribeHomeMobile = document.getElementById('btnSidebarSubscribeHomeMobile');
 // Panel Bodies
   DOM.panelShortlistBody = document.getElementById('panel-shortlist');
   DOM.panelConciergeBody = document.getElementById('panel-concierge');
@@ -660,6 +666,14 @@ function updateSwipeStats(current, max) {
         const percent = current / max;
         const offset = 251 - (251 * percent);
         DOM.mobileStatsRingCircle.style.strokeDashoffset = offset;
+
+    // Home widget (mobile) - Home panel
+    if (DOM.homeStatsCountDisplay) DOM.homeStatsCountDisplay.textContent = current;
+    if (DOM.homeStatsRingCircle) {
+        const percent = current / max;
+        const offset = 251 - (251 * percent);
+        DOM.homeStatsRingCircle.style.strokeDashoffset = offset;
+    }
     }
 }
 
@@ -1134,6 +1148,8 @@ if (DOM.frmPassword) DOM.frmPassword.addEventListener('submit', async (e) => {
   if (DOM.btnPremiumCancel) DOM.btnPremiumCancel.addEventListener('click', () => DOM.dlgPremiumApply.close());
   if (DOM.btnSidebarSubscribe) DOM.btnSidebarSubscribe.addEventListener('click', openPremium);
 
+  if (DOM.btnSidebarSubscribeHomeMobile) DOM.btnSidebarSubscribeHomeMobile.addEventListener('click', () => { window.location.href = './tier.html?upgrade=1'; });
+
   // 10. Forms
   if (DOM.frmProfile) {
     DOM.frmProfile.addEventListener('submit', async (e) => {
@@ -1524,15 +1540,20 @@ async function loadActiveNearbyPanel(force = false) {
   }
 }
 
+
 function renderActiveNearbyPanel(payload) {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const items = Array.isArray(payload.items) ? payload.items : [];
+
+  const targets = [DOM.activeNearbyContainer, DOM.homeActiveNearbyContainer].filter(Boolean);
+
+  // Empty
   if (!items.length) {
-    DOM.activeNearbyContainer.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
+    targets.forEach(t => { t.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>"; });
     return;
   }
 
-  let html = `<div class="active-grid">`;
+  let html = '';
   items.forEach(u => {
     const photo = u.photoUrl ? esc(u.photoUrl) : 'assets/images/truematch-mark.png';
     const hasPhoto = !!u.photoUrl;
@@ -1542,34 +1563,36 @@ function renderActiveNearbyPanel(payload) {
         <span class="online-dot"></span>
       </div>`;
   });
-  html += `</div>`;
 
-  DOM.activeNearbyContainer.innerHTML = html;
+  targets.forEach(t => { t.innerHTML = html; });
 
-  DOM.activeNearbyContainer.querySelectorAll('.active-item').forEach(el => {
-    el.addEventListener('click', () => {
-      const email = String(el.dataset.email || '').toLowerCase();
-      if (!email) return;
+  // Bind clicks for both desktop + home-mobile containers
+  targets.forEach(container => {
+    container.querySelectorAll('.active-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const email = String(el.dataset.email || '').toLowerCase();
+        if (!email) return;
 
-      const profile = {
-        id: email,
-        email,
-        name: el.dataset.name || 'Member',
-        age: el.dataset.age || '',
-        city: el.dataset.city || '',
-        photoUrl: el.dataset.photo || ''
-      };
+        const profile = {
+          id: email,
+          email,
+          name: el.dataset.name || 'Member',
+          age: el.dataset.age || '',
+          city: el.dataset.city || '',
+          photoUrl: el.dataset.photo || ''
+        };
 
-      try { setActiveTab('swipe'); } catch {}
-      try {
-        if (SwipeController && typeof SwipeController.jumpTo === 'function') {
-          SwipeController.jumpTo(profile);
-        } else {
+        try { setActiveTab('swipe'); } catch {}
+        try {
+          if (SwipeController && typeof SwipeController.jumpTo === 'function') {
+            SwipeController.jumpTo(profile);
+          } else {
+            toast('Opening profile…', 'info');
+          }
+        } catch {
           toast('Opening profile…', 'info');
         }
-      } catch {
-        toast('Opening profile…', 'info');
-      }
+      });
     });
   });
 }
@@ -2063,6 +2086,13 @@ function renderHomeEmptyStates() {
     const hasActive = DOM.activeNearbyContainer.querySelector('.active-item');
     if (!hasActive) {
       DOM.activeNearbyContainer.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
+    }
+  }
+
+  if (DOM.homeActiveNearbyContainer) {
+    const hasActive = DOM.homeActiveNearbyContainer.querySelector('.active-item');
+    if (!hasActive) {
+      DOM.homeActiveNearbyContainer.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
     }
   }
 }
@@ -2995,7 +3025,10 @@ if (lastLimit === null) {
 
   if (DOM.mobileStatsCountDisplay) DOM.mobileStatsCountDisplay.textContent = '∞';
   if (DOM.mobileStatsRingCircle) DOM.mobileStatsRingCircle.style.strokeDashoffset = 0;
-  return;
+  
+  if (DOM.homeStatsCountDisplay) DOM.homeStatsCountDisplay.textContent = '∞';
+  if (DOM.homeStatsRingCircle) DOM.homeStatsRingCircle.style.strokeDashoffset = 0;
+return;
 }
 
     const safeLimit = Number.isFinite(lastLimit) && lastLimit > 0 ? lastLimit : DAILY_SWIPE_LIMIT;
