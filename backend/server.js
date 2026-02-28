@@ -5687,17 +5687,32 @@ app.get('/api/messages', async (req, res) => {
       });
     }
 
-    // Demo fallback list (in-memory)
+        // Demo fallback list (in-memory)
     const byPeer = DB.messages[email] || {};
     const threads = Object.keys(byPeer).map((peerEmail) => {
       const list = byPeer[peerEmail] || [];
       const last = list.length ? list[list.length - 1] : null;
+
+      const lastMessage = last ? String(last.text || '') : '';
+      const lastMessageAtMs = last ? Number(last.createdAtMs || 0) : 0;
+
+      // Approx last read = max readAt among messages sent TO me
+      let lastReadAtMs = 0;
+      for (const msg of (list || [])) {
+        if (String(msg.to || '').toLowerCase() !== String(email).toLowerCase()) continue;
+        const ra = msg.readAt ? Date.parse(String(msg.readAt)) : 0;
+        if (Number.isFinite(ra) && ra > lastReadAtMs) lastReadAtMs = ra;
+      }
+
       return {
         peerEmail,
         count: list.length,
-        lastMessage: last ? (last.text || '') : ''
+        lastMessage,
+        lastMessageAtMs,
+        lastReadAtMs
       };
     });
+
 
     return res.json({
       ok: true,
@@ -9431,8 +9446,8 @@ app.get('/api/matches', authMiddleware, async (req, res) => {
     const rawMatches = await _getMatchesFor(myEmail);
     const out = [];
 
-// Attach lastMessage preview for the Matches UI (real persistence via msgThreads index)
-let __lastMsgByPeer = {};
+// Attach lastMessage preview + unread meta for the Matches UI (real persistence via msgThreads index)
+let __threadMetaByPeer = {};
 if (hasFirebase && firestore && usersCollection) {
   try {
     const meDoc = await findUserByEmail(myEmail);
@@ -9448,17 +9463,37 @@ if (hasFirebase && firestore && usersCollection) {
         const v = d.data() || {};
         const peer = String(v.peerEmail || '').toLowerCase();
         if (!peer) return;
-        __lastMsgByPeer[peer] = String(v.lastMessageText || '');
+        __threadMetaByPeer[peer] = {
+          lastMessage: String(v.lastMessageText || ''),
+          lastMessageAtMs: Number(v.lastMessageAtMs || 0),
+          lastReadAtMs: Number(v.lastReadAtMs || 0),
+        };
       });
     }
   } catch (_) {}
 } else {
-  // Demo fallback
+  // Demo fallback (compute from in-memory messages)
   const byPeer = (DB.messages && DB.messages[myEmail]) ? DB.messages[myEmail] : {};
   Object.keys(byPeer || {}).forEach((peer) => {
     const list = byPeer[peer] || [];
     const last = list.length ? list[list.length - 1] : null;
-    if (last && last.text) __lastMsgByPeer[String(peer).toLowerCase()] = String(last.text);
+
+    const lastMessage = last ? String(last.text || '') : '';
+    const lastMessageAtMs = last ? Number(last.createdAtMs || 0) : 0;
+
+    // Approx last read = max readAt among messages sent TO me
+    let lastReadAtMs = 0;
+    for (const msg of (list || [])) {
+      if (String(msg.to || '').toLowerCase() !== String(myEmail).toLowerCase()) continue;
+      const ra = msg.readAt ? Date.parse(String(msg.readAt)) : 0;
+      if (Number.isFinite(ra) && ra > lastReadAtMs) lastReadAtMs = ra;
+    }
+
+    __threadMetaByPeer[String(peer || '').toLowerCase()] = {
+      lastMessage,
+      lastMessageAtMs,
+      lastReadAtMs
+    };
   });
 }
 
@@ -9476,6 +9511,7 @@ for (const m of rawMatches) {
       const name = (other && other.name) ? other.name : (otherEmail.split('@')[0] || 'Member');
       const city = (other && other.city) ? other.city : 'Global';
       const photoUrl = (other && (other.avatarUrl || other.photoUrl)) ? (other.avatarUrl || other.photoUrl) : 'assets/images/truematch-mark.png';
+      const __meta = __threadMetaByPeer[otherEmail] || {};
 
       out.push({
         id: otherEmail,
@@ -9483,7 +9519,10 @@ for (const m of rawMatches) {
         name,
         city,
         photoUrl,
-        lastMessage: __lastMsgByPeer[otherEmail] || '',
+        lastMessage: String(__meta.lastMessage || ''),
+        lastMessageAtMs: Number(__meta.lastMessageAtMs || 0),
+        lastReadAtMs: Number(__meta.lastReadAtMs || 0),
+        hasUnread: Number(__meta.lastMessageAtMs || 0) > Number(__meta.lastReadAtMs || 0),
         meAction: m.meAction || null,
         themAction: m.themAction || null,
         since: m.createdAtMs || null,

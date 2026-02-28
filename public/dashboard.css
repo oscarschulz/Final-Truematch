@@ -259,6 +259,9 @@ body::after {
 .btn--white { background: #fff; color: #000; font-weight: 800; width: 100%; border: none; }
 .btn--white:hover { background: #f0f0f0; }
 
+/* Home (mobile) widgets: hidden by default, shown in the mobile breakpoint */
+.home-mobile-widgets { display: none; }
+
 .matches-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 15px; width: 100%; box-sizing: border-box; margin-bottom: 20px; align-items: stretch; }
 .match-card { background: rgba(255,255,255,0.05); border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(5px); transition: 0.2s; cursor: pointer !important; position: relative; z-index: 1; }
 .match-card:hover { background: rgba(255,255,255,0.1); transform: translateY(-3px); }
@@ -740,29 +743,6 @@ dialog::backdrop { background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-in
 .delay-3 { animation-delay: 0.3s; }
 @keyframes slideUpFade { to { opacity: 1; transform: translateY(0); } }
 
-
-/* =========================================
-   HOME (MOBILE): Right-sidebar widgets mirrored inside Home
-   ========================================= */
-.home-mobile-widgets { display: none; }
-
-@media (max-width: 768px) {
-  /* Ensure desktop right sidebar never shows on mobile */
-  body.tm-dark .right-sidebar { display: none !important; }
-
-  /* Force Home widgets visible on mobile (override responsive.css if needed) */
-  body.tm-dark #panel-home #homeMobileWidgets.home-mobile-widgets {
-    display: flex !important;
-    flex-direction: column;
-    gap: 16px;
-    margin-top: 18px;
-  }
-
-  /* Slightly tighter cards so they feel native on mobile */
-  body.tm-dark #panel-home #homeMobileWidgets .glass-card { margin-bottom: 0; }
-  body.tm-dark #panel-home #homeMobileWidgets .progress-ring { transform: scale(0.92); }
-  body.tm-dark #panel-home #homeMobileWidgets .premium-card { margin-top: 0; }
-}
 /* =========================================
    RESPONSIVE (MOBILE VIEW WITH POPUP MENU)
    ========================================= */
@@ -869,6 +849,24 @@ dialog::backdrop { background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-in
     }
     
     .panel { background: transparent !important; }
+
+    /* ---------------------------------------------------------
+       HOME (MOBILE): show right-sidebar widgets inside Home
+       - Prevent duplicates by hiding the desktop right sidebar
+       - Do NOT push widgets to the bottom (avoid looking "missing")
+       --------------------------------------------------------- */
+    .right-sidebar { display: none !important; }
+
+    #panel-home #homeBottomMobileZone { margin-top: 18px !important; }
+
+    #panel-home #homeMobileWidgets.home-mobile-widgets {
+        display: flex !important;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    #panel-home #homeMobileWidgets .glass-card { margin-bottom: 0; }
+    #panel-home #homeMobileWidgets .premium-card { margin-top: 0; }
 
 
   /* Swipe tab – keep content truly centered on mobile */
@@ -999,78 +997,4 @@ dialog::backdrop { background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-in
   textarea {
     font-size: 16px; /* avoid iOS zoom */
   }
-}
-
-
-/* =========================================================
-   MOBILE: "Swipes Left" widget inside Swipe panel
-   - shows only on mobile, hides on desktop (right sidebar already shows it)
-   ========================================================= */
-.swipe-mobile-stats{
-  display:none;
-}
-
-@media (max-width: 768px){
-  .swipe-mobile-stats{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:12px;
-
-    width:min(420px, 100%);
-    margin: 14px auto 6px;
-    padding: 12px 14px;
-
-    background: rgba(20, 20, 25, 0.55);
-    border: 1px solid rgba(255,255,255,0.12);
-    border-radius: 16px;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-  }
-
-  .swipe-mobile-stats .sms-left{
-    display:flex;
-    flex-direction:column;
-    gap:2px;
-    min-width: 0;
-  }
-
-  .swipe-mobile-stats .sms-title{
-    font-weight: 900;
-    letter-spacing: 0.3px;
-    font-size: 0.95rem;
-  }
-
-  .swipe-mobile-stats .sms-sub{
-    font-size: 0.78rem;
-    color: rgba(255,255,255,0.70);
-  }
-
-  .swipe-mobile-stats .sms-ring{
-    position: relative;
-    width: 46px;
-    height: 46px;
-    flex: 0 0 46px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-  }
-
-  .swipe-mobile-stats .sms-ring svg{
-    position:absolute;
-    inset:0;
-    transform: rotate(-90deg);
-  }
-
-  .swipe-mobile-stats .sms-count{
-    position: relative;
-    font-weight: 900;
-    font-size: 0.98rem;
-    line-height: 1;
-    color: #fff;
-  }
-
-  /* reuse ring styling */
-  .swipe-mobile-stats circle.bg { stroke: rgba(255,255,255,0.10); fill:none; stroke-width:8; stroke-linecap:round; }
-  .swipe-mobile-stats circle.fg { stroke: var(--brand-color); fill:none; stroke-width:8; stroke-linecap:round; transition: stroke-dashoffset 0.5s; }
 }

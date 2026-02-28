@@ -138,6 +138,10 @@ state.chatForceScrollToBottom = false;
 state.chatScrollBound = false;
 state.chatIsNearBottom = true;
 
+// --- Inbox (unread) runtime state ---
+state.inboxPollTimer = null;
+state.inboxThreadState = {}; // { peerEmail: { lastMessageAtMs, lastReadAtMs } }
+
 
 // Read the last known user from localStorage
 function safeGetLocalUser() {
@@ -693,6 +697,8 @@ function enableBackdropClose(dialog) {
 async function initApp() {
   cacheDom();
   await loadMe();
+  // Background unread updater (safe even if Matches tab isn't open yet).
+  try { startInboxPolling({ immediate: true }); } catch {}
   
   SwipeController.init();
 await loadHomePanels(true);
@@ -1603,6 +1609,7 @@ function renderActiveNearbyPanel(payload) {
 
 // Chat (modal) polling + smart scroll
 const CHAT_POLL_MS = 4000;
+const INBOX_POLL_MS = 12000;
 
 function isChatModalOpen() {
   return !!(DOM.dlgChat && DOM.dlgChat.open);
@@ -1663,6 +1670,121 @@ function stopChatPolling() {
   }
 }
 
+function updateMatchPreview(peerEmail, lastText, { bumpToTop = true } = {}) {
+  const email = String(peerEmail || '').trim().toLowerCase();
+  if (!email) return;
+  const text = String(lastText || '').trim();
+  if (!text) return;
+
+  if (!DOM.matchesContainer) return;
+
+  // Find match card by data-email (case-insensitive)
+  const cards = Array.from(DOM.matchesContainer.querySelectorAll('.match-card'));
+  const card = cards.find(c => String(c.dataset.email || '').trim().toLowerCase() === email);
+  if (!card) return;
+
+  // Update stored preview (used by click handler + search)
+  card.dataset.msg = text;
+  const lastEl = card.querySelector('.match-last');
+  if (lastEl) lastEl.textContent = text;
+
+  // Optional: move active conversation to top (like real inbox behavior)
+  if (bumpToTop && card.parentElement) {
+    const parent = card.parentElement;
+    if (parent.firstElementChild !== card) {
+      parent.insertBefore(card, parent.firstElementChild);
+    }
+  }
+}
+
+function setMatchUnread(peerEmail, hasUnread) {
+  const email = String(peerEmail || '').trim().toLowerCase();
+  if (!email) return;
+  if (!DOM.matchesContainer) return;
+
+  const cards = Array.from(DOM.matchesContainer.querySelectorAll('.match-card'));
+  const card = cards.find(c => String(c.dataset.email || '').trim().toLowerCase() === email);
+  if (!card) return;
+
+  const badge = card.querySelector('.match-unread-badge');
+  if (badge) {
+    badge.style.display = hasUnread ? 'block' : 'none';
+  }
+  card.dataset.unread = hasUnread ? '1' : '0';
+
+  const lastEl = card.querySelector('.match-last');
+  if (lastEl) {
+    if (hasUnread) {
+      lastEl.style.fontWeight = '700';
+      lastEl.style.color = '#fff';
+    } else {
+      lastEl.style.fontWeight = '';
+      lastEl.style.color = '';
+    }
+  }
+}
+
+function startInboxPolling({ immediate = false } = {}) {
+  stopInboxPolling();
+
+  if (!state.me || !state.me.email) return;
+
+  state.inboxPollTimer = setInterval(() => {
+    pollInboxOnce();
+  }, INBOX_POLL_MS);
+
+  if (immediate) pollInboxOnce();
+}
+
+function stopInboxPolling() {
+  if (state.inboxPollTimer) {
+    try { clearInterval(state.inboxPollTimer); } catch {}
+    state.inboxPollTimer = null;
+  }
+}
+
+async function pollInboxOnce() {
+  try {
+    if (!state.me || !state.me.email) return;
+
+    const res = await apiGet('/api/messages');
+    if (!res || !res.ok) return;
+
+    const threads = Array.isArray(res.threads) ? res.threads : [];
+    if (!threads.length) return;
+
+    state.inboxThreadState = state.inboxThreadState && typeof state.inboxThreadState === 'object'
+      ? state.inboxThreadState
+      : {};
+
+    for (const t of threads) {
+      const peer = String(t.peerEmail || '').trim().toLowerCase();
+      if (!peer) continue;
+
+      const lastMessage = String(t.lastMessage || '').trim();
+      const lastMessageAtMs = Number(t.lastMessageAtMs || 0);
+      const lastReadAtMs = Number(t.lastReadAtMs || 0);
+      const hasUnread = (lastMessageAtMs > lastReadAtMs) && (lastMessageAtMs > 0);
+
+      const prev = state.inboxThreadState[peer] || {};
+      const prevLastAt = Number(prev.lastMessageAtMs || 0);
+      const changedLast = lastMessageAtMs > 0 && lastMessageAtMs !== prevLastAt;
+
+      // Update preview only when last message changed.
+      if (changedLast && lastMessage) {
+        // Bump only when it looks like a new incoming unread message.
+        updateMatchPreview(peer, lastMessage, { bumpToTop: hasUnread });
+      }
+
+      setMatchUnread(peer, hasUnread);
+
+      state.inboxThreadState[peer] = { lastMessageAtMs, lastReadAtMs };
+    }
+  } catch (e) {
+    // silent
+  }
+}
+
 async function openChatModal(name, imgColor, lastMsg, peerEmail, peerPhotoUrl) {
   if (!DOM.dlgChat) return;
 
@@ -1717,6 +1839,8 @@ async function openChatModal(name, imgColor, lastMsg, peerEmail, peerPhotoUrl) {
   // On first open, always land at the bottom (latest message).
   state.chatForceScrollToBottom = true;
   await loadAndRenderThread(state.currentChatPeerEmail);
+  // Clear unread badge (backend also updates lastReadAtMs on thread load).
+  try { setMatchUnread(state.currentChatPeerEmail, false); } catch {}
 
   // Keep the thread fresh while modal is open.
   startChatPolling();
@@ -1786,14 +1910,20 @@ function renderMatchesFromApi(matches) {
       const safeSub = (m.city ? m.city : '—');
       const photoUrl = m.photoUrl || '';
       const msg = (m.lastMessage || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const lastAt = Number(m.lastMessageAtMs || 0);
+      const readAt = Number(m.lastReadAtMs || 0);
+      const hasUnread = !!m.hasUnread || (lastAt > readAt && lastAt > 0);
       const seedColor = getRandomColor();
+      const unreadBadge = `<div class="match-unread-badge" style="position:absolute; top:12px; right:12px; width:10px; height:10px; border-radius:999px; background:#3AAFB9; box-shadow:0 0 0 4px rgba(58,175,185,0.15); ${hasUnread ? '' : 'display:none;'}"></div>`;
+      const lastStyle = hasUnread ? 'font-weight:700; color:#fff;' : '';
       return `
-        <div class="match-card" data-name="${safeName}" data-email="${m.email || ''}" data-photo-url="${photoUrl}" data-msg="${msg}">
+        <div class="match-card" data-name="${safeName}" data-email="${m.email || ''}" data-photo-url="${photoUrl}" data-msg="${msg}" data-unread="${hasUnread ? '1' : '0'}">
+          ${unreadBadge}
           <div class="match-img" style="background-color:${seedColor}; ${photoUrl ? `background-image:url('${photoUrl}'); background-size:cover; background-position:center;` : ''}"></div>
           <div class="match-info">
             <div class="match-name">${safeName}</div>
             <div class="match-sub">${safeSub}</div>
-            <div class="match-last">${msg || 'Tap to chat'}</div>
+            <div class="match-last" style="${lastStyle}">${msg || 'Tap to chat'}</div>
           </div>
         </div>
       `;
