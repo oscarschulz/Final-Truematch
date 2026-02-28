@@ -766,6 +766,8 @@ async function initApp() {
   await loadMe();
   // Background unread updater (safe even if Matches tab isn't open yet).
   try { startInboxPolling({ immediate: true }); } catch {}
+  // Prefetch notifications so the bell dot is accurate even before opening the dropdown.
+  try { NotificationsController.load({ force: true }).catch(() => {}); } catch {}
   
   SwipeController.init();
 await loadHomePanels(true);
