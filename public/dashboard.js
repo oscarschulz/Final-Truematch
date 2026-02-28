@@ -250,6 +250,7 @@ function cacheDom() {
   DOM.chatReceiptLine = DOM.dlgChat ? DOM.dlgChat.querySelector('.chat-header p') : null;
 
   DOM.activeNearbyContainer = document.getElementById('activeNearbyContainer');
+  DOM.mobileActiveNearbyContainer = document.getElementById('mobileActiveNearbyContainer');
   DOM.btnNotifToggle = document.getElementById('btnNotifToggle');
   DOM.notifDropdown = document.getElementById('notifDropdown');
   DOM.notifDot = DOM.btnNotifToggle ? DOM.btnNotifToggle.querySelector('.notif-dot') : null;
@@ -320,6 +321,7 @@ DOM.inpName = document.getElementById('inpName');
   DOM.btnSwipeSuper = document.getElementById('btnSwipeSuper');
   DOM.btnRefreshSwipe = document.getElementById('btnRefreshSwipe');
   DOM.btnSidebarSubscribe = document.getElementById('btnSidebarSubscribe'); 
+  DOM.btnSidebarSubscribeMobile = document.getElementById('btnSidebarSubscribeMobile'); 
   
   DOM.statsRingCircle = document.getElementById('statsRingCircle');
   DOM.statsCountDisplay = document.getElementById('statsCountDisplay');
@@ -1102,7 +1104,7 @@ if (DOM.frmPassword) DOM.frmPassword.addEventListener('submit', async (e) => {
 
   const openPremium = (e) => {
       // Sidebar "Subscribe" should always go to plans
-      if (e && e.currentTarget && e.currentTarget.id === 'btnSidebarSubscribe') {
+      if (e && e.currentTarget && (e.currentTarget.id === 'btnSidebarSubscribe' || e.currentTarget.id === 'btnSidebarSubscribeMobile')) {
           window.location.href = './tier.html?upgrade=1';
           return;
       }
@@ -1133,6 +1135,7 @@ if (DOM.frmPassword) DOM.frmPassword.addEventListener('submit', async (e) => {
   };  if (DOM.btnOpenPremiumApply) DOM.btnOpenPremiumApply.addEventListener('click', openPremium);
   if (DOM.btnPremiumCancel) DOM.btnPremiumCancel.addEventListener('click', () => DOM.dlgPremiumApply.close());
   if (DOM.btnSidebarSubscribe) DOM.btnSidebarSubscribe.addEventListener('click', openPremium);
+  if (DOM.btnSidebarSubscribeMobile) DOM.btnSidebarSubscribeMobile.addEventListener('click', openPremium);
 
   // 10. Forms
   if (DOM.frmProfile) {
@@ -1501,7 +1504,7 @@ function renderAdmirersPanel(payload) {
 }
 
 async function loadActiveNearbyPanel(force = false) {
-  if (!DOM.activeNearbyContainer) return;
+  if (!DOM.activeNearbyContainer && !DOM.mobileActiveNearbyContainer) return;
   if (state.homeLoading && state.homeLoading.nearby) return;
 
   const now = Date.now();
@@ -1525,10 +1528,22 @@ async function loadActiveNearbyPanel(force = false) {
 }
 
 function renderActiveNearbyPanel(payload) {
+  const targets = [];
+  if (DOM.activeNearbyContainer) targets.push(DOM.activeNearbyContainer);
+  if (DOM.mobileActiveNearbyContainer && DOM.mobileActiveNearbyContainer !== DOM.activeNearbyContainer) {
+    targets.push(DOM.mobileActiveNearbyContainer);
+  }
+
+  targets.forEach((container) => {
+    renderActiveNearbyPanelInto(container, payload);
+  });
+}
+
+function renderActiveNearbyPanelInto(container, payload) {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const items = Array.isArray(payload.items) ? payload.items : [];
   if (!items.length) {
-    DOM.activeNearbyContainer.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
+    container.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
     return;
   }
 
@@ -1544,9 +1559,9 @@ function renderActiveNearbyPanel(payload) {
   });
   html += `</div>`;
 
-  DOM.activeNearbyContainer.innerHTML = html;
+  container.innerHTML = html;
 
-  DOM.activeNearbyContainer.querySelectorAll('.active-item').forEach(el => {
+  container.querySelectorAll('.active-item').forEach(el => {
     el.addEventListener('click', () => {
       const email = String(el.dataset.email || '').toLowerCase();
       if (!email) return;
@@ -1573,6 +1588,7 @@ function renderActiveNearbyPanel(payload) {
     });
   });
 }
+
 
 
 // ---------------------------------------------------------------------
