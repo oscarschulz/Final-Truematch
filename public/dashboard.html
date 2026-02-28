@@ -9,6 +9,25 @@
   
   <link rel="stylesheet" href="dashboard.css" />
   <link rel="stylesheet" href="responsive.css" />
+  <style id="tm-home-widgets-mobile-override">
+    /* Force Home widgets visible on mobile (Home tab only) and prevent duplicates */
+    @media (max-width: 768px) {
+      body.tm-dark .right-sidebar { display: none !important; }
+      body.tm-dark #panel-home #homeMobileWidgets {
+        display: flex !important;
+        flex-direction: column;
+        gap: 16px;
+        margin-top: 18px;
+      }
+      body.tm-dark #panel-home #homeMobileWidgets .glass-card { margin-bottom: 0; }
+      body.tm-dark #panel-home #homeMobileWidgets .progress-ring { transform: scale(0.92); }
+      body.tm-dark #panel-home #homeMobileWidgets .premium-card { margin-top: 0; }
+    }
+    @media (min-width: 769px) {
+      body.tm-dark #panel-home #homeMobileWidgets { display: none !important; }
+    }
+  </style>
+
   
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
@@ -76,39 +95,6 @@
         <div class="admirer-list-container" id="admirerContainer"></div>
 
         <div style="margin-top: auto; border-top: 1px solid rgba(255,255,255,0.1); padding: 25px 30px 20px; margin-left: -30px; margin-right: -30px; background: transparent;">
-  <!-- Mobile-only: mirror desktop right-sidebar widgets inside Home -->
-  <div class="home-mobile-widgets" id="homeMobileWidgets" aria-label="Home widgets">
-    <div class="glass-card stats-widget home-widget">
-      <div class="home-card-header"><h3 style="margin:0;">Swipes Left</h3></div>
-      <div data-kpi="remaining" style="text-align:center; padding: 12px 0;">
-        <div class="progress-ring">
-          <svg width="92" height="92" viewBox="0 0 100 100" aria-hidden="true">
-            <circle class="bg" cx="50" cy="50" r="40"></circle>
-            <circle class="fg" id="homeStatsRingCircle" cx="50" cy="50" r="40" style="stroke-dasharray: 251; stroke-dashoffset: 0;"></circle>
-          </svg>
-          <div class="progress-text"><h2 id="homeStatsCountDisplay" style="font-size:1.6rem; margin:0;">-</h2></div>
-        </div>
-        <p class="tiny muted" style="margin-top:8px;">Resets Daily</p>
-      </div>
-    </div>
-
-    <div class="glass-card home-widget">
-      <div class="home-card-header" style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
-        <h3 style="margin:0; font-size:0.9rem;">Active Nearby</h3><span class="live-pulse">● LIVE</span>
-      </div>
-      <div class="active-grid" id="homeActiveNearbyContainer"></div>
-    </div>
-
-    <div class="premium-card home-widget">
-      <div class="premium-content">
-        <i class="fa-solid fa-crown" style="font-size:2rem; margin-bottom:10px;"></i>
-        <h3>Unlock More Features</h3>
-        <p>See who likes you & unlimited swipes.</p>
-        <button class="btn btn--white" id="btnSidebarSubscribeHomeMobile">Upgrade Now</button>
-      </div>
-    </div>
-  </div>
-
 
 </div>
       </section>
