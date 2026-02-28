@@ -4088,13 +4088,27 @@ app.post('/api/me/preferences', async (req, res) => {
       
       return res.status(400).json({ ok: false, message: 'lookingFor required' });
     }
-    let pg = '';
+    
+// -------- profileGender required for NEW users only --------
+const emailForGuard = (DB.user && DB.user.email) ? String(DB.user.email).trim().toLowerCase() : String(getSessionEmail(req) || '').trim().toLowerCase();
+const wasPrefsSavedBefore =
+  (emailForGuard && DB.users && DB.users[emailForGuard] && DB.users[emailForGuard].prefsSaved === true) ||
+  (DB.user && DB.user.prefsSaved === true) ||
+  (DB.prefs && DB.prefsSaved === true);
+
+let pg = '';
     if (typeof pgRaw !== 'undefined' && pgRaw !== null && String(pgRaw).trim() !== '') {
       pg = _normGender(pgRaw);
       if (!pg) {
         return res.status(400).json({ ok: false, message: 'profileGender must be man or woman' });
       }
     }
+// NEW users must provide profileGender (man or woman)
+if (!wasPrefsSavedBefore && !pg) {
+  return res.status(400).json({ ok: false, message: 'profileGender is required (man or woman)' });
+}
+
+
     // Save in memory
     DB.prefs = {
       city,
@@ -4105,13 +4119,15 @@ app.post('/api/me/preferences', async (req, res) => {
     };
     DB.user.prefsSaved = true;
 
-    // IMPORTANT: persist to per-email cache so next requests keep it
+        if (pg) DB.user.profileGender = pg;
+// IMPORTANT: persist to per-email cache so next requests keep it
     const email = DB.user?.email || getSessionEmail(req);
     if (email) {
       DB.prefsByEmail[email] = DB.prefs;
       if (DB.users[email]) {
         DB.users[email].prefsSaved = true;
-      } else {
+        if (pg) DB.users[email].profileGender = pg;
+} else {
         DB.users[email] = { ...(DB.user || {}), email, prefsSaved: true };
       }
 
