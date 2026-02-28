@@ -1406,6 +1406,10 @@ function _getProfileGenderFromUserDoc(u) {
   if (g) return g;
 
   // Legacy-only fallback (hetero assumption)
+  const schemaV = Number(u.schemaVersion || u.schema_version || 0);
+  const isLegacy = !schemaV || schemaV < 2;
+  // If this is a new-schema user (v2+), we NEVER infer gender.
+  if (!isLegacy) return '';
   if (!ALLOW_GENDER_INFERENCE) return '';
 
   const theirWant = _getWantGenderFromPrefs(u.prefs || u.preferences || null);
@@ -2095,6 +2099,8 @@ function publicUser(doc) {
     id: doc.id || doc.uid || doc.userId || null,
     uid: doc.uid || doc.id || doc.userId || null,
     email,
+    profileGender: _normGender(doc.profileGender || doc.gender || doc.sex || '') || '',
+    schemaVersion: (doc.schemaVersion ?? doc.schema_version ?? null),
     name: doc.name || doc.fullName || '',
     handle: doc.handle || doc.username || (doc.creatorApplication && doc.creatorApplication.handle) || '',
     username: doc.username || doc.handle || '',
@@ -2590,6 +2596,7 @@ app.post('/api/auth/register', async (req, res) => {
       DB.user = {
         id: 'demo-1',
         email: emailNorm,
+        schemaVersion: 2,
         name: nameNorm || emailNorm.split('@')[0] || 'User',
         city: city ? String(city) : '',
         plan: 'free',
@@ -2627,6 +2634,7 @@ app.post('/api/auth/register', async (req, res) => {
 
     const docData = {
       email: emailNorm,
+      schemaVersion: 2,
       passwordHash,
       name: nameNorm || emailNorm.split('@')[0] || 'User',
       city: city ? String(city) : '',
@@ -4091,10 +4099,9 @@ app.post('/api/me/preferences', async (req, res) => {
     
 // -------- profileGender required for NEW users only --------
 const emailForGuard = (DB.user && DB.user.email) ? String(DB.user.email).trim().toLowerCase() : String(getSessionEmail(req) || '').trim().toLowerCase();
-const wasPrefsSavedBefore =
-  (emailForGuard && DB.users && DB.users[emailForGuard] && DB.users[emailForGuard].prefsSaved === true) ||
-  (DB.user && DB.user.prefsSaved === true) ||
-  (DB.prefs && DB.prefsSaved === true);
+const meDocForGuard = (emailForGuard && DB.users && DB.users[emailForGuard]) ? DB.users[emailForGuard] : (DB.user || null);
+const schemaVForGuard = meDocForGuard ? Number(meDocForGuard.schemaVersion || meDocForGuard.schema_version || 0) : 0;
+const requireProfileGender = schemaVForGuard >= 2;
 
 let pg = '';
     if (typeof pgRaw !== 'undefined' && pgRaw !== null && String(pgRaw).trim() !== '') {
@@ -4104,7 +4111,7 @@ let pg = '';
       }
     }
 // NEW users must provide profileGender (man or woman)
-if (!wasPrefsSavedBefore && !pg) {
+if (requireProfileGender && !pg) {
   return res.status(400).json({ ok: false, message: 'profileGender is required (man or woman)' });
 }
 
@@ -10135,33 +10142,29 @@ app.post('/api/auth/verify-email-code', async (req, res) => {
       return res.status(400).json({ ok:false, message:'invalid_code', attempts: info.attempts });
     }
 
-    delete DB.emailVerify[email];
-
-    // mark verified
+    // ✅ mark verified
     DB.user = DB.user || {};
     if (DB.user && (DB.user.email || '').toLowerCase() === email){
       DB.user.emailVerified = true;
     }
-    // also persist
-// keep per-email cache in sync (prevents redirect loops on next page)
-if (email) {
-  if (DB.users[email]) {
-          if (pg) DB.users[email].profileGender = pg;
-      if (pg) DB.user.profileGender = pg;
-    DB.users[email].emailVerified = true;
-  } else {
-    // minimal seed so subsequent middleware hydration keeps verified=true
-    DB.users[email] = { ...(DB.user || {}), email, emailVerified: true, ...(pg ? { profileGender: pg } : {}) };
-  }
-}
 
+    // keep per-email cache in sync (prevents redirect loops on next page)
+    DB.users = DB.users || {};
+    if (email){
+      if (!DB.users[email]) DB.users[email] = { ...(DB.user || {}), email };
+      DB.users[email].emailVerified = true;
+    }
+
+    // persist (best effort)
     if (hasFirebase){
       try{ await updateUserByEmail(email, { emailVerified: true }); }catch{}
     }
-    // clear code
+
+    // clear OTP record ONCE, at the end
     delete DB.emailVerify[email];
 
     return res.json({ ok:true, message:'email_verified' });
+
   }catch(err){
     console.error(err);
     return res.status(500).json({ ok:false, message:'server_error' });

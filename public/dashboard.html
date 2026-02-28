@@ -203,6 +203,10 @@
                           <span class="settings-label"><i class="fa-solid fa-calendar"></i> Your Age</span>
                           <span class="settings-value" id="dispAge">-</span>
                       </div>
+<div class="settings-item">
+    <span class="settings-label"><i class="fa-solid fa-user"></i> I am</span>
+    <span class="settings-value" id="dispProfileGender">-</span>
+</div>
                   </div>
               </div>
               
@@ -324,6 +328,17 @@
             <label class="field">
               <span>Your age</span>
               <input id="inpAge" type="number" min="18" max="99" placeholder="e.g., 25" />
+            </label>
+          </div>
+
+          <div class="field-row">
+            <label class="field">
+              <span>I am</span>
+              <select id="inpProfileGender">
+                <option value="">Select...</option>
+                <option value="women">Woman</option>
+                <option value="men">Man</option>
+              </select>
             </label>
           </div>
 

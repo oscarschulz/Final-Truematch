@@ -262,6 +262,7 @@ function cacheDom() {
   // Settings display (should mirror Preferences page fields)
   DOM.dispCity = document.getElementById('dispCity');
     DOM.dispAge = document.getElementById('dispAge'); // profile city
+  DOM.dispProfileGender = document.getElementById('dispProfileGender');
   DOM.dispPrefCity = document.getElementById('dispPrefCity');
   DOM.dispAgeRange = document.getElementById('dispAgeRange');
   DOM.dispEthnicity = document.getElementById('dispEthnicity');
@@ -301,6 +302,7 @@ DOM.inpName = document.getElementById('inpName');
   DOM.inpEmail = document.getElementById('inpEmail');
   DOM.inpCity = document.getElementById('inpCity');
   DOM.inpUserAge = document.getElementById('inpAge') || document.getElementById('inpUserAge');
+  DOM.inpProfileGender = document.getElementById('inpProfileGender');
   DOM.inpPrefCity = document.getElementById('inpPrefCity');
   DOM.inpAgeMin = document.getElementById('inpAgeMin');
   DOM.inpAgeMax = document.getElementById('inpAgeMax');
@@ -2261,6 +2263,11 @@ function renderSettingsDisplay(user, prefs) {
 
   
   if (DOM.dispAge) DOM.dispAge.textContent = user?.age ? String(user.age) : '—';
+
+  if (DOM.dispProfileGender) {
+    const g = String(user?.profileGender || '').toLowerCase();
+    DOM.dispProfileGender.textContent = (g === 'women') ? 'Woman' : (g === 'men' ? 'Man' : '—');
+  }
 // Preferences fields (matches Preferences page)
   const prefCity = prefs?.city || '';
   const ageMin = Number.isFinite(prefs?.ageMin) ? prefs.ageMin : (prefs?.ageMin ? parseInt(prefs.ageMin, 10) : null);
@@ -2299,6 +2306,7 @@ function syncFormToState() {
   if (DOM.inpEmail) DOM.inpEmail.value = me.email || '';
   if (DOM.inpCity) DOM.inpCity.value = me.city || '';
   if (DOM.inpUserAge) DOM.inpUserAge.value = me.age || '';
+  if (DOM.inpProfileGender) DOM.inpProfileGender.value = me.profileGender || '';
 
   // Avatar (preview existing unless user selects a new one)
   if (DOM.inpAvatarFile) DOM.inpAvatarFile.value = '';
@@ -2793,6 +2801,7 @@ async function handleProfileSave() {
   const name = (DOM.inpName ? DOM.inpName.value : '').trim();
   const profileCity = (DOM.inpCity ? DOM.inpCity.value : '').trim();
   const age = DOM.inpUserAge ? parseInt(DOM.inpUserAge.value, 10) : null;
+  const profileGender = (DOM.inpProfileGender ? DOM.inpProfileGender.value : '').trim();
 
   const preferredCity = (DOM.inpPrefCity ? DOM.inpPrefCity.value : '').trim();
   const ageMin = DOM.inpAgeMin ? parseInt(DOM.inpAgeMin.value, 10) : 18;
@@ -2813,6 +2822,10 @@ async function handleProfileSave() {
     showToast('Preferred city is required.', 'error');
     return;
   }
+  if (profileGender && !['women','men'].includes(profileGender)) {
+    showToast('Please select a valid value for “I am”.', 'error');
+    return;
+  }
   if (!Number.isFinite(age) || age < 18 || age > 99) {
     showToast('Please enter a valid age (18-99).', 'error');
     return;
@@ -2827,6 +2840,7 @@ async function handleProfileSave() {
     city: profileCity,
     age
   };
+  if (profileGender) profilePayload.profileGender = profileGender;
   if (state.selectedAvatarDataUrl) profilePayload.avatarDataUrl = state.selectedAvatarDataUrl;
 
   const prefsPayload = {
@@ -2835,6 +2849,7 @@ async function handleProfileSave() {
     ageMax,
     lookingFor: [lookingFor]
   };
+  if (profileGender) prefsPayload.profileGender = profileGender;
   if (ethnicity) prefsPayload.ethnicity = ethnicity;
   if (intent) prefsPayload.intent = intent;
   if (dealbreakers) prefsPayload.dealbreakers = dealbreakers;
