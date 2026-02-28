@@ -1438,25 +1438,53 @@ function _loadSeedCacheOnce() {
   return _SEED_CACHE;
 }
 
+let _SEED_FS_CACHE = null;
+let _SEED_FS_CACHE_TS = 0;
+const _SEED_FS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+async function _loadSeedFirestoreCache() {
+  if (!hasFirebase || !firestore) return [];
+  const now = Date.now();
+  if (Array.isArray(_SEED_FS_CACHE) && (now - _SEED_FS_CACHE_TS) < _SEED_FS_CACHE_TTL_MS) {
+    return _SEED_FS_CACHE;
+  }
+  try {
+    // 500 docs lang usually, so safe i-cache.
+    const snap = await firestore.collection(SEED_PROFILES_COLLECTION).limit(2000).get();
+    const out = [];
+    snap.forEach(doc => out.push({ _docId: doc.id, ...(doc.data() || {}) }));
+    _SEED_FS_CACHE = out;
+    _SEED_FS_CACHE_TS = now;
+    return out;
+  } catch (e) {
+    console.warn('[seedProfiles] firestore cache load failed:', e.message);
+    return [];
+  }
+}
+
+function _inferSeedGenderFromId(seedId) {
+  const sid = String(seedId || '').toLowerCase();
+  if (/^seed_w_\d{4}$/.test(sid) || sid.includes('woman') || sid.includes('female')) return 'women';
+  if (/^seed_m_\d{4}$/.test(sid) || sid.includes('man') || sid.includes('male')) return 'men';
+  return '';
+}
+
 async function _fetchSeedProfiles(limit, wantGender) {
-  // 1) Firestore path (preferred)
-  if (hasFirebase && firestore) {
-    try {
-      let q = firestore.collection(SEED_PROFILES_COLLECTION);
-
-      // gender filter if available
-      if (wantGender === 'women' || wantGender === 'men') {
-        q = q.where('gender', '==', wantGender);
-      }
-
-      const snap = await q.limit(limit).get();
-      const out = [];
-      snap.forEach(doc => out.push({ _docId: doc.id, ...(doc.data() || {}) }));
-      return out;
-    } catch (e) {
-      console.warn('[seedProfiles] firestore fetch failed:', e.message);
-      // fall through to local cache
+  // 1) Firestore cache path (preferred)
+  const fsCache = await _loadSeedFirestoreCache();
+  if (Array.isArray(fsCache) && fsCache.length) {
+    let filtered = fsCache;
+    if (wantGender === 'women' || wantGender === 'men') {
+      filtered = fsCache.filter(s => {
+        const g = _normGender(s.gender || s.sex || s.profileGender || '');
+        if (g) return g === wantGender;
+        const inferred = _inferSeedGenderFromId(s.id || s._docId || '');
+        return inferred ? inferred === wantGender : true;
+      });
     }
+    const copy = filtered.slice();
+    _shuffleInPlace(copy);
+    return copy.slice(0, limit);
   }
 
   // 2) Local JSON fallback (no Firebase required)
@@ -1466,10 +1494,14 @@ async function _fetchSeedProfiles(limit, wantGender) {
 
     let filtered = cache;
     if (wantGender === 'women' || wantGender === 'men') {
-      filtered = cache.filter(s => String(s.gender || '').toLowerCase() === wantGender);
+      filtered = cache.filter(s => {
+        const g = _normGender(s.gender || s.sex || s.profileGender || '');
+        if (g) return g === wantGender;
+        const inferred = _inferSeedGenderFromId(s.id || s._docId || '');
+        return inferred ? inferred === wantGender : true;
+      });
     }
 
-    // shuffle then slice
     const copy = filtered.slice();
     _shuffleInPlace(copy);
     return copy.slice(0, limit);
