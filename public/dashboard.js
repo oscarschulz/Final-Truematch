@@ -130,6 +130,15 @@ async function fileToOptimizedSquareDataUrl(file, maxSize = 768, quality = 0.85,
 
 const state = { me: null, prefs: null, plan: 'free', activeTab: 'home', isLoading: false, selectedAvatarDataUrl: null, homeCache: { admirersTs: 0, nearbyTs: 0 }, homeLoading: { admirers: false, nearby: false } };
 
+// --- Chat (modal) runtime state (polling + smart scroll) ---
+state.chatPollTimer = null;
+state.chatLastSig = '';
+state.chatNewToastShown = false;
+state.chatForceScrollToBottom = false;
+state.chatScrollBound = false;
+state.chatIsNearBottom = true;
+
+
 // Read the last known user from localStorage
 function safeGetLocalUser() {
   try {
@@ -326,12 +335,6 @@ DOM.inpName = document.getElementById('inpName');
   
     DOM.mobileStatsRingCircle = document.getElementById('mobileStatsRingCircle');
   DOM.mobileStatsCountDisplay = document.getElementById('mobileStatsCountDisplay');
-
-  // Home (mobile) widgets (mirrors right sidebar)
-  DOM.homeStatsRingCircle = document.getElementById('homeStatsRingCircle');
-  DOM.homeStatsCountDisplay = document.getElementById('homeStatsCountDisplay');
-  DOM.homeActiveNearbyContainer = document.getElementById('homeActiveNearbyContainer');
-  DOM.btnSidebarSubscribeHomeMobile = document.getElementById('btnSidebarSubscribeHomeMobile');
 // Panel Bodies
   DOM.panelShortlistBody = document.getElementById('panel-shortlist');
   DOM.panelConciergeBody = document.getElementById('panel-concierge');
@@ -666,14 +669,6 @@ function updateSwipeStats(current, max) {
         const percent = current / max;
         const offset = 251 - (251 * percent);
         DOM.mobileStatsRingCircle.style.strokeDashoffset = offset;
-
-    // Home widget (mobile) - Home panel
-    if (DOM.homeStatsCountDisplay) DOM.homeStatsCountDisplay.textContent = current;
-    if (DOM.homeStatsRingCircle) {
-        const percent = current / max;
-        const offset = 251 - (251 * percent);
-        DOM.homeStatsRingCircle.style.strokeDashoffset = offset;
-    }
     }
 }
 
@@ -954,7 +949,8 @@ function setupEventListeners() {
   }
 
   // 5. Modals Close
-  if (DOM.btnCloseChat && DOM.dlgChat) DOM.btnCloseChat.addEventListener('click', () => DOM.dlgChat.close());
+  if (DOM.btnCloseChat && DOM.dlgChat) DOM.btnCloseChat.addEventListener('click', () => { stopChatPolling(); DOM.dlgChat.close(); });
+  if (DOM.dlgChat) DOM.dlgChat.addEventListener('close', () => { stopChatPolling(); });
 
   // Chat Send
   if (DOM.btnChatSend) DOM.btnChatSend.addEventListener('click', (e) => { e.preventDefault(); sendChatMessage(); });
@@ -1147,8 +1143,6 @@ if (DOM.frmPassword) DOM.frmPassword.addEventListener('submit', async (e) => {
   };  if (DOM.btnOpenPremiumApply) DOM.btnOpenPremiumApply.addEventListener('click', openPremium);
   if (DOM.btnPremiumCancel) DOM.btnPremiumCancel.addEventListener('click', () => DOM.dlgPremiumApply.close());
   if (DOM.btnSidebarSubscribe) DOM.btnSidebarSubscribe.addEventListener('click', openPremium);
-
-  if (DOM.btnSidebarSubscribeHomeMobile) DOM.btnSidebarSubscribeHomeMobile.addEventListener('click', () => { window.location.href = './tier.html?upgrade=1'; });
 
   // 10. Forms
   if (DOM.frmProfile) {
@@ -1540,20 +1534,15 @@ async function loadActiveNearbyPanel(force = false) {
   }
 }
 
-
 function renderActiveNearbyPanel(payload) {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const items = Array.isArray(payload.items) ? payload.items : [];
-
-  const targets = [DOM.activeNearbyContainer, DOM.homeActiveNearbyContainer].filter(Boolean);
-
-  // Empty
   if (!items.length) {
-    targets.forEach(t => { t.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>"; });
+    DOM.activeNearbyContainer.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
     return;
   }
 
-  let html = '';
+  let html = `<div class="active-grid">`;
   items.forEach(u => {
     const photo = u.photoUrl ? esc(u.photoUrl) : 'assets/images/truematch-mark.png';
     const hasPhoto = !!u.photoUrl;
@@ -1563,36 +1552,34 @@ function renderActiveNearbyPanel(payload) {
         <span class="online-dot"></span>
       </div>`;
   });
+  html += `</div>`;
 
-  targets.forEach(t => { t.innerHTML = html; });
+  DOM.activeNearbyContainer.innerHTML = html;
 
-  // Bind clicks for both desktop + home-mobile containers
-  targets.forEach(container => {
-    container.querySelectorAll('.active-item').forEach(el => {
-      el.addEventListener('click', () => {
-        const email = String(el.dataset.email || '').toLowerCase();
-        if (!email) return;
+  DOM.activeNearbyContainer.querySelectorAll('.active-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const email = String(el.dataset.email || '').toLowerCase();
+      if (!email) return;
 
-        const profile = {
-          id: email,
-          email,
-          name: el.dataset.name || 'Member',
-          age: el.dataset.age || '',
-          city: el.dataset.city || '',
-          photoUrl: el.dataset.photo || ''
-        };
+      const profile = {
+        id: email,
+        email,
+        name: el.dataset.name || 'Member',
+        age: el.dataset.age || '',
+        city: el.dataset.city || '',
+        photoUrl: el.dataset.photo || ''
+      };
 
-        try { setActiveTab('swipe'); } catch {}
-        try {
-          if (SwipeController && typeof SwipeController.jumpTo === 'function') {
-            SwipeController.jumpTo(profile);
-          } else {
-            toast('Opening profile…', 'info');
-          }
-        } catch {
+      try { setActiveTab('swipe'); } catch {}
+      try {
+        if (SwipeController && typeof SwipeController.jumpTo === 'function') {
+          SwipeController.jumpTo(profile);
+        } else {
           toast('Opening profile…', 'info');
         }
-      });
+      } catch {
+        toast('Opening profile…', 'info');
+      }
     });
   });
 }
@@ -1602,8 +1589,75 @@ function renderActiveNearbyPanel(payload) {
 // MODAL HELPERS
 // ---------------------------------------------------------------------
 
+// Chat (modal) polling + smart scroll
+const CHAT_POLL_MS = 4000;
+
+function isChatModalOpen() {
+  return !!(DOM.dlgChat && DOM.dlgChat.open);
+}
+
+function getChatBottomOffsetPx() {
+  if (!DOM.chatBody) return 0;
+  const el = DOM.chatBody;
+  const scrollH = Number(el.scrollHeight || 0);
+  const scrollTop = Number(el.scrollTop || 0);
+  const clientH = Number(el.clientHeight || 0);
+  return Math.max(0, scrollH - scrollTop - clientH);
+}
+
+function isChatNearBottom(thresholdPx = 110) {
+  return getChatBottomOffsetPx() <= thresholdPx;
+}
+
+function bindChatScrollTracker() {
+  if (!DOM.chatBody) return;
+  if (state.chatScrollBound) return;
+
+  state.chatScrollBound = true;
+  // Keep an up-to-date "near bottom" flag so renders don't yank the user to the bottom.
+  DOM.chatBody.addEventListener('scroll', () => {
+    state.chatIsNearBottom = isChatNearBottom();
+    if (state.chatIsNearBottom) {
+      // User is at bottom again; allow future "new message" toasts.
+      state.chatNewToastShown = false;
+    }
+  }, { passive: true });
+}
+
+async function pollChatThreadOnce() {
+  if (!isChatModalOpen()) return;
+  if (!state.currentChatPeerEmail) return;
+  await loadAndRenderThread(state.currentChatPeerEmail);
+}
+
+function startChatPolling({ immediate = false } = {}) {
+  stopChatPolling();
+
+  if (!isChatModalOpen()) return;
+  if (!state.currentChatPeerEmail) return;
+
+  state.chatPollTimer = setInterval(() => {
+    // Don't await inside interval; loadAndRenderThread already has its own try/catch.
+    pollChatThreadOnce();
+  }, CHAT_POLL_MS);
+
+  if (immediate) pollChatThreadOnce();
+}
+
+function stopChatPolling() {
+  if (state.chatPollTimer) {
+    try { clearInterval(state.chatPollTimer); } catch {}
+    state.chatPollTimer = null;
+  }
+}
+
 async function openChatModal(name, imgColor, lastMsg, peerEmail, peerPhotoUrl) {
   if (!DOM.dlgChat) return;
+
+  // Switching chats / reopening: always reset polling + "new message" signals.
+  stopChatPolling();
+  state.chatLastSig = '';
+  state.chatNewToastShown = false;
 
   state.currentChatPeerEmail = String(peerEmail || '').toLowerCase();
   state.currentChatPeerName = name || 'Match';
@@ -1628,21 +1682,34 @@ async function openChatModal(name, imgColor, lastMsg, peerEmail, peerPhotoUrl) {
   const nameEl = DOM.chatUserName || DOM.chatName;
   if (nameEl) nameEl.textContent = state.currentChatPeerName;
 
-  // Reset header meta line
+  // Reset header meta line (presence is a placeholder for now)
   if (DOM.chatReceiptLine) {
     DOM.chatReceiptLine.textContent = '● Online';
   }
 
   // Clear body and show initial hint
-  DOM.chatBody.innerHTML = '';
+  if (DOM.chatBody) DOM.chatBody.innerHTML = '';
   DOM.dlgChat.showModal();
 
+  // Track user scroll so refreshes don't yank the view.
+  bindChatScrollTracker();
+  state.chatIsNearBottom = true;
+
   if (!state.currentChatPeerEmail) {
-    DOM.chatBody.innerHTML = '<p style="margin:0; color:rgba(255,255,255,0.7);">No chat recipient found.</p>';
+    if (DOM.chatBody) {
+      DOM.chatBody.innerHTML = '<p style="margin:0; color:rgba(255,255,255,0.7);">No chat recipient found.</p>';
+    }
     return;
   }
 
+  // On first open, always land at the bottom (latest message).
+  state.chatForceScrollToBottom = true;
   await loadAndRenderThread(state.currentChatPeerEmail);
+
+  // Keep the thread fresh while modal is open.
+  startChatPolling();
+
+  try { DOM.chatInput && DOM.chatInput.focus(); } catch {}
 }
 
 
@@ -1743,13 +1810,22 @@ async function loadAndRenderThread(peerEmail) {
 function renderThreadMessages(messages, planKey, usage) {
   if (!DOM.chatBody) return;
 
+  const body = DOM.chatBody;
+
   const meEmail = String((state.me && state.me.email) || '').toLowerCase();
   const peerEmail = String(state.currentChatPeerEmail || '').toLowerCase();
 
+  // Preserve user reading position: if the user is not near the bottom, do NOT auto-jump on refresh.
+  const prevClientH = Number(body.clientHeight || 0);
+  const prevScrollH = Number(body.scrollHeight || 0);
+  const prevScrollTop = Number(body.scrollTop || 0);
+  const prevFromBottom = Math.max(0, prevScrollH - prevScrollTop - prevClientH);
+  const wasNearBottom = state.chatForceScrollToBottom || prevFromBottom <= 110;
+
   if (!messages.length) {
-    DOM.chatBody.innerHTML = '<p style="margin:0; color:rgba(255,255,255,0.7);">Start the conversation.</p>';
+    body.innerHTML = '<p style="margin:0; color:rgba(255,255,255,0.7);">Start the conversation.</p>';
   } else {
-    DOM.chatBody.innerHTML = messages.map(msg => {
+    body.innerHTML = messages.map(msg => {
       const from = String(msg.from || '').toLowerCase();
       const isMe = from === meEmail;
       const safeText = String(msg.text || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -1766,14 +1842,15 @@ function renderThreadMessages(messages, planKey, usage) {
     }).join('');
   }
 
-  DOM.chatBody.scrollTop = DOM.chatBody.scrollHeight;
-
   // Read receipt line (Tier1+)
   if (DOM.chatReceiptLine) {
     if (planKey === 'free') {
       DOM.chatReceiptLine.textContent = '● Online';
     } else {
-      const lastOut = [...messages].reverse().find(m => String(m.from || '').toLowerCase() === meEmail && String(m.to || '').toLowerCase() === peerEmail);
+      const lastOut = [...messages].reverse().find(m =>
+        String(m.from || '').toLowerCase() === meEmail &&
+        String(m.to || '').toLowerCase() === peerEmail
+      );
       const seen = !!(lastOut && lastOut.readAt);
       DOM.chatReceiptLine.textContent = seen ? 'Seen' : 'Delivered';
     }
@@ -1786,6 +1863,43 @@ function renderThreadMessages(messages, planKey, usage) {
   } else {
     if (DOM.btnChatSend) DOM.btnChatSend.disabled = false;
   }
+
+  // Signature for "new message" detection (avoid spamming toasts on every poll).
+  const last = messages && messages.length ? messages[messages.length - 1] : null;
+  const lastKey = last
+    ? `${String(last.messageId || last.id || '')}|${String(last.createdAtMs || last.createdAt || '')}|${String(last.from || '')}|${String(last.text || '')}`
+    : '';
+  const sig = `${messages.length}|${lastKey}`;
+  const prevSig = String(state.chatLastSig || '');
+  const changed = sig !== prevSig;
+  if (changed) state.chatLastSig = sig;
+
+  // Smart scroll:
+  // - If user is (or was) at the bottom, keep them at the bottom.
+  // - If user scrolled up, preserve their distance from bottom (so the view doesn't jump).
+  const forceBottom = !!state.chatForceScrollToBottom;
+
+  if (forceBottom || wasNearBottom) {
+    body.scrollTop = body.scrollHeight;
+    state.chatNewToastShown = false; // user is at bottom; allow future toasts
+  } else {
+    const newClientH = Number(body.clientHeight || 0);
+    const newScrollH = Number(body.scrollHeight || 0);
+    const target = Math.max(0, newScrollH - newClientH - prevFromBottom);
+    body.scrollTop = target;
+  }
+
+  // If new incoming message arrived while user is reading older messages, show a single toast.
+  if (prevSig && changed && !forceBottom && !wasNearBottom) {
+    const incoming = !!(last && String(last.from || '').toLowerCase() !== meEmail);
+    if (incoming && !state.chatNewToastShown) {
+      showToast('New message', 'info');
+      state.chatNewToastShown = true;
+    }
+  }
+
+  // Reset one-shot scroll flag
+  state.chatForceScrollToBottom = false;
 }
 
 async function sendChatMessage() {
@@ -1807,6 +1921,7 @@ async function sendChatMessage() {
     }
 
     DOM.chatInput.value = '';
+    state.chatForceScrollToBottom = true;
     await loadAndRenderThread(state.currentChatPeerEmail);
 
     // Free message cap feedback
@@ -2086,13 +2201,6 @@ function renderHomeEmptyStates() {
     const hasActive = DOM.activeNearbyContainer.querySelector('.active-item');
     if (!hasActive) {
       DOM.activeNearbyContainer.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
-    }
-  }
-
-  if (DOM.homeActiveNearbyContainer) {
-    const hasActive = DOM.homeActiveNearbyContainer.querySelector('.active-item');
-    if (!hasActive) {
-      DOM.homeActiveNearbyContainer.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
     }
   }
 }
@@ -3025,10 +3133,7 @@ if (lastLimit === null) {
 
   if (DOM.mobileStatsCountDisplay) DOM.mobileStatsCountDisplay.textContent = '∞';
   if (DOM.mobileStatsRingCircle) DOM.mobileStatsRingCircle.style.strokeDashoffset = 0;
-  
-  if (DOM.homeStatsCountDisplay) DOM.homeStatsCountDisplay.textContent = '∞';
-  if (DOM.homeStatsRingCircle) DOM.homeStatsRingCircle.style.strokeDashoffset = 0;
-return;
+  return;
 }
 
     const safeLimit = Number.isFinite(lastLimit) && lastLimit > 0 ? lastLimit : DAILY_SWIPE_LIMIT;
