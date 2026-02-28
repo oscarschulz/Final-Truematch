@@ -1369,7 +1369,9 @@ const SEED_MIN_DECK = Math.max(0, Number(process.env.SEED_MIN_DECK || '20')); //
 const SEED_FETCH_LIMIT = Math.max(10, Number(process.env.SEED_FETCH_LIMIT || '140')); // fetch extra for filtering
 const SEED_ID_PREFIX = 'seed:'; // IMPORTANT: seeds use this id prefix in swipes
 const SEED_PHOTO_BASE_URL = String(process.env.SEED_PHOTO_BASE_URL || '').replace(/\/+$/, '');
-
+// Gender inference fallback (legacy accounts only)
+// 1 = allow inference (default), 0 = require explicit profileGender
+const ALLOW_GENDER_INFERENCE = (process.env.ALLOW_GENDER_INFERENCE || '1') !== '0';
 
 // Gender normalization helpers (for swipe deck filtering)
 function _normGender(v) {
@@ -1393,16 +1395,19 @@ function _getWantGenderFromPrefs(prefs) {
 }
 function _getProfileGenderFromUserDoc(u) {
   if (!u || typeof u !== 'object') return '';
-  // Prefer explicit fields if you add them later
+
+  // Prefer explicit profileGender first (new standard)
   let g =
-    _normGender(u.gender) ||
     _normGender(u.profileGender) ||
+    _normGender(u.gender) ||
     _normGender(u.sex) ||
-    (u.prefs && (_normGender(u.prefs.gender) || _normGender(u.prefs.profileGender) || _normGender(u.prefs.sex)));
+    (u.prefs && (_normGender(u.prefs.profileGender) || _normGender(u.prefs.gender) || _normGender(u.prefs.sex)));
 
   if (g) return g;
 
-  // Fallback heuristic: infer from their own lookingFor (hetero assumption)
+  // Legacy-only fallback (hetero assumption)
+  if (!ALLOW_GENDER_INFERENCE) return '';
+
   const theirWant = _getWantGenderFromPrefs(u.prefs || u.preferences || null);
   return _oppositeGender(theirWant);
 }
@@ -4026,7 +4031,7 @@ app.post('/api/me/preferences', async (req, res) => {
     const ageMaxRaw = (typeof body.ageMax !== 'undefined') ? body.ageMax : body.maxAge;
     const lookingRaw = (typeof body.lookingFor !== 'undefined') ? body.lookingFor : body.looking_for;
     const ethRaw = body.ethnicity;
-
+    const pgRaw = (typeof body.profileGender !== 'undefined') ? body.profileGender : body.gender;
     const city = (cityRaw || '').toString().trim();
     const min = Number(ageMinRaw);
     const max = Number(ageMaxRaw);
@@ -4080,9 +4085,16 @@ app.post('/api/me/preferences', async (req, res) => {
 
 
     if (!lf.length) {
+      
       return res.status(400).json({ ok: false, message: 'lookingFor required' });
     }
-
+    let pg = '';
+    if (typeof pgRaw !== 'undefined' && pgRaw !== null && String(pgRaw).trim() !== '') {
+      pg = _normGender(pgRaw);
+      if (!pg) {
+        return res.status(400).json({ ok: false, message: 'profileGender must be man or woman' });
+      }
+    }
     // Save in memory
     DB.prefs = {
       city,
@@ -4116,7 +4128,7 @@ app.post('/api/me/preferences', async (req, res) => {
     // Push to Firestore if available
     if (hasFirebase && email) {
       try {
-        await updateUserByEmail(email, { prefs: DB.prefs, prefsSaved: true });
+        await updateUserByEmail(email, { prefs: DB.prefs, prefsSaved: true, ...(pg ? { profileGender: pg } : {}) });
       } catch (err) {
         console.error('error saving prefs to Firestore:', err);
       }
@@ -4148,6 +4160,7 @@ app.post('/api/me/profile', async (req, res) => {
       headerDataUrl,
       headerUrl,
       age,
+      profileGender,
       city,
       username,
       phone,
@@ -4165,7 +4178,15 @@ app.post('/api/me/profile', async (req, res) => {
     headerDataUrl = (headerDataUrl || '').toString();
     headerUrl = (headerUrl || '').toString();
     requireProfileCompletion = !!requireProfileCompletion;
-
+        // profileGender: only allow "man" or "woman" (internally normalized to men/women)
+    let pg = _normGender(profileGender);
+    if (typeof profileGender !== 'undefined' && profileGender !== null && String(profileGender).trim() !== '') {
+      if (!pg) {
+        return res.status(400).json({ ok: false, message: 'profileGender must be man or woman' });
+      }
+    } else {
+      pg = ''; // not provided
+    }
     // 2) Validate
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.status(400).json({ ok: false, message: 'invalid_email' });
@@ -4204,7 +4225,7 @@ app.post('/api/me/profile', async (req, res) => {
     if (phone) fields.phone = phone;
     if (Number.isFinite(age)) fields.age = age;
     if (city) fields.city = city;
-
+    if (pg) fields.profileGender = pg;
     // Fetch existing user doc (for existing avatar path/url) when Firebase is ON
     let existingDoc = null;
     if (hasFirebase && usersCollection) {
@@ -10109,10 +10130,12 @@ app.post('/api/auth/verify-email-code', async (req, res) => {
 // keep per-email cache in sync (prevents redirect loops on next page)
 if (email) {
   if (DB.users[email]) {
+          if (pg) DB.users[email].profileGender = pg;
+      if (pg) DB.user.profileGender = pg;
     DB.users[email].emailVerified = true;
   } else {
     // minimal seed so subsequent middleware hydration keeps verified=true
-    DB.users[email] = { ...(DB.user || {}), email, emailVerified: true };
+    DB.users[email] = { ...(DB.user || {}), email, emailVerified: true, ...(pg ? { profileGender: pg } : {}) };
   }
 }
 
