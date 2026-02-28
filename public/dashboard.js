@@ -690,12 +690,79 @@ function enableBackdropClose(dialog) {
     });
 }
 
+
+// ---------------------------------------------------------------------
+// HOME (MOBILE): Ensure sidebar widgets exist inside Home panel
+// - We inject these only on mobile view so desktop keeps the right sidebar.
+// - This avoids "missing markup" issues when HTML didn't include the containers.
+// ---------------------------------------------------------------------
+function ensureHomeMobileWidgets() {
+  try {
+    const isMobile = !!(window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
+    if (!isMobile) return;
+
+    const homePanel = document.querySelector('section.panel[data-panel="home"]');
+    if (!homePanel) return;
+
+    // Prevent duplicates
+    if (document.getElementById('homeMobileWidgets')) return;
+
+    const wrap = document.createElement('div');
+    wrap.id = 'homeMobileWidgets';
+    wrap.className = 'home-mobile-widgets';
+
+    // Inline styles as a fallback (in case responsive.css overrides dashboard.css)
+    wrap.style.display = 'flex';
+    wrap.style.flexDirection = 'column';
+    wrap.style.gap = '12px';
+    wrap.style.marginTop = '14px';
+    wrap.style.padding = '0 10px 18px';
+
+    wrap.innerHTML = `
+      <div class="tm-card" style="padding:14px; border-radius:14px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10);">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+          <div style="font-weight:700;">Active Nearby</div>
+          <div style="display:flex; align-items:center; gap:6px; font-size:12px; color:#ff4d6d;">
+            <span style="width:6px; height:6px; border-radius:999px; background:#ff4d6d; display:inline-block;"></span>
+            <span style="letter-spacing:.2em;">LIVE</span>
+          </div>
+        </div>
+        <div id="homeActiveNearbyContainer"></div>
+      </div>
+
+      <div class="tm-card" style="padding:16px; border-radius:14px; background:rgba(0,0,0,0.35); border:1px solid rgba(255,215,0,0.35);">
+        <div style="display:flex; gap:10px; align-items:center;">
+          <div style="width:40px; height:40px; border-radius:12px; display:flex; align-items:center; justify-content:center; background:rgba(255,215,0,0.08);">
+            <i class="fa-solid fa-crown" style="color:#ffd700;"></i>
+          </div>
+          <div style="flex:1;">
+            <div style="font-weight:800;">Unlock More Features</div>
+            <div style="font-size:12px; color:rgba(255,255,255,0.70); margin-top:2px;">
+              See who likes you &amp; unlimited swipes.
+            </div>
+          </div>
+        </div>
+        <button id="btnSidebarSubscribeMobile" class="btn btn--primary" style="width:100%; margin-top:12px;">Upgrade Now</button>
+      </div>
+    `;
+
+    homePanel.appendChild(wrap);
+  } catch (_) {
+    // no-op
+  }
+}
+
+
 // ---------------------------------------------------------------------
 // CORE INIT
 // ---------------------------------------------------------------------
 
 async function initApp() {
   cacheDom();
+  ensureHomeMobileWidgets();
+  // Refresh DOM refs for dynamically injected Home widgets (mobile)
+  DOM.homeActiveNearbyContainer = document.getElementById('homeActiveNearbyContainer');
+  DOM.btnSidebarSubscribeMobile = document.getElementById('btnSidebarSubscribeMobile');
   await loadMe();
   // Background unread updater (safe even if Matches tab isn't open yet).
   try { startInboxPolling({ immediate: true }); } catch {}
