@@ -696,51 +696,16 @@ function enableBackdropClose(dialog) {
 // - We inject these only on mobile view so desktop keeps the right sidebar.
 // - This avoids "missing markup" issues when HTML didn't include the containers.
 // ---------------------------------------------------------------------
-function ensureHomeMobileWidgets({ force = false } = {}) {
+function ensureHomeMobileWidgets() {
   try {
     const isMobile = !!(window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
-    if (!isMobile && !force) return;
+    if (!isMobile) return;
 
     const homePanel = document.querySelector('section.panel[data-panel="home"]');
     if (!homePanel) return;
 
-    // Already injected
-    if (document.getElementById('homeMobileWidgets')) {
-      // Refresh DOM refs (in case cacheDom ran before injection)
-      if (typeof DOM === 'object' && DOM) {
-        DOM.homeActiveNearbyContainer = document.getElementById('homeActiveNearbyContainer');
-        DOM.btnSidebarSubscribeMobile = document.getElementById('btnSidebarSubscribeMobile');
-      }
-      return;
-    }
-
-    // Prefer the existing "home bottom" wrapper so widgets sit at the bottom without extra scrolling.
-    let bottomWrap =
-      homePanel.querySelector('.home-bottom-wrapper') ||
-      homePanel.querySelector('#homeBottomWrapper');
-
-    if (!bottomWrap) {
-      // Your Home panel already contains a bottom divider <div style="margin-top: auto; ..."> (no id/class).
-      // We safely detect it by its inline style.
-      const kids = Array.from(homePanel.children || []);
-      bottomWrap = kids.find((el) => {
-        if (!el || el.tagName !== 'DIV') return false;
-        const s = String(el.getAttribute('style') || '').replace(/\s+/g, '').toLowerCase();
-        return s.includes('margin-top:auto') && s.includes('border-top');
-      }) || null;
-    }
-
-    if (!bottomWrap) {
-      bottomWrap = document.createElement('div');
-      bottomWrap.id = 'homeBottomWrapper';
-      bottomWrap.style.marginTop = 'auto';
-      bottomWrap.style.borderTop = '1px solid rgba(255,255,255,0.1)';
-      bottomWrap.style.padding = '20px 30px 20px';
-      bottomWrap.style.marginLeft = '-30px';
-      bottomWrap.style.marginRight = '-30px';
-      bottomWrap.style.background = 'transparent';
-      homePanel.appendChild(bottomWrap);
-    }
+    // Prevent duplicates
+    if (document.getElementById('homeMobileWidgets')) return;
 
     const wrap = document.createElement('div');
     wrap.id = 'homeMobileWidgets';
@@ -750,70 +715,42 @@ function ensureHomeMobileWidgets({ force = false } = {}) {
     wrap.style.display = 'flex';
     wrap.style.flexDirection = 'column';
     wrap.style.gap = '12px';
-    wrap.style.width = '100%';
+    wrap.style.marginTop = '14px';
+    wrap.style.padding = '0 10px 18px';
 
     wrap.innerHTML = `
-      <div class="glass-card" style="margin:0; padding:14px;">
+      <div class="tm-card" style="padding:14px; border-radius:14px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10);">
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
-          <div style="font-weight:800; font-size:0.95rem;">Active Nearby</div>
+          <div style="font-weight:700;">Active Nearby</div>
           <div style="display:flex; align-items:center; gap:6px; font-size:12px; color:#ff4d6d;">
             <span style="width:6px; height:6px; border-radius:999px; background:#ff4d6d; display:inline-block;"></span>
-            <span style="letter-spacing:.18em; font-weight:800;">LIVE</span>
+            <span style="letter-spacing:.2em;">LIVE</span>
           </div>
         </div>
         <div id="homeActiveNearbyContainer"></div>
       </div>
 
-      <div class="premium-card" style="margin:0;">
-        <div class="premium-content">
-          <i class="fa-solid fa-crown" style="font-size:2rem; margin-bottom:10px;"></i>
-          <h3>Unlock More Features</h3>
-          <p>See who likes you &amp; unlimited swipes.</p>
-          <button class="btn btn--white" id="btnSidebarSubscribeMobile">Upgrade Now</button>
+      <div class="tm-card" style="padding:16px; border-radius:14px; background:rgba(0,0,0,0.35); border:1px solid rgba(255,215,0,0.35);">
+        <div style="display:flex; gap:10px; align-items:center;">
+          <div style="width:40px; height:40px; border-radius:12px; display:flex; align-items:center; justify-content:center; background:rgba(255,215,0,0.08);">
+            <i class="fa-solid fa-crown" style="color:#ffd700;"></i>
+          </div>
+          <div style="flex:1;">
+            <div style="font-weight:800;">Unlock More Features</div>
+            <div style="font-size:12px; color:rgba(255,255,255,0.70); margin-top:2px;">
+              See who likes you &amp; unlimited swipes.
+            </div>
+          </div>
         </div>
+        <button id="btnSidebarSubscribeMobile" class="btn btn--primary" style="width:100%; margin-top:12px;">Upgrade Now</button>
       </div>
     `;
 
-    bottomWrap.appendChild(wrap);
-
-    // Wire the mobile upgrade CTA without depending on setupEventListeners timing
-    const btn = wrap.querySelector('#btnSidebarSubscribeMobile');
-    if (btn) {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        window.location.href = './tier.html?upgrade=1';
-      });
-    }
-
-    // Refresh DOM refs for renderers that target the new containers
-    if (typeof DOM === 'object' && DOM) {
-      DOM.homeActiveNearbyContainer = document.getElementById('homeActiveNearbyContainer');
-      DOM.btnSidebarSubscribeMobile = document.getElementById('btnSidebarSubscribeMobile');
-    }
-
-    // If Active Nearby was already fetched for desktop, render it here too (best-effort)
-    try { loadActiveNearbyPanel(true); } catch (_) {}
+    homePanel.appendChild(wrap);
   } catch (_) {
     // no-op
   }
 }
-
-let __homeMobileWidgetsWatcherBound = false;
-function bindHomeMobileWidgetsWatcher() {
-  if (__homeMobileWidgetsWatcherBound) return;
-  __homeMobileWidgetsWatcherBound = true;
-
-  // If the user toggles DevTools device toolbar AFTER load, we still inject widgets.
-  let t = null;
-  window.addEventListener('resize', () => {
-    if (t) clearTimeout(t);
-    t = setTimeout(() => {
-      ensureHomeMobileWidgets();
-    }, 120);
-  });
-}
-
 
 
 // ---------------------------------------------------------------------
@@ -835,7 +772,6 @@ await loadHomePanels(true);
     renderHomeEmptyStates();
   setupEventListeners();
   setupMobileMenu();
-  bindHomeMobileWidgetsWatcher();
 
   // Restore last opened tab if allowed for this plan
   try {
@@ -1025,6 +961,17 @@ function setupEventListeners() {
     }
   });
   
+
+  // 1b. Upgrade button (opens Tier page)
+  const btnUpgradeNav = document.getElementById('btnNavUpgrade');
+  if (btnUpgradeNav) {
+    btnUpgradeNav.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      window.location.href = './tier.html?upgrade=1';
+    });
+  }
+
   // 2. Notifications (Dashboard bell)
   if (DOM.btnNotifToggle && DOM.notifDropdown) {
       // Prevent inside clicks from closing the dropdown
@@ -1441,12 +1388,6 @@ function setActiveTab(tabName) {
     }
   }
   state.activeTab = tabName;
-
-
-  // Mobile: ensure Home widgets exist (handles viewport changes after initial load)
-  if (tabName === 'home') {
-    ensureHomeMobileWidgets();
-  }
   // Creators watcher should only run while user is on Creators tab.
   if (tabName === 'creators') startCreatorApprovalWatcher();
   else stopCreatorApprovalWatcher();
