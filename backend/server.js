@@ -1361,7 +1361,6 @@ const SWIPES_COLLECTION = process.env.SWIPES_COLLECTION || 'iTrueMatchSwipes';
 const MATCHES_COLLECTION = process.env.MATCHES_COLLECTION || 'iTrueMatchMatches';
 const PS_SWIPES_COLLECTION = process.env.PS_SWIPES_COLLECTION || 'iTrueMatchPSSwipes';
 const PS_MATCHES_COLLECTION = process.env.PS_MATCHES_COLLECTION || 'iTrueMatchPSMatches';
-
 // ---------------- Seed Profiles (Swipe deck filler) ----------------
 const SEED_PROFILES_COLLECTION = process.env.SEED_PROFILES_COLLECTION || 'seedProfiles';
 const ENABLE_SEED_PROFILES = (process.env.ENABLE_SEED_PROFILES || '1') !== '0'; // default ON
@@ -1370,6 +1369,7 @@ const SEED_MIN_DECK = Math.max(0, Number(process.env.SEED_MIN_DECK || '20')); //
 const SEED_FETCH_LIMIT = Math.max(10, Number(process.env.SEED_FETCH_LIMIT || '140')); // fetch extra for filtering
 const SEED_ID_PREFIX = 'seed:'; // IMPORTANT: seeds use this id prefix in swipes
 const SEED_PHOTO_BASE_URL = String(process.env.SEED_PHOTO_BASE_URL || '').replace(/\/+$/, '');
+
 
 // Gender normalization helpers (for swipe deck filtering)
 function _normGender(v) {
@@ -1432,25 +1432,58 @@ function _seedDocToCandidate(s) {
   const seedId = String(s.id || s._docId || '').trim();
   const id = `${SEED_ID_PREFIX}${seedId}`;
 
-  const photoUrl =
-    s.photoUrl ||
-    ((s.photoKey && SEED_PHOTO_BASE_URL) ? `${SEED_PHOTO_BASE_URL}/${s.photoKey}` : '') ||
-    'assets/images/truematch-mark.png';
-
-  // Default: women (because your current seed pack is women),
-  // but if you later add men seeds, just store s.gender = "men".
+  // Detect gender (for filtering + photo folder routing)
   let gender = _normGender(s.gender || s.sex || s.profileGender || '');
   if (!gender) {
     const sid = seedId.toLowerCase();
     if (/^seed_w_\d{4}$/.test(sid) || sid.includes('woman') || sid.includes('female')) gender = 'women';
     else if (/^seed_m_\d{4}$/.test(sid) || sid.includes('man') || sid.includes('male')) gender = 'men';
   }
+  gender = gender || 'women';
+
+  // Build seed photo URL robustly (supports base ending with /women or /men, and keys without folders)
+  let photoUrl = '';
+  if (s.photoUrl) {
+    photoUrl = String(s.photoUrl || '');
+  } else {
+    let key = String(s.photoKey || '').trim();
+    if (key) {
+      if (/^https?:\/\//i.test(key)) {
+        photoUrl = key;
+      } else {
+        let base = String(SEED_PHOTO_BASE_URL || '/seed').replace(/\/+$/, '');
+        const root = base.replace(/\/(women|men)$/i, '');
+        const m = base.match(/\/(women|men)$/i);
+        const baseGender = m ? String(m[1] || '').toLowerCase() : '';
+
+        if (key.includes('/')) {
+          // key already contains folder (e.g. women/woman_0001.jpg)
+          // if base ends with /women or /men, use root so we don't double-nest
+          if (baseGender) base = root;
+        } else {
+          // key has no folder (e.g. woman_0001.jpg / man_0001.jpg)
+          if (baseGender) {
+            // If base is gender-specific but doesn't match the seed's gender, swap to the correct folder
+            if (baseGender !== gender) base = `${root}/${gender}`;
+          } else {
+            // base is root -> prefix gender folder
+            base = root || base;
+            key = `${gender}/${key}`;
+          }
+        }
+
+        // Collapse accidental double slashes (but keep protocol //)
+        photoUrl = `${base}/${key}`.replace(/([^:]\/)\/+/g, '$1');
+      }
+    }
+  }
+  if (!photoUrl) photoUrl = 'assets/images/truematch-mark.png';
 
   return {
     id,
     isSeed: true,
     seedId,
-    gender: gender || 'women',
+    gender,
     seedLabel: s.seedLabel || 'Sample profile (Beta)',
     name: s.name || 'Sample Profile',
     age: s.age || 25,
@@ -1463,12 +1496,13 @@ function _seedDocToCandidate(s) {
   };
 }
 
+
 function _isSeedTargetId(tId) {
   const s = String(tId || '').toLowerCase();
-  return s.startsWith(SEED_ID_PREFIX) || /^seed_w_\d{4}$/.test(s) || /^seed_m_\d{4}$/.test(s) || /^seed:seed_w_\d{4}$/.test(s) || /^seed:seed_m_\d{4}$/.test(s);
+  return s.startsWith(SEED_ID_PREFIX) ||
+    /^seed_w_\d{4}$/.test(s) || /^seed_m_\d{4}$/.test(s) ||
+    /^seed:seed_w_\d{4}$/.test(s) || /^seed:seed_m_\d{4}$/.test(s);
 }
-
-
 function _b64url(str) {
   return Buffer.from(String(str || ''), 'utf8')
     .toString('base64')
@@ -3432,22 +3466,6 @@ app.get('/api/me/active-nearby', authMiddleware, async (req, res) => {
                       : true;
 
     const isPremium = (planKey !== 'free') && (planActive !== false);
-
-    // Gender filter (based on my preferences: lookingFor men|women)
-    // NOTE: preferences.html currently only collects "lookingFor" (men/women).
-    // We treat that as the target gender to show in Swipe.
-    let meDocForPrefs = null;
-    if (hasFirebase) {
-      try { meDocForPrefs = await findUserByEmail(myEmail); } catch {}
-    }
-    const prefsSource =
-      (meDocForPrefs && meDocForPrefs.prefs && typeof meDocForPrefs.prefs === 'object') ? meDocForPrefs.prefs :
-      (userDoc && userDoc.prefs && typeof userDoc.prefs === 'object') ? userDoc.prefs :
-      (DB.prefsByEmail && DB.prefsByEmail[myEmail]) ? DB.prefsByEmail[myEmail] :
-      (DB.prefs && typeof DB.prefs === 'object') ? DB.prefs :
-      null;
-
-    const wantGender = _getWantGenderFromPrefs(prefsSource);
 
     const myCity = String(userDoc.city || userDoc.location || '').trim();
     const out = [];
@@ -7724,7 +7742,83 @@ app.get('/api/creators/feed', async (req, res) => {
     });} catch (e) {
     return res.status(400).json({ ok: false, error: String(e?.message || e) });
   }
+});// Creators-only suggestions (for creators.html right sidebar)
+// Returns only users who have been approved as creators (excludes normal members + swipe seed profiles)
+app.get('/api/creators/suggestions', authMiddleware, async (req, res) => {
+  try {
+    const meEmail = _normalizeEmail((req.user && req.user.email) || getSessionEmail(req) || '');
+    if (!meEmail) return res.status(401).json({ ok: false, error: 'Not authenticated' });
+
+    const limit = Math.max(1, Math.min(30, parseInt(req.query?.limit || '12', 10) || 12));
+
+    const normalizeCreatorApproved = (u) => {
+      const cs = String(u?.creatorStatus || '').toLowerCase().trim();
+      const cas = String(u?.creatorApplication?.status || '').toLowerCase().trim();
+      return cs === 'approved' || cas === 'approved';
+    };
+
+    const out = [];
+
+    if (hasFirebase && usersCollection) {
+      // Fast path: query creatorStatus == approved
+      let snap = null;
+      try {
+        snap = await usersCollection.where('creatorStatus', '==', 'approved').limit(200).get();
+      } catch (_) {
+        // Fallback if index/rules block the query: scan a bounded set and filter in memory
+        snap = await usersCollection.limit(300).get();
+      }
+
+      (snap?.docs || []).forEach((doc) => {
+        const u = doc.data() || {};
+        if (!normalizeCreatorApproved(u)) return;
+
+        const email = _normalizeEmail(u.email || '');
+        if (!email || email === meEmail) return;
+
+        out.push({
+          id: email,
+          name: u.name || 'Creator',
+          age: u.age || 25,
+          city: u.city || 'Global',
+          badge: 'CREATOR',
+          photoUrl: u.avatarUrl || u.photoUrl || 'assets/images/truematch-mark.png'
+        });
+      });
+    } else {
+      // In-memory fallback
+      const list = Object.values(DB.users || {}).filter((u) => u && normalizeCreatorApproved(u));
+      for (const u of list) {
+        const email = _normalizeEmail(u.email || '');
+        if (!email || email === meEmail) continue;
+
+        out.push({
+          id: email,
+          name: u.name || 'Creator',
+          age: u.age || 25,
+          city: u.city || 'Global',
+          badge: 'CREATOR',
+          photoUrl: u.avatarUrl || u.photoUrl || 'assets/images/truematch-mark.png'
+        });
+      }
+    }
+
+    // Shuffle + slice
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = out[i];
+      out[i] = out[j];
+      out[j] = tmp;
+    }
+
+    return res.json({ ok: true, items: out.slice(0, limit) });
+  } catch (err) {
+    console.error('creators/suggestions error:', err);
+    return res.status(500).json({ ok: false, message: 'Server error' });
+  }
 });
+
+
 
 
 // ---- Creator post interactions (reactions + comments) ----
@@ -8090,6 +8184,7 @@ app.post('/api/creator/posts/comment', authMiddleware, async (req, res) => {
       postId,
       text,
       authorEmail: email,
+      userId: __tmSafeStr(req?.user?.uid || req?.user?.id || req?.user?.userId || '').trim() || null,
       authorName,
       creatorName: authorName,
       authorAvatarUrl,
@@ -8193,9 +8288,7 @@ async function __creatorDeleteCommentHandler(req, res) {
     if (!firebaseReady || !firestore) {
       return res.status(503).json({ ok: false, message: 'Firebase not configured' });
     }
-
-    // Prefer email-based auth (cookie sessions). Keep uid as optional compatibility.
-    const uid = __tmSafeStr(req?.user?.uid || req?.user?.id || '').trim();
+    const uid = __tmSafeStr(req?.user?.uid || '').trim();
     const meEmail = _normalizeEmail((req.user && req.user.email) || '');
     if (!uid && !meEmail) {
       return res.status(401).json({ ok: false, message: 'Not authenticated' });
@@ -8213,26 +8306,17 @@ async function __creatorDeleteCommentHandler(req, res) {
     if (!targetSnap || !targetSnap.exists) {
       return res.status(404).json({ ok: false, message: 'Comment not found' });
     }
-
     const targetData = targetSnap.data() || {};
     const postData = postSnap.data() || {};
 
-    // Delete permissions:
-    // - comment/reply author OR
-    // - post owner (creator who posted the post)
-    const targetUid = __tmSafeStr(targetData.userId || targetData.uid || '').trim();
-    const postUid = __tmSafeStr(postData.userId || postData.uid || '').trim();
+    const targetUid = __tmSafeStr(targetData.userId || '').trim();
+    const postUid = __tmSafeStr(postData.userId || '').trim();
 
     const targetEmail = _normalizeEmail(targetData.authorEmail || targetData.creatorEmail || targetData.email || '');
-    const postEmail = _normalizeEmail(postData.creatorEmail || postData.email || postData.ownerEmail || postData.authorEmail || '');
+    const postEmail = _normalizeEmail(postData.creatorEmail || postData.email || postData.ownerEmail || '');
 
-    const isTargetOwner =
-      (uid && targetUid && targetUid === uid) ||
-      (meEmail && targetEmail && targetEmail === meEmail);
-
-    const isPostOwner =
-      (uid && postUid && postUid === uid) ||
-      (meEmail && postEmail && postEmail === meEmail);
+    const isTargetOwner = (uid && targetUid && targetUid === uid) || (meEmail && targetEmail && targetEmail === meEmail);
+    const isPostOwner = (uid && postUid && postUid === uid) || (meEmail && postEmail && postEmail === meEmail);
 
     if (!isTargetOwner && !isPostOwner) {
       return res.status(403).json({ ok: false, message: 'Not allowed to delete this comment' });
@@ -8261,17 +8345,7 @@ async function __creatorDeleteCommentHandler(req, res) {
 
     const nowMs = Date.now();
 
-    // IMPORTANT UX RULE:
-    // - Root comments should NOT be hard-deleted (otherwise replies can "disappear" in UIs that only render replies under a parent).
-    // - If a node has children, soft-delete it to avoid orphaning.
-    const targetParent = __creatorReplyTargetIdFromComment(targetData);
-    const isRootNode = !targetParent;
-
-    // Helpful trace to verify the deployed code path in Railway logs
-    try { console.log('[TM] creator comment delete (single-node)', { postId, commentId, isRootNode, hasChildren }); } catch (_) {}
-    try { res.setHeader('X-TM-Comment-Delete', 'single-node-v2'); } catch (_) {}
-
-    if (isRootNode || hasChildren) {
+    if (hasChildren) {
       // Preserve replyTo meta prefix if it exists (so nested threading keeps working)
       const raw = __tmSafeStr(targetData.text || '').trim();
       const m = raw.match(/^\s*(\[\[replyTo:[^\]]+\]\])\s*/i);
@@ -8336,7 +8410,7 @@ async function __creatorDeleteCommentHandler(req, res) {
       softDeleted: false,
       deletedCommentIds: [targetSnap.id]
     });
-  } catch (err) {
+} catch (err) {
     console.error('creator comment delete error:', err);
     return res.status(err?.status || 500).json({
       ok: false,
@@ -8344,7 +8418,6 @@ async function __creatorDeleteCommentHandler(req, res) {
     });
   }
 }
-
 
 // Primary endpoint used by patched creators.js
 app.post('/api/creator/posts/comment/delete', authMiddleware, __creatorDeleteCommentHandler);
@@ -8358,7 +8431,7 @@ app.get('/api/creator/posts/comments', authMiddleware, async (req, res) => {
     if (!email) return res.status(401).json({ ok: false, message: 'Not authenticated' });
 
     const postId = safeStr(req.query.postId || req.query.id || '');
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit || 50)));
     if (!postId) return res.status(400).json({ ok: false, message: 'postId is required' });
 
     if (!hasFirebase || !firestore) {
@@ -8383,7 +8456,6 @@ app.get('/api/creator/posts/comments', authMiddleware, async (req, res) => {
         id: safeStr(x.id || d.id),
         postId: safeStr(x.postId || postId),
         text: safeStr(x.text || ''),
-        deleted: !!x.deleted,
         authorEmail: safeStr(x.authorEmail || ''),
         authorName: safeStr(x.authorName || ''),
         createdAtMs: Number(x.createdAtMs || 0),
@@ -9553,27 +9625,15 @@ app.get('/api/swipe/candidates', async (req, res) => {
 
     // ✅ Use real user doc (not only DB.user)
     const userDoc = (DB.users && DB.users[myEmail]) || DB.user || {};
+
+    // Match gender filter (based on my preferences: prefs.lookingFor)
+    const myWantGender = _getWantGenderFromPrefs((userDoc && userDoc.prefs) || (userDoc && userDoc.preferences) || (DB.prefsByEmail && DB.prefsByEmail[myEmail]) || DB.prefs || null);
     const planKey = normalizePlanKey((req.user && req.user.plan) || userDoc.plan || 'free');
     const planActive = ((req.user && typeof req.user.planActive === 'boolean') ? req.user.planActive
                       : (typeof userDoc.planActive === 'boolean') ? userDoc.planActive
                       : true);
 
     const isPremium = (planKey !== 'free') && (planActive !== false);
-
-    // ✅ Gender filter (based on my preferences: lookingFor women|men)
-    // If prefs are missing/unsaved, wantGender becomes '' and we don't filter by gender.
-    let meDocForPrefs = null;
-    if (hasFirebase) {
-      try { meDocForPrefs = await findUserByEmail(myEmail); } catch {}
-    }
-    const prefsSource =
-      (meDocForPrefs && meDocForPrefs.prefs && typeof meDocForPrefs.prefs === 'object') ? meDocForPrefs.prefs :
-      (userDoc && userDoc.prefs && typeof userDoc.prefs === 'object') ? userDoc.prefs :
-      (DB.prefsByEmail && DB.prefsByEmail[myEmail]) ? DB.prefsByEmail[myEmail] :
-      (DB.prefs && typeof DB.prefs === 'object') ? DB.prefs :
-      null;
-    const wantGender = _getWantGenderFromPrefs(prefsSource);
-
 
     // ✅ Cap: free only; premium unlimited
     const cap = isPremium ? null : STRICT_DAILY_LIMIT;
@@ -9633,19 +9693,19 @@ app.get('/api/swipe/candidates', async (req, res) => {
         // ✅ Premium-to-premium only
         if (isPremium && !isPremiumCandidate(u)) return;
 
-        // ✅ Gender filter (based on my lookingFor)
-        const candGender = _getProfileGenderFromUserDoc(u);
-        if (wantGender) {
-          if (!candGender) return;
-          if (candGender !== wantGender) return;
-        }
 
+        // Gender filter: show only profiles matching what I'm looking for (when available)
+        if (myWantGender) {
+          const candGender = _getProfileGenderFromUserDoc(u);
+          if (candGender && candGender !== myWantGender) return;
+        }
         candidates.push({
           id: candEmail,
           name: u.name || 'Member',
           age: u.age || 25,
           city: u.city || 'Global',
-          photoUrl: u.avatarUrl || 'assets/images/truematch-mark.png'
+          photoUrl: u.avatarUrl || 'assets/images/truematch-mark.png',
+          gender: _getProfileGenderFromUserDoc(u) || null
         });
       });
     } else {
@@ -9672,13 +9732,12 @@ app.get('/api/swipe/candidates', async (req, res) => {
           // ✅ Premium-to-premium only
           if (isPremium && !isPremiumCandidate(u)) return false;
 
-          // ✅ Gender filter (based on my lookingFor)
-          const candGender = _getProfileGenderFromUserDoc(u);
-          if (wantGender) {
-            if (!candGender) return false;
-            if (candGender !== wantGender) return false;
-          }
 
+          // Gender filter: show only profiles matching what I'm looking for (when available)
+          if (myWantGender) {
+            const candGender = _getProfileGenderFromUserDoc(u);
+            if (candGender && candGender !== myWantGender) return false;
+          }
           return true;
         })
         .map(u => ({
@@ -9686,11 +9745,10 @@ app.get('/api/swipe/candidates', async (req, res) => {
           name: u.name || 'Member',
           age: u.age || 25,
           city: u.city || 'Global',
-          photoUrl: u.avatarUrl || 'assets/images/truematch-mark.png'
+          photoUrl: u.avatarUrl || 'assets/images/truematch-mark.png',
+          gender: _getProfileGenderFromUserDoc(u) || null
         }));
     }
-
-
     // ---------------- Seed merge (deck filler) ----------------
     if (ENABLE_SEED_PROFILES && (SEEDS_FOR_PREMIUM || !isPremium) && SEED_MIN_DECK > 0) {
       try {
@@ -9710,12 +9768,9 @@ app.get('/api/swipe/candidates', async (req, res) => {
           for (const s of seeds) {
             const cand = _seedDocToCandidate(s);
 
-            // ✅ Gender filter for seeds too
-            if (wantGender) {
-              const sg = _normGender(cand.gender);
-              if (!sg || sg !== wantGender) continue;
-            }
 
+            // Gender filter: add only seed profiles matching what I'm looking for
+            if (myWantGender && cand && cand.gender && cand.gender !== myWantGender) continue;
             // Same PASS-only re-serve rule (+ cooldown)
             const prev = mySwipes[cand.id];
             if (prev) {
@@ -9743,7 +9798,6 @@ app.get('/api/swipe/candidates', async (req, res) => {
     if (Array.isArray(candidates) && candidates.length > 1) {
       _shuffleInPlace(candidates);
     }
-
     // ✅ If capped (free), slice candidates to remaining swipes
     if (cap !== null) {
       if (remaining <= 0) {
@@ -9781,9 +9835,8 @@ app.post('/api/swipe/action', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'Invalid swipe payload' });
     }
 
-    // Detect seed targets (demo profiles) so we don't enforce premium gating or matching on them
-    const isSeedTarget = _isSeedTargetId(tId);
 
+    const isSeedTarget = _isSeedTargetId(tId);
     // Plan-gated daily swipe cap:
     // - free: 20/day (server-side enforced)
     // - tier1+: unlimited
@@ -9834,6 +9887,7 @@ const actionType = (action === 'super' || action === 'superlike') ? 'superlike' 
     if (!_isPositiveSwipe(actionType)) {
       return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: false });
     }
+
 
     // Seed targets never create matches (deck filler only)
     if (isSeedTarget) {
