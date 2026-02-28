@@ -1799,6 +1799,35 @@ function renderMatchesFromApi(matches) {
       `;
     }).join('');
   }
+
+// --- Matches UI helpers (keep last message preview in sync with chat) ---
+function updateMatchPreview(peerEmail, lastText, { bumpToTop = true } = {}) {
+  const email = String(peerEmail || '').trim().toLowerCase();
+  if (!email) return;
+  const text = String(lastText || '').trim();
+  if (!text) return;
+
+  if (!DOM.matchesContainer) return;
+
+  // Find match card by data-email (case-insensitive)
+  const cards = Array.from(DOM.matchesContainer.querySelectorAll('.match-card'));
+  const card = cards.find(c => String(c.dataset.email || '').trim().toLowerCase() === email);
+  if (!card) return;
+
+  // Update stored preview (used by click handler + search)
+  card.dataset.msg = text;
+  const lastEl = card.querySelector('.match-last');
+  if (lastEl) lastEl.textContent = text;
+
+  // Optional: move active conversation to top (like real inbox behavior)
+  if (bumpToTop && card.parentElement) {
+    const parent = card.parentElement;
+    if (parent.firstElementChild !== card) {
+      parent.insertBefore(card, parent.firstElementChild);
+    }
+  }
+}
+
 }
 
 // --- Messages / Chat ---
@@ -1886,6 +1915,11 @@ function renderThreadMessages(messages, planKey, usage) {
   const changed = sig !== prevSig;
   if (changed) state.chatLastSig = sig;
 
+  // Keep Matches list preview in sync with the latest message (if the Matches panel is currently rendered).
+  if (changed && last && String(last.text || '').trim()) {
+    try { updateMatchPreview(peerEmail, last.text, { bumpToTop: true }); } catch {}
+  }
+
   // Smart scroll:
   // - If user is (or was) at the bottom, keep them at the bottom.
   // - If user scrolled up, preserve their distance from bottom (so the view doesn't jump).
@@ -1931,6 +1965,9 @@ async function sendChatMessage() {
       if (DOM.btnChatSend) DOM.btnChatSend.disabled = false;
       return;
     }
+
+    // Update matches preview immediately (optimistic UI)
+    try { updateMatchPreview(state.currentChatPeerEmail, text, { bumpToTop: true }); } catch {}
 
     DOM.chatInput.value = '';
     state.chatForceScrollToBottom = true;
