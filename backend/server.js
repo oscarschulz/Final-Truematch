@@ -10297,19 +10297,22 @@ app.get('/api/swipe/candidates', async (req, res) => {
 
           // fetch extra so we can filter out already-swiped seeds
           const fetchN = Math.min(SEED_FETCH_LIMIT, Math.max(need * 4, need + 20));
-          const wantGender = (() => {
-          const lf =
-            (userDoc && userDoc.prefs && Array.isArray(userDoc.prefs.lookingFor) && userDoc.prefs.lookingFor[0]) ||
-            userDoc.lookingFor ||
-          userDoc.looking_for ||
-          '';
-        const s = String(lf).toLowerCase();
-          if (s === 'men' || s === 'man' || s === 'male') return 'men';
-        if (s === 'women' || s === 'woman' || s === 'female') return 'women';
-      return null;
-      })();
 
-let seeds = await _fetchSeedProfiles(fetchN, wantGender);
+          // STRICT: prevent seed mixing across user genders.
+          // - profileGender=men  -> only women seed profiles
+          // - profileGender=women -> only men seed profiles
+          // If profileGender is unknown (legacy), we fall back to prefs.lookingFor behavior.
+          const myProfileGender = _getProfileGenderFromUserDoc(userDoc);
+          const strictSeedGender = _oppositeGender(myProfileGender); // men<->women, '' if unknown
+
+          // If strict opposite gender is known but the user chose a different lookingFor (same-gender / mismatch),
+          // don't serve seeds (real candidates still apply).
+          let wantGender = strictSeedGender || myWantGender || null;
+          if (strictSeedGender && myWantGender && myWantGender !== strictSeedGender) {
+            wantGender = null;
+          }
+
+          let seeds = wantGender ? await _fetchSeedProfiles(fetchN, wantGender) : [];
           _shuffleInPlace(seeds);
 
           const add = [];
@@ -10317,8 +10320,10 @@ let seeds = await _fetchSeedProfiles(fetchN, wantGender);
             const cand = _seedDocToCandidate(s);
 
 
-            // Gender filter: add only seed profiles matching what I'm looking for
-            if (myWantGender && cand && cand.gender && cand.gender !== myWantGender) continue;
+            // Strict: prevent seed mixing across user genders
+            if (strictSeedGender && cand && cand.gender && cand.gender !== strictSeedGender) continue;
+            // Fallback: if strict gender is unknown, respect lookingFor
+            if (!strictSeedGender && myWantGender && cand && cand.gender && cand.gender !== myWantGender) continue;
             // Same PASS-only re-serve rule (+ cooldown)
             const prev = mySwipes[cand.id];
             if (prev) {
