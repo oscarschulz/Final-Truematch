@@ -10,6 +10,31 @@
   <link rel="stylesheet" href="dashboard.css" />
   <link rel="stylesheet" href="responsive.css" />
   
+  
+  <!-- FORCE: show Home mobile widgets; loaded AFTER responsive.css so it wins -->
+<style>
+/* === HOME (MOBILE) — Mirror desktop right-sidebar widgets (Active Nearby + Upgrade) ===
+   NOTE: responsive.css is loaded AFTER dashboard.css, so we use high specificity + !important
+   to guarantee visibility on mobile, and avoid duplicates by hiding .right-sidebar on mobile.
+*/
+#panel-home #homeMobileWidgets.home-mobile-widgets { display: none !important; }
+
+@media (max-width: 768px) {
+  /* show only inside Home on mobile */
+  #panel-home #homeMobileWidgets.home-mobile-widgets { 
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 16px !important;
+    width: 100% !important;
+  }
+  /* avoid duplicate widgets from desktop */
+  .right-sidebar { display: none !important; }
+}
+
+@media (min-width: 769px) {
+  #panel-home #homeMobileWidgets.home-mobile-widgets { display: none !important; }
+}
+</style>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 
@@ -75,32 +100,29 @@
         <h3 class="section-title">Who Liked You <span class="badge-pill" id="admirerCount">0 New</span></h3>
         <div class="admirer-list-container" id="admirerContainer"></div>
 
-        <!-- Home (MOBILE ONLY): mirror desktop right-sidebar widgets here -->
-        <div id="homeBottomMobileZone" style="margin-top: auto; border-top: 1px solid rgba(255,255,255,0.1); padding: 25px 30px 20px; margin-left: -30px; margin-right: -30px; background: transparent;">
+        <div style="margin-top: auto; border-top: 1px solid rgba(255,255,255,0.1); padding: 25px 30px 20px; margin-left: -30px; margin-right: -30px; background: transparent;">
 
-          <div id="homeMobileWidgets" class="home-mobile-widgets" aria-label="Home widgets">
-            <div class="glass-card">
-              <div class="home-card-header" style="margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
-                <h3 style="margin:0; font-size:0.9rem;">Active Nearby</h3><span class="live-pulse">● LIVE</span>
-              </div>
-              <div id="homeActiveNearbyContainer"></div>
-            </div>
-
-            <div class="premium-card">
-              <div class="premium-content">
-                <i class="fa-solid fa-crown" style="font-size:2rem; margin-bottom:10px;"></i>
-                <h3>Unlock More Features</h3>
-                <p>See who likes you & unlimited swipes.</p>
-                <button class="btn btn--white" id="btnSidebarSubscribeMobile">Upgrade Now</button>
-              </div>
-            </div>
-          </div>
-
-        </div>
+</div>
       </section>
 
       <section class="panel" data-panel="swipe">
         <div class="feed-header">Discover</div>
+
+<!-- Mobile-only: Swipes Left widget (mirrors right sidebar KPI) -->
+<div class="swipe-mobile-stats" id="mobileSwipeStats" aria-label="Swipes left today">
+  <div class="sms-left">
+    <div class="sms-title">Swipes Left</div>
+    <div class="sms-sub">Resets Daily</div>
+  </div>
+  <div class="sms-ring">
+    <svg width="46" height="46" viewBox="0 0 100 100" aria-hidden="true">
+      <circle class="bg" cx="50" cy="50" r="40"></circle>
+      <circle class="fg" id="mobileStatsRingCircle" cx="50" cy="50" r="40" style="stroke-dasharray: 251; stroke-dashoffset: 0;"></circle>
+    </svg>
+    <div class="sms-count" id="mobileStatsCountDisplay">-</div>
+  </div>
+</div>
+
         <div class="swipe-layout">
           <div class="swipe-empty" id="swipeEmpty" hidden>
             <div style="font-size:3rem;">✨</div>
@@ -155,8 +177,6 @@
               <button class="btn btn--white" id="btnOpenCreatorApply" style="border-radius:99px; padding: 10px 26px; font-weight:800;">Apply</button>
               <button class="btn btn--primary" id="btnGoCreatorsPage" style="display:none; border-radius:99px; padding: 10px 26px; font-weight:800;">Open Creators Page</button>
             </div>
-
-            <div class="tiny muted" style="margin-top:12px;">Once approved by admin, this tab will automatically open the Creators page.</div>
           </div>
       </section>
 
