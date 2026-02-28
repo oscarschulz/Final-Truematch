@@ -259,6 +259,8 @@ function cacheDom() {
   DOM.chatReceiptLine = DOM.dlgChat ? DOM.dlgChat.querySelector('.chat-header p') : null;
 
   DOM.activeNearbyContainer = document.getElementById('activeNearbyContainer');
+  DOM.homeActiveNearbyContainer = document.getElementById('homeActiveNearbyContainer');
+  DOM.btnSidebarSubscribeMobile = document.getElementById('btnSidebarSubscribeMobile');
   DOM.btnNotifToggle = document.getElementById('btnNotifToggle');
   DOM.notifDropdown = document.getElementById('notifDropdown');
   DOM.notifDot = DOM.btnNotifToggle ? DOM.btnNotifToggle.querySelector('.notif-dot') : null;
@@ -1112,7 +1114,7 @@ if (DOM.frmPassword) DOM.frmPassword.addEventListener('submit', async (e) => {
 
   const openPremium = (e) => {
       // Sidebar "Subscribe" should always go to plans
-      if (e && e.currentTarget && e.currentTarget.id === 'btnSidebarSubscribe') {
+      if (e && e.currentTarget && (e.currentTarget.id === 'btnSidebarSubscribe' || e.currentTarget.id === 'btnSidebarSubscribeMobile')) {
           window.location.href = './tier.html?upgrade=1';
           return;
       }
@@ -1143,6 +1145,7 @@ if (DOM.frmPassword) DOM.frmPassword.addEventListener('submit', async (e) => {
   };  if (DOM.btnOpenPremiumApply) DOM.btnOpenPremiumApply.addEventListener('click', openPremium);
   if (DOM.btnPremiumCancel) DOM.btnPremiumCancel.addEventListener('click', () => DOM.dlgPremiumApply.close());
   if (DOM.btnSidebarSubscribe) DOM.btnSidebarSubscribe.addEventListener('click', openPremium);
+  if (DOM.btnSidebarSubscribeMobile) DOM.btnSidebarSubscribeMobile.addEventListener('click', openPremium);
 
   // 10. Forms
   if (DOM.frmProfile) {
@@ -1511,7 +1514,7 @@ function renderAdmirersPanel(payload) {
 }
 
 async function loadActiveNearbyPanel(force = false) {
-  if (!DOM.activeNearbyContainer) return;
+  if (!DOM.activeNearbyContainer && !DOM.homeActiveNearbyContainer) return;
   if (state.homeLoading && state.homeLoading.nearby) return;
 
   const now = Date.now();
@@ -1537,8 +1540,14 @@ async function loadActiveNearbyPanel(force = false) {
 function renderActiveNearbyPanel(payload) {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const items = Array.isArray(payload.items) ? payload.items : [];
+
+  const targets = [DOM.activeNearbyContainer, DOM.homeActiveNearbyContainer].filter(Boolean);
+  if (!targets.length) return;
+
   if (!items.length) {
-    DOM.activeNearbyContainer.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
+    targets.forEach(t => {
+      t.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
+    });
     return;
   }
 
@@ -1554,35 +1563,38 @@ function renderActiveNearbyPanel(payload) {
   });
   html += `</div>`;
 
-  DOM.activeNearbyContainer.innerHTML = html;
+  targets.forEach(t => {
+    t.innerHTML = html;
 
-  DOM.activeNearbyContainer.querySelectorAll('.active-item').forEach(el => {
-    el.addEventListener('click', () => {
-      const email = String(el.dataset.email || '').toLowerCase();
-      if (!email) return;
+    t.querySelectorAll('.active-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const email = String(el.dataset.email || '').toLowerCase();
+        if (!email) return;
 
-      const profile = {
-        id: email,
-        email,
-        name: el.dataset.name || 'Member',
-        age: el.dataset.age || '',
-        city: el.dataset.city || '',
-        photoUrl: el.dataset.photo || ''
-      };
+        const profile = {
+          id: email,
+          email,
+          name: el.dataset.name || 'Member',
+          age: el.dataset.age || '',
+          city: el.dataset.city || '',
+          photoUrl: el.dataset.photo || ''
+        };
 
-      try { setActiveTab('swipe'); } catch {}
-      try {
-        if (SwipeController && typeof SwipeController.jumpTo === 'function') {
-          SwipeController.jumpTo(profile);
-        } else {
+        try { setActiveTab('swipe'); } catch {}
+        try {
+          if (SwipeController && typeof SwipeController.jumpTo === 'function') {
+            SwipeController.jumpTo(profile);
+          } else {
+            toast('Opening profile…', 'info');
+          }
+        } catch {
           toast('Opening profile…', 'info');
         }
-      } catch {
-        toast('Opening profile…', 'info');
-      }
+      });
     });
   });
 }
+
 
 
 // ---------------------------------------------------------------------
@@ -2201,6 +2213,12 @@ function renderHomeEmptyStates() {
     const hasActive = DOM.activeNearbyContainer.querySelector('.active-item');
     if (!hasActive) {
       DOM.activeNearbyContainer.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
+    }
+  }
+  if (DOM.homeActiveNearbyContainer) {
+    const hasActive = DOM.homeActiveNearbyContainer.querySelector('.active-item');
+    if (!hasActive) {
+      DOM.homeActiveNearbyContainer.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
     }
   }
 }
