@@ -745,6 +745,9 @@ return {
     const lookingForRadio = qs('input[name="lookingFor"]:checked');
     const lookingFor = lookingForRadio ? String(lookingForRadio.value || '').toLowerCase() : '';
 
+    const profileGenderRadio = qs('input[name=\"profileGender\"]:checked');
+    const profileGender = profileGenderRadio ? String(profileGenderRadio.value || '').toLowerCase() : '';
+
     const intent = qs('select[name="intent"]')?.value || '';
     const dealbreakers =
       qs('textarea[name="dealbreakers"]')?.value?.trim() || '';
@@ -763,6 +766,7 @@ return {
       ageMax,
       ethnicity,
       lookingFor,
+      profileGender,
       intent,
       dealbreakers,
       sharedValues
@@ -773,6 +777,8 @@ return {
     if (!prefs) return false;
 
     const { city, ageMin, ageMax, lookingFor } = prefs;
+
+    const profileGender = String(prefs.profileGender || '').toLowerCase();
 
     if (!city || typeof city !== 'string') {
       toast('Please enter your city.', 'error');
@@ -797,7 +803,17 @@ return {
       return false;
     }
 
-    return true;
+    
+    if (!profileGender) {
+      toast('Please select your gender (Man or Woman).', 'error');
+      return false;
+    }
+
+    if (profileGender !== 'man' && profileGender !== 'woman' && profileGender !== 'men' && profileGender !== 'women') {
+      toast('Gender must be Man or Woman.', 'error');
+      return false;
+    }
+return true;
   }
 
   function fillFormFromPrefs(prefs) {
@@ -818,14 +834,27 @@ return {
     if (prefs.ethnicity && qs('select[name="ethnicity"]')) {
       qs('select[name="ethnicity"]').value = prefs.ethnicity;
     }
-    if (prefs.lookingFor) {
-      let lf = prefs.lookingFor;
-      if (Array.isArray(lf)) lf = lf[0];
-      const val = String(lf || '').toLowerCase();
-      qsa('input[name="lookingFor"]').forEach((r) => {
-        r.checked = String(r.value || '').toLowerCase() === val;
-      });
-    }
+    
+if (prefs.lookingFor) {
+  let lf = prefs.lookingFor;
+  if (Array.isArray(lf)) lf = lf[0];
+  const val = String(lf || '').toLowerCase();
+  qsa('input[name="lookingFor"]').forEach((r) => {
+    r.checked = String(r.value || '').toLowerCase() === val;
+  });
+}
+
+// Profile gender (I am: Man/Woman)
+{
+  let pg = prefs.profileGender || prefs.gender || prefs.sex || '';
+  if (Array.isArray(pg)) pg = pg[0];
+  const val = String(pg || '').toLowerCase();
+  if (val) {
+    qsa('input[name="profileGender"]').forEach((r) => {
+      r.checked = String(r.value || '').toLowerCase() === val;
+    });
+  }
+}
 if (prefs.intent && qs('select[name="intent"]')) {
       qs('select[name="intent"]').value = prefs.intent;
     }
@@ -877,7 +906,8 @@ if (prefs.intent && qs('select[name="intent"]')) {
         (user && (user.preferences || user.prefs)) || {},
         prefs || {}
       ),
-      prefsSaved: true
+      prefsSaved: true,
+      ...(prefs && prefs.profileGender ? { profileGender: prefs.profileGender } : {})
     });
 
     return merged;
@@ -1352,6 +1382,8 @@ if (prefs.intent && qs('select[name="intent"]')) {
             city: profile.city,
             requireProfileCompletion: requireAll
           };
+          // Save explicit profileGender (required for new users)
+          if (prefs && prefs.profileGender) profilePayload.profileGender = prefs.profileGender;
           if (AVATAR_DATA_URL_FOR_UPLOAD) {
             profilePayload.avatarDataUrl = AVATAR_DATA_URL_FOR_UPLOAD;
           }
@@ -1377,6 +1409,16 @@ if (prefs.intent && qs('select[name="intent"]')) {
           setAvatarFileName('');
           AVATAR_DATA_URL_FOR_UPLOAD = '';
 
+
+          // Prefill profile gender from server profile (if any)
+          try {
+            const pgServer = String((baseUser && (baseUser.profileGender || baseUser.gender || baseUser.sex)) || '').toLowerCase();
+            if (pgServer) {
+              qsa('input[name=\"profileGender\"]').forEach((r) => {
+                r.checked = String(r.value || '').toLowerCase() === pgServer;
+              });
+            }
+          } catch (e) {}
           // 2) Save preferences
           const res = await api.savePreferences(prefs);
 

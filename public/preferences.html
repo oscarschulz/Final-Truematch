@@ -12,7 +12,7 @@
 
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="auth.css">
-  <link rel="stylesheet" href="preferences.css?v=7">
+  <link rel="stylesheet" href="preferences.css?v=8">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css">
 <link rel="stylesheet" href="responsive.css">
 
@@ -162,6 +162,24 @@
                 </label>
               </div>
             </div>
+
+<div class="pref-group stagger-3" id="profileGenderGroup">
+  <label class="static-label">I am</label>
+  <div class="radio-cards">
+    <label class="radio-card">
+      <input type="radio" name="profileGender" value="man" required>
+      <div class="card-content">Man</div>
+    </label>
+    <label class="radio-card">
+      <input type="radio" name="profileGender" value="woman" required>
+      <div class="card-content">Woman</div>
+    </label>
+  </div>
+  <div class="hint" style="margin-top:8px; font-size:0.74rem; color: rgba(148,163,184,0.78);">
+    This helps us show your profile to the right people.
+  </div>
+</div>
+
 
             <section id="advancedPrefsSection" class="advanced-section hidden" style="display:none;">
               <div class="lock-overlay">
@@ -321,6 +339,6 @@
   <script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
 
   <script src="tm-loader.js"></script>
-  <script type="module" src="preferences.js?v=4"></script>
+  <script type="module" src="preferences.js?v=5"></script>
 </body>
 </html>

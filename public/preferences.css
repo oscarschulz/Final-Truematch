@@ -901,3 +901,7 @@ select option{ background:#02040a; color:#fff; padding:10px; }
     flex: 1;
   }
 }
+
+
+/* --- Profile Gender (I am) group spacing --- */
+#profileGenderGroup .radio-cards{ margin-top: 6px; }
