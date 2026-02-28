@@ -1051,38 +1051,3 @@ dialog::backdrop { background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-in
   .swipe-mobile-stats circle.bg { stroke: rgba(255,255,255,0.10); fill:none; stroke-width:8; stroke-linecap:round; }
   .swipe-mobile-stats circle.fg { stroke: var(--brand-color); fill:none; stroke-width:8; stroke-linecap:round; transition: stroke-dashoffset 0.5s; }
 }
-
-
-/* =========================================================
-   MOBILE: Swipe panel extras (Active Nearby + Upgrade)
-   - mirrors the desktop right sidebar widgets inside the Swipe tab
-   ========================================================= */
-.swipe-mobile-extras{
-  display:none;
-}
-
-@media (max-width: 768px){
-  .swipe-mobile-extras{
-    display:flex;
-    flex-direction:column;
-    gap:12px;
-    width:min(420px, 100%);
-    margin: 10px auto 6px;
-  }
-
-  .swipe-mobile-extras .glass-card{ margin: 0; }
-  .swipe-mobile-extras .premium-card{ margin: 0; }
-
-  .swipe-mobile-extras .premium-content{
-    padding: 18px 16px;
-  }
-  .swipe-mobile-extras .premium-content h3{
-    margin: 0 0 6px;
-    font-size: 1.05rem;
-  }
-  .swipe-mobile-extras .premium-content p{
-    margin: 0 0 12px;
-    color: rgba(255,255,255,0.80);
-    font-size: 0.9rem;
-  }
-}
