@@ -747,22 +747,22 @@ dialog::backdrop { background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-in
 .home-mobile-widgets { display: none; }
 
 @media (max-width: 768px) {
-  /* Hide desktop right sidebar completely on mobile (we render widgets inside Home) */
-  .right-sidebar { display: none !important; }
+  /* Ensure desktop right sidebar never shows on mobile */
+  body.tm-dark .right-sidebar { display: none !important; }
 
-  .home-mobile-widgets {
-    display: flex;
+  /* Force Home widgets visible on mobile (override responsive.css if needed) */
+  body.tm-dark #panel-home #homeMobileWidgets.home-mobile-widgets {
+    display: flex !important;
     flex-direction: column;
     gap: 16px;
     margin-top: 18px;
   }
 
   /* Slightly tighter cards so they feel native on mobile */
-  .home-mobile-widgets .glass-card { margin-bottom: 0; }
-  .home-mobile-widgets .progress-ring { transform: scale(0.92); }
-  .home-mobile-widgets .premium-card { margin-top: 0; }
+  body.tm-dark #panel-home #homeMobileWidgets .glass-card { margin-bottom: 0; }
+  body.tm-dark #panel-home #homeMobileWidgets .progress-ring { transform: scale(0.92); }
+  body.tm-dark #panel-home #homeMobileWidgets .premium-card { margin-top: 0; }
 }
-
 /* =========================================
    RESPONSIVE (MOBILE VIEW WITH POPUP MENU)
    ========================================= */
