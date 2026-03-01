@@ -2857,40 +2857,82 @@ function hydrateCreatorApplyFormFromState() {
     if (app.price && form.elements.price) form.elements.price.value = String(app.price);
 
     // Packed fields live inside contentStyle (backward compatible)
-    const parts = _parsePackedParts(app.contentStyle);
-    const displayName = _getPackedValue(parts, 'Display name');
-    const location = _getPackedValue(parts, 'Location');
-    const languages = _getPackedValue(parts, 'Languages');
-    const category = _getPackedValue(parts, 'Category');
-    const niche = _getPackedValue(parts, 'Niche');
-    const schedule = _getPackedValue(parts, 'Posting schedule');
-    const bio = _getPackedValue(parts, 'Bio');
-    const boundaries = _getPackedValue(parts, 'Boundaries');
-    const currency = _getPackedValue(parts, 'Currency');
-    const styleNotes = _getPackedValue(parts, 'Style notes');
+    const _fillIfEmpty = (el, val) => {
+  if (!el) return;
+  if (String(el.value || '').trim()) return;
+  if (!val) return;
+  el.value = String(val).trim();
+};
 
-    if (displayName && form.elements.creatorDisplayName) form.elements.creatorDisplayName.value = displayName;
-    if (location && form.elements.creatorCountry) form.elements.creatorCountry.value = location;
-    if (languages && form.elements.creatorLanguages) form.elements.creatorLanguages.value = languages;
-    if (bio && form.elements.creatorBio) form.elements.creatorBio.value = bio;
-    if (category && form.elements.creatorCategory) form.elements.creatorCategory.value = category;
-    if (niche && form.elements.creatorNiche) form.elements.creatorNiche.value = niche;
-    if (schedule && form.elements.creatorPostingSchedule) form.elements.creatorPostingSchedule.value = schedule;
-    if (boundaries && form.elements.creatorContentBoundaries) form.elements.creatorContentBoundaries.value = boundaries;
-    if (currency && form.elements.creatorCurrency) form.elements.creatorCurrency.value = currency;
-    if (styleNotes && form.elements.contentStyle) form.elements.contentStyle.value = styleNotes;
+// --- v2 structured fields (preferred) ---
+const displayNameV2 = String(app.displayName || '').trim();
+const countryV2 = String(app.country || '').trim();
+const languagesV2 = String(app.languages || '').trim();
+const bioV2 = String(app.bio || '').trim();
+const categoryV2 = String(app.category || '').trim();
+const nicheV2 = String(app.niche || '').trim();
+const scheduleV2 = String(app.postingSchedule || '').trim();
+const boundariesV2 = String(app.contentBoundaries || '').trim();
+const currencyV2 = String(app.currency || '').trim();
+const styleNotesV2 = String(app.styleNotes || '').trim();
 
-    // Links are packed as: "Instagram: ... | TikTok: ... | X: ... | Website: ..."
-    const linkParts = _parsePackedParts(app.links);
-    const ig = _getPackedValue(linkParts, 'Instagram');
-    const tt = _getPackedValue(linkParts, 'TikTok');
-    const x = _getPackedValue(linkParts, 'X');
-    const web = _getPackedValue(linkParts, 'Website');
+const social = (app.social && typeof app.social === 'object') ? app.social : {};
+const igV2 = String(app.instagram || social.instagram || '').trim();
+const ttV2 = String(app.tiktok || social.tiktok || '').trim();
+const xV2 = String(app.x || social.x || '').trim();
+const webV2 = String(app.website || social.website || '').trim();
 
-    if (ig && form.elements.creatorInstagram) form.elements.creatorInstagram.value = ig;
-    if (tt && form.elements.creatorTikTok) form.elements.creatorTikTok.value = tt;
-    if (x && form.elements.creatorX) form.elements.creatorX.value = x;
-    if (web && form.elements.creatorWebsite) form.elements.creatorWebsite.value = web;
+_fillIfEmpty(form.elements.creatorDisplayName, displayNameV2);
+_fillIfEmpty(form.elements.creatorCountry, countryV2);
+_fillIfEmpty(form.elements.creatorLanguages, languagesV2);
+_fillIfEmpty(form.elements.creatorBio, bioV2);
+_fillIfEmpty(form.elements.creatorCategory, categoryV2);
+_fillIfEmpty(form.elements.creatorNiche, nicheV2);
+_fillIfEmpty(form.elements.creatorPostingSchedule, scheduleV2);
+_fillIfEmpty(form.elements.creatorContentBoundaries, boundariesV2);
+_fillIfEmpty(form.elements.creatorCurrency, currencyV2);
+_fillIfEmpty(form.elements.contentStyle, styleNotesV2);
+
+_fillIfEmpty(form.elements.creatorInstagram, igV2);
+_fillIfEmpty(form.elements.creatorTikTok, ttV2);
+_fillIfEmpty(form.elements.creatorX, xV2);
+_fillIfEmpty(form.elements.creatorWebsite, webV2);
+
+// --- Backward compatible packed fallbacks (only fill what is still empty) ---
+const parts = _parsePackedParts(app.contentStyle);
+const displayName = _getPackedValue(parts, 'Display name');
+const location = _getPackedValue(parts, 'Location');
+const languages = _getPackedValue(parts, 'Languages');
+const category = _getPackedValue(parts, 'Category');
+const niche = _getPackedValue(parts, 'Niche');
+const schedule = _getPackedValue(parts, 'Posting schedule');
+const bio = _getPackedValue(parts, 'Bio');
+const boundaries = _getPackedValue(parts, 'Boundaries');
+const currency = _getPackedValue(parts, 'Currency');
+const styleNotes = _getPackedValue(parts, 'Style notes');
+
+_fillIfEmpty(form.elements.creatorDisplayName, displayName);
+_fillIfEmpty(form.elements.creatorCountry, location);
+_fillIfEmpty(form.elements.creatorLanguages, languages);
+_fillIfEmpty(form.elements.creatorBio, bio);
+_fillIfEmpty(form.elements.creatorCategory, category);
+_fillIfEmpty(form.elements.creatorNiche, niche);
+_fillIfEmpty(form.elements.creatorPostingSchedule, schedule);
+_fillIfEmpty(form.elements.creatorContentBoundaries, boundaries);
+_fillIfEmpty(form.elements.creatorCurrency, currency);
+_fillIfEmpty(form.elements.contentStyle, styleNotes);
+
+// Links are packed as: "Instagram: ... | TikTok: ... | X: ... | Website: ..."
+const linkParts = _parsePackedParts(app.links);
+const ig = _getPackedValue(linkParts, 'Instagram');
+const tt = _getPackedValue(linkParts, 'TikTok');
+const x = _getPackedValue(linkParts, 'X');
+const web = _getPackedValue(linkParts, 'Website');
+
+_fillIfEmpty(form.elements.creatorInstagram, ig);
+_fillIfEmpty(form.elements.creatorTikTok, tt);
+_fillIfEmpty(form.elements.creatorX, x);
+_fillIfEmpty(form.elements.creatorWebsite, web);
   } catch (_) {
     // non-fatal
   }
@@ -2986,26 +3028,37 @@ async function handleCreatorApplicationSubmit() {
 
     // NOTE: Current backend stores only {handle, gender, contentStyle, price, links}.
     // To avoid touching server logic, we safely "pack" the new fields into contentStyle/links.
-    const packedContentStyle = [
-      displayName ? `Display name: ${displayName}` : '',
-      country ? `Location: ${country}` : '',
-      languages ? `Languages: ${languages}` : '',
-      category ? `Category: ${category}` : '',
-      niche ? `Niche: ${niche}` : '',
-      schedule ? `Posting schedule: ${schedule}` : '',
-      bio ? `Bio: ${bio}` : '',
-      boundaries ? `Boundaries: ${boundaries}` : '',
-      currency ? `Currency: ${currency}` : '',
-      contentStyleRaw ? `Style notes: ${contentStyleRaw}` : ''
-    ].filter(Boolean).join(" | ");
+    // Backend supports structured Creator application fields (v2).
+const payload = {
+  handle,
+  price,
+  gender,
 
-    const payload = {
-      handle,
-      price,
-      contentStyle: packedContentStyle,
-      gender,
-      links: linksCompiled
-    };
+  // style notes (free text)
+  contentStyle: contentStyleRaw,
+
+  // structured fields
+  displayName,
+  country,
+  languages,
+  bio,
+  category,
+  niche,
+  postingSchedule: schedule,
+  contentBoundaries: boundaries,
+  currency,
+
+  // legacy packed links (still useful for older admin UIs)
+  links: linksCompiled,
+
+  // structured socials
+  social: {
+    instagram: ig,
+    tiktok: tt,
+    x,
+    website: web
+  }
+};
 
     if (!payload.handle || !payload.price) {
       showToast('Please fill in your handle and monthly price.', 'error');
@@ -3026,7 +3079,7 @@ async function handleCreatorApplicationSubmit() {
 
     // Update local state (so UI reflects pending immediately)
     state.me.creatorStatus = 'pending';
-    state.me.creatorApplication = { ...payload, submittedAt: Date.now() };
+    state.me.creatorApplication = (res && res.creatorApplication) ? res.creatorApplication : { ...payload, submittedAt: Date.now() };
 
     renderCreatorPremiumEntryCards();
 

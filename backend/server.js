@@ -6698,48 +6698,110 @@ app.post('/api/me/creator/apply', async (req, res) => {
       return res.status(401).json({ ok: false, message: 'not logged in' });
     }
 
-    const { handle, gender, contentStyle, price, links } = req.body || {};
+    const body = (req.body && typeof req.body === 'object') ? req.body : {};
+
+    const safeStr = (v, max = 3000) => {
+      const s = (v === null || v === undefined) ? '' : String(v);
+      const t = s.trim();
+      return t.length > max ? t.slice(0, max) : t;
+    };
+
+    // Legacy fields (still accepted by older frontends)
+    const handle = safeStr(body.handle, 120);
+    const gender = safeStr(body.gender || 'woman', 30) || 'woman';
+    const contentStyle = safeStr(body.contentStyle, 3000);
+    const price = Number(body.price);
+    const links = safeStr(body.links, 2000);
+
+    // v2 structured fields (new)
+    const displayName = safeStr(body.displayName, 120);
+    const country = safeStr(body.country, 120);
+    const languages = safeStr(body.languages, 200);
+    const bio = safeStr(body.bio, 2000);
+    const category = safeStr(body.category, 120);
+    const niche = safeStr(body.niche, 200);
+    const postingSchedule = safeStr(body.postingSchedule, 200);
+    const contentBoundaries = safeStr(body.contentBoundaries, 2000);
+    const currency = safeStr(body.currency, 20) || 'USD';
+    const styleNotes = safeStr(body.styleNotes, 3000) || contentStyle;
+
+    const socialObj = (body.social && typeof body.social === 'object') ? body.social : {};
+    const instagram = safeStr(socialObj.instagram, 300);
+    const tiktok = safeStr(socialObj.tiktok, 300);
+    const x = safeStr(socialObj.x, 300);
+    const website = safeStr(socialObj.website, 500);
 
     // Basic validation
-    if (!handle || !price) {
+    if (!handle || !Number.isFinite(price) || price <= 0) {
       return res.status(400).json({ ok: false, message: 'Handle and price are required' });
     }
 
+    // Build legacy packed strings for backward compatibility (admin UIs, older pages)
+    const packedContentStyle = [
+      displayName ? `Display name: ${displayName}` : '',
+      country ? `Location: ${country}` : '',
+      languages ? `Languages: ${languages}` : '',
+      category ? `Category: ${category}` : '',
+      niche ? `Niche: ${niche}` : '',
+      postingSchedule ? `Posting schedule: ${postingSchedule}` : '',
+      bio ? `Bio: ${bio}` : '',
+      contentBoundaries ? `Boundaries: ${contentBoundaries}` : '',
+      currency ? `Currency: ${currency}` : '',
+      styleNotes ? `Style notes: ${styleNotes}` : ''
+    ].filter(Boolean).join(' | ');
+
+    const packedLinks = [
+      instagram ? `Instagram: ${instagram}` : '',
+      tiktok ? `TikTok: ${tiktok}` : '',
+      x ? `X: ${x}` : '',
+      website ? `Website: ${website}` : ''
+    ].filter(Boolean).join(' | ');
+
     const applicationData = {
-      handle: String(handle).trim(),
-      gender: String(gender || 'woman'),
-      contentStyle: String(contentStyle || ''),
-      price: Number(price),
-      links: String(links || ''),
+      // legacy fields (kept)
+      handle,
+      gender,
+      contentStyle: packedContentStyle || contentStyle,
+      price,
+      links: links || packedLinks,
+
+      // v2 structured fields (new)
+      schemaVersion: 2,
+      displayName,
+      country,
+      languages,
+      bio,
+      category,
+      niche,
+      postingSchedule,
+      contentBoundaries,
+      currency,
+      styleNotes,
+      social: { instagram, tiktok, x, website },
+
       appliedAt: new Date().toISOString(),
       status: 'pending' // pending | approved | rejected
     };
 
-    // Update Memory DB
+    // Update request-scoped user
     DB.user.creatorStatus = 'pending';
     DB.user.creatorApplication = applicationData;
 
-    // [FIX START] Update Cache / Global DB
-    // Siguraduhing naka-save ang user sa main listahan (DB.users) bago mag-update
-    const email = DB.user.email;
-    
-    // Kung wala sa listahan (halimbawa: kakarestart lang), idagdag muna
-    if (!DB.users[email]) {
-       DB.users[email] = { ...DB.user };
-    }
-    
-    // Ngayon, i-update ang status at application data
-    Object.assign(DB.users[email], {
+    // Persist to local disk store (fallback) + per-email cache
+    const email = String(DB.user.email || '').trim().toLowerCase();
+    if (email) {
+      if (!DB.users[email]) DB.users[email] = { ...DB.user };
+      Object.assign(DB.users[email], {
         creatorStatus: 'pending',
         creatorApplication: applicationData
-    });
-      saveUsersStore();
-    // [FIX END]
+      });
+      try { saveUsersStore(); } catch (_) {}
+    }
 
     // Update Firestore (if active)
-    if (hasFirebase && DB.user.email) {
+    if (hasFirebase && email) {
       try {
-        await updateUserByEmail(DB.user.email, {
+        await updateUserByEmail(email, {
           creatorStatus: 'pending',
           creatorApplication: applicationData
         });
@@ -6748,7 +6810,7 @@ app.post('/api/me/creator/apply', async (req, res) => {
       }
     }
 
-    return res.json({ ok: true, creatorStatus: 'pending' });
+    return res.json({ ok: true, creatorStatus: 'pending', creatorApplication: applicationData });
   } catch (err) {
     console.error('Creator apply error:', err);
     return res.status(500).json({ ok: false, message: 'server error' });
