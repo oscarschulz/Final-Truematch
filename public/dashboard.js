@@ -722,7 +722,7 @@ function ensureHomeMobileWidgets() {
       <div class="tm-card" style="padding:14px; border-radius:14px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10);">
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
           <div style="font-weight:700;">Active Nearby</div>
-          <div style="display:flex; align-items:center; gap:6px; font-size:12px; color:#ff4d6d;">
+          <div class="live-pulse" style="display:flex; align-items:center; gap:6px; font-size:12px; color:#ff4d6d;">
             <span style="width:6px; height:6px; border-radius:999px; background:#ff4d6d; display:inline-block;"></span>
             <span style="letter-spacing:.2em;">LIVE</span>
           </div>
@@ -1018,12 +1018,12 @@ function setupEventListeners() {
               name = targetCard.querySelector('.match-name').textContent.split(',')[0];
               imgColor = targetCard.querySelector('.match-img').style.backgroundColor;
               msg = targetCard.dataset.msg; 
-              openChatModal(name, imgColor, msg, targetCard.dataset.email || '', targetCard.dataset.photoUrl || '');
+              openChatModal(name, imgColor, msg, targetCard.dataset.email || '', targetCard.dataset.photoUrl || '', targetCard.dataset.lastSeenAtMs || 0);
           }
       } else if (item) {
           name = item.dataset.name;
           imgColor = item.querySelector('.story-img').style.backgroundColor;
-          openChatModal(name, imgColor, "New match 🔥", item.dataset.email || '', item.dataset.photoUrl || '');
+          openChatModal(name, imgColor, "New match 🔥", item.dataset.email || '', item.dataset.photoUrl || '', item.dataset.lastSeenAtMs || 0);
       }
   };
   if (DOM.matchesContainer) DOM.matchesContainer.addEventListener('click', handleMatchClick);
@@ -1626,25 +1626,41 @@ async function loadActiveNearbyPanel(force = false) {
 function renderActiveNearbyPanel(payload) {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const items = Array.isArray(payload.items) ? payload.items : [];
+  const anyOnline = items.some(u => !!u && !!u.isOnline);
 
   const targets = [DOM.activeNearbyContainer, DOM.homeActiveNearbyContainer].filter(Boolean);
   if (!targets.length) return;
 
-  if (!items.length) {
-    targets.forEach(t => {
-      t.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
-    });
-    return;
-  }
+
+if (!items.length) {
+  targets.forEach(t => {
+    t.innerHTML = "<div class='active-empty tiny muted'>No active users nearby yet.</div>";
+    try {
+      const wrap = t.closest('.sidebar-card') || t.closest('.tm-card') || t.parentElement;
+      const live = wrap ? wrap.querySelector('.live-pulse') : null;
+      if (live) live.style.display = 'none';
+    } catch {}
+  });
+  return;
+}
+
+
+  targets.forEach(t => {
+    try {
+      const wrap = t.closest('.sidebar-card') || t.closest('.tm-card') || t.parentElement;
+      const live = wrap ? wrap.querySelector('.live-pulse') : null;
+      if (live) live.style.display = anyOnline ? '' : 'none';
+    } catch {}
+  });
 
   let html = `<div class="active-grid">`;
   items.forEach(u => {
     const photo = u.photoUrl ? esc(u.photoUrl) : 'assets/images/truematch-mark.png';
     const hasPhoto = !!u.photoUrl;
     html += `
-      <div class="active-item" data-email="${esc(u.email || '')}" data-name="${esc(u.name || 'Member')}" data-city="${esc(u.city || '')}" data-age="${esc(u.age || '')}" data-photo="${esc(u.photoUrl || '')}" title="${esc(u.name || 'Member')}">
+      <div class="active-item" data-email="${esc(u.email || '')}" data-name="${esc(u.name || 'Member')}" data-city="${esc(u.city || '')}" data-age="${esc(u.age || '')}" data-photo="${esc(u.photoUrl || '')}" title="${esc(u.name || 'Member')}${u && u.lastSeenAtMs ? ' • ' + String(formatPresenceLine(u.lastSeenAtMs) || '').replace('● ', '') : ''}">
         <img class="active-img" src="${photo}" style="background:${hasPhoto ? 'transparent' : getRandomColor()}; object-fit:${hasPhoto ? 'cover' : 'contain'};">
-        <span class="online-dot"></span>
+        <span class="online-dot" style="${u && u.isOnline ? '' : 'display:none;'}"></span>
       </div>`;
   });
   html += `</div>`;
@@ -1748,6 +1764,8 @@ function stopChatPolling() {
     try { clearInterval(state.chatPollTimer); } catch {}
     state.chatPollTimer = null;
   }
+  // Also stop presence polling for the chat header.
+  try { stopChatPresencePolling(); } catch {}
 }
 
 function updateMatchPreview(peerEmail, lastText, { bumpToTop = true } = {}) {
@@ -1865,7 +1883,74 @@ async function pollInboxOnce() {
   }
 }
 
-async function openChatModal(name, imgColor, lastMsg, peerEmail, peerPhotoUrl) {
+
+
+// --- Presence helpers (server-driven) ---
+const PRESENCE_ONLINE_WINDOW_MS = 2 * 60 * 1000;
+const CHAT_PRESENCE_POLL_MS = 20000;
+
+function formatLastSeenAge(ms) {
+  const ageMs = Math.max(0, Date.now() - Number(ms || 0));
+  const sec = Math.floor(ageMs / 1000);
+  if (sec < 10) return 'just now';
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const d = Math.floor(hr / 24);
+  return `${d}d ago`;
+}
+
+function formatPresenceLine(lastSeenAtMs) {
+  const ms = Number(lastSeenAtMs || 0);
+  if (!ms) return '';
+  const isOnline = (Date.now() - ms) <= PRESENCE_ONLINE_WINDOW_MS;
+  if (isOnline) return '● Online';
+  return `Last active ${formatLastSeenAge(ms)}`;
+}
+
+async function fetchPeerPresence(peerEmail) {
+  const email = String(peerEmail || '').trim().toLowerCase();
+  if (!email) return null;
+  const res = await apiGet('/api/users/presence?email=' + encodeURIComponent(email));
+  if (!res || !res.ok) return null;
+  return {
+    lastSeenAtMs: Number(res.lastSeenAtMs || 0),
+    isOnline: !!res.isOnline
+  };
+}
+
+function stopChatPresencePolling() {
+  if (state.chatPresenceTimer) {
+    try { clearInterval(state.chatPresenceTimer); } catch {}
+    state.chatPresenceTimer = null;
+  }
+}
+
+async function refreshChatPresenceOnce() {
+  try {
+    if (!isChatModalOpen()) return;
+    if (!state.currentChatPeerEmail) return;
+    const p = await fetchPeerPresence(state.currentChatPeerEmail);
+    if (!p) return;
+    state.currentChatPeerLastSeenAtMs = Number(p.lastSeenAtMs || 0);
+    if (DOM.chatReceiptLine) {
+      const line = formatPresenceLine(state.currentChatPeerLastSeenAtMs);
+      DOM.chatReceiptLine.textContent = line || ' ';
+    }
+  } catch (_) {}
+}
+
+function startChatPresencePolling({ immediate = false } = {}) {
+  stopChatPresencePolling();
+  state.chatPresenceTimer = setInterval(() => {
+    refreshChatPresenceOnce();
+  }, CHAT_PRESENCE_POLL_MS);
+  if (immediate) refreshChatPresenceOnce();
+}
+
+async function openChatModal(name, imgColor, lastMsg, peerEmail, peerPhotoUrl, peerLastSeenAtMs) {
   if (!DOM.dlgChat) return;
 
   // Switching chats / reopening: always reset polling + "new message" signals.
@@ -1876,6 +1961,7 @@ async function openChatModal(name, imgColor, lastMsg, peerEmail, peerPhotoUrl) {
   state.currentChatPeerEmail = String(peerEmail || '').toLowerCase();
   state.currentChatPeerName = name || 'Match';
   state.currentChatPeerPhoto = peerPhotoUrl || '';
+  state.currentChatPeerLastSeenAtMs = Number(peerLastSeenAtMs || 0);
 
   const avatarEl = DOM.chatUserImg || DOM.chatAvatar;
   if (avatarEl) {
@@ -1896,9 +1982,10 @@ async function openChatModal(name, imgColor, lastMsg, peerEmail, peerPhotoUrl) {
   const nameEl = DOM.chatUserName || DOM.chatName;
   if (nameEl) nameEl.textContent = state.currentChatPeerName;
 
-  // Reset header meta line (presence is a placeholder for now)
+  // Reset header meta line (presence is server-driven)
   if (DOM.chatReceiptLine) {
-    DOM.chatReceiptLine.textContent = '● Online';
+    const line = formatPresenceLine(state.currentChatPeerLastSeenAtMs);
+    DOM.chatReceiptLine.textContent = line || ' ';
   }
 
   // Clear body and show initial hint
@@ -1924,6 +2011,8 @@ async function openChatModal(name, imgColor, lastMsg, peerEmail, peerPhotoUrl) {
 
   // Keep the thread fresh while modal is open.
   startChatPolling();
+  // Keep presence indicator fresh while modal is open.
+  startChatPresencePolling({ immediate: true });
 
   try { DOM.chatInput && DOM.chatInput.focus(); } catch {}
 }
@@ -1967,7 +2056,7 @@ function renderMatchesFromApi(matches) {
         const safeName = (m.name || 'Match').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         const photoUrl = m.photoUrl || '';
         return `
-          <div class="story-item" data-name="${safeName}" data-email="${m.email || ''}" data-photo-url="${photoUrl}">
+          <div class="story-item" data-name="${safeName}" data-email="${m.email || ''}" data-photo-url="${photoUrl}" data-last-seen-at-ms="${m.lastSeenAtMs || 0}">
             <div class="story-ring">
               <div class="story-img" style="${photoUrl ? `background-image:url('${photoUrl}')` : ''}"></div>
             </div>
@@ -1997,7 +2086,7 @@ function renderMatchesFromApi(matches) {
       const unreadBadge = `<div class="match-unread-badge" style="position:absolute; top:12px; right:12px; width:10px; height:10px; border-radius:999px; background:#3AAFB9; box-shadow:0 0 0 4px rgba(58,175,185,0.15); ${hasUnread ? '' : 'display:none;'}"></div>`;
       const lastStyle = hasUnread ? 'font-weight:700; color:#fff;' : '';
       return `
-        <div class="match-card" data-name="${safeName}" data-email="${m.email || ''}" data-photo-url="${photoUrl}" data-msg="${msg}" data-unread="${hasUnread ? '1' : '0'}">
+        <div class="match-card" data-name="${safeName}" data-email="${m.email || ''}" data-photo-url="${photoUrl}" data-last-seen-at-ms="${m.lastSeenAtMs || 0}" data-msg="${msg}" data-unread="${hasUnread ? '1' : '0'}">
           ${unreadBadge}
           <div class="match-img" style="background-color:${seedColor}; ${photoUrl ? `background-image:url('${photoUrl}'); background-size:cover; background-position:center;` : ''}"></div>
           <div class="match-info">

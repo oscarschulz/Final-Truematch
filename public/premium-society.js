@@ -390,6 +390,7 @@ export const SwipeController = (() => {
   let index = 0;
   let dailySwipes = 20;
   let resetTime = 0;
+  let serverLimit = null; // null/undefined => unlimited (server truth)
   let isSwiping = false;
 
   // Touch Handling Variables
@@ -403,30 +404,35 @@ export const SwipeController = (() => {
    */
   function init() {
     index = 0;
-    
-    // Load local cache as backup
-    const savedSwipes = localStorage.getItem("ps_swipes_left");
-    const savedTime = localStorage.getItem("ps_reset_time");
+    isSwiping = false;
+
+    // Default: Premium Society is unlimited unless server returns a numeric cap
+    serverLimit = null;
+    dailySwipes = Infinity;
+    resetTime = 0;
+
+    // Optional local cache (ONLY as temporary display if server is slow/offline)
+    const savedSwipesRaw = localStorage.getItem("ps_swipes_left");
+    const savedTimeRaw = localStorage.getItem("ps_reset_time");
+    const savedSwipes = savedSwipesRaw != null ? Number(savedSwipesRaw) : NaN;
+    const savedTime = savedTimeRaw != null ? Number(savedTimeRaw) : NaN;
     const now = Date.now();
 
-    if (savedTime && now < parseInt(savedTime)) {
-      dailySwipes = parseInt(savedSwipes);
-      resetTime = parseInt(savedTime);
-    } else {
-      dailySwipes = 20;
-      resetTime = now + 12 * 60 * 60 * 1000;
-      saveData();
+    if (Number.isFinite(savedSwipes) && Number.isFinite(savedTime) && now < savedTime) {
+      // We don't know the serverLimit yet, so treat this as a temporary number
+      dailySwipes = savedSwipes;
+      resetTime = savedTime;
     }
 
     startCountdown();
-    
+
     if (PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove("active");
     if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = "flex";
 
-    // Unahin ang stats local habang nag-fe-fetch
-    updateStats(dailySwipes, 20);
-    
-    // Tawagin ang backend data
+    // Render initial stats (will be corrected after fetchCandidates)
+    updateStats(dailySwipes, serverLimit);
+
+    // Fetch live deck + limit from backend
     fetchCandidates();
 
     // Button Listeners
@@ -437,6 +443,7 @@ export const SwipeController = (() => {
 
     initTouchEvents();
   }
+
 
   /**
    * GESTURE LOGIC
@@ -529,8 +536,20 @@ export const SwipeController = (() => {
 
       if (data && data.ok && data.candidates) {
         candidates = data.candidates;
-        dailySwipes = data.remaining;
-        updateStats(data.remaining, data.limit || 20);
+
+        // Server truth:
+        // - data.limit === null/undefined  => unlimited
+        // - data.remaining can be null when unlimited
+        serverLimit = (data.limit === undefined || data.limit === null) ? null : Number(data.limit);
+
+        if (serverLimit === null) {
+          dailySwipes = Infinity;
+        } else {
+          const rem = (data.remaining === undefined || data.remaining === null) ? serverLimit : Number(data.remaining);
+          dailySwipes = Number.isFinite(rem) ? rem : serverLimit;
+        }
+
+        updateStats(dailySwipes, serverLimit);
       } else { 
         throw new Error("No live data"); 
       }
@@ -554,8 +573,9 @@ export const SwipeController = (() => {
   async function handleSwipe(action) {
     if (isSwiping || index >= candidates.length) return;
     
-    // Initial guard: Huwag ituloy kung alam na nating ubos na ang limit
-    if (dailySwipes <= 0 && action !== 'pass') {
+    // Guard: only enforce limits when serverLimit is a finite number
+    const isLimited = Number.isFinite(serverLimit) && Number.isFinite(dailySwipes);
+    if (isLimited && dailySwipes <= 0 && action !== 'pass') {
       fireEmptyAlert();
       return;
     }
@@ -616,9 +636,17 @@ export const SwipeController = (() => {
       }
       
       // C. SYNC STATS: Kunin ang "truth" mula sa server (Handle null as unlimited)
-      if (data.remaining !== undefined) {
-        dailySwipes = data.remaining;
-        updateStats(data.remaining, data.limit); // data.limit can be null for unlimited
+      if (data && ('remaining' in data || 'limit' in data)) {
+        serverLimit = (data.limit === undefined || data.limit === null) ? null : Number(data.limit);
+
+        if (serverLimit === null) {
+          dailySwipes = Infinity;
+        } else {
+          const rem = (data.remaining === undefined || data.remaining === null) ? serverLimit : Number(data.remaining);
+          dailySwipes = Number.isFinite(rem) ? rem : serverLimit;
+        }
+
+        updateStats(dailySwipes, serverLimit);
       }
 
     } catch (err) {
@@ -772,20 +800,21 @@ function createCard(person, position) {
   }
 
   function saveData() {
-    localStorage.setItem("ps_swipes_left", dailySwipes);
-    localStorage.setItem("ps_reset_time", resetTime);
+    // Only persist numeric limits; Premium Society is typically unlimited.
+    if (!Number.isFinite(serverLimit) || !Number.isFinite(dailySwipes) || !Number.isFinite(resetTime)) return;
+    localStorage.setItem("ps_swipes_left", String(dailySwipes));
+    localStorage.setItem("ps_reset_time", String(resetTime));
   }
 
 function updateStats(curr, max) {
-    // Logic mula sa Old JS: limit === null means "unlimited"
-    const displayVal = (max === null || max === undefined) ? '∞' : curr;
-    
+    const unlimited = (max === null || max === undefined || !Number.isFinite(max));
+    const displayVal = unlimited ? '∞' : String(Number.isFinite(curr) ? curr : 0);
+
     if (PS_DOM.countDisplay) PS_DOM.countDisplay.textContent = displayVal;
     if (PS_DOM.mobileSwipeBadge) PS_DOM.mobileSwipeBadge.textContent = displayVal;
-    
+
     if (PS_DOM.ringCircle) {
-      // Kapag unlimited, gawing full ang ring
-      const percent = (max === null || max === undefined) ? 1 : (curr / max);
+      const percent = unlimited ? 1 : Math.max(0, Math.min(1, (Number.isFinite(curr) ? curr : 0) / max));
       PS_DOM.ringCircle.style.strokeDashoffset = 314 - (314 * percent);
     }
 }
@@ -796,31 +825,32 @@ function updateStats(curr, max) {
    */
   function startCountdown() {
     setInterval(() => {
+      // If unlimited, keep UI truthful and do not run local reset logic.
+      if (serverLimit === null || serverLimit === undefined || !Number.isFinite(serverLimit)) {
+        if (PS_DOM.timerDisplay) PS_DOM.timerDisplay.textContent = 'Unlimited swipes';
+        return;
+      }
+
       const now = Date.now();
-      
-      // Kunin ang huling reset time mula sa storage (Galing sa lumang backend logic)
-      const savedResetTime = parseInt(localStorage.getItem("ps_reset_time"));
-      
-      // Kung wala pang saved time o tapos na ang 12 hours, mag-set ng bago
-      if (!savedResetTime || now >= savedResetTime) {
-        dailySwipes = 20;
-        resetTime = now + 12 * 60 * 60 * 1000; // 12 Hours reset cycle
-        saveData(); // I-save agad ang dailySwipes at resetTime sa localStorage
-        updateStats(dailySwipes, 20);
+      const savedResetTimeRaw = localStorage.getItem("ps_reset_time");
+      const savedResetTime = savedResetTimeRaw != null ? Number(savedResetTimeRaw) : NaN;
+
+      // If missing or expired, start a new local cycle (fallback UI only)
+      if (!Number.isFinite(savedResetTime) || now >= savedResetTime) {
+        dailySwipes = serverLimit;
+        resetTime = now + 12 * 60 * 60 * 1000; // 12-hour cycle (UI fallback)
+        saveData();
+        updateStats(dailySwipes, serverLimit);
       } else {
         resetTime = savedResetTime;
       }
 
       const diff = resetTime - now;
-      if (diff > 0) {
+      if (diff > 0 && PS_DOM.timerDisplay) {
         const hrs = Math.floor((diff / (1000 * 60 * 60)) % 24);
         const mins = Math.floor((diff / (1000 * 60)) % 60);
         const secs = Math.floor((diff / 1000) % 60);
-        
-        if (PS_DOM.timerDisplay) {
-          // Format: Resets in 11h 59m 59s
-          PS_DOM.timerDisplay.textContent = `Resets in ${hrs}h ${mins}m ${secs}s`;
-        }
+        PS_DOM.timerDisplay.textContent = `Resets in ${hrs}h ${mins}m ${secs}s`;
       }
     }, 1000);
   }

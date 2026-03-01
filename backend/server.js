@@ -904,6 +904,85 @@ function setAnonState() {
   DB.prefs = null;
 }
 
+
+// ---------------- Presence / "last seen" (server-driven, lightweight) -------------------
+// - lastSeenAt is updated on authenticated requests (throttled) so the UI can show real presence.
+// - "Online" window is short; "Active" window is slightly longer for the Active Nearby widget.
+const PRESENCE_ONLINE_WINDOW_MS = 2 * 60 * 1000;      // 2 minutes
+const PRESENCE_ACTIVE_WINDOW_MS = 10 * 60 * 1000;     // 10 minutes
+const PRESENCE_TOUCH_MIN_INTERVAL_MS = 60 * 1000;     // write at most once/minute per user
+const __presenceTouchAtMs = new Map();
+
+function _tsToMs(v) {
+  if (!v) return 0;
+  try {
+    // Firestore Timestamp
+    if (typeof v.toDate === 'function') return v.toDate().getTime();
+  } catch {}
+  if (v instanceof Date) return v.getTime();
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  const parsed = Date.parse(String(v));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function _computePresence(lastSeenAt) {
+  const lastSeenAtMs = _tsToMs(lastSeenAt);
+  const age = lastSeenAtMs ? (Date.now() - lastSeenAtMs) : Number.POSITIVE_INFINITY;
+  const isOnline = age <= PRESENCE_ONLINE_WINDOW_MS;
+  const isActive = age <= PRESENCE_ACTIVE_WINDOW_MS;
+  return { lastSeenAtMs, isOnline, isActive };
+}
+
+async function _touchLastSeen(reqUser) {
+  try {
+    const email = String((reqUser && reqUser.email) || '').trim().toLowerCase();
+    if (!email) return;
+
+    const now = Date.now();
+    const lastTouch = __presenceTouchAtMs.get(email) || 0;
+    if ((now - lastTouch) < PRESENCE_TOUCH_MIN_INTERVAL_MS) return;
+    __presenceTouchAtMs.set(email, now);
+
+    // Local JSON store fallback
+    if (!hasFirebase || !usersCollection) {
+      DB.users = DB.users && typeof DB.users === 'object' ? DB.users : {};
+      const cur = (DB.users[email] || (DB.user && String(DB.user.email || '').toLowerCase() === email ? DB.user : null)) || {};
+      const next = { ...cur, email, lastSeenAt: new Date(now) };
+      DB.users[email] = next;
+      // keep request-scoped DB.user in sync
+      if (DB.user && String(DB.user.email || '').trim().toLowerCase() === email) {
+        DB.user = { ...DB.user, lastSeenAt: next.lastSeenAt };
+      }
+      try { saveUsersStore(); } catch {}
+      return;
+    }
+
+    // Firebase
+    const docId = String((reqUser && (reqUser.id || reqUser.uid)) || '').trim();
+    if (docId) {
+      await usersCollection.doc(docId).update({
+        lastSeenAt: admin ? admin.firestore.FieldValue.serverTimestamp() : new Date(now)
+      });
+      // Update in-memory cache best-effort (for quick reads)
+      if (DB.users && DB.users[email]) {
+        DB.users[email] = { ...DB.users[email], lastSeenAt: new Date(now) };
+      }
+      if (DB.user && String(DB.user.email || '').trim().toLowerCase() === email) {
+        DB.user = { ...DB.user, lastSeenAt: new Date(now) };
+      }
+      return;
+    }
+
+    // Fallback if we don't have docId
+    await updateUserByEmail(email, {
+      lastSeenAt: admin ? admin.firestore.FieldValue.serverTimestamp() : new Date(now)
+    });
+  } catch (_) {
+    // never block requests due to presence writes
+  }
+}
+
+
 // Attach session user to this request (so /api/me and other routes read the right user)
 app.use(async (req, res, next) => {
   const email = getSessionEmail(req);
@@ -960,7 +1039,7 @@ app.use(async (req, res, next) => {
 // This does NOT change existing session logic; it only reads the same tm_session cookie
 // and exposes the resolved user on req.user.
 // ============================================================
-function authMiddleware(req, res, next) {
+async function authMiddleware(req, res, next) {
   try {
     const email = (typeof getSessionEmail === 'function' ? getSessionEmail(req) : '') ||
                   String((DB.user && DB.user.email) || '').trim().toLowerCase();
@@ -979,6 +1058,10 @@ function authMiddleware(req, res, next) {
 
     req.user = DB.user ? { ...DB.user } : { email };
     req.user.email = String(req.user.email || email).trim().toLowerCase();
+
+    // Presence: update lastSeenAt (throttled)
+    try { await _touchLastSeen(req.user); } catch (_) {}
+
     return next();
   } catch (e) {
     console.error('authMiddleware error:', e);
@@ -3564,14 +3647,18 @@ app.get('/api/me/active-nearby', authMiddleware, async (req, res) => {
     const isPremium = (planKey !== 'free') && (planActive !== false);
 
     const myCity = String(userDoc.city || userDoc.location || '').trim();
-    const out = [];
+    const candidates = [];
 
     const pushCandidate = (doc) => {
       const mini = _miniProfileFromDoc(doc, doc && doc.email ? doc.email : '');
       const e = String(mini.email || '').trim().toLowerCase();
       if (!e || e === myEmail) return;
       if (isPremium && !_isPremiumCandidateDoc(doc || mini)) return; // premium-only browsing
-      out.push({ ...mini, email: e });
+
+      const p = _computePresence((doc && (doc.lastSeenAt ?? doc.last_seen_at)) || null);
+      if (!p.isActive) return; // only truly active users
+
+      candidates.push({ ...mini, email: e, lastSeenAtMs: p.lastSeenAtMs, isOnline: p.isOnline });
     };
 
     if (hasFirebase && usersCollection) {
@@ -3597,7 +3684,6 @@ app.get('/api/me/active-nearby', authMiddleware, async (req, res) => {
         }
         if (isPremium && !_isPremiumCandidateDoc(u)) continue;
         pushCandidate(u);
-        if (out.length >= limit) break;
       }
     } else {
       const all = Object.values(DB.users || {});
@@ -3611,11 +3697,11 @@ app.get('/api/me/active-nearby', authMiddleware, async (req, res) => {
         }
         if (isPremium && !_isPremiumCandidateDoc(u)) continue;
         pushCandidate(u);
-        if (out.length >= limit) break;
       }
     }
 
-    return res.json({ ok: true, items: out.slice(0, limit) });
+    candidates.sort((a, b) => Number(b.lastSeenAtMs || 0) - Number(a.lastSeenAtMs || 0));
+    return res.json({ ok: true, items: candidates.slice(0, limit) });
   } catch (e) {
     console.error('GET /api/me/active-nearby error:', e);
     return res.status(500).json({ ok: false, error: 'server_error' });
@@ -9512,6 +9598,7 @@ for (const m of rawMatches) {
       const city = (other && other.city) ? other.city : 'Global';
       const photoUrl = (other && (other.avatarUrl || other.photoUrl)) ? (other.avatarUrl || other.photoUrl) : 'assets/images/truematch-mark.png';
       const __meta = __threadMetaByPeer[otherEmail] || {};
+      const __p = _computePresence((other && (other.lastSeenAt ?? other.last_seen_at)) || null);
 
       out.push({
         id: otherEmail,
@@ -9519,6 +9606,8 @@ for (const m of rawMatches) {
         name,
         city,
         photoUrl,
+        lastSeenAtMs: Number(__p.lastSeenAtMs || 0),
+        isOnline: !!__p.isOnline,
         lastMessage: String(__meta.lastMessage || ''),
         lastMessageAtMs: Number(__meta.lastMessageAtMs || 0),
         lastReadAtMs: Number(__meta.lastReadAtMs || 0),
@@ -9535,6 +9624,37 @@ for (const m of rawMatches) {
     res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
+
+
+
+// ---------------- Presence lookup (for chat header / UI) -------------------
+app.get('/api/users/presence', authMiddleware, async (req, res) => {
+  try {
+    const email = String((req.query && req.query.email) || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ ok: false, error: 'missing_email' });
+
+    let other = null;
+    if (hasFirebase && usersCollection) {
+      other = await findUserByEmail(email);
+    } else {
+      other = (DB.users && DB.users[email]) ? DB.users[email] : null;
+    }
+
+    if (!other) return res.status(404).json({ ok: false, error: 'not_found' });
+
+    const p = _computePresence((other && (other.lastSeenAt ?? other.last_seen_at)) || null);
+    return res.json({
+      ok: true,
+      email,
+      lastSeenAtMs: Number(p.lastSeenAtMs || 0),
+      isOnline: !!p.isOnline
+    });
+  } catch (e) {
+    console.error('GET /api/users/presence error:', e);
+    return res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
 // Public config to expose client IDs (safe values only)
 
 
@@ -9984,7 +10104,8 @@ app.get('/api/premium-society/candidates', authMiddleware, async (req, res) => {
           name: pu.name,
           age: pu.age,
           city: pu.location || pu.city || '',
-          photoUrl: pu.avatarUrl || pu.photoUrl || pu.profilePhotoUrl || ''
+          photoUrl: pu.avatarUrl || pu.photoUrl || pu.profilePhotoUrl || '',
+          lastSeenAtMs: normalizeEpochMs(pu.lastSeenAt || pu.lastSeenAtMs || raw.lastSeenAt || raw.last_seen_at || 0)
         });
       });
     } else {
@@ -10003,14 +10124,76 @@ app.get('/api/premium-society/candidates', authMiddleware, async (req, res) => {
           name: pu.name,
           age: pu.age,
           city: pu.location || pu.city || '',
-          photoUrl: pu.avatarUrl || pu.photoUrl || pu.profilePhotoUrl || ''
+          photoUrl: pu.avatarUrl || pu.photoUrl || pu.profilePhotoUrl || '',
+          lastSeenAtMs: normalizeEpochMs(pu.lastSeenAt || pu.lastSeenAtMs || raw.lastSeenAt || raw.last_seen_at || 0)
         });
       }
     }
 
-    const picked = pickOneCandidate(candidates);
-    const list = picked ? [picked] : [];
-    return res.json({ ok: true, candidates: list, remaining: null, limit: null, limitReached: false });
+
+    // --- PRIORITY MATCHING (server-driven) ---
+    // 1) Shuffle first so ties are naturally randomized
+    for (let i = candidates.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = candidates[i];
+      candidates[i] = candidates[j];
+      candidates[j] = tmp;
+    }
+
+    // 2) People who already liked you (inbound positive swipe) are prioritized
+    const inboundPos = new Set();
+    try {
+      if (hasFirebase && firestore) {
+        // Firestore 'in' + another where can require an index; fallback to filtering in-memory.
+        let snapIn = null;
+        try {
+          snapIn = await firestore
+            .collection(PS_SWIPES_COLLECTION)
+            .where('to', '==', myEmail)
+            .where('type', 'in', ['like', 'superlike'])
+            .limit(5000)
+            .get();
+        } catch (_) {
+          snapIn = await firestore
+            .collection(PS_SWIPES_COLLECTION)
+            .where('to', '==', myEmail)
+            .limit(5000)
+            .get();
+        }
+
+        (snapIn?.docs || []).forEach(d => {
+          const v = d.data() || {};
+          const from = String(v.from || '').toLowerCase();
+          const t = String(v.type || '').toLowerCase();
+          if (!from) return;
+          if (t === 'like' || t === 'superlike') inboundPos.add(from);
+        });
+      } else {
+        const sw = DB.psSwipes || {};
+        for (const [from, map] of Object.entries(sw)) {
+          const v = map && map[myEmail] ? map[myEmail] : null;
+          const t = String(v && v.type ? v.type : '').toLowerCase();
+          if (t === 'like' || t === 'superlike') inboundPos.add(String(from || '').toLowerCase());
+        }
+      }
+    } catch (_) {
+      // ignore; still returns a shuffled list
+    }
+
+    candidates.sort((a, b) => {
+      const aIn = inboundPos.has(String(a.email || a.id || '').toLowerCase()) ? 1 : 0;
+      const bIn = inboundPos.has(String(b.email || b.id || '').toLowerCase()) ? 1 : 0;
+      if (aIn !== bIn) return bIn - aIn;
+
+      const at = Number(a.lastSeenAtMs || 0);
+      const bt = Number(b.lastSeenAtMs || 0);
+      if (at !== bt) return bt - at;
+
+      return 0;
+    });
+
+    const limit = Math.max(1, Math.min(50, parseInt(req.query.limit || '20', 10) || 20));
+    return res.json({ ok: true, candidates: candidates.slice(0, limit), remaining: null, limit: null, limitReached: false });
   } catch (err) {
     console.error('[premium-society] candidates error:', err);
     return res.status(500).json({ ok: false, message: 'Server error' });
