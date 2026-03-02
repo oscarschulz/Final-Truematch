@@ -2411,56 +2411,91 @@ async function uploadHeaderDataUrlToStorage(email, headerDataUrl, prevHeaderPath
 
 // ---------- Shortlist & dates helpers (plan-based serving) ----------
 async function loadShortlistState(email) {
-  if (!email) {
+  const emailNorm = String(email || '').trim().toLowerCase();
+
+  if (!emailNorm) {
     return {
       shortlist: [],
       shortlistLastDate: null,
-      plan: DB.user.plan || null,
+      shortlistServedToday: 0,
+      plan: (DB.user && DB.user.plan) || null,
+      planEnd: (DB.user && (DB.user.planEnd ?? DB.user.subscriptionEnd)) || null,
+      planActive: (DB.user && typeof DB.user.planActive === 'boolean') ? DB.user.planActive : null,
       prefs: DB.prefs || null
     };
   }
 
   if (hasFirebase && usersCollection) {
-    const doc = await findUserByEmail(email);
+    const doc = await findUserByEmail(emailNorm);
     if (!doc) {
-      return { shortlist: [], shortlistLastDate: null, plan: null, prefs: null };
+      return {
+        shortlist: [],
+        shortlistLastDate: null,
+        shortlistServedToday: 0,
+        plan: null,
+        planEnd: null,
+        planActive: null,
+        prefs: null
+      };
     }
+
     return {
-      shortlist: doc.shortlist || [],
+      shortlist: Array.isArray(doc.shortlist) ? doc.shortlist : [],
       shortlistLastDate: doc.shortlistLastDate || null,
+      shortlistServedToday: Number(doc.shortlistServedToday || 0) || 0,
       plan: doc.plan || null,
+      planEnd: doc.planEnd ?? doc.subscriptionEnd ?? null,
+      planActive: (typeof doc.planActive === 'boolean') ? doc.planActive : null,
       prefs: doc.prefs || null
     };
   }
 
-  if (!DB.shortlistState[email]) {
-    DB.shortlistState[email] = {
+  if (!DB.shortlistState[emailNorm]) {
+    DB.shortlistState[emailNorm] = {
       shortlist: [],
-      shortlistLastDate: null
+      shortlistLastDate: null,
+      shortlistServedToday: 0
     };
   }
 
   return {
-    shortlist: DB.shortlistState[email].shortlist || [],
-    shortlistLastDate: DB.shortlistState[email].shortlistLastDate || null,
-    plan: DB.user.plan || null,
+    shortlist: Array.isArray(DB.shortlistState[emailNorm].shortlist) ? DB.shortlistState[emailNorm].shortlist : [],
+    shortlistLastDate: DB.shortlistState[emailNorm].shortlistLastDate || null,
+    shortlistServedToday: Number(DB.shortlistState[emailNorm].shortlistServedToday || 0) || 0,
+    plan: (DB.user && DB.user.plan) || null,
+    planEnd: (DB.user && (DB.user.planEnd ?? DB.user.subscriptionEnd)) || null,
+    planActive: (DB.user && typeof DB.user.planActive === 'boolean') ? DB.user.planActive : null,
     prefs: DB.prefs || null
   };
 }
 
 async function saveShortlistState(email, state) {
-  if (!email) return;
+  const emailNorm = String(email || '').trim().toLowerCase();
+  if (!emailNorm) return;
+
+  const patch = {};
+
+  // Only write fields that are actually present (avoid wiping shortlist with undefined)
+  if (state && Object.prototype.hasOwnProperty.call(state, 'shortlist') && Array.isArray(state.shortlist)) {
+    patch.shortlist = state.shortlist;
+  }
+  if (state && Object.prototype.hasOwnProperty.call(state, 'shortlistLastDate')) {
+    patch.shortlistLastDate = state.shortlistLastDate ?? null;
+  }
+  if (state && Object.prototype.hasOwnProperty.call(state, 'shortlistServedToday')) {
+    patch.shortlistServedToday = Number(state.shortlistServedToday || 0) || 0;
+  }
+
+  // Nothing to update
+  if (!Object.keys(patch).length) return;
 
   if (hasFirebase && usersCollection) {
-    await updateUserByEmail(email, {
-      shortlist: state.shortlist,
-      shortlistLastDate: state.shortlistLastDate
-    });
+    await updateUserByEmail(emailNorm, patch);
   } else {
-    DB.shortlistState[email] = {
-      shortlist: state.shortlist,
-      shortlistLastDate: state.shortlistLastDate
-    };
+    if (!DB.shortlistState[emailNorm]) {
+      DB.shortlistState[emailNorm] = { shortlist: [], shortlistLastDate: null, shortlistServedToday: 0 };
+    }
+    DB.shortlistState[emailNorm] = { ...DB.shortlistState[emailNorm], ...patch };
   }
 }
 
@@ -2540,6 +2575,7 @@ async function serveShortlistForToday(email) {
 
   // Mark as served
   await saveShortlistState(email, {
+    shortlist: stateShortlist,
     shortlistLastDate: today,
     shortlistServedToday: 1
   });
@@ -6698,110 +6734,119 @@ app.post('/api/me/creator/apply', async (req, res) => {
       return res.status(401).json({ ok: false, message: 'not logged in' });
     }
 
-    const body = (req.body && typeof req.body === 'object') ? req.body : {};
-
-    const safeStr = (v, max = 3000) => {
-      const s = (v === null || v === undefined) ? '' : String(v);
-      const t = s.trim();
-      return t.length > max ? t.slice(0, max) : t;
-    };
-
-    // Legacy fields (still accepted by older frontends)
-    const handle = safeStr(body.handle, 120);
-    const gender = safeStr(body.gender || 'woman', 30) || 'woman';
-    const contentStyle = safeStr(body.contentStyle, 3000);
-    const price = Number(body.price);
-    const links = safeStr(body.links, 2000);
-
-    // v2 structured fields (new)
-    const displayName = safeStr(body.displayName, 120);
-    const country = safeStr(body.country, 120);
-    const languages = safeStr(body.languages, 200);
-    const bio = safeStr(body.bio, 2000);
-    const category = safeStr(body.category, 120);
-    const niche = safeStr(body.niche, 200);
-    const postingSchedule = safeStr(body.postingSchedule, 200);
-    const contentBoundaries = safeStr(body.contentBoundaries, 2000);
-    const currency = safeStr(body.currency, 20) || 'USD';
-    const styleNotes = safeStr(body.styleNotes, 3000) || contentStyle;
-
-    const socialObj = (body.social && typeof body.social === 'object') ? body.social : {};
-    const instagram = safeStr(socialObj.instagram, 300);
-    const tiktok = safeStr(socialObj.tiktok, 300);
-    const x = safeStr(socialObj.x, 300);
-    const website = safeStr(socialObj.website, 500);
+    const {
+  handle,
+  gender,
+  contentStyle,
+  price,
+  links,
+  // Creator application structured fields (v2)
+  displayName,
+  country,
+  languages,
+  bio,
+  category,
+  niche,
+  postingSchedule,
+  contentBoundaries,
+  currency,
+  styleNotes,
+  social
+} = req.body || {};
 
     // Basic validation
-    if (!handle || !Number.isFinite(price) || price <= 0) {
+    if (!handle || !price) {
       return res.status(400).json({ ok: false, message: 'Handle and price are required' });
     }
 
-    // Build legacy packed strings for backward compatibility (admin UIs, older pages)
-    const packedContentStyle = [
-      displayName ? `Display name: ${displayName}` : '',
-      country ? `Location: ${country}` : '',
-      languages ? `Languages: ${languages}` : '',
-      category ? `Category: ${category}` : '',
-      niche ? `Niche: ${niche}` : '',
-      postingSchedule ? `Posting schedule: ${postingSchedule}` : '',
-      bio ? `Bio: ${bio}` : '',
-      contentBoundaries ? `Boundaries: ${contentBoundaries}` : '',
-      currency ? `Currency: ${currency}` : '',
-      styleNotes ? `Style notes: ${styleNotes}` : ''
-    ].filter(Boolean).join(' | ');
+    const _safeStr = (v) => (v === null || v === undefined) ? '' : String(v).trim();
 
-    const packedLinks = [
-      instagram ? `Instagram: ${instagram}` : '',
-      tiktok ? `TikTok: ${tiktok}` : '',
-      x ? `X: ${x}` : '',
-      website ? `Website: ${website}` : ''
-    ].filter(Boolean).join(' | ');
+// Structured socials (preferred)
+const socialObj = (social && typeof social === 'object') ? social : {};
+const instagram = _safeStr(socialObj.instagram);
+const tiktok = _safeStr(socialObj.tiktok);
+const x = _safeStr(socialObj.x);
+const website = _safeStr(socialObj.website);
 
-    const applicationData = {
-      // legacy fields (kept)
-      handle,
-      gender,
-      contentStyle: packedContentStyle || contentStyle,
-      price,
-      links: links || packedLinks,
+// Build legacy packed strings for backward compatibility (admin UIs, older pages)
+const packedContentStyle = [
+  _safeStr(displayName) ? `Display name: ${_safeStr(displayName)}` : '',
+  _safeStr(country) ? `Location: ${_safeStr(country)}` : '',
+  _safeStr(languages) ? `Languages: ${_safeStr(languages)}` : '',
+  _safeStr(category) ? `Category: ${_safeStr(category)}` : '',
+  _safeStr(niche) ? `Niche: ${_safeStr(niche)}` : '',
+  _safeStr(postingSchedule) ? `Posting schedule: ${_safeStr(postingSchedule)}` : '',
+  _safeStr(bio) ? `Bio: ${_safeStr(bio)}` : '',
+  _safeStr(contentBoundaries) ? `Boundaries: ${_safeStr(contentBoundaries)}` : '',
+  _safeStr(currency) ? `Currency: ${_safeStr(currency)}` : '',
+  _safeStr(styleNotes) ? `Style notes: ${_safeStr(styleNotes)}` : '',
+  _safeStr(contentStyle) ? `Style notes: ${_safeStr(contentStyle)}` : ''
+].filter(Boolean).join(' | ');
 
-      // v2 structured fields (new)
-      schemaVersion: 2,
-      displayName,
-      country,
-      languages,
-      bio,
-      category,
-      niche,
-      postingSchedule,
-      contentBoundaries,
-      currency,
-      styleNotes,
-      social: { instagram, tiktok, x, website },
+const packedLinks = [
+  instagram ? `Instagram: ${instagram}` : '',
+  tiktok ? `TikTok: ${tiktok}` : '',
+  x ? `X: ${x}` : '',
+  website ? `Website: ${website}` : ''
+].filter(Boolean).join(' | ');
 
-      appliedAt: new Date().toISOString(),
-      status: 'pending' // pending | approved | rejected
-    };
+const applicationData = {
+  // legacy fields (kept)
+  handle: _safeStr(handle),
+  gender: _safeStr(gender || 'woman') || 'woman',
+  // Keep legacy packed fields for old consumers
+  contentStyle: packedContentStyle || _safeStr(contentStyle),
+  price: Number(price),
+  links: _safeStr(links) || packedLinks,
 
-    // Update request-scoped user
+  // v2 structured fields (new)
+  schemaVersion: 2,
+  displayName: _safeStr(displayName),
+  country: _safeStr(country),
+  languages: _safeStr(languages),
+  bio: _safeStr(bio),
+  category: _safeStr(category),
+  niche: _safeStr(niche),
+  postingSchedule: _safeStr(postingSchedule),
+  contentBoundaries: _safeStr(contentBoundaries),
+  currency: _safeStr(currency) || 'USD',
+  styleNotes: _safeStr(styleNotes) || _safeStr(contentStyle),
+  social: {
+    instagram,
+    tiktok,
+    x,
+    website
+  },
+
+  appliedAt: new Date().toISOString(),
+  status: 'pending' // pending | approved | rejected
+};
+
+    // Update Memory DB
     DB.user.creatorStatus = 'pending';
     DB.user.creatorApplication = applicationData;
 
-    // Persist to local disk store (fallback) + per-email cache
-    const email = String(DB.user.email || '').trim().toLowerCase();
-    if (email) {
-      if (!DB.users[email]) DB.users[email] = { ...DB.user };
-      Object.assign(DB.users[email], {
+    // [FIX START] Update Cache / Global DB
+    // Siguraduhing naka-save ang user sa main listahan (DB.users) bago mag-update
+    const email = DB.user.email;
+    
+    // Kung wala sa listahan (halimbawa: kakarestart lang), idagdag muna
+    if (!DB.users[email]) {
+       DB.users[email] = { ...DB.user };
+    }
+    
+    // Ngayon, i-update ang status at application data
+    Object.assign(DB.users[email], {
         creatorStatus: 'pending',
         creatorApplication: applicationData
-      });
-      try { saveUsersStore(); } catch (_) {}
-    }
+    });
+      saveUsersStore();
+    // [FIX END]
 
     // Update Firestore (if active)
-    if (hasFirebase && email) {
+    if (hasFirebase && DB.user.email) {
       try {
-        await updateUserByEmail(email, {
+        await updateUserByEmail(DB.user.email, {
           creatorStatus: 'pending',
           creatorApplication: applicationData
         });
@@ -6810,7 +6855,7 @@ app.post('/api/me/creator/apply', async (req, res) => {
       }
     }
 
-    return res.json({ ok: true, creatorStatus: 'pending', creatorApplication: applicationData });
+    return res.json({ ok: true, creatorStatus: 'pending' });
   } catch (err) {
     console.error('Creator apply error:', err);
     return res.status(500).json({ ok: false, message: 'server error' });
