@@ -3079,7 +3079,7 @@ const payload = {
 
     // Update local state (so UI reflects pending immediately)
     state.me.creatorStatus = 'pending';
-    state.me.creatorApplication = (res && res.creatorApplication) ? res.creatorApplication : { ...payload, submittedAt: Date.now() };
+    state.me.creatorApplication = { ...payload, submittedAt: Date.now() };
 
     renderCreatorPremiumEntryCards();
 
@@ -3729,7 +3729,18 @@ if (lastLimit === null) {
           }
         } else {
           setSwipeStats(res.remaining, res.limit);
-          if (res.match) showToast('It’s a match! 🎉');
+
+          if (res.limitReached) {
+            showToast('Daily swipe limit reached. Come back tomorrow.', 'error');
+            profiles = [];
+            currentIndex = 0;
+            if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
+            if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
+            if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
+            return;
+          }
+
+          if (res.isMatch) showToast('It\u2019s a match! 🎉');
         }
     } catch (e) {
         console.error(e);

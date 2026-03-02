@@ -518,7 +518,111 @@ Object.defineProperty(DB, 'prefs', {
   }
 });
 
-const SERVER_SWIPE_COUNTS = {}; 
+const SERVER_SWIPE_COUNTS = {};
+// ---------------- Daily Swipe Counter (persistent in Firestore) ----------------
+// KPI widget ("Swipes Left") + server-side enforcement should remain correct even after server restarts.
+// We store a small per-user counter object: { date: 'YYYY-MM-DD', count: number }
+// - Firestore mode: persisted in the user doc (field name configurable)
+// - Demo/in-memory mode: falls back to SERVER_SWIPE_COUNTS
+const DAILY_SWIPE_COUNTER_FIELD = process.env.DAILY_SWIPE_COUNTER_FIELD || 'dailySwipeCounter';
+
+function _todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function _normalizeDailySwipeCounter(rec) {
+  const today = _todayKey();
+  if (!rec || typeof rec !== 'object') return { date: today, count: 0 };
+  const date = String(rec.date || '').slice(0, 10);
+  const count = Math.max(0, Math.floor(Number(rec.count || 0)));
+  if (!date || date !== today) return { date: today, count: 0 };
+  return { date: today, count };
+}
+
+async function _persistDailySwipeCounter(email, rec) {
+  const e = String(email || '').trim().toLowerCase();
+  if (!e) return;
+  // Update cache first (so next reads in this request are consistent)
+  try {
+    if (DB && DB.users && DB.users[e]) DB.users[e][DAILY_SWIPE_COUNTER_FIELD] = rec;
+    if (DB && DB.user && String(DB.user.email || '').trim().toLowerCase() === e) DB.user[DAILY_SWIPE_COUNTER_FIELD] = rec;
+  } catch (_) {}
+
+  if (hasFirebase && usersCollection) {
+    try {
+      await updateUserByEmail(e, { [DAILY_SWIPE_COUNTER_FIELD]: rec });
+    } catch (err) {
+      // don't hard-fail the request if persistence fails
+      console.warn('[dailySwipeCounter] persist failed:', err && err.message ? err.message : err);
+    }
+  }
+}
+
+async function _getDailySwipeCount(email, userDoc) {
+  const e = String(email || '').trim().toLowerCase();
+  if (!e) return 0;
+
+  // Demo mode: use in-memory counter (legacy behavior)
+  if (!(hasFirebase && usersCollection)) {
+    const today = _todayKey();
+    let rec = SERVER_SWIPE_COUNTS[e];
+    if (!rec || typeof rec !== 'object' || rec.date !== today) rec = { date: today, count: 0 };
+    if (!('count' in rec)) rec.count = 0;
+    SERVER_SWIPE_COUNTS[e] = rec;
+    return Math.max(0, Math.floor(Number(rec.count || 0)));
+  }
+
+  const doc = (userDoc && typeof userDoc === 'object') ? userDoc
+            : (DB && DB.users && DB.users[e]) ? DB.users[e]
+            : (DB && DB.user && String(DB.user.email || '').trim().toLowerCase() === e) ? DB.user
+            : {};
+
+  const currentRaw = doc ? doc[DAILY_SWIPE_COUNTER_FIELD] : null;
+  const norm = _normalizeDailySwipeCounter(currentRaw);
+
+  // Persist only when missing or stale (once per day)
+  const needsWrite = (!currentRaw || typeof currentRaw !== 'object' ||
+    String(currentRaw.date || '').slice(0, 10) !== norm.date ||
+    Number(currentRaw.count || 0) !== norm.count);
+
+  if (needsWrite) {
+    await _persistDailySwipeCounter(e, norm);
+  }
+
+  return norm.count;
+}
+
+async function _incDailySwipeCount(email, userDoc, inc = 1) {
+  const e = String(email || '').trim().toLowerCase();
+  if (!e) return 0;
+
+  const add = Math.max(0, Math.floor(Number(inc || 0)));
+  if (add <= 0) return _getDailySwipeCount(e, userDoc);
+
+  // Demo mode: legacy in-memory counter
+  if (!(hasFirebase && usersCollection)) {
+    const today = _todayKey();
+    let rec = SERVER_SWIPE_COUNTS[e];
+    if (!rec || typeof rec !== 'object' || rec.date !== today) rec = { date: today, count: 0 };
+    rec.count = Math.max(0, Math.floor(Number(rec.count || 0))) + add;
+    SERVER_SWIPE_COUNTS[e] = rec;
+    return rec.count;
+  }
+
+  const doc = (userDoc && typeof userDoc === 'object') ? userDoc
+            : (DB && DB.users && DB.users[e]) ? DB.users[e]
+            : (DB && DB.user && String(DB.user.email || '').trim().toLowerCase() === e) ? DB.user
+            : {};
+
+  const currentRaw = doc ? doc[DAILY_SWIPE_COUNTER_FIELD] : null;
+  const norm = _normalizeDailySwipeCounter(currentRaw);
+  norm.count += add;
+
+  await _persistDailySwipeCounter(e, norm);
+  return norm.count;
+}
+// ---------------------------------------------------------------------------
+ 
 const STRICT_DAILY_LIMIT = 20;
 // PASS cooldown: profiles you PASS can reappear only after some time.
 // Set PASS_RESHOW_AFTER_HOURS=0 to allow immediate re-show (useful for local testing).
@@ -2411,91 +2515,56 @@ async function uploadHeaderDataUrlToStorage(email, headerDataUrl, prevHeaderPath
 
 // ---------- Shortlist & dates helpers (plan-based serving) ----------
 async function loadShortlistState(email) {
-  const emailNorm = String(email || '').trim().toLowerCase();
-
-  if (!emailNorm) {
+  if (!email) {
     return {
       shortlist: [],
       shortlistLastDate: null,
-      shortlistServedToday: 0,
-      plan: (DB.user && DB.user.plan) || null,
-      planEnd: (DB.user && (DB.user.planEnd ?? DB.user.subscriptionEnd)) || null,
-      planActive: (DB.user && typeof DB.user.planActive === 'boolean') ? DB.user.planActive : null,
+      plan: DB.user.plan || null,
       prefs: DB.prefs || null
     };
   }
 
   if (hasFirebase && usersCollection) {
-    const doc = await findUserByEmail(emailNorm);
+    const doc = await findUserByEmail(email);
     if (!doc) {
-      return {
-        shortlist: [],
-        shortlistLastDate: null,
-        shortlistServedToday: 0,
-        plan: null,
-        planEnd: null,
-        planActive: null,
-        prefs: null
-      };
+      return { shortlist: [], shortlistLastDate: null, plan: null, prefs: null };
     }
-
     return {
-      shortlist: Array.isArray(doc.shortlist) ? doc.shortlist : [],
+      shortlist: doc.shortlist || [],
       shortlistLastDate: doc.shortlistLastDate || null,
-      shortlistServedToday: Number(doc.shortlistServedToday || 0) || 0,
       plan: doc.plan || null,
-      planEnd: doc.planEnd ?? doc.subscriptionEnd ?? null,
-      planActive: (typeof doc.planActive === 'boolean') ? doc.planActive : null,
       prefs: doc.prefs || null
     };
   }
 
-  if (!DB.shortlistState[emailNorm]) {
-    DB.shortlistState[emailNorm] = {
+  if (!DB.shortlistState[email]) {
+    DB.shortlistState[email] = {
       shortlist: [],
-      shortlistLastDate: null,
-      shortlistServedToday: 0
+      shortlistLastDate: null
     };
   }
 
   return {
-    shortlist: Array.isArray(DB.shortlistState[emailNorm].shortlist) ? DB.shortlistState[emailNorm].shortlist : [],
-    shortlistLastDate: DB.shortlistState[emailNorm].shortlistLastDate || null,
-    shortlistServedToday: Number(DB.shortlistState[emailNorm].shortlistServedToday || 0) || 0,
-    plan: (DB.user && DB.user.plan) || null,
-    planEnd: (DB.user && (DB.user.planEnd ?? DB.user.subscriptionEnd)) || null,
-    planActive: (DB.user && typeof DB.user.planActive === 'boolean') ? DB.user.planActive : null,
+    shortlist: DB.shortlistState[email].shortlist || [],
+    shortlistLastDate: DB.shortlistState[email].shortlistLastDate || null,
+    plan: DB.user.plan || null,
     prefs: DB.prefs || null
   };
 }
 
 async function saveShortlistState(email, state) {
-  const emailNorm = String(email || '').trim().toLowerCase();
-  if (!emailNorm) return;
-
-  const patch = {};
-
-  // Only write fields that are actually present (avoid wiping shortlist with undefined)
-  if (state && Object.prototype.hasOwnProperty.call(state, 'shortlist') && Array.isArray(state.shortlist)) {
-    patch.shortlist = state.shortlist;
-  }
-  if (state && Object.prototype.hasOwnProperty.call(state, 'shortlistLastDate')) {
-    patch.shortlistLastDate = state.shortlistLastDate ?? null;
-  }
-  if (state && Object.prototype.hasOwnProperty.call(state, 'shortlistServedToday')) {
-    patch.shortlistServedToday = Number(state.shortlistServedToday || 0) || 0;
-  }
-
-  // Nothing to update
-  if (!Object.keys(patch).length) return;
+  if (!email) return;
 
   if (hasFirebase && usersCollection) {
-    await updateUserByEmail(emailNorm, patch);
+    await updateUserByEmail(email, {
+      shortlist: state.shortlist,
+      shortlistLastDate: state.shortlistLastDate
+    });
   } else {
-    if (!DB.shortlistState[emailNorm]) {
-      DB.shortlistState[emailNorm] = { shortlist: [], shortlistLastDate: null, shortlistServedToday: 0 };
-    }
-    DB.shortlistState[emailNorm] = { ...DB.shortlistState[emailNorm], ...patch };
+    DB.shortlistState[email] = {
+      shortlist: state.shortlist,
+      shortlistLastDate: state.shortlistLastDate
+    };
   }
 }
 
@@ -2575,7 +2644,6 @@ async function serveShortlistForToday(email) {
 
   // Mark as served
   await saveShortlistState(email, {
-    shortlist: stateShortlist,
     shortlistLastDate: today,
     shortlistServedToday: 1
   });
@@ -6734,119 +6802,110 @@ app.post('/api/me/creator/apply', async (req, res) => {
       return res.status(401).json({ ok: false, message: 'not logged in' });
     }
 
-    const {
-  handle,
-  gender,
-  contentStyle,
-  price,
-  links,
-  // Creator application structured fields (v2)
-  displayName,
-  country,
-  languages,
-  bio,
-  category,
-  niche,
-  postingSchedule,
-  contentBoundaries,
-  currency,
-  styleNotes,
-  social
-} = req.body || {};
+    const body = (req.body && typeof req.body === 'object') ? req.body : {};
+
+    const safeStr = (v, max = 3000) => {
+      const s = (v === null || v === undefined) ? '' : String(v);
+      const t = s.trim();
+      return t.length > max ? t.slice(0, max) : t;
+    };
+
+    // Legacy fields (still accepted by older frontends)
+    const handle = safeStr(body.handle, 120);
+    const gender = safeStr(body.gender || 'woman', 30) || 'woman';
+    const contentStyle = safeStr(body.contentStyle, 3000);
+    const price = Number(body.price);
+    const links = safeStr(body.links, 2000);
+
+    // v2 structured fields (new)
+    const displayName = safeStr(body.displayName, 120);
+    const country = safeStr(body.country, 120);
+    const languages = safeStr(body.languages, 200);
+    const bio = safeStr(body.bio, 2000);
+    const category = safeStr(body.category, 120);
+    const niche = safeStr(body.niche, 200);
+    const postingSchedule = safeStr(body.postingSchedule, 200);
+    const contentBoundaries = safeStr(body.contentBoundaries, 2000);
+    const currency = safeStr(body.currency, 20) || 'USD';
+    const styleNotes = safeStr(body.styleNotes, 3000) || contentStyle;
+
+    const socialObj = (body.social && typeof body.social === 'object') ? body.social : {};
+    const instagram = safeStr(socialObj.instagram, 300);
+    const tiktok = safeStr(socialObj.tiktok, 300);
+    const x = safeStr(socialObj.x, 300);
+    const website = safeStr(socialObj.website, 500);
 
     // Basic validation
-    if (!handle || !price) {
+    if (!handle || !Number.isFinite(price) || price <= 0) {
       return res.status(400).json({ ok: false, message: 'Handle and price are required' });
     }
 
-    const _safeStr = (v) => (v === null || v === undefined) ? '' : String(v).trim();
+    // Build legacy packed strings for backward compatibility (admin UIs, older pages)
+    const packedContentStyle = [
+      displayName ? `Display name: ${displayName}` : '',
+      country ? `Location: ${country}` : '',
+      languages ? `Languages: ${languages}` : '',
+      category ? `Category: ${category}` : '',
+      niche ? `Niche: ${niche}` : '',
+      postingSchedule ? `Posting schedule: ${postingSchedule}` : '',
+      bio ? `Bio: ${bio}` : '',
+      contentBoundaries ? `Boundaries: ${contentBoundaries}` : '',
+      currency ? `Currency: ${currency}` : '',
+      styleNotes ? `Style notes: ${styleNotes}` : ''
+    ].filter(Boolean).join(' | ');
 
-// Structured socials (preferred)
-const socialObj = (social && typeof social === 'object') ? social : {};
-const instagram = _safeStr(socialObj.instagram);
-const tiktok = _safeStr(socialObj.tiktok);
-const x = _safeStr(socialObj.x);
-const website = _safeStr(socialObj.website);
+    const packedLinks = [
+      instagram ? `Instagram: ${instagram}` : '',
+      tiktok ? `TikTok: ${tiktok}` : '',
+      x ? `X: ${x}` : '',
+      website ? `Website: ${website}` : ''
+    ].filter(Boolean).join(' | ');
 
-// Build legacy packed strings for backward compatibility (admin UIs, older pages)
-const packedContentStyle = [
-  _safeStr(displayName) ? `Display name: ${_safeStr(displayName)}` : '',
-  _safeStr(country) ? `Location: ${_safeStr(country)}` : '',
-  _safeStr(languages) ? `Languages: ${_safeStr(languages)}` : '',
-  _safeStr(category) ? `Category: ${_safeStr(category)}` : '',
-  _safeStr(niche) ? `Niche: ${_safeStr(niche)}` : '',
-  _safeStr(postingSchedule) ? `Posting schedule: ${_safeStr(postingSchedule)}` : '',
-  _safeStr(bio) ? `Bio: ${_safeStr(bio)}` : '',
-  _safeStr(contentBoundaries) ? `Boundaries: ${_safeStr(contentBoundaries)}` : '',
-  _safeStr(currency) ? `Currency: ${_safeStr(currency)}` : '',
-  _safeStr(styleNotes) ? `Style notes: ${_safeStr(styleNotes)}` : '',
-  _safeStr(contentStyle) ? `Style notes: ${_safeStr(contentStyle)}` : ''
-].filter(Boolean).join(' | ');
+    const applicationData = {
+      // legacy fields (kept)
+      handle,
+      gender,
+      contentStyle: packedContentStyle || contentStyle,
+      price,
+      links: links || packedLinks,
 
-const packedLinks = [
-  instagram ? `Instagram: ${instagram}` : '',
-  tiktok ? `TikTok: ${tiktok}` : '',
-  x ? `X: ${x}` : '',
-  website ? `Website: ${website}` : ''
-].filter(Boolean).join(' | ');
+      // v2 structured fields (new)
+      schemaVersion: 2,
+      displayName,
+      country,
+      languages,
+      bio,
+      category,
+      niche,
+      postingSchedule,
+      contentBoundaries,
+      currency,
+      styleNotes,
+      social: { instagram, tiktok, x, website },
 
-const applicationData = {
-  // legacy fields (kept)
-  handle: _safeStr(handle),
-  gender: _safeStr(gender || 'woman') || 'woman',
-  // Keep legacy packed fields for old consumers
-  contentStyle: packedContentStyle || _safeStr(contentStyle),
-  price: Number(price),
-  links: _safeStr(links) || packedLinks,
+      appliedAt: new Date().toISOString(),
+      status: 'pending' // pending | approved | rejected
+    };
 
-  // v2 structured fields (new)
-  schemaVersion: 2,
-  displayName: _safeStr(displayName),
-  country: _safeStr(country),
-  languages: _safeStr(languages),
-  bio: _safeStr(bio),
-  category: _safeStr(category),
-  niche: _safeStr(niche),
-  postingSchedule: _safeStr(postingSchedule),
-  contentBoundaries: _safeStr(contentBoundaries),
-  currency: _safeStr(currency) || 'USD',
-  styleNotes: _safeStr(styleNotes) || _safeStr(contentStyle),
-  social: {
-    instagram,
-    tiktok,
-    x,
-    website
-  },
-
-  appliedAt: new Date().toISOString(),
-  status: 'pending' // pending | approved | rejected
-};
-
-    // Update Memory DB
+    // Update request-scoped user
     DB.user.creatorStatus = 'pending';
     DB.user.creatorApplication = applicationData;
 
-    // [FIX START] Update Cache / Global DB
-    // Siguraduhing naka-save ang user sa main listahan (DB.users) bago mag-update
-    const email = DB.user.email;
-    
-    // Kung wala sa listahan (halimbawa: kakarestart lang), idagdag muna
-    if (!DB.users[email]) {
-       DB.users[email] = { ...DB.user };
-    }
-    
-    // Ngayon, i-update ang status at application data
-    Object.assign(DB.users[email], {
+    // Persist to local disk store (fallback) + per-email cache
+    const email = String(DB.user.email || '').trim().toLowerCase();
+    if (email) {
+      if (!DB.users[email]) DB.users[email] = { ...DB.user };
+      Object.assign(DB.users[email], {
         creatorStatus: 'pending',
         creatorApplication: applicationData
-    });
-      saveUsersStore();
-    // [FIX END]
+      });
+      try { saveUsersStore(); } catch (_) {}
+    }
 
     // Update Firestore (if active)
-    if (hasFirebase && DB.user.email) {
+    if (hasFirebase && email) {
       try {
-        await updateUserByEmail(DB.user.email, {
+        await updateUserByEmail(email, {
           creatorStatus: 'pending',
           creatorApplication: applicationData
         });
@@ -6855,7 +6914,7 @@ const applicationData = {
       }
     }
 
-    return res.json({ ok: true, creatorStatus: 'pending' });
+    return res.json({ ok: true, creatorStatus: 'pending', creatorApplication: applicationData });
   } catch (err) {
     console.error('Creator apply error:', err);
     return res.status(500).json({ ok: false, message: 'server error' });
@@ -10470,13 +10529,7 @@ app.get('/api/swipe/candidates', async (req, res) => {
     let limit = null;
 
     if (cap !== null) {
-      const today = new Date().toISOString().slice(0, 10);
-      let rec = SERVER_SWIPE_COUNTS[myEmail];
-      if (!rec || typeof rec !== 'object' || !('count' in rec) || !('date' in rec)) rec = { date: today, count: 0 };
-      if (rec.date !== today) rec = { date: today, count: 0 };
-      SERVER_SWIPE_COUNTS[myEmail] = rec;
-
-      const currentCount = rec.count || 0;
+      const currentCount = await _getDailySwipeCount(myEmail, userDoc);
       remaining = Math.max(0, cap - currentCount);
       limit = cap;
 
@@ -10685,9 +10738,11 @@ app.post('/api/swipe/action', async (req, res) => {
     // - tier1+: unlimited
     const userDoc = (DB.users && DB.users[myEmail]) || DB.user || {};
     const planKey = normalizePlanKey((req.user && req.user.plan) || userDoc.plan || 'free');
-    const cap = (planKey === 'free') ? STRICT_DAILY_LIMIT : null;
-    const planActive = (typeof userDoc.planActive === 'boolean') ? userDoc.planActive : true;
+    const planActive = (typeof userDoc.planActive === 'boolean') ? userDoc.planActive
+                      : (req.user && typeof req.user.planActive === 'boolean') ? req.user.planActive
+                      : true;
     const isPremium = (planKey !== 'free') && (planActive !== false);
+    const cap = isPremium ? null : STRICT_DAILY_LIMIT;
 
   if (isPremium && !isSeedTarget) {
   // prevent premium users from swiping on non-premium targets (extra safety)
@@ -10707,23 +10762,18 @@ app.post('/api/swipe/action', async (req, res) => {
     let limitReached = false;
 
     if (cap !== null) {
-      const today = new Date().toISOString().slice(0, 10);
-      let rec = SERVER_SWIPE_COUNTS[myEmail];
-      if (!rec || typeof rec !== 'object' || rec.date !== today) {
-        rec = { date: today, count: 0 };
-        SERVER_SWIPE_COUNTS[myEmail] = rec;
-      }
-      if (rec.count >= cap) {
+      const currentCount = await _getDailySwipeCount(myEmail, userDoc);
+      if (currentCount >= cap) {
         return res.json({ ok: true, remaining: 0, limit: cap, limitReached: true, isMatch: false });
       }
     }
+
 const actionType = (action === 'super' || action === 'superlike') ? 'superlike' : (action === 'like' ? 'like' : 'pass');
     await _saveSwipe(myEmail, tId, actionType);
 
     if (cap !== null) {
-      const rec = SERVER_SWIPE_COUNTS[myEmail];
-      rec.count += 1;
-      remaining = Math.max(0, cap - rec.count);
+      const nextCount = await _incDailySwipeCount(myEmail, userDoc, 1);
+      remaining = Math.max(0, cap - nextCount);
       limitReached = remaining <= 0;
     }
 // If pass: no match check needed
