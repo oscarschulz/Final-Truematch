@@ -1393,6 +1393,8 @@ function setActiveTab(tabName) {
   // Creators watcher should only run while user is on Creators tab.
   if (tabName === 'creators') startCreatorApprovalWatcher();
   else stopCreatorApprovalWatcher();
+  // Concierge scheduled list auto-refresh should only run while user is on Concierge tab.
+  if (tabName !== 'concierge') stopConciergeScheduledPolling();
   // 1. Update Navigation State
   DOM.tabs.forEach(t => {
     if (t.dataset.panel === tabName) t.classList.add('is-active');
@@ -1460,7 +1462,9 @@ function onPanelActivated(tabName) {
     loadShortlistPanel();
   }
   if (tabName === 'concierge') {
-    loadConciergePanel();
+    Promise.resolve(loadConciergePanel())
+      .catch(() => {})
+      .finally(() => { try { startConciergeScheduledPolling({ immediate: true }); } catch {} });
   }
 }
 
@@ -2543,16 +2547,65 @@ function renderConciergePanel(picksRes, approvedRes, scheduledRes) {
   if (!scheduled.length) {
     scheduledEl.innerHTML = '<div style="color:rgba(255,255,255,0.7);">No scheduled dates yet.</div>';
   } else {
+    // Best-effort formatting: if scheduledAt is parseable, show a readable datetime; otherwise show raw text.
+    const formatWhen = (value) => {
+      if (!value) return '';
+      const s = String(value).trim();
+      if (!s) return '';
+      const d = new Date(s);
+      if (!Number.isNaN(d.getTime())) {
+        try {
+          return new Intl.DateTimeFormat(undefined, {
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: 'numeric',
+            minute: '2-digit'
+          }).format(d);
+        } catch (_) {
+          return d.toLocaleString();
+        }
+      }
+      return s;
+    };
+
     scheduledEl.innerHTML = scheduled.map(it => {
       const p = it.profile || it;
       const safeName = String(p.name || 'Profile').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const safeCity = String(p.city || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      const when = it.when || it.date || it.time || it.scheduledAt || '';
+
+      const rawWhen = it.when || it.date || it.time || it.scheduledAt || '';
+      const whenText = formatWhen(rawWhen);
+
+      // If admin has confirmed the date, server sets confirmedAt. Otherwise this is still "requested".
+      const isConfirmed = !!it.confirmedAt;
+      const statusLabel = isConfirmed ? 'CONFIRMED' : 'REQUESTED';
+      const statusStyle = isConfirmed
+        ? 'background:rgba(34,197,94,0.14); border:1px solid rgba(34,197,94,0.35); color:rgba(34,197,94,0.95);'
+        : 'background:rgba(251,191,36,0.14); border:1px solid rgba(251,191,36,0.35); color:rgba(251,191,36,0.95);';
+
+      const location = (it.location != null) ? String(it.location).trim() : '';
+      const notes = (it.notes != null) ? String(it.notes).trim() : '';
+
+      // Escape location/notes basic HTML chars to avoid injection (names/cities already sanitized above).
+      const safeLoc = location.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const safeNotes = notes.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
       return `
         <div class="conc-card">
-          <div class="conc-meta">
-            <div class="conc-name">${safeName}</div>
-            <div class="conc-sub">${safeCity}${when ? ' • ' + String(when) : ''}</div>
+          <div class="conc-meta" style="display:flex; flex-direction:column; gap:6px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+              <div class="conc-name">${safeName}</div>
+              <span style="font-size:11px; font-weight:800; letter-spacing:.12em; padding:6px 10px; border-radius:999px; ${statusStyle}">${statusLabel}</span>
+            </div>
+
+            <div class="conc-sub">
+              ${safeCity}${whenText ? ' • ' + String(whenText).replace(/</g, '&lt;').replace(/>/g, '&gt;') : ''}
+            </div>
+
+            ${safeLoc ? `<div style="font-size:12px; color:rgba(255,255,255,0.72);">Location: <span style="color:rgba(255,255,255,0.92);">${safeLoc}</span></div>` : ''}
+            ${safeNotes ? `<div style="font-size:12px; color:rgba(255,255,255,0.72);">Notes: <span style="color:rgba(255,255,255,0.92);">${safeNotes}</span></div>` : ''}
+            ${!isConfirmed ? `<div style="font-size:12px; color:rgba(255,255,255,0.55);">Waiting for your concierge to confirm the date details.</div>` : ''}
           </div>
         </div>
       `;
@@ -3253,6 +3306,78 @@ function startPremiumApprovalWatcher() {
       // silent: keep trying
     }
   }, 4000);
+}
+
+
+// ------------------------------------------------------------------
+// Concierge scheduled list auto-refresh (client-side polling)
+// - While user is on Concierge tab (Tier 3 only), refresh Concierge panel periodically.
+// - Stops automatically after 10 minutes to avoid endless polling.
+// ------------------------------------------------------------------
+let __conciergePollTimer = null;
+let __conciergePollStartedAt = 0;
+const CONCIERGE_POLL_MS = 8000;
+
+function stopConciergeScheduledPolling() {
+  if (__conciergePollTimer) {
+    clearInterval(__conciergePollTimer);
+    __conciergePollTimer = null;
+  }
+  __conciergePollStartedAt = 0;
+}
+
+function startConciergeScheduledPolling(opts = {}) {
+  try {
+    const immediate = !!opts.immediate;
+
+    if (!state || state.activeTab !== 'concierge') {
+      stopConciergeScheduledPolling();
+      return;
+    }
+
+    const plan = normalizePlanKey(state.plan || 'free');
+    if (plan !== 'tier3') {
+      stopConciergeScheduledPolling();
+      return;
+    }
+
+    if (__conciergePollTimer) {
+      // already running
+      if (immediate) {
+        // best-effort refresh right now
+        Promise.resolve(loadConciergePanel()).catch(() => {});
+      }
+      return;
+    }
+
+    __conciergePollStartedAt = Date.now();
+
+    const runOnce = async () => {
+      // If user switched tabs mid-interval, stop.
+      if (!state || state.activeTab !== 'concierge') {
+        stopConciergeScheduledPolling();
+        return;
+      }
+
+      // Stop after 10 minutes to avoid endless polling
+      if (Date.now() - __conciergePollStartedAt > 10 * 60 * 1000) {
+        stopConciergeScheduledPolling();
+        return;
+      }
+
+      try {
+        await loadConciergePanel();
+      } catch {
+        // silent
+      }
+    };
+
+    if (immediate) runOnce();
+
+    __conciergePollTimer = setInterval(runOnce, CONCIERGE_POLL_MS);
+  } catch {
+    // silent
+  }
 }
 
 async function handlePremiumApplicationSubmit() {

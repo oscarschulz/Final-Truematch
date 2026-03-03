@@ -2612,6 +2612,20 @@ async function loadScheduledDates(email) {
   return DB.datesState[email] || [];
 }
 
+async function saveScheduledDates(email, scheduledDates) {
+  if (!email) return;
+
+  const next = Array.isArray(scheduledDates) ? scheduledDates : [];
+
+  if (hasFirebase && usersCollection) {
+    const existing = await findUserByEmail(email);
+    if (!existing) return;
+    await usersCollection.doc(existing.id).update({ scheduledDates: next });
+  } else {
+    DB.datesState[email] = next;
+  }
+}
+
 
 // ✅ Approved helpers (Firestore or demo memory)
 async function addApprovedProfile(email, profile) {
@@ -5547,6 +5561,7 @@ app.post('/api/admin/confirmed-date', async (req, res) => {
 
     let {
       email,
+      profileId,
       candidateName,
       igUrl,
       city,
@@ -5556,32 +5571,85 @@ app.post('/api/admin/confirmed-date', async (req, res) => {
     } = req.body || {};
 
     const emailNorm = String(email || '').trim().toLowerCase();
-    if (!emailNorm || !candidateName || !scheduledAt) {
+    const pid = String(profileId || '').trim();
+    const name = String(candidateName || '').trim();
+
+    if (!emailNorm || !scheduledAt || (!name && !pid)) {
       return res.status(400).json({
         ok: false,
-        message: 'email, candidateName & scheduledAt required'
+        message: 'email & scheduledAt required (and candidateName or profileId)'
       });
     }
 
-    const profile = {
-      id: `date_${Date.now()}`,
-      name: String(candidateName).trim(),
-      igUrl: igUrl ? String(igUrl).trim() : '',
-      city: city ? String(city).trim() : '',
-      location: location ? String(location).trim() : '',
-      notes: notes ? String(notes).trim() : '',
+    // Load existing scheduled list (if user already requested a date, update that entry instead of creating duplicates)
+    const currentList = await loadScheduledDates(emailNorm);
+    const scheduledDates = Array.isArray(currentList) ? [...currentList] : [];
+
+    const norm = (v) => String(v || '').trim().toLowerCase();
+
+    let idx = -1;
+
+    // Prefer exact match by profileId/id (best accuracy)
+    if (pid) {
+      idx = scheduledDates.findIndex((it) => String((it && it.id) || '').trim() === pid);
+    }
+
+    // Fallback match by name (+ optional city) for backward-compat with existing admin UI (which doesn't send profileId)
+    if (idx === -1 && name) {
+      const nameKey = norm(name);
+      const cityKey = norm(city);
+
+      for (let i = scheduledDates.length - 1; i >= 0; i--) {
+        const it = scheduledDates[i] || {};
+        const itName = norm(it.name || it.candidateName);
+        if (!itName || itName !== nameKey) continue;
+
+        if (cityKey) {
+          const itCity = norm(it.city);
+          if (itCity !== cityKey) continue;
+        }
+
+        idx = i;
+        break;
+      }
+    }
+
+    const base = (idx >= 0 && scheduledDates[idx] && typeof scheduledDates[idx] === 'object')
+      ? scheduledDates[idx]
+      : {};
+
+    const nextItem = {
+      ...base,
+      id: (idx >= 0 ? (base.id || pid || `date_${Date.now()}`) : (pid || `date_${Date.now()}`)),
+      name: name || String(base.name || base.candidateName || '').trim(),
+      igUrl: (igUrl != null) ? String(igUrl).trim() : (base.igUrl || ''),
+      city: (city != null && String(city).trim()) ? String(city).trim() : (base.city || ''),
+      location: (location != null) ? String(location).trim() : (base.location || ''),
+      notes: (notes != null) ? String(notes).trim() : (base.notes || ''),
       status: 'scheduled',
-      scheduledAt: String(scheduledAt)
+      scheduledAt: String(scheduledAt).trim(),
+      confirmedAt: new Date().toISOString()
     };
 
-    await addScheduledDate(emailNorm, profile);
+    if (!nextItem.name) {
+      return res.status(400).json({
+        ok: false,
+        message: 'candidateName required (or existing scheduled item must contain a name)'
+      });
+    }
 
-    return res.json({ ok: true });
+    if (idx >= 0) scheduledDates[idx] = nextItem;
+    else scheduledDates.push(nextItem);
+
+    await saveScheduledDates(emailNorm, scheduledDates);
+
+    return res.json({ ok: true, updated: idx >= 0, id: nextItem.id });
   } catch (err) {
     console.error('admin confirmed-date error:', err);
-    return res.status(500).json({ ok: false, message: 'server error' });
+    return res.status(500).json({ ok: false, error: 'server_error' });
   }
 });
+
 
 // ---------------- Dates (Tier 3 scheduling) -------------------
 app.get('/api/dates', async (_req, res) => {
