@@ -1935,7 +1935,8 @@ async function refreshChatPresenceOnce() {
     const p = await fetchPeerPresence(state.currentChatPeerEmail);
     if (!p) return;
     state.currentChatPeerLastSeenAtMs = Number(p.lastSeenAtMs || 0);
-    if (DOM.chatReceiptLine) {
+    const planKey = normalizePlanKey(state.plan || (state.me && state.me.plan));
+    if (planKey === 'free' && DOM.chatReceiptLine) {
       const line = formatPresenceLine(state.currentChatPeerLastSeenAtMs);
       DOM.chatReceiptLine.textContent = line || ' ';
     }
@@ -1984,8 +1985,13 @@ async function openChatModal(name, imgColor, lastMsg, peerEmail, peerPhotoUrl, p
 
   // Reset header meta line (presence is server-driven)
   if (DOM.chatReceiptLine) {
-    const line = formatPresenceLine(state.currentChatPeerLastSeenAtMs);
-    DOM.chatReceiptLine.textContent = line || ' ';
+    const planKey = normalizePlanKey(state.plan || (state.me && state.me.plan));
+    if (planKey === 'free') {
+      const line = formatPresenceLine(state.currentChatPeerLastSeenAtMs);
+      DOM.chatReceiptLine.textContent = line || ' ';
+    } else {
+      DOM.chatReceiptLine.textContent = 'Delivered';
+    }
   }
 
   // Clear body and show initial hint
@@ -2035,24 +2041,42 @@ async function loadMatchesPanel() {
       return;
     }
 
-    renderMatchesFromApi(Array.isArray(res.matches) ? res.matches : []);
+    const matches = Array.isArray(res.matches) ? res.matches : [];
+    renderMatchesFromApi(matches, res.kpi || null);
+
+    // If user opened Matches, mark current batch as seen so New Matches KPI resets next time.
+    try {
+      const newCount = Number(res.kpi && res.kpi.newMatches || 0);
+      if (newCount > 0) {
+        await apiPost('/api/matches/seen', {});
+        if (DOM.newMatchCount) DOM.newMatchCount.textContent = '0';
+      }
+    } catch (_) {}
   } catch (err) {
     console.warn('loadMatchesPanel failed:', err);
   }
 }
 
-function renderMatchesFromApi(matches) {
-  // Update counters
+function renderMatchesFromApi(matches, kpi) {
+  // Update counters (server-driven)
   const count = matches.length;
-  if (DOM.matchCount) DOM.matchCount.textContent = String(count);
-  if (DOM.newMatchCount) DOM.newMatchCount.textContent = String(Math.min(count, 6));
+  const totalMatches = (kpi && Number.isFinite(Number(kpi.totalMatches))) ? Number(kpi.totalMatches) : count;
+  const newMatches = (kpi && Number.isFinite(Number(kpi.newMatches)))
+    ? Number(kpi.newMatches)
+    : (matches.filter(m => m && m.isNew).length);
+
+  if (DOM.matchCount) DOM.matchCount.textContent = String(totalMatches);
+  if (DOM.newMatchCount) DOM.newMatchCount.textContent = String(Math.max(0, newMatches));
 
   // --- Stories (new matches rail) ---
   if (DOM.newMatchesRail) {
     if (!count) {
       DOM.newMatchesRail.innerHTML = '<div style="color:rgba(255,255,255,0.65); font-size:0.9rem;">No matches yet.</div>';
     } else {
-      DOM.newMatchesRail.innerHTML = matches.slice(0, 6).map(m => {
+      const railItems = (newMatches > 0)
+        ? matches.filter(m => m && m.isNew).slice(0, 6)
+        : matches.slice(0, 6);
+      DOM.newMatchesRail.innerHTML = railItems.map(m => {
         const safeName = (m.name || 'Match').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         const photoUrl = m.photoUrl || '';
         return `
@@ -3079,7 +3103,7 @@ const payload = {
 
     // Update local state (so UI reflects pending immediately)
     state.me.creatorStatus = 'pending';
-    state.me.creatorApplication = { ...payload, submittedAt: Date.now() };
+    state.me.creatorApplication = (res && res.creatorApplication) ? res.creatorApplication : { ...payload, submittedAt: Date.now() };
 
     renderCreatorPremiumEntryCards();
 
@@ -3729,18 +3753,7 @@ if (lastLimit === null) {
           }
         } else {
           setSwipeStats(res.remaining, res.limit);
-
-          if (res.limitReached) {
-            showToast('Daily swipe limit reached. Come back tomorrow.', 'error');
-            profiles = [];
-            currentIndex = 0;
-            if (DOM.swipeStack) DOM.swipeStack.innerHTML = '';
-            if (DOM.swipeEmpty) DOM.swipeEmpty.hidden = false;
-            if (DOM.swipeControls) DOM.swipeControls.style.display = 'none';
-            return;
-          }
-
-          if (res.isMatch) showToast('It\u2019s a match! 🎉');
+          if (res.match) showToast('It’s a match! 🎉');
         }
     } catch (e) {
         console.error(e);
