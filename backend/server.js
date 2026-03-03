@@ -5059,7 +5059,7 @@ app.get('/api/shortlist', async (_req, res) => {
 
 
   const user = (DB.users && DB.users[email]) || DB.user || {};
-  const planKey = normalizePlanKey(user.plan || 'free');
+  const planKey = normalizePlanKey(user.plan || user.planKey || user.tier || user.level || user.subscriptionTier || user.subscription || user.currentPlan || 'free');
   if (planKey !== 'tier2' && planKey !== 'tier3') {
     return res.status(403).json({ ok: false, message: 'not_allowed' });
   }
@@ -5084,7 +5084,7 @@ app.get('/api/shortlist/approved', async (_req, res) => {
 
 
   const user = (DB.users && DB.users[email]) || DB.user || {};
-  const planKey = normalizePlanKey(user.plan || 'free');
+  const planKey = normalizePlanKey(user.plan || user.planKey || user.tier || user.level || user.subscriptionTier || user.subscription || user.currentPlan || 'free');
   if (planKey !== 'tier2' && planKey !== 'tier3') {
     return res.status(403).json({ ok: false, message: 'not_allowed' });
   }
@@ -5106,7 +5106,7 @@ app.get('/api/concierge/scheduled', async (_req, res) => {
     }
 
     const user = (DB.users && DB.users[email]) || DB.user || {};
-    const planKey = normalizePlanKey(user.plan || 'free');
+    const planKey = normalizePlanKey(user.plan || user.planKey || user.tier || user.level || user.subscriptionTier || user.subscription || user.currentPlan || 'free');
     if (planKey !== 'tier3') {
       return res.status(403).json({ ok: false, message: 'not_allowed' });
     }
@@ -5130,7 +5130,7 @@ app.post('/api/approved/date', async (req, res) => {
 
 
   const user = (DB.users && DB.users[email]) || DB.user || {};
-  const planKey = normalizePlanKey(user.plan || 'free');
+  const planKey = normalizePlanKey(user.plan || user.planKey || user.tier || user.level || user.subscriptionTier || user.subscription || user.currentPlan || 'free');
   if (planKey !== 'tier3') {
     return res.status(403).json({ ok: false, message: 'not_allowed' });
   }
@@ -5177,7 +5177,7 @@ app.post('/api/shortlist/decision', async (req, res) => {
 
 
   const user = (DB.users && DB.users[email]) || DB.user || {};
-  const planKey = normalizePlanKey(user.plan || 'free');
+  const planKey = normalizePlanKey(user.plan || user.planKey || user.tier || user.level || user.subscriptionTier || user.subscription || user.currentPlan || 'free');
   if (planKey !== 'tier2' && planKey !== 'tier3') {
     return res.status(403).json({ ok: false, message: 'not_allowed' });
   }
