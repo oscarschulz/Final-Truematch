@@ -440,6 +440,24 @@ function showToast(msg, type = 'success') {
 // Backwards-compat: some code calls toast(...) instead of showToast(...)
 function toast(msg, type = 'success') { showToast(msg, type); }
 
+// Upgrade helper: always route to tier page in upgrade mode (and preserve demo=1 when present)
+function goToUpgrade() {
+  try {
+    const target = new URL('tier.html', window.location.href);
+    target.searchParams.set('upgrade', '1');
+
+    // Preserve demo=1 (demo mode) so tier/pay pages stay consistent.
+    try {
+      const cur = new URL(window.location.href);
+      if (cur.searchParams.get('demo') === '1') target.searchParams.set('demo', '1');
+    } catch {}
+
+    window.location.href = target.toString();
+  } catch {
+    window.location.href = './tier.html?upgrade=1';
+  }
+}
+
 function normalizePlanKey(rawPlan) {
   // Accepts: 'free' | 'plus' | 'elite' | 'concierge' | 'tier1' | 'tier2' | 'tier3'
   // Also accepts numeric tiers: 0/1/2/3 (or strings like '1', '2', '3')
@@ -970,7 +988,7 @@ function setupEventListeners() {
     btnUpgradeNav.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      window.location.href = './tier.html?upgrade=1';
+      goToUpgrade();
     });
   }
 
@@ -1201,7 +1219,7 @@ if (DOM.frmPassword) DOM.frmPassword.addEventListener('submit', async (e) => {
   const openPremium = (e) => {
       // Sidebar "Subscribe" should always go to plans
       if (e && e.currentTarget && (e.currentTarget.id === 'btnSidebarSubscribe' || e.currentTarget.id === 'btnSidebarSubscribeMobile')) {
-          window.location.href = './tier.html?upgrade=1';
+          goToUpgrade();
           return;
       }
 
@@ -3406,7 +3424,7 @@ async function handlePremiumApplicationSubmit() {
   const isEligibleByUiRule = (planKey === 'tier2' || planKey === 'tier3');
   if (!isEligibleByUiRule) {
     showToast('Premium Society applications are available for Elite (Tier 2) and Concierge (Tier 3) members only.', 'error');
-    window.location.href = './tier.html?upgrade=1';
+    goToUpgrade();
     return;
   }
 
@@ -3456,14 +3474,14 @@ async function handlePremiumApplicationSubmit() {
       // Keep UX consistent with the intentional gating rule.
       if (res && res.code === 'not_eligible') {
         showToast('Premium Society applications are available for Elite (Tier 2) and Concierge (Tier 3) members only.', 'error');
-        window.location.href = './tier.html?upgrade=1';
+        goToUpgrade();
         return;
       }
 
       // Common server-side eligibility failure (inactive plan, etc.)
       if (/requires?\s+an\s+ACTIVE/i.test(msgStr) || (/plan/i.test(msgStr) && /active/i.test(msgStr))) {
         showToast('Your plan must be active to submit a Premium Society application. Please upgrade/renew and try again.', 'error');
-        window.location.href = './tier.html?upgrade=1';
+        goToUpgrade();
         return;
       }
 
