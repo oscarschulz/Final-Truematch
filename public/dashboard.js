@@ -811,11 +811,11 @@ await loadHomePanels(true);
 //   dashboard.html?open=messages&peer=user@example.com
 try {
   const params = new URLSearchParams(window.location.search || '');
-  const open = String(params.get('open') || '').trim();
+  const open = String(params.get('open') || params.get('tab') || '').trim().toLowerCase();
   const peer = String(params.get('peer') || '').trim().toLowerCase();
 
   if (open) {
-    if (open === 'messages') {
+    if (open === 'messages' || open === 'chat') {
       // Messages live under Matches UI (chat modal)
       try { setActiveTab('matches'); } catch {}
       try { await loadMatchesPanel(); } catch {}
@@ -844,6 +844,7 @@ try {
     try {
       const url = new URL(window.location.href);
       url.searchParams.delete('open');
+      url.searchParams.delete('tab');
       url.searchParams.delete('peer');
       window.history.replaceState({}, document.title, url.toString());
     } catch {}
@@ -953,8 +954,68 @@ const NotificationsController = (() => {
       // Optional click-through
       if (notif.href) {
         row.style.cursor = 'pointer';
-        row.addEventListener('click', () => {
-          try { window.location.href = notif.href; } catch (_) {}
+        row.addEventListener('click', async () => {
+          // Optimistically mark as read (server + local) then follow deep-link.
+          try { await apiPost('/api/me/notifications/mark-read', { id: notif.id }); } catch (_) {}
+          try { notif.readAtMs = Date.now(); } catch (_) {}
+
+          const href = String(notif.href || '').trim();
+          if (!href) {
+            try { NotificationsController.load({ force: true }).catch(() => {}); } catch (_) {}
+            return;
+          }
+
+          // If the href points back to dashboard, handle it in-app (no full reload).
+          try {
+            const u = new URL(href, window.location.origin);
+            const path = (u.pathname || '').toLowerCase();
+
+            if (path.endsWith('/dashboard.html') || path === '/dashboard.html' || path.endsWith('dashboard.html')) {
+              const open = String(u.searchParams.get('open') || u.searchParams.get('tab') || '').trim().toLowerCase();
+              const peer = String(u.searchParams.get('peer') || '').trim().toLowerCase();
+
+              if (open) {
+                if (open === 'messages' || open === 'chat') {
+                  try { setActiveTab('matches'); } catch (_) {}
+                  try { await loadMatchesPanel(); } catch (_) {}
+
+                  if (peer) {
+                    const cards = Array.from(document.querySelectorAll('.match-card')) || [];
+                    const card = cards.find(el => String(el?.dataset?.email || '').trim().toLowerCase() === peer) || null;
+                    const seedColor = (typeof getRandomColor === 'function') ? getRandomColor() : '#3AAFB9';
+
+                    if (card) {
+                      const name = card.dataset.name || 'Match';
+                      const msg = card.dataset.msg || '';
+                      const photoUrl = card.dataset.photoUrl || '';
+                      const lastSeenAtMs = Number(card.dataset.lastSeenAtMs || 0);
+                      await openChatModal(name, seedColor, msg, peer, photoUrl, lastSeenAtMs);
+                    } else {
+                      await openChatModal(peer, seedColor, '', peer, '', 0);
+                    }
+                  }
+                } else {
+                  try { setActiveTab(open); } catch (_) {}
+                }
+
+                try {
+                  // Clean URL so refresh/back doesn't keep reopening
+                  const url = new URL(window.location.href);
+                  url.searchParams.delete('open');
+                  url.searchParams.delete('tab');
+                  url.searchParams.delete('peer');
+                  window.history.replaceState({}, document.title, url.toString());
+                } catch (_) {}
+
+                try { if (DOM.notifDropdown) DOM.notifDropdown.hidden = true; } catch (_) {}
+                try { NotificationsController.load({ force: true }).catch(() => {}); } catch (_) {}
+                return;
+              }
+            }
+          } catch (_) {}
+
+          // Fallback: navigate normally.
+          try { window.location.href = href; } catch (_) {}
         });
       }
 

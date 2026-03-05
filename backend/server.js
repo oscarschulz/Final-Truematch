@@ -3958,6 +3958,48 @@ app.post('/api/me/notifications/mark-all-read', authMiddleware, async (req, res)
   }
 });
 
+app.post('/api/me/notifications/mark-read', authMiddleware, async (req, res) => {
+  try {
+    const email = String(req.user && req.user.email ? req.user.email : '').trim().toLowerCase();
+    if (!email) return res.status(401).json({ ok: false, error: 'Not authenticated' });
+
+    const id = String((req.body && (req.body.id || req.body.notifId || req.body.notificationId)) || '').trim();
+    if (!id) return res.status(400).json({ ok: false, error: 'id_required' });
+
+    const user = await findUserByEmail(email);
+    const userId = user && user.id ? String(user.id) : '';
+
+    // Local JSON fallback
+    if (!hasFirebase || !usersCollection || !userId) {
+      DB.notificationsByEmail = DB.notificationsByEmail && typeof DB.notificationsByEmail === 'object' ? DB.notificationsByEmail : {};
+      const arr = Array.isArray(DB.notificationsByEmail[email]) ? DB.notificationsByEmail[email] : [];
+      const now = Date.now();
+      for (const n of arr) {
+        if (!n) continue;
+        if (String(n.id || '') === id) {
+          if (!n.readAtMs && !n.readAt) {
+            n.readAtMs = now;
+            n.readAt = now;
+          }
+          break;
+        }
+      }
+      DB.notificationsByEmail[email] = arr;
+      return res.json({ ok: true });
+    }
+
+    const docRef = usersCollection.doc(userId).collection(NOTIFS_SUBCOL).doc(id);
+    const nowField = admin && admin.firestore ? admin.firestore.FieldValue.serverTimestamp() : new Date();
+    await docRef.set({ readAt: nowField }, { merge: true });
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('POST /api/me/notifications/mark-read error:', e);
+    return res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+
 // ============================================================
 
 // ---------------- Recent Moments (Stories) -------------------
@@ -6265,6 +6307,18 @@ app.post('/api/messages/send', async (req, res) => {
         }, { merge: true });
       });
 
+
+      // 🔔 Notify recipient (dashboard bell) - deep link to open chat
+      try {
+        const senderName = String((user && (user.name || user.fullName)) || (DB.user && (DB.user.name || DB.user.fullName)) || 'Someone').trim() || 'Someone';
+        const preview = text.length > 90 ? (text.slice(0, 90) + '…') : text;
+        await _pushNotifToEmail(peerEmail, {
+          type: 'message',
+          title: 'New message',
+          message: `${senderName}: ${preview}`,
+          href: `dashboard.html?open=messages&peer=${encodeURIComponent(String(email || '').trim().toLowerCase())}`
+        });
+      } catch (_) {}
       return res.json({
         ok: true,
         plan: planKey,
@@ -6283,6 +6337,18 @@ app.post('/api/messages/send', async (req, res) => {
 
     DB.messages[email][peerEmail].push(msg);
     DB.messages[peerEmail][email].push(msg);
+
+    // 🔔 Notify recipient (dashboard bell) - deep link to open chat
+    try {
+      const senderName = String((user && (user.name || user.fullName)) || (DB.user && (DB.user.name || DB.user.fullName)) || 'Someone').trim() || 'Someone';
+      const preview = text.length > 90 ? (text.slice(0, 90) + '…') : text;
+      await _pushNotifToEmail(peerEmail, {
+        type: 'message',
+        title: 'New message',
+        message: `${senderName}: ${preview}`,
+        href: `dashboard.html?open=messages&peer=${encodeURIComponent(String(email || '').trim().toLowerCase())}`
+      });
+    } catch (_) {}
 
     return res.json({
       ok: true,
@@ -10982,7 +11048,7 @@ const actionType = (action === 'super' || action === 'superlike') ? 'superlike' 
           type: 'match',
           title: 'New Match',
           message: `You matched with ${otherName}.`,
-          href: 'dashboard.html?tab=matches',
+          href: 'dashboard.html?open=matches',
           createdAt: createdAtField,
           readAt: null
         });
@@ -10991,7 +11057,7 @@ const actionType = (action === 'super' || action === 'superlike') ? 'superlike' 
           type: 'match',
           title: 'New Match',
           message: `${meName} matched with you.`,
-          href: 'dashboard.html?tab=matches',
+          href: 'dashboard.html?open=matches',
           createdAt: createdAtField,
           readAt: null
         });
@@ -11012,7 +11078,7 @@ const actionType = (action === 'super' || action === 'superlike') ? 'superlike' 
         type: isSuper ? 'superlike' : 'like',
         title,
         message: msg,
-        href: 'dashboard.html?tab=matches',
+        href: 'dashboard.html?open=matches',
         createdAt: createdAtField,
         readAt: null
       });
