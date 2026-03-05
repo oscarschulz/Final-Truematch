@@ -6356,7 +6356,7 @@ app.post('/api/messages/send', async (req, res) => {
           type: 'message',
           title: 'New message',
           message: `${senderName}: ${preview}`,
-          href: `dashboard.html?open=messages&peer=${encodeURIComponent(String(email || '').trim().toLowerCase())}`
+          href: `dashboard.html?open=messages&peer=${encodeURIComponent(String(email || '').trim().toLowerCase())}&focus=${encodeURIComponent(String(email || '').trim().toLowerCase())}`
         });
       } catch (_) {}
       return res.json({
@@ -6386,7 +6386,7 @@ app.post('/api/messages/send', async (req, res) => {
         type: 'message',
         title: 'New message',
         message: `${senderName}: ${preview}`,
-        href: `dashboard.html?open=messages&peer=${encodeURIComponent(String(email || '').trim().toLowerCase())}`
+        href: `dashboard.html?open=messages&peer=${encodeURIComponent(String(email || '').trim().toLowerCase())}&focus=${encodeURIComponent(String(email || '').trim().toLowerCase())}`
       });
     } catch (_) {}
 
@@ -11088,7 +11088,7 @@ const actionType = (action === 'super' || action === 'superlike') ? 'superlike' 
           type: 'match',
           title: 'New Match',
           message: `You matched with ${otherName}.`,
-          href: 'dashboard.html?open=matches',
+          href: `dashboard.html?open=matches&focus=${encodeURIComponent(String(tId || '').trim().toLowerCase())}`,
           createdAt: createdAtField,
           readAt: null
         });
@@ -11097,7 +11097,7 @@ const actionType = (action === 'super' || action === 'superlike') ? 'superlike' 
           type: 'match',
           title: 'New Match',
           message: `${meName} matched with you.`,
-          href: 'dashboard.html?open=matches',
+          href: `dashboard.html?open=matches&focus=${encodeURIComponent(String(myEmail || '').trim().toLowerCase())}`,
           createdAt: createdAtField,
           readAt: null
         });
@@ -11118,7 +11118,7 @@ const actionType = (action === 'super' || action === 'superlike') ? 'superlike' 
         type: isSuper ? 'superlike' : 'like',
         title,
         message: msg,
-        href: 'dashboard.html?open=matches',
+        href: `dashboard.html?open=matches&focus=${encodeURIComponent(String(myEmail || '').trim().toLowerCase())}`,
         createdAt: createdAtField,
         readAt: null
       });
