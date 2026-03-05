@@ -455,6 +455,29 @@ app.use(express.static(PUBLIC_DIR));
 app.use('/public', express.static(PUBLIC_DIR));
 
 
+// =========================
+// Message media storage (disk) - MVP
+// - Stores small data: URLs returned to clients to avoid Firestore 1MB doc limit
+// - Protected by session cookie (must be logged in)
+// =========================
+const MSG_MEDIA_DIR = process.env.MSG_MEDIA_DIR || path.join(__dirname, '_msg_media');
+try { if (!fs.existsSync(MSG_MEDIA_DIR)) fs.mkdirSync(MSG_MEDIA_DIR, { recursive: true }); } catch (_) {}
+
+app.use('/msg-media', (req, res, next) => {
+  try {
+    const email = getSessionEmail(req) || (DB.user && DB.user.email);
+    if (!email) return res.status(401).send('Unauthorized');
+    // No-store
+    res.setHeader('Cache-Control', 'no-store, no-cache, max-age=0, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    return next();
+  } catch (_) {
+    return res.status(401).send('Unauthorized');
+  }
+}, express.static(MSG_MEDIA_DIR, { etag: false, maxAge: 0 }));
+
+
 // static files
 
 // ---------------- In-memory "DB" (demo + cache) ----------------
@@ -6170,7 +6193,7 @@ app.get('/api/messages', async (req, res) => {
       const list = byPeer[peerEmail] || [];
       const last = list.length ? list[list.length - 1] : null;
 
-      const lastMessage = last ? String(last.text || '') : '';
+      const lastMessage = last ? (String(last.text || '') || ((last.media && last.media.length) ? '[Media]' : '')) : '';
       const lastMessageAtMs = last ? Number(last.createdAtMs || 0) : 0;
 
       // Approx last read = max readAt among messages sent TO me
@@ -6239,6 +6262,8 @@ app.get('/api/messages/thread/:peer', async (req, res) => {
           from: String(v.from || ''),
           to: String(v.to || ''),
           text: String(v.text || ''),
+          media: Array.isArray(v.media) ? v.media : [],
+          sentAt: String(v.sentAt || '') || (Number(v.createdAtMs || 0) ? new Date(Number(v.createdAtMs || 0)).toISOString() : ''),
           createdAtMs: Number(v.createdAtMs || _msg_tsToMs(v.createdAt) || Date.now()),
           createdAt: v.createdAt || null,
           readAt: v.readAt || null
@@ -6412,9 +6437,15 @@ app.post('/api/messages/send', async (req, res) => {
     const peerEmail = _msg_normEmail(peerRaw);
     const text = String(textRaw).trim();
 
-    if (!peerEmail || !text) {
-      return res.status(400).json({ ok: false, message: 'to and text are required' });
-    }
+const mediaIdsRaw = body.mediaIds || body.media_ids || body.mediaIDs || [];
+const mediaInlineRaw = body.media || body.mediaItems || body.attachments || [];
+
+const mediaIds = Array.isArray(mediaIdsRaw) ? mediaIdsRaw.map((x) => String(x || '').trim()).filter(Boolean) : [];
+const mediaInline = Array.isArray(mediaInlineRaw) ? mediaInlineRaw : [];
+
+if (!peerEmail || (!text && !mediaIds.length && !mediaInline.length)) {
+  return res.status(400).json({ ok: false, message: 'to and content are required' });
+}
 
     // Optional guard: only allow chat with matches. Uncomment to enforce strictly:
     // const matchEmails = await _getMatchEmails(email);
@@ -6436,15 +6467,107 @@ app.post('/api/messages/send', async (req, res) => {
       return res.status(500).json({ ok: false, message: 'server error' });
     }
 
-    const nowMs = Date.now();
-    const threadId = _msg_threadId(email, peerEmail);
-    const msgObj = {
-      from: email,
-      to: peerEmail,
-      text,
-      createdAtMs: nowMs,
-      createdAt: admin && admin.firestore ? admin.firestore.FieldValue.serverTimestamp() : nowMs
-    };
+const nowMs = Date.now();
+const threadId = _msg_threadId(email, peerEmail);
+
+// Build media array (URLs), so Firestore doc size stays safe.
+const MAX_MEDIA = 6;
+const MAX_BYTES_PER_ITEM = 2 * 1024 * 1024; // 2MB
+const MAX_TOTAL_BYTES = 6 * 1024 * 1024;    // 6MB
+
+function _extFromMime(mime) {
+  const m = String(mime || '').toLowerCase();
+  if (m.includes('jpeg')) return 'jpg';
+  if (m.includes('png')) return 'png';
+  if (m.includes('webp')) return 'webp';
+  if (m.includes('gif')) return 'gif';
+  if (m.includes('mp4')) return 'mp4';
+  if (m.includes('quicktime')) return 'mov';
+  if (m.includes('webm')) return 'webm';
+  if (m.includes('mpeg')) return 'mp3';
+  if (m.includes('wav')) return 'wav';
+  return 'bin';
+}
+
+function _typeFromMime(mime) {
+  const m = String(mime || '').toLowerCase();
+  if (m.startsWith('image/')) return 'image';
+  if (m.startsWith('video/')) return 'video';
+  if (m.startsWith('audio/')) return 'audio';
+  return 'other';
+}
+
+function _safePickInlineMedia(arr) {
+  const out = [];
+  let total = 0;
+
+  for (const it of (arr || []).slice(0, MAX_MEDIA)) {
+    const src = String(it?.src || it?.url || '');
+    const name = String(it?.name || '').slice(0, 120);
+    const locked = !!it?.locked;
+
+    if (!src) continue;
+
+    // If already a /msg-media url, keep as-is (no re-write)
+    if (src.startsWith('/msg-media/')) {
+      const type = String(it?.type || '').toLowerCase() || 'other';
+      out.push({ id: String(it?.id || ''), url: src, type, name, locked });
+      continue;
+    }
+
+    // Only accept data URLs in this MVP
+    const m = src.match(/^data:([^;]+);base64,(.+)$/);
+    if (!m) continue;
+
+    const mime = m[1];
+    const b64 = m[2] || '';
+    // Rough byte estimate for base64
+    const bytes = Math.floor((b64.length * 3) / 4);
+    if (bytes <= 0) continue;
+    if (bytes > MAX_BYTES_PER_ITEM) continue;
+    if (total + bytes > MAX_TOTAL_BYTES) break;
+
+    const ext = _extFromMime(mime);
+    const type = _typeFromMime(mime);
+
+    const fileName = `msg_${nowMs}_${Math.random().toString(16).slice(2)}.${ext}`;
+    const absPath = path.join(MSG_MEDIA_DIR, fileName);
+
+    try {
+      const buf = Buffer.from(b64, 'base64');
+      if (!buf || !buf.length) continue;
+      if (buf.length > MAX_BYTES_PER_ITEM) continue;
+      fs.writeFileSync(absPath, buf);
+      total += buf.length;
+      out.push({
+        id: String(it?.id || fileName),
+        url: `/msg-media/${fileName}`,
+        type: String(it?.type || type),
+        name,
+        locked
+      });
+    } catch (_) {
+      // skip
+    }
+  }
+
+  return out;
+}
+
+const media = _safePickInlineMedia(mediaInline);
+
+const sentAt = new Date(nowMs).toISOString();
+const previewText = text || (media.length ? '[Media]' : '');
+
+const msgObj = {
+  from: email,
+  to: peerEmail,
+  text,
+  media,
+  sentAt,
+  createdAtMs: nowMs,
+  createdAt: admin && admin.firestore ? admin.firestore.FieldValue.serverTimestamp() : nowMs
+};
 
     // Firestore-backed write
     if (hasFirebase && firestore && usersCollection) {
@@ -6471,7 +6594,7 @@ app.post('/api/messages/send', async (req, res) => {
 
         // Update thread doc last message
         tx.set(threadRef, {
-          lastMessageText: text,
+          lastMessageText: previewText,
           lastMessageAtMs: nowMs,
           lastMessageFrom: email,
           lastMessageTo: peerEmail,
@@ -6484,7 +6607,7 @@ app.post('/api/messages/send', async (req, res) => {
         tx.set(myIdxRef, {
           threadId,
           peerEmail,
-          lastMessageText: text,
+          lastMessageText: previewText,
           lastMessageAtMs: nowMs,
           lastMessageFrom: email,
           lastMessageTo: peerEmail,
@@ -6497,7 +6620,7 @@ app.post('/api/messages/send', async (req, res) => {
         tx.set(peerIdxRef, {
           threadId,
           peerEmail: email,
-          lastMessageText: text,
+          lastMessageText: previewText,
           lastMessageAtMs: nowMs,
           lastMessageFrom: email,
           lastMessageTo: peerEmail,
@@ -6510,7 +6633,8 @@ app.post('/api/messages/send', async (req, res) => {
       // 🔔 Notify recipient (dashboard bell) - deep link to open chat
       try {
         const senderName = String((user && (user.name || user.fullName)) || (DB.user && (DB.user.name || DB.user.fullName)) || 'Someone').trim() || 'Someone';
-        const preview = text.length > 90 ? (text.slice(0, 90) + '…') : text;
+        const basePreview = previewText || text || 'Sent media';
+        const preview = basePreview.length > 90 ? (basePreview.slice(0, 90) + '…') : basePreview;
         await _pushNotifToEmail(peerEmail, {
           type: 'message',
           title: 'New message',

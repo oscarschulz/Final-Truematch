@@ -205,12 +205,15 @@ const __CreatorsData = (function() {
     return apiGetJson(`/api/messages/thread/${peer}`);
 }
 
- async function sendMessageTo(peerEmail, text) {
+ async function sendMessageTo(peerEmail, payload) {
     const to = String(peerEmail || '').trim().toLowerCase();
-    const msg = String(text || '').trim();
+    const p = (payload && typeof payload === 'object') ? payload : { text: payload };
+    const msg = String(p.text || '').trim();
+    const mediaIds = Array.isArray(p.mediaIds) ? p.mediaIds : [];
+    const media = Array.isArray(p.media) ? p.media : [];
     if (!to) throw new Error('peer required');
-    if (!msg) throw new Error('text required');
-    return apiPostJson('/api/messages/send', { to, text: msg });
+    if (!msg && !mediaIds.length && !media.length) throw new Error('message is empty');
+    return apiPostJson('/api/messages/send', { to, text: msg, mediaIds, media });
 }
 
 // =============================================================
@@ -3999,6 +4002,220 @@ let __peerProfileByEmail = new Map();
 let __threadsPoll = null;
 let __activeChatPoll = null;
 
+
+// -------------------------------
+// Chat attachments (Vault -> Message)
+// - Uses local Vault items (tm_uploaded_media) as a picker source
+// - Sends inline media to backend (backend persists small media and returns URLs)
+// -------------------------------
+let __chatDraftMedia = []; // [{ id, src|url, type, name, locked }]
+
+function __chatClearDraftMedia() {
+    __chatDraftMedia = [];
+    __chatRenderAttachStrip();
+}
+
+function __chatGetLocalVaultMedia() {
+    try {
+        const raw = JSON.parse(localStorage.getItem('tm_uploaded_media') || '[]');
+        return Array.isArray(raw) ? raw : [];
+    } catch (_) {
+        return [];
+    }
+}
+
+function __chatEnsureAttachStrip() {
+    const wrap = document.getElementById('chat-input-wrapper') || document.getElementById('chat-bottom-wrapper');
+    if (!wrap) return null;
+    let strip = document.getElementById('tm-chat-attach-strip');
+    if (strip) return strip;
+
+    strip = document.createElement('div');
+    strip.id = 'tm-chat-attach-strip';
+    strip.style.display = 'none';
+    strip.style.gap = '8px';
+    strip.style.padding = '8px 0 0 0';
+    strip.style.flexWrap = 'wrap';
+    strip.style.alignItems = 'center';
+    strip.style.maxWidth = '100%';
+    strip.style.overflowX = 'auto';
+    strip.style.whiteSpace = 'nowrap';
+
+    // Insert before input row if possible
+    try {
+        wrap.insertBefore(strip, wrap.firstChild);
+    } catch (_) {
+        wrap.appendChild(strip);
+    }
+    return strip;
+}
+
+function __chatRenderAttachStrip() {
+    const strip = __chatEnsureAttachStrip();
+    if (!strip) return;
+
+    const items = Array.isArray(__chatDraftMedia) ? __chatDraftMedia : [];
+    if (!items.length) {
+        strip.innerHTML = '';
+        strip.style.display = 'none';
+        return;
+    }
+
+    strip.style.display = 'flex';
+    strip.innerHTML = '';
+
+    items.slice(0, 8).forEach((m, idx) => {
+        const cell = document.createElement('div');
+        cell.style.position = 'relative';
+        cell.style.width = '56px';
+        cell.style.height = '56px';
+        cell.style.borderRadius = '12px';
+        cell.style.overflow = 'hidden';
+        cell.style.border = '1px solid rgba(255,255,255,0.12)';
+        cell.style.background = '#000';
+        cell.style.flex = '0 0 auto';
+
+        const src = String(m?.url || m?.src || '');
+        const type = String(m?.type || '').toLowerCase();
+
+        if (type.includes('video')) {
+            cell.innerHTML = `<div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:18px;">▶</div>`;
+        } else {
+            cell.innerHTML = `<img src="${src}" alt="" style="width:100%; height:100%; object-fit:cover; display:block;">`;
+        }
+
+        const rm = document.createElement('button');
+        rm.type = 'button';
+        rm.textContent = '×';
+        rm.style.position = 'absolute';
+        rm.style.top = '4px';
+        rm.style.right = '4px';
+        rm.style.width = '20px';
+        rm.style.height = '20px';
+        rm.style.borderRadius = '999px';
+        rm.style.border = '0';
+        rm.style.background = 'rgba(0,0,0,0.7)';
+        rm.style.color = '#fff';
+        rm.style.cursor = 'pointer';
+        rm.style.lineHeight = '20px';
+        rm.style.padding = '0';
+        rm.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            __chatDraftMedia = (__chatDraftMedia || []).filter((_, i) => i !== idx);
+            __chatRenderAttachStrip();
+        });
+
+        cell.appendChild(rm);
+        strip.appendChild(cell);
+    });
+
+    // +N indicator
+    if (items.length > 8) {
+        const more = document.createElement('div');
+        more.style.color = 'rgba(255,255,255,0.75)';
+        more.style.fontSize = '12px';
+        more.style.padding = '0 4px';
+        more.textContent = `+${items.length - 8}`;
+        strip.appendChild(more);
+    }
+}
+
+async function __chatOpenAttachPicker() {
+    if (!activePeerEmail) {
+        toastInstance?.fire?.({ icon: 'info', title: 'Select a conversation' });
+        return;
+    }
+
+    const vault = __chatGetLocalVaultMedia().slice(0, 60);
+    if (!vault.length) {
+        toastInstance?.fire?.({ icon: 'info', title: 'Your Vault is empty (Collections → Vault)' });
+        return;
+    }
+
+    // Build simple selectable grid
+    const initial = new Set((__chatDraftMedia || []).map(x => String(x?.id || x?.src || '')));
+    const itemsHtml = vault.map((m, i) => {
+        const id = String(m?.id ?? i);
+        const key = id || String(m?.src || '');
+        const checked = initial.has(key) ? 'data-checked="1"' : '';
+        const src = String(m?.src || '');
+        const t = String(m?.type || '').toLowerCase();
+        const thumb = t.includes('video')
+          ? `<div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:18px;">▶</div>`
+          : `<img src="${src}" alt="" style="width:100%; height:100%; object-fit:cover; display:block;">`;
+
+        return `
+          <div class="tm-chat-pick-item" data-key="${encodeURIComponent(key)}" ${checked}
+               style="position:relative; border-radius:12px; overflow:hidden; border:1px solid rgba(255,255,255,0.12); background:#000; cursor:pointer; aspect-ratio:1/1;">
+            ${thumb}
+            <div class="tm-chat-pick-check"
+                 style="position:absolute; top:8px; right:8px; width:18px; height:18px; border-radius:999px; border:1px solid rgba(255,255,255,0.6); background:rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center; font-size:12px;">
+              ${initial.has(key) ? '✓' : ''}
+            </div>
+          </div>
+        `;
+    }).join('');
+
+    const html = `
+      <div style="text-align:left; margin-bottom:10px; color:rgba(255,255,255,0.75); font-size:13px;">
+        Select media to attach (max 6 per message).
+      </div>
+      <div id="tmChatPickGrid" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;">
+        ${itemsHtml}
+      </div>
+    `;
+
+    if (!(typeof Swal !== 'undefined' && Swal?.fire)) return;
+
+    const picked = new Set(initial);
+    await Swal.fire({
+        title: 'Attach from Vault',
+        html,
+        showCancelButton: true,
+        confirmButtonText: 'Attach',
+        cancelButtonText: 'Cancel',
+        background: '#0b1220',
+        color: '#fff',
+        didOpen: () => {
+            const grid = document.getElementById('tmChatPickGrid');
+            if (!grid) return;
+            grid.addEventListener('click', (e) => {
+                const it = e.target && e.target.closest ? e.target.closest('.tm-chat-pick-item') : null;
+                if (!it) return;
+                const key = decodeURIComponent(String(it.getAttribute('data-key') || ''));
+                const isOn = picked.has(key);
+                if (isOn) picked.delete(key);
+                else picked.add(key);
+
+                const check = it.querySelector('.tm-chat-pick-check');
+                if (check) check.innerHTML = picked.has(key) ? '✓' : '';
+                it.setAttribute('data-checked', picked.has(key) ? '1' : '0');
+            });
+        },
+        preConfirm: () => Array.from(picked)
+    }).then((r) => {
+        if (!r.isConfirmed) return;
+        const keys = Array.isArray(r.value) ? r.value : [];
+        const selected = [];
+        keys.slice(0, 6).forEach((key) => {
+            const m = vault.find(x => String(x?.id || x?.src || '') === String(key));
+            if (!m) return;
+            selected.push({
+                id: m.id ?? key,
+                src: m.src || '',
+                type: m.type || '',
+                name: m.name || '',
+                locked: !!m.locked
+            });
+        });
+        __chatDraftMedia = selected;
+        __chatRenderAttachStrip();
+        try { if (DOM.chatInput) DOM.chatInput.focus(); } catch (_) {}
+    });
+}
+
+
 const TM_TAGS_KEY = 'tm_chat_tags';
 const TM_HIDDEN_KEY = 'tm_hidden_chats';
 const TM_NOTES_KEY = 'tm_user_notes';
@@ -4797,6 +5014,9 @@ async function openChatWithUser(peerEmail) {
     loadUserNote(peer);
     unlockChatInputs();
 
+    // Clear any pending attachments when switching chats
+    try { __chatClearDraftMedia(); } catch (_) {}
+
     // Mobile UX: reveal chat panel
     try {
         if (window.innerWidth <= 768) document.body.classList.add('chat-open');
@@ -4821,7 +5041,7 @@ async function loadChat(peerEmail) {
         for (const m of messages) {
             const from = normalizeEmail(m?.from);
             const isReceived = from === peer;
-            createMessageBubble(safeStr(m?.text), isReceived ? 'received' : 'sent', m?.sentAt);
+            createMessageBubble(m, isReceived ? 'received' : 'sent');
         }
 
         // mark seen locally
@@ -4841,18 +5061,80 @@ async function loadChat(peerEmail) {
     }
 }
 
-function createMessageBubble(text, type, sentAtIso) {
+function createMessageBubble(textOrMsg, type, sentAtIso) {
     if (!DOM.chatHistoryContainer) return;
+
+    const m = (textOrMsg && typeof textOrMsg === 'object') ? textOrMsg : null;
+    const text = m ? safeStr(m.text || '') : safeStr(textOrMsg || '');
+    const media = m ? (Array.isArray(m.media) ? m.media : (Array.isArray(m.attachments) ? m.attachments : [])) : [];
+
+    const iso =
+        sentAtIso
+        || (m && (safeStr(m.sentAt) || (Number.isFinite(Number(m.createdAtMs)) ? new Date(Number(m.createdAtMs)).toISOString() : '')))
+        || new Date().toISOString();
 
     const bubble = document.createElement('div');
     bubble.className = `chat-bubble ${type}`;
 
-    const time = sentAtIso ? formatTimeShort(sentAtIso) : formatTimeShort(new Date().toISOString());
+    const time = formatTimeShort(iso);
+
+    const hasText = !!String(text || '').trim();
+    const hasMedia = Array.isArray(media) && media.length > 0;
+
+    let mediaHtml = '';
+    if (hasMedia) {
+        const cells = media.slice(0, 6).map((it, idx) => {
+            const src = String(it?.url || it?.src || it?.thumb || '');
+            const t = String(it?.type || '').toLowerCase();
+            const isVideo = t.includes('video');
+            const label = isVideo ? '▶' : '';
+            return `
+              <div class="tm-bubble-media-item" data-idx="${idx}"
+                   style="position:relative; width:88px; height:88px; border-radius:12px; overflow:hidden; border:1px solid rgba(255,255,255,0.12); background:#000; cursor:pointer; flex:0 0 auto;">
+                ${isVideo
+                    ? `<div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:20px;">${label}</div>`
+                    : `<img src="${src}" alt="" style="width:100%; height:100%; object-fit:cover; display:block;">`
+                }
+              </div>
+            `;
+        }).join('');
+
+        mediaHtml = `
+          <div class="tm-bubble-media-grid" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:${hasText ? '8px' : '0'};">
+            ${cells}
+          </div>
+        `;
+    }
 
     bubble.innerHTML = `
-        <div class="bubble-text">${escapeHtml(text)}</div>
+        ${hasText ? `<div class="bubble-text">${escapeHtml(text)}</div>` : ''}
+        ${mediaHtml}
         <div class="bubble-meta">${time}</div>
     `;
+
+    // Media click -> preview
+    if (hasMedia && typeof Swal !== 'undefined' && Swal?.fire) {
+        bubble.querySelectorAll('.tm-bubble-media-item').forEach((node) => {
+            node.addEventListener('click', () => {
+                const idx = Number(node.getAttribute('data-idx') || 0);
+                const it = media[idx];
+                if (!it) return;
+                const src = String(it?.url || it?.src || it?.thumb || '');
+                const t = String(it?.type || '').toLowerCase();
+                const isVideo = t.includes('video');
+                Swal.fire({
+                    title: String(it?.name || 'Media'),
+                    html: isVideo
+                        ? `<video src="${src}" controls autoplay style="width:100%; border-radius:12px;"></video>`
+                        : `<img src="${src}" style="width:100%; border-radius:12px;" />`,
+                    showCancelButton: false,
+                    confirmButtonText: 'Close',
+                    background: '#0b1220',
+                    color: '#fff'
+                });
+            });
+        });
+    }
 
     DOM.chatHistoryContainer.appendChild(bubble);
 }
@@ -5212,30 +5494,41 @@ function initSendMessage() {
             return;
         }
 
-        const raw = DOM.chatInput ? DOM.chatInput.value : '';
-        const text = String(raw || '').trim();
-        if (!text) return;
+const raw = DOM.chatInput ? DOM.chatInput.value : '';
+const text = String(raw || '').trim();
+const media = Array.isArray(__chatDraftMedia) ? __chatDraftMedia.slice(0, 6) : [];
+if (!text && !media.length) return;
 
-        try {
-            // Optimistic: disable briefly
-            if (DOM.btnSendMsg) DOM.btnSendMsg.disabled = true;
+try {
+    // Optimistic: disable briefly
+    if (DOM.btnSendMsg) DOM.btnSendMsg.disabled = true;
 
-            const res = await sendMessageTo(activePeerEmail, text);
-            const msg = res?.message || { text, sentAt: new Date().toISOString() };
+    const res = await sendMessageTo(activePeerEmail, {
+        text,
+        mediaIds: media.map(x => x.id).filter(Boolean),
+        media
+    });
+    const msg = res?.message || { text, media, sentAt: new Date().toISOString() };
 
-            createMessageBubble(text, 'sent', msg.sentAt);
-            if (DOM.chatInput) DOM.chatInput.value = '';
-            DOM.chatHistoryContainer.scrollTop = DOM.chatHistoryContainer.scrollHeight;
+    const sentIso =
+        safeStr(msg.sentAt)
+        || (Number.isFinite(Number(msg.createdAtMs)) ? new Date(Number(msg.createdAtMs)).toISOString() : new Date().toISOString());
 
-            // Update preview/time in list
-            const u = __msgUsers.find(x => x.email === activePeerEmail);
-            if (u) {
-                u.preview = text;
-                u.time = formatListTime(msg.sentAt);
-            }
-            renderMessageList();
+    createMessageBubble(msg, 'sent', sentIso);
+    if (DOM.chatInput) DOM.chatInput.value = '';
+    try { __chatClearDraftMedia(); } catch (_) {}
+    DOM.chatHistoryContainer.scrollTop = DOM.chatHistoryContainer.scrollHeight;
 
-        } catch (e) {
+    // Update preview/time in list
+    const preview = text || (Array.isArray(msg.media) && msg.media.length ? '[Media]' : '');
+    const u = __msgUsers.find(x => x.email === activePeerEmail);
+    if (u) {
+        u.preview = preview;
+        u.time = formatListTime(sentIso);
+    }
+    renderMessageList();
+
+} catch (e) {
             if (String(e?.message || '').includes('daily_message_limit_reached')) {
                 toastInstance?.fire?.({ icon: 'error', title: 'Daily message limit reached' });
             } else {
@@ -5323,41 +5616,109 @@ function initMediaGallery() {
     const btnTop = document.getElementById('btn-chat-media-top');
     const btnBottom = document.getElementById('btn-chat-media-bottom');
 
-    const open = async () => {
+    const openGallery = async () => {
         if (!activePeerEmail) {
             toastInstance?.fire?.({ icon: 'info', title: 'Select a conversation' });
             return;
         }
 
-        const title = (activeChatUser?.name ? `${activeChatUser.name} • Media` : 'Chat media');
+        try {
+            const res = await getMessageThread(activePeerEmail);
+            const messages = Array.isArray(res?.messages) ? res.messages : [];
+            const all = [];
+            messages.forEach((m) => {
+                const media = Array.isArray(m?.media) ? m.media : (Array.isArray(m?.attachments) ? m.attachments : []);
+                media.forEach((it) => all.push({ ...it, _sentAt: m?.sentAt || m?.createdAtMs || null }));
+            });
 
-        // Backend media threads not implemented yet.
-        const html = `
-            <div style="text-align:left; line-height:1.4;">
-                <div style="font-weight:600; margin-bottom:6px;">No shared media yet</div>
-                <div style="color:rgba(255,255,255,0.75); font-size:13px;">
-                    When you start sending images, they’ll show up here.
-                </div>
-            </div>
-        `;
+            const title = (activeChatUser?.name ? `${activeChatUser.name} • Media` : 'Chat media');
 
-        if (typeof Swal !== 'undefined' && Swal?.fire) {
+            if (!all.length) {
+                const html = `
+                    <div style="text-align:left; line-height:1.4;">
+                        <div style="font-weight:600; margin-bottom:6px;">No shared media yet</div>
+                        <div style="color:rgba(255,255,255,0.75); font-size:13px;">
+                            Send images or videos and they’ll show up here.
+                        </div>
+                    </div>
+                `;
+                await Swal.fire({
+                    title,
+                    html,
+                    showCancelButton: false,
+                    confirmButtonText: 'Close',
+                    background: '#0b1220',
+                    color: '#fff'
+                });
+                return;
+            }
+
+            const cells = all.slice(0, 60).map((it, idx) => {
+                const src = String(it?.url || it?.src || '');
+                const t = String(it?.type || '').toLowerCase();
+                const isVideo = t.includes('video');
+                return `
+                  <div class="tm-chat-gallery-item" data-idx="${idx}"
+                       style="position:relative; border-radius:12px; overflow:hidden; border:1px solid rgba(255,255,255,0.12); background:#000; cursor:pointer; aspect-ratio:1/1;">
+                    ${isVideo
+                        ? `<div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:20px;">▶</div>`
+                        : `<img src="${src}" alt="" style="width:100%; height:100%; object-fit:cover; display:block;">`
+                    }
+                  </div>
+                `;
+            }).join('');
+
+            const html = `
+              <div id="tmChatGalleryGrid" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;">
+                ${cells}
+              </div>
+            `;
+
             await Swal.fire({
                 title,
                 html,
                 showCancelButton: false,
                 confirmButtonText: 'Close',
                 background: '#0b1220',
-                color: '#fff'
+                color: '#fff',
+                didOpen: () => {
+                    const grid = document.getElementById('tmChatGalleryGrid');
+                    if (!grid) return;
+                    grid.addEventListener('click', (e) => {
+                        const node = e.target && e.target.closest ? e.target.closest('.tm-chat-gallery-item') : null;
+                        if (!node) return;
+                        const idx = Number(node.getAttribute('data-idx') || 0);
+                        const it = all[idx];
+                        if (!it) return;
+                        const src = String(it?.url || it?.src || '');
+                        const t = String(it?.type || '').toLowerCase();
+                        const isVideo = t.includes('video');
+                        Swal.fire({
+                            title: String(it?.name || 'Media'),
+                            html: isVideo
+                                ? `<video src="${src}" controls autoplay style="width:100%; border-radius:12px;"></video>`
+                                : `<img src="${src}" style="width:100%; border-radius:12px;" />`,
+                            showCancelButton: false,
+                            confirmButtonText: 'Close',
+                            background: '#0b1220',
+                            color: '#fff'
+                        });
+                    });
+                }
             });
-        } else {
-            window.alert('No shared media yet.');
+        } catch (e) {
+            toastInstance?.fire?.({ icon: 'error', title: e?.message || 'Unable to load media' });
         }
     };
 
-    if (btnTop) btnTop.addEventListener('click', open);
-    if (btnBottom) btnBottom.addEventListener('click', open);
+    const openAttach = async () => {
+        try { await __chatOpenAttachPicker(); } catch (e) { console.error(e); }
+    };
+
+    if (btnTop) btnTop.addEventListener('click', openGallery);
+    if (btnBottom) btnBottom.addEventListener('click', openAttach);
 }
+
 
 // -------------------------------
 // Mobile input teleport (kept)
