@@ -5186,6 +5186,49 @@ async function tmVaultDeleteFromApi(id) {
   return out;
 }
 
+async function tmVaultSetLockedFromApi(id, locked) {
+  const payload = { id: String(id || '').trim(), locked: !!locked };
+  if (!payload.id) throw new Error('Missing id');
+  const out = await apiPostJson('/api/collections/vault/lock', payload);
+  if (!out?.ok) throw new Error(out?.error || out?.message || 'Update failed');
+  return out;
+}
+
+// Fire-and-forget lock toggle (keeps UI actions simple)
+function tmVaultSetLocked(id, locked) {
+  const key = String(id || '').trim();
+  if (!key) return;
+
+  const nextLocked = !!locked;
+
+  // Optimistic update API cache
+  try {
+    if (Array.isArray(__vaultApiItems) && __vaultApiItems.length) {
+      __vaultApiItems = __vaultApiItems.map((x) => {
+        if (String(x?.id) !== key) return x;
+        return { ...x, locked: nextLocked };
+      });
+      tmLsWrite(TM_VAULT_API_CACHE_KEY, __vaultApiItems);
+    }
+  } catch {}
+
+  // Also update local fallback cache
+  try {
+    const local = _tmVaultLocalRead();
+    const updated = local.map((x) => {
+      if (String(x?.id) !== key) return x;
+      return { ...x, locked: nextLocked };
+    });
+    _tmVaultLocalWrite(updated);
+  } catch {}
+
+  // Best-effort remote update
+  tmVaultSetLockedFromApi(key, nextLocked)
+    .then(() => tmSyncVaultFromApi({ silent: true }))
+    .catch(() => {});
+}
+
+
 // Fire-and-forget delete (keeps old sync call sites working)
 function tmVaultDelete(id) {
   const key = String(id || '').trim();
@@ -5844,6 +5887,80 @@ function rsMediaApply(items) {
   return list;
 }
 
+
+function tmGetMyCreatorSubPrice() {
+  // Best-effort: read from Subscription Price setting input if present.
+  try {
+    const el = document.getElementById('tm-sub-price');
+    if (el) {
+      const n = Number(String(el.value || '').replace(/[^\d.]/g, ''));
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+  } catch {}
+
+  // Fallback: attempt to read from cached /api/me payload if available
+  try {
+    const me = window.__tmMe || window.__meCache || null;
+    const ca = me?.user?.creatorApplication || me?.creatorApplication || null;
+    const n = Number(ca?.price || ca?.subscriptionPrice || ca?.subPrice || 0);
+    if (Number.isFinite(n) && n > 0) return n;
+  } catch {}
+
+  // Default UX fallback
+  return 9.99;
+}
+
+function tmShowLockedPaywallPreview(item) {
+  const m = item || {};
+  const price = tmGetMyCreatorSubPrice();
+  const type = String(m.type || '').toLowerCase();
+  const src = String(m.src || '');
+
+  let preview = `<div style="padding:8px 0; color:rgba(255,255,255,0.85); font-size:13px;">Locked content preview</div>`;
+  if (type === 'image' && src) {
+    preview = `
+      <div style="position:relative; border-radius:14px; overflow:hidden;">
+        <img src="${src}" style="width:100%; max-height:360px; object-fit:cover; filter: blur(16px); transform: scale(1.05);" />
+        <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; background:rgba(0,0,0,0.35);">
+          <div style="width:44px; height:44px; border-radius:999px; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.55); border:1px solid rgba(255,255,255,0.18);">
+            <i class="fa-solid fa-lock" style="color:#fff;"></i>
+          </div>
+          <div style="font-weight:800; color:#fff; letter-spacing:0.3px;">Subscribe to unlock</div>
+          <div style="font-size:12px; color:rgba(255,255,255,0.85);">$${price.toFixed(2)} / month</div>
+        </div>
+      </div>
+    `;
+  } else if (type === 'video' && src) {
+    preview = `
+      <div style="position:relative; border-radius:14px; overflow:hidden;">
+        <video src="${src}" muted playsinline preload="metadata" style="width:100%; max-height:360px; object-fit:cover; filter: blur(16px); transform: scale(1.05);"></video>
+        <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; background:rgba(0,0,0,0.35);">
+          <div style="width:44px; height:44px; border-radius:999px; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.55); border:1px solid rgba(255,255,255,0.18);">
+            <i class="fa-solid fa-lock" style="color:#fff;"></i>
+          </div>
+          <div style="font-weight:800; color:#fff; letter-spacing:0.3px;">Subscribe to unlock</div>
+          <div style="font-size:12px; color:rgba(255,255,255,0.85);">$${price.toFixed(2)} / month</div>
+        </div>
+      </div>
+    `;
+  }
+
+  Swal.fire({
+    title: 'Locked content',
+    html: preview,
+    showCancelButton: true,
+    confirmButtonText: 'Go to Subscriptions',
+    confirmButtonColor: '#64E9EE',
+    cancelButtonText: 'Close',
+    background: '#0d1423',
+    color: '#fff'
+  }).then((r) => {
+    if (!r.isConfirmed) return;
+    const btn = document.getElementById('nav-link-subs') || document.getElementById('nav-link-add-card');
+    if (btn && typeof btn.click === 'function') btn.click();
+  });
+}
+
 function rsRenderMedia() {
   const view = document.getElementById('rs-view-type-media');
   if (!view) return;
@@ -5945,6 +6062,11 @@ function rsRenderMedia() {
     }
 
     if (m.locked) {
+      // Blur the underlying thumbnail (img/video) and add lock overlay
+      try {
+        const el = cell.querySelector('img, video');
+        if (el) el.style.filter = 'blur(10px)';
+      } catch {}
       const lock = document.createElement('div');
       lock.style.position = 'absolute';
       lock.style.inset = '0';
@@ -5958,13 +6080,13 @@ function rsRenderMedia() {
     }
 
     cell.addEventListener('click', () => {
-      let title = (m.name || '').trim() || 'Vault item';
+      const title = (m.name || '').trim() || 'Vault item';
+      const isLocked = !!m.locked;
+
       let html = '';
       let imageUrl = null;
 
-      if (m.locked) {
-        html = `<div style="padding:10px 0; color:var(--text);">This item is locked.</div>`;
-      } else if (m.type === 'image') {
+      if (m.type === 'image') {
         imageUrl = m.src;
       } else if (m.type === 'video') {
         html = `<video src="${m.src}" controls autoplay style="width:100%; border-radius:12px;"></video>`;
@@ -5974,23 +6096,55 @@ function rsRenderMedia() {
         html = `<div style="padding:10px 0; color:var(--text);">Preview not available for this file type.</div>`;
       }
 
+      if (isLocked) {
+        html = (html || '') + `
+          <div style="margin-top:10px; padding:10px; border-radius:12px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.03); color:rgba(255,255,255,0.86); font-size:12px;">
+            This item is <strong>Locked</strong>. Fans will see a blur + “Subscribe to unlock”.
+            <div style="margin-top:10px;">
+              <button type="button" id="tm-paywall-preview-btn" style="padding:10px 12px; border-radius:12px; border:1px solid rgba(100,233,238,0.25); background:rgba(100,233,238,0.12); color:#fff; cursor:pointer;">Preview paywall</button>
+            </div>
+          </div>`;
+      }
+
       Swal.fire({
         title,
         html: html || undefined,
         imageUrl: imageUrl || undefined,
         imageAlt: 'media',
-        showConfirmButton: false,
+        showConfirmButton: true,
+        confirmButtonText: isLocked ? 'Unlock item' : 'Lock item',
+        confirmButtonColor: '#64E9EE',
         showDenyButton: true,
         denyButtonText: 'Delete',
         denyButtonColor: '#ff4d6d',
+        showCancelButton: true,
+        cancelButtonText: 'Close',
         background: '#0d1423',
-        color: '#fff'
+        color: '#fff',
+        didOpen: () => {
+          const btn = document.getElementById('tm-paywall-preview-btn');
+          if (btn) {
+            btn.addEventListener('click', (e) => {
+              e.preventDefault();
+              try { Swal.close(); } catch {}
+              try { tmShowLockedPaywallPreview(m); } catch {}
+            });
+          }
+        }
       }).then((r) => {
-        if (!r.isDenied) return;
-        deleteMediaFromStorage(m.id);
-        try { rsToast('success', 'Deleted'); } catch(e) {}
-        try { renderCollections(); } catch(e) {}
-        try { rsRenderMedia(); } catch(e) {}
+        if (r.isConfirmed) {
+          tmVaultSetLocked(m.id, !isLocked);
+          try { rsToast('success', (!isLocked ? 'Locked' : 'Unlocked')); } catch(e) {}
+          try { renderCollections(); } catch(e) {}
+          try { rsRenderMedia(); } catch(e) {}
+          return;
+        }
+        if (r.isDenied) {
+          deleteMediaFromStorage(m.id);
+          try { rsToast('success', 'Deleted'); } catch(e) {}
+          try { renderCollections(); } catch(e) {}
+          try { rsRenderMedia(); } catch(e) {}
+        }
       });
     });
 
@@ -6218,32 +6372,51 @@ function rsBindMediaSidebar() {
                 return;
             }
 
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                const base64String = event.target.result;
-                const mediaItem = {
-                    id: Date.now(),
-                    src: base64String,
-                    name: file.name || '',
-                    type: file.type.startsWith('video') ? 'video' : (file.type.startsWith('image') ? 'image' : (file.type.startsWith('audio') ? 'audio' : 'other')),
-                    createdAt: Date.now(),
-                    date: new Date().toLocaleDateString()
+                        (async () => {
+                // Ask if this upload should be Locked (paywalled)
+                const ask = await Swal.fire({
+                    title: 'Upload to Vault',
+                    text: 'Do you want this item to be Locked (paywalled) for fans?',
+                    input: 'checkbox',
+                    inputPlaceholder: 'Locked (paywall)',
+                    showCancelButton: true,
+                    confirmButtonText: 'Continue',
+                    confirmButtonColor: '#64E9EE',
+                    cancelButtonText: 'Cancel',
+                    background: '#0d1423',
+                    color: '#fff'
+                });
+                if (!ask.isConfirmed) { try { fileInput.value = ''; } catch(_) {} return; }
+                const isLocked = !!ask.value;
+            
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    const base64String = event.target.result;
+                    const mediaItem = {
+                        id: Date.now(),
+                        src: base64String,
+                        name: file.name || '',
+                        type: file.type.startsWith('video') ? 'video' : (file.type.startsWith('image') ? 'image' : (file.type.startsWith('audio') ? 'audio' : 'other')),
+                        locked: isLocked,
+                        createdAt: Date.now(),
+                        date: new Date().toLocaleDateString()
+                    };
+                    (async () => {
+                        try {
+                            await tmVaultAddToApi(mediaItem);
+                            TopToast.fire({ icon: 'success', title: 'Uploaded to Vault!' });
+                        } catch (e) {
+                            // Offline / backend not configured -> local fallback
+                            saveMediaToStorage(mediaItem);
+                            TopToast.fire({ icon: 'success', title: 'Saved to Vault!' });
+                        }
+                        try { renderCollections(); } catch(_) {}
+                        try { rsRenderMedia(); } catch(_) {}
+                    })();
                 };
-                (async () => {
-                    try {
-                        await tmVaultAddToApi(mediaItem);
-                        TopToast.fire({ icon: 'success', title: 'Uploaded to Vault!' });
-                    } catch (e) {
-                        // Offline / backend not configured -> local fallback
-                        saveMediaToStorage(mediaItem);
-                        TopToast.fire({ icon: 'success', title: 'Saved to Vault!' });
-                    }
-                    try { renderCollections(); } catch(_) {}
-                    try { rsRenderMedia(); } catch(_) {}
-                })();
-            };
-            reader.readAsDataURL(file);
-            fileInput.value = '';
+                reader.readAsDataURL(file);
+                try { fileInput.value = ''; } catch(_) {}
+            })();
         });
     }
 
@@ -6368,22 +6541,91 @@ function rsBindMediaSidebar() {
             }
 
             div.innerHTML = contentHTML;
+
+            // Locked overlay + blur (Vault grid)
+            try {
+                if (media.locked) {
+                    const el = div.querySelector('img, video');
+                    if (el) el.style.filter = 'blur(12px)';
+                    const lock = document.createElement('div');
+                    lock.style.position = 'absolute';
+                    lock.style.inset = '0';
+                    lock.style.display = 'flex';
+                    lock.style.alignItems = 'center';
+                    lock.style.justifyContent = 'center';
+                    lock.style.background = 'rgba(0,0,0,0.45)';
+                    lock.style.color = '#fff';
+                    lock.innerHTML = '<i class="fa-solid fa-lock"></i>';
+                    div.appendChild(lock);
+                }
+            } catch(e) {}
+
             
             div.onclick = () => {
+                const title = (media.name || '').trim() || 'Vault item';
+                const isLocked = !!media.locked;
+
+                let html = '';
+                let imageUrl = null;
+
+                if (media.type === 'image') {
+                    imageUrl = media.src;
+                } else if (media.type === 'video') {
+                    html = `<video src="${media.src}" controls autoplay style="width:100%; border-radius:12px;"></video>`;
+                } else if (media.type === 'audio') {
+                    html = `<audio src="${media.src}" controls autoplay style="width:100%;"></audio>`;
+                } else {
+                    html = `<div style="padding:10px 0; color:var(--text);">Preview not available for this file type.</div>`;
+                }
+
+                if (isLocked) {
+                    html = (html || '') + `
+                      <div style="margin-top:10px; padding:10px; border-radius:12px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.03); color:rgba(255,255,255,0.86); font-size:12px;">
+                        This item is <strong>Locked</strong>. Fans will see a blur + “Subscribe to unlock”.
+                        <div style="margin-top:10px;">
+                          <button type="button" id="tm-paywall-preview-btn-main" style="padding:10px 12px; border-radius:12px; border:1px solid rgba(100,233,238,0.25); background:rgba(100,233,238,0.12); color:#fff; cursor:pointer;">Preview paywall</button>
+                        </div>
+                      </div>`;
+                }
+
                 Swal.fire({
-                    imageUrl: media.type === 'image' ? media.src : null,
-                    html: media.type === 'video' ? `<video src="${media.src}" controls autoplay style="width:100%"></video>` : '',
+                    title,
+                    html: html || undefined,
+                    imageUrl: (media.type === 'image') ? imageUrl : undefined,
+                    showConfirmButton: true,
+                    confirmButtonText: isLocked ? 'Unlock item' : 'Lock item',
+                    confirmButtonColor: '#64E9EE',
                     showDenyButton: true,
-                    showConfirmButton: false,
                     denyButtonText: 'Delete from Vault',
                     denyButtonColor: '#ff4757',
+                    showCancelButton: true,
+                    cancelButtonText: 'Close',
                     background: '#0d1423',
+                    color: '#fff',
                     showCloseButton: true,
-                    customClass: { popup: 'swal-media-preview' }
+                    customClass: { popup: 'swal-media-preview' },
+                    didOpen: () => {
+                      const btn = document.getElementById('tm-paywall-preview-btn-main');
+                      if (btn) {
+                        btn.addEventListener('click', (e) => {
+                          e.preventDefault();
+                          try { Swal.close(); } catch {}
+                          try { tmShowLockedPaywallPreview(media); } catch {}
+                        });
+                      }
+                    }
                 }).then((result) => {
+                    if (result.isConfirmed) {
+                        tmVaultSetLocked(media.id, !isLocked);
+                        try { TopToast.fire({ icon: 'success', title: (!isLocked ? 'Locked' : 'Unlocked') }); } catch(_) {}
+                        try { renderCollections(); } catch(_) {}
+                        try { rsRenderMedia(); } catch(_) {}
+                        return;
+                    }
                     if (result.isDenied) {
                         deleteMediaFromStorage(media.id);
-                        renderCollections();
+                        try { renderCollections(); } catch(_) {}
+                        try { rsRenderMedia(); } catch(_) {}
                     }
                 });
             };

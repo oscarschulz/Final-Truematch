@@ -11974,6 +11974,51 @@ app.post('/api/collections/vault/add', async (req, res) => {
   }
 });
 
+
+
+app.post('/api/collections/vault/lock', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req));
+    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+
+    const id = safeStr(req.body?.id || '').trim();
+    const locked = !!req.body?.locked;
+    if (!id) return res.status(400).json({ ok: false, error: 'Missing id.' });
+
+    // Demo fallback
+    if (!hasFirebase || !firestore || !usersCollection) {
+      const list = _demoVaultFor(me);
+      const idx = list.findIndex(x => String(x?.id) === String(id));
+      if (idx >= 0) {
+        list[idx].locked = locked;
+        DB.vaultMediaByEmail[me] = list.slice(0, 400);
+        return res.json({ ok: true, item: _vaultClientItem(id, list[idx]) });
+      }
+      return res.status(404).json({ ok: false, error: 'not_found' });
+    }
+
+    const u = await findUserByEmail(me);
+    if (!u || !u.id) return res.status(404).json({ ok: false, error: 'user_not_found' });
+
+    const docRef = usersCollection.doc(String(u.id)).collection(VAULT_MEDIA_SUBCOL).doc(String(id));
+    const snap = await docRef.get();
+    if (!snap.exists) return res.status(404).json({ ok: false, error: 'not_found' });
+
+    const nowMs = Date.now();
+    await docRef.set(pruneUndefinedDeep({
+      locked,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAtMs: nowMs,
+    }), { merge: true });
+
+    const nextSnap = await docRef.get();
+    const item = nextSnap.exists ? _vaultClientItem(id, nextSnap.data() || {}) : null;
+    return res.json({ ok: true, item });
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
 app.post('/api/collections/vault/delete', async (req, res) => {
   try {
     const me = _normalizeEmail(getSessionEmail(req));
