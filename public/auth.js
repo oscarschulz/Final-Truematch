@@ -700,22 +700,150 @@ if (await tryDemoLogin(email, password)) {
     });
   });
 
-  whenReady(() => {
-    const googleBtn = $("#btnGoogleLogin");
-    if (!googleBtn || googleBtn.dataset.tmBound === "1") return;
-    googleBtn.dataset.tmBound = "1";
-    googleBtn.addEventListener("click", async (e) => {
-      e.preventDefault();
-      try { tmShowLoader('Signing in…','Opening Google'); } catch {}
-      try {
-        const r = await callAPI("/api/auth/oauth/mock", { provider: "google" });
-        saveLocalUser(r?.user || { email: "google@demo.local", name: "Google User" });
-        const extra = new URLSearchParams();
-        if (r?.demo) extra.set("demo", "1");
-        await finishLogin((r && r.user && r.user.email) ? r.user.email : "google@demo.local");
-      } finally { try { tmHideLoader(); } catch {} }
+    // ---------------- OAuth: Google (real) ----------------
+  async function tmFetchPublicConfig() {
+    try {
+      const r = await fetch(API_BASE + '/api/config', { method: 'GET', credentials: 'include' });
+      if (!r.ok) return {};
+      const j = await r.json();
+      return (j && typeof j === 'object') ? j : {};
+    } catch {
+      return {};
+    }
+  }
+
+  async function tmGetGoogleClientId() {
+    // Prefer server-driven config (Railway env). Fallback to any existing window.GOOGLE_CLIENT_ID.
+    const cfg = await tmFetchPublicConfig();
+    const fromApi = (cfg.googleClientId || '').toString().trim();
+    if (fromApi) return fromApi;
+    const fromWin = (window.GOOGLE_CLIENT_ID || '').toString().trim();
+    return fromWin || '';
+  }
+
+  function tmEnsureGoogleOauthUI() {
+    const wrap = document.querySelector('.oauth-wrap');
+    if (!wrap) return null;
+
+    if (wrap.dataset.tmOauthReady === '1') return wrap;
+    wrap.dataset.tmOauthReady = '1';
+
+    // Inject divider + container (keeps your HTML base unchanged)
+    wrap.innerHTML = '';
+    const divider = document.createElement('div');
+    divider.className = 'divider';
+    divider.innerHTML = '<span>or</span>';
+
+    const gsiWrap = document.createElement('div');
+    gsiWrap.id = 'tmGoogleBtnWrap';
+    gsiWrap.style.width = '100%';
+    gsiWrap.style.display = 'flex';
+    gsiWrap.style.justifyContent = 'center';
+
+    // Fallback button (used only if GSI isn't available)
+    const fallbackBtn = document.createElement('button');
+    fallbackBtn.type = 'button';
+    fallbackBtn.className = 'btn-oauth';
+    fallbackBtn.id = 'btnGoogleLogin';
+    fallbackBtn.style.display = 'none';
+    fallbackBtn.innerHTML = `
+      <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+        <path fill="#EA4335" d="M24 9.5c3.1 0 5.9 1.1 8.1 2.9l6-6C34.5 3.1 29.7 1 24 1 14.9 1 7.2 6.2 3.3 13.7l7 5.4C12.2 13.4 17.6 9.5 24 9.5z"/>
+        <path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-2.8-.4-4H24v7.6h12.7c-.3 2-1.9 5-5.1 7l7.9 6.1c4.6-4.2 7-10.4 7-17.7z"/>
+        <path fill="#FBBC05" d="M10.3 28.6c-.5-1.4-.8-2.9-.8-4.6s.3-3.2.8-4.6l-7-5.4C1.8 17 1 20.4 1 24s.8 7 2.3 10l7-5.4z"/>
+        <path fill="#34A853" d="M24 47c5.7 0 10.5-1.9 14-5.1l-7.9-6.1c-2.1 1.4-4.9 2.4-6.1 2.4-6.4 0-11.8-3.9-13.7-9.6l-7 5.4C7.2 41.8 14.9 47 24 47z"/>
+        <path fill="none" d="M0 0h48v48H0z"/>
+      </svg>
+      <span>Continue with Google</span>
+    `.trim();
+
+    wrap.appendChild(divider);
+    wrap.appendChild(gsiWrap);
+    wrap.appendChild(fallbackBtn);
+
+    return wrap;
+  }
+
+  async function tmInitGoogleGSI() {
+    const wrap = tmEnsureGoogleOauthUI();
+    if (!wrap) return;
+
+    const clientId = await tmGetGoogleClientId();
+
+    // If not configured, show fallback demo OAuth (keeps existing behavior for local testing)
+    if (!clientId) {
+      const btn = document.getElementById('btnGoogleLogin');
+      if (btn) {
+        btn.style.display = '';
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          try { tmShowLoader('Signing in…','Google not configured'); } catch {}
+          try {
+            const r = await callAPI('/api/auth/oauth/mock', { provider: 'google' });
+            saveLocalUser(r?.user || { email: 'google@demo.local', name: 'Google User' });
+            await finishLogin((r && r.user && r.user.email) ? r.user.email : 'google@demo.local');
+          } finally { try { tmHideLoader(); } catch {} }
+        }, { once: true });
+      }
+      return;
+    }
+
+    // Wait for GSI script to be available
+    const start = Date.now();
+    while (!(window.google && google.accounts && google.accounts.id)) {
+      if (Date.now() - start > 7000) break;
+      await new Promise(r => setTimeout(r, 60));
+    }
+
+    const gsi = (window.google && google.accounts && google.accounts.id) ? google.accounts.id : null;
+    const gsiWrap = document.getElementById('tmGoogleBtnWrap');
+    if (!gsi || !gsiWrap) {
+      // Fallback (GSI not loaded)
+      const btn = document.getElementById('btnGoogleLogin');
+      if (btn) btn.style.display = '';
+      return;
+    }
+
+    if (gsiWrap.dataset.tmBound === '1') return;
+    gsiWrap.dataset.tmBound = '1';
+
+    gsi.initialize({
+      client_id: clientId,
+      callback: async (resp) => {
+        const credential = resp && resp.credential ? String(resp.credential) : '';
+        if (!credential) return;
+
+        const remember = !!document.getElementById('rememberMe')?.checked;
+
+        try { tmShowLoader('Signing in…','Verifying Google'); } catch {}
+        try {
+          const r = await callAPI('/api/auth/oauth/google', { credential, remember });
+          if (!r || !r.ok) {
+            if (window.Swal) Swal.fire({ icon: 'error', title: 'Google Sign-in Failed', text: r?.message || 'Unable to sign in with Google.' });
+            return;
+          }
+          saveLocalUser(r.user || {});
+          await finishLogin((r && r.user && r.user.email) ? r.user.email : '');
+        } finally { try { tmHideLoader(); } catch {} }
+      }
     });
+
+    // Render official Google button
+    gsi.renderButton(gsiWrap, {
+      type: 'standard',
+      theme: 'outline',
+      size: 'large',
+      text: 'continue_with',
+      shape: 'pill',
+      width: Math.min(420, (wrap.getBoundingClientRect().width || 420))
+    });
+  }
+
+  whenReady(() => {
+    tmInitGoogleGSI();
   });
+
+
 
   whenReady(() => {
   const btnOpenForgot   = document.getElementById('btnOpenForgot');

@@ -24,6 +24,28 @@ try {
 } catch (e) {
   google = null;
 }
+// Google OAuth ("Continue with Google") (lazy)
+let OAuth2Client = null;
+try {
+  ({ OAuth2Client } = require('google-auth-library'));
+} catch (e) {
+  OAuth2Client = null;
+}
+let _tmGoogleOAuthClient = null;
+function getGoogleOAuthClient() {
+  const cid = (process.env.GOOGLE_CLIENT_ID || '').trim();
+  if (!cid || !OAuth2Client) return null;
+  try {
+    if (!_tmGoogleOAuthClient || _tmGoogleOAuthClient._tmCid !== cid) {
+      _tmGoogleOAuthClient = new OAuth2Client(cid);
+      _tmGoogleOAuthClient._tmCid = cid;
+    }
+    return _tmGoogleOAuthClient;
+  } catch {
+    return null;
+  }
+}
+
 // ---------------- Basic server setup ----------------
 const app = express();
 app.set('trust proxy', 1);
@@ -3518,6 +3540,143 @@ app.post('/api/auth/oauth/mock', (_req, res) => {
   DB.user.prefsSaved = Boolean(DB.prefs);
   DB.user.planActive = false;
   return res.json({ ok: true, user: DB.user });
+});
+
+// ---------------- OAuth: GOOGLE (real) -------------------
+// Expects a Google Identity Services ID token in `credential` (JWT).
+app.post('/api/auth/oauth/google', async (req, res) => {
+  try {
+    // Rate limit (anti-abuse)
+    if (!rateLimitOr429(req, res, _rlKey(req, 'oauth_google'), 60, 15 * 60 * 1000, 'too_many_requests')) return;
+
+    const body = req.body || {};
+    const credential = (body.credential || body.idToken || body.id_token || '').toString().trim();
+
+    if (!credential) {
+      return res.status(400).json({ ok: false, message: 'missing_google_credential' });
+    }
+
+    const cid = (process.env.GOOGLE_CLIENT_ID || '').trim();
+    if (!cid) {
+      return res.status(503).json({ ok: false, message: 'google_oauth_not_configured' });
+    }
+
+    const client = getGoogleOAuthClient();
+    if (!client) {
+      return res.status(500).json({ ok: false, message: 'google_oauth_client_unavailable' });
+    }
+
+    // Verify ID token (JWT) from Google
+    const ticket = await client.verifyIdToken({ idToken: credential, audience: cid });
+    const payload = (ticket && typeof ticket.getPayload === 'function') ? ticket.getPayload() : null;
+
+    const emailRaw = payload && payload.email ? String(payload.email) : '';
+    const emailNorm = emailRaw.trim().toLowerCase();
+
+    if (!emailNorm || !isValidEmail(emailNorm)) {
+      clearSession(res);
+      return res.status(401).json({ ok: false, message: 'invalid_google_account' });
+    }
+
+    const name = payload && payload.name ? String(payload.name).trim() : '';
+    const picture = payload && payload.picture ? String(payload.picture).trim() : '';
+
+    const emailVerified = !!(payload && (payload.email_verified === true || String(payload.email_verified).toLowerCase() === 'true'));
+
+    // If prod and Firebase is missing, do NOT fall back to insecure demo auth.
+    if (IS_PROD && !hasFirebase) {
+      clearSession(res);
+      return res.status(503).json({ ok: false, message: 'auth_backend_misconfigured' });
+    }
+
+    // Demo / local fallback (no Firestore)
+    if (!hasFirebase) {
+      if (!DB.user) DB.user = {};
+      DB.user.email = emailNorm;
+      DB.user.name = name || (emailNorm.split('@')[0] || 'User');
+      if (picture) DB.user.avatarUrl = picture;
+      DB.user.plan = DB.user.plan || 'free';
+      DB.user.planStart = DB.user.planStart || new Date().toISOString();
+      DB.user.planEnd = DB.user.planEnd || null;
+      DB.user.planActive = true;
+      DB.user.emailVerified = true;
+      DB.user.prefsSaved = Boolean(DB.prefs);
+      setSession(res, emailNorm, parseRememberFlag(req));
+      return res.json({ ok: true, user: DB.user, demo: true });
+    }
+
+    // Firestore mode: find or create user
+    let userDoc;
+    try {
+      userDoc = await findUserByEmail(emailNorm);
+    } catch (dbErr) {
+      console.error('google oauth DB lookup failed:', dbErr);
+      clearSession(res);
+      return res.status(503).json({ ok: false, message: 'Auth database unavailable. Please try again.' });
+    }
+
+    const nowIso = new Date().toISOString();
+
+    if (!userDoc) {
+      const docData = {
+        email: emailNorm,
+        schemaVersion: 2,
+        passwordHash: '', // Google accounts don't have a password by default
+        name: name || (emailNorm.split('@')[0] || 'User'),
+        city: '',
+        plan: 'free',
+        planStart: nowIso,
+        planEnd: null,
+        avatarUrl: picture || '',
+        prefsSaved: false,
+        emailVerified: emailVerified || true,
+        prefs: null,
+        planActive: true,
+        shortlist: [],
+        shortlistLastDate: null,
+        scheduledDates: []
+      };
+
+      userDoc = await createUserDoc(docData);
+    } else {
+      const patch = {};
+      if ((emailVerified || true) && !userDoc.emailVerified) patch.emailVerified = true;
+      if (picture && !userDoc.avatarUrl) patch.avatarUrl = picture;
+      if (name && (!userDoc.name || userDoc.name === (emailNorm.split('@')[0] || 'User'))) patch.name = name;
+
+      // Ensure plan exists
+      if (!userDoc.plan) {
+        patch.plan = 'free';
+        patch.planActive = true;
+        patch.planStart = userDoc.planStart || nowIso;
+        patch.planEnd = null;
+      }
+
+      if (Object.keys(patch).length) {
+        try {
+          userDoc = await updateUserByEmail(emailNorm, patch);
+        } catch (e) {
+          console.warn('google oauth update failed (non-fatal):', e);
+        }
+      }
+    }
+
+    // Hydrate session/state
+    DB.prefs = userDoc.prefs || null;
+    DB.user = publicUser(userDoc);
+    DB.user.prefsSaved = Boolean(DB.prefs || userDoc.prefsSaved);
+
+    DB.users[emailNorm] = { ...DB.user };
+    DB.prefsByEmail[emailNorm] = DB.prefs;
+
+    setSession(res, emailNorm, parseRememberFlag(req));
+
+    return res.json({ ok: true, user: DB.user });
+  } catch (err) {
+    console.error('google oauth error:', err);
+    clearSession(res);
+    return res.status(401).json({ ok: false, message: 'google_signin_failed' });
+  }
 });
 
 // ---------------- Current user -------------------
