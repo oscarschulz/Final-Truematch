@@ -3827,40 +3827,38 @@ async function _seedWelcomeNotifIfMissing(userId, emailNorm) {
   }
 }
 
-
-// Push a notification to a user by email (Firestore-first; safe JSON fallback).
-// Payload fields: { type, title, message, href }
-async function _pushNotifToEmail(targetEmail, payload = {}, docId = '') {
+async function _pushNotifToEmail(emailNorm, payload = {}, docId = '') {
   try {
-    const emailNorm = String(targetEmail || '').trim().toLowerCase();
-    if (!emailNorm) return;
+    const toEmail = String(emailNorm || '').trim().toLowerCase();
+    if (!toEmail) return;
 
-    const p = payload && typeof payload === 'object' ? payload : {};
+    const createdAtField = payload.createdAt || (admin && admin.firestore ? admin.firestore.FieldValue.serverTimestamp() : Date.now());
     const clean = {
-      type: String(p.type || 'system'),
-      title: String(p.title || 'Notification'),
-      message: String(p.message || p.text || ''),
-      href: p.href ? String(p.href) : '',
-      createdAt: (admin && admin.firestore) ? admin.firestore.FieldValue.serverTimestamp() : Date.now(),
-      readAt: null
+      type: String(payload.type || 'system'),
+      title: String(payload.title || ''),
+      message: String(payload.message || payload.text || ''),
+      href: payload.href ? String(payload.href) : '',
+      createdAt: createdAtField,
+      readAt: (payload.readAt === 0 || payload.readAtMs === 0) ? 0 : (payload.readAt || payload.readAtMs || null)
     };
 
-    // Local JSON fallback (when Firebase is OFF)
+    // Local JSON / demo fallback (no Firestore)
     if (!hasFirebase || !usersCollection) {
-      DB.notificationsByEmail = (DB.notificationsByEmail && typeof DB.notificationsByEmail === 'object') ? DB.notificationsByEmail : {};
-      const arr = Array.isArray(DB.notificationsByEmail[emailNorm]) ? DB.notificationsByEmail[emailNorm] : [];
-      const id = String(docId || (`n_${Date.now()}_${Math.random().toString(16).slice(2)}`));
-      arr.unshift(_normalizeNotif(id, { ...clean, createdAtMs: Date.now(), readAtMs: 0 }));
-      DB.notificationsByEmail[emailNorm] = arr.slice(0, 200);
+      DB.notificationsByEmail = DB.notificationsByEmail && typeof DB.notificationsByEmail === 'object' ? DB.notificationsByEmail : {};
+      const arr = Array.isArray(DB.notificationsByEmail[toEmail]) ? DB.notificationsByEmail[toEmail] : [];
+      const id = String(docId || payload.id || '').trim() || `n_${Date.now()}`;
+      const norm = _normalizeNotif(id, { ...clean, createdAtMs: Date.now(), readAtMs: 0 });
+      arr.unshift(norm);
+      DB.notificationsByEmail[toEmail] = arr;
       return;
     }
 
-    const user = await findUserByEmail(emailNorm);
+    const user = await findUserByEmail(toEmail);
     const userId = user && user.id ? String(user.id) : '';
     if (!userId) return;
 
     const col = usersCollection.doc(userId).collection(NOTIFS_SUBCOL);
-    const id = String(docId || '').trim();
+    const id = String(docId || payload.id || '').trim();
     if (id) {
       await col.doc(id).set(clean, { merge: true });
     } else {
@@ -3870,7 +3868,6 @@ async function _pushNotifToEmail(targetEmail, payload = {}, docId = '') {
     console.warn('push notif failed:', e?.message || e);
   }
 }
-
 
 app.get('/api/me/notifications', authMiddleware, async (req, res) => {
   try {
@@ -5688,18 +5685,6 @@ app.post('/api/admin/confirmed-date', async (req, res) => {
 
     await saveScheduledDates(emailNorm, scheduledDates);
 
-
-// Notify user (dashboard bell)
-try {
-  const locPart = nextItem.location ? ` at ${String(nextItem.location)}` : '';
-  await _pushNotifToEmail(emailNorm, {
-    type: 'concierge',
-    title: 'Date confirmed',
-    message: `Your concierge date with ${nextItem.name} is scheduled for ${nextItem.scheduledAt}${locPart}.`,
-    href: 'dashboard.html?open=concierge'
-  }, `concierge_${nextItem.id}`);
-} catch (_) {}
-
     return res.json({ ok: true, updated: idx >= 0, id: nextItem.id });
   } catch (err) {
     console.error('admin confirmed-date error:', err);
@@ -5929,17 +5914,6 @@ app.get('/api/messages', async (req, res) => {
           lastReadAtMs: Number(v.lastReadAtMs || 0),
         };
       });
-
-
-// Notify recipient (dashboard bell)
-try {
-  await _pushNotifToEmail(peerEmail, {
-    type: 'message',
-    title: 'New message',
-    message: `${(user && user.name) ? String(user.name) : email}: ${String(text).slice(0, 120)}`,
-    href: `dashboard.html?open=messages&peer=${encodeURIComponent(email)}`
-  }, `msg_${msgRef.id}`);
-} catch (_) {}
 
       return res.json({
         ok: true,
@@ -6309,17 +6283,6 @@ app.post('/api/messages/send', async (req, res) => {
 
     DB.messages[email][peerEmail].push(msg);
     DB.messages[peerEmail][email].push(msg);
-
-
-// Notify recipient (dashboard bell)
-try {
-  await _pushNotifToEmail(peerEmail, {
-    type: 'message',
-    title: 'New message',
-    message: `${(user && user.name) ? String(user.name) : email}: ${String(text).slice(0, 120)}`,
-    href: `dashboard.html?open=messages&peer=${encodeURIComponent(email)}`
-  }, `msg_${msg.id}`);
-} catch (_) {}
 
     return res.json({
       ok: true,
@@ -9634,6 +9597,19 @@ app.post('/api/admin/creators/approve', requireAdmin, async (req, res) => {
       DB.user.creatorApplication = { ...prev, status: 'approved', decidedAt };
     }
 
+    // 🔔 Notify user about Creator approval
+    try {
+      const createdAtField = admin && admin.firestore ? admin.firestore.FieldValue.serverTimestamp() : Date.now();
+      await _pushNotifToEmail(email, {
+        type: 'creator',
+        title: 'Creator Application Approved',
+        message: 'Your Creator application has been approved. You can now access the Creators page.',
+        href: 'creators.html',
+        createdAt: createdAtField,
+        readAt: null
+      });
+    } catch (_) {}
+
     return res.json({ ok: true });
   } catch (err) {
     console.error('creators/approve error:', err);
@@ -9674,6 +9650,19 @@ app.post('/api/admin/creators/reject', requireAdmin, async (req, res) => {
       const prev = DB.user.creatorApplication || {};
       DB.user.creatorApplication = { ...prev, status: 'rejected', decidedAt };
     }
+
+    // 🔔 Notify user about Creator rejection
+    try {
+      const createdAtField = admin && admin.firestore ? admin.firestore.FieldValue.serverTimestamp() : Date.now();
+      await _pushNotifToEmail(email, {
+        type: 'creator',
+        title: 'Creator Application Rejected',
+        message: 'Your Creator application was not approved. You can update your profile and re-apply when applications reopen.',
+        href: 'dashboard.html',
+        createdAt: createdAtField,
+        readAt: null
+      });
+    } catch (_) {}
 
     return res.json({ ok: true });
   } catch (err) {
@@ -9790,6 +9779,22 @@ app.post('/api/admin/premium/decision', requireAdmin, async (req, res) => {
         DB.user.premiumApplication = fields.premiumApplication;
       }
     }
+
+    // 🔔 Notify user about Premium Society decision
+    try {
+      const createdAtField = admin && admin.firestore ? admin.firestore.FieldValue.serverTimestamp() : Date.now();
+      const isApproved = (dec === 'approved');
+      await _pushNotifToEmail(e, {
+        type: 'premium',
+        title: isApproved ? 'Premium Society Approved' : 'Premium Society Rejected',
+        message: isApproved
+          ? 'Your Premium Society application has been approved. Welcome to Premium Society.'
+          : 'Your Premium Society application was not approved. You can review your details and re-apply later.',
+        href: isApproved ? 'premium-society.html' : 'dashboard.html',
+        createdAt: createdAtField,
+        readAt: null
+      });
+    } catch (_) {}
 
     return res.json({ ok: true, status: dec });
   } catch (err) {
@@ -10961,8 +10966,57 @@ const actionType = (action === 'super' || action === 'superlike') ? 'superlike' 
 
     if (isMutual) {
       await _saveMatch(myEmail, tId, actionType, otherType);
+
+      // 🔔 Notify both users about the new match
+      try {
+        const createdAtField = admin && admin.firestore ? admin.firestore.FieldValue.serverTimestamp() : Date.now();
+        const meName = String(userDoc.name || userDoc.fullName || 'Someone').trim() || 'Someone';
+
+        let otherDoc = null;
+        if (hasFirebase) otherDoc = await findUserByEmail(tId);
+        else otherDoc = (DB.users && DB.users[tId]) ? DB.users[tId] : null;
+
+        const otherName = String((otherDoc && (otherDoc.name || otherDoc.fullName)) || 'someone').trim() || 'someone';
+
+        await _pushNotifToEmail(myEmail, {
+          type: 'match',
+          title: 'New Match',
+          message: `You matched with ${otherName}.`,
+          href: 'dashboard.html?tab=matches',
+          createdAt: createdAtField,
+          readAt: null
+        });
+
+        await _pushNotifToEmail(tId, {
+          type: 'match',
+          title: 'New Match',
+          message: `${meName} matched with you.`,
+          href: 'dashboard.html?tab=matches',
+          createdAt: createdAtField,
+          readAt: null
+        });
+      } catch (_) {}
+
       return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: true, matchWithEmail: tId });
     }
+
+    // 🔔 Notify the target about a new like/superlike (non-mutual)
+    try {
+      const createdAtField = admin && admin.firestore ? admin.firestore.FieldValue.serverTimestamp() : Date.now();
+      const meName = String(userDoc.name || userDoc.fullName || 'Someone').trim() || 'Someone';
+      const isSuper = (actionType === 'superlike');
+      const title = isSuper ? 'New Super Like' : 'New Like';
+      const msg = isSuper ? `${meName} super liked you.` : `${meName} liked you.`;
+
+      await _pushNotifToEmail(tId, {
+        type: isSuper ? 'superlike' : 'like',
+        title,
+        message: msg,
+        href: 'dashboard.html?tab=matches',
+        createdAt: createdAtField,
+        readAt: null
+      });
+    } catch (_) {}
 
     return res.json({ ok: true, remaining, limit: cap, limitReached, isMatch: false });
   } catch (err) {
