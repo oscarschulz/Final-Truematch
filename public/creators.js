@@ -211,10 +211,14 @@ const __CreatorsData = (function() {
     const msg = String(p.text || '').trim();
     const mediaIds = Array.isArray(p.mediaIds) ? p.mediaIds : [];
     const media = Array.isArray(p.media) ? p.media : [];
+    const ppv = (p.ppv && typeof p.ppv === 'object') ? p.ppv : null;
     if (!to) throw new Error('peer required');
     if (!msg && !mediaIds.length && !media.length) throw new Error('message is empty');
-    return apiPostJson('/api/messages/send', { to, text: msg, mediaIds, media });
+    const body = { to, text: msg, mediaIds, media };
+    if (ppv) body.ppv = ppv;
+    return apiPostJson('/api/messages/send', body);
 }
+
 
 // =============================================================
 // LOCAL CARDS STORAGE (Client-only)
@@ -4222,6 +4226,52 @@ const TM_NOTES_KEY = 'tm_user_notes';
 const TM_LAST_SEEN_KEY = 'tm_msg_last_seen_v1';
 const TM_STARRED_KEY = 'tm_starred_chats';
 
+const TM_PPV_UNLOCKS_KEY = 'tm_ppv_unlocks_v1';
+
+function tmPpvReadUnlockMap() {
+    try {
+        const raw = localStorage.getItem(TM_PPV_UNLOCKS_KEY);
+        if (!raw) return {};
+        const obj = JSON.parse(raw);
+        return (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
+    } catch (_) {
+        return {};
+    }
+}
+
+function tmPpvIsUnlocked(messageId) {
+    const id = String(messageId || '').trim();
+    if (!id) return false;
+    const map = tmPpvReadUnlockMap();
+    return !!map[id];
+}
+
+function tmPpvSetUnlocked(messageId) {
+    const id = String(messageId || '').trim();
+    if (!id) return false;
+    const map = tmPpvReadUnlockMap();
+    map[id] = 1;
+    try {
+        localStorage.setItem(TM_PPV_UNLOCKS_KEY, JSON.stringify(map));
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+async function tmPpvUnlockServer(peerEmail, messageId) {
+    const peer = normalizeEmail(peerEmail);
+    const mid = String(messageId || '').trim();
+    if (!peer || !mid) throw new Error('unlock requires peer and messageId');
+    try {
+        return await apiPostJson('/api/messages/ppv/unlock', { peerEmail: peer, messageId: mid });
+    } catch (e) {
+        // If endpoint not available yet, still allow local unlock.
+        return { ok: false, message: e?.message || 'unlock_failed' };
+    }
+}
+
+
 // -------------------------------
 // Server-backed Messages Meta (progressive enhancement)
 // - Persists: starred, priority ($/$$/$$$), hidden, notes, lastSeenAt
@@ -5067,6 +5117,8 @@ function createMessageBubble(textOrMsg, type, sentAtIso) {
     const m = (textOrMsg && typeof textOrMsg === 'object') ? textOrMsg : null;
     const text = m ? safeStr(m.text || '') : safeStr(textOrMsg || '');
     const media = m ? (Array.isArray(m.media) ? m.media : (Array.isArray(m.attachments) ? m.attachments : [])) : [];
+    const msgId = m ? String(m.id || '') : '';
+    const ppv = (m && m.ppv && typeof m.ppv === 'object') ? m.ppv : null;
 
     const iso =
         sentAtIso
@@ -5081,20 +5133,65 @@ function createMessageBubble(textOrMsg, type, sentAtIso) {
     const hasText = !!String(text || '').trim();
     const hasMedia = Array.isArray(media) && media.length > 0;
 
+    const ppvPriceCents = ppv ? (Number(ppv.priceCents ?? ppv.price ?? 0) || 0) : 0;
+    const ppvCurrency = ppv ? String(ppv.currency || 'USD') : 'USD';
+
+    const anyLockedMedia = hasMedia ? media.some(it => !!it?.locked) : false;
+    const isLockedMessage = !!ppvPriceCents || anyLockedMedia;
+
+    // Unlock rules:
+    // - Sent messages are always unlocked for the sender.
+    // - Received messages require ppv.unlocked OR local unlock flag.
+    const unlocked =
+        (type === 'sent')
+        || (!!ppv && !!ppv.unlocked)
+        || (msgId ? tmPpvIsUnlocked(msgId) : false)
+        || !isLockedMessage;
+
+    function fmtPrice(cents, currency) {
+        const c = Math.max(0, Math.floor(Number(cents || 0)));
+        const cur = String(currency || 'USD').toUpperCase();
+        const amt = (c / 100).toFixed(2);
+        if (cur === 'USD') return `$${amt}`;
+        return `${amt} ${cur}`;
+    }
+
     let mediaHtml = '';
     if (hasMedia) {
         const cells = media.slice(0, 6).map((it, idx) => {
             const src = String(it?.url || it?.src || it?.thumb || '');
             const t = String(it?.type || '').toLowerCase();
             const isVideo = t.includes('video');
-            const label = isVideo ? '▶' : '';
+            const locked = !!it?.locked || !!ppvPriceCents;
+            const lockedForViewer = locked && !unlocked;
+
+            const lockBadge = lockedForViewer
+                ? `<div class="tm-ppv-lock-overlay" style="
+                        position:absolute; inset:0;
+                        display:flex; flex-direction:column;
+                        align-items:center; justify-content:center;
+                        gap:6px;
+                        background: rgba(0,0,0,0.40);
+                        color:#fff;
+                        text-align:center;
+                        padding:10px;
+                        ">
+                        <div style="font-size:18px; line-height:1;">🔒</div>
+                        <div style="font-weight:800; font-size:12px; letter-spacing:0.3px;">LOCKED</div>
+                        ${ppvPriceCents ? `<div style="font-size:12px; opacity:0.92;">Unlock ${fmtPrice(ppvPriceCents, ppvCurrency)}</div>` : ''}
+                   </div>`
+                : '';
+
+            const imgStyle = lockedForViewer ? 'filter: blur(14px); transform: scale(1.06);' : '';
+            const thumb = isVideo
+                ? `<div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:20px; ${imgStyle}">▶</div>`
+                : `<img src="${src}" alt="" style="width:100%; height:100%; object-fit:cover; display:block; ${imgStyle}">`;
+
             return `
-              <div class="tm-bubble-media-item" data-idx="${idx}"
+              <div class="tm-bubble-media-item" data-idx="${idx}" data-locked="${lockedForViewer ? '1' : '0'}"
                    style="position:relative; width:88px; height:88px; border-radius:12px; overflow:hidden; border:1px solid rgba(255,255,255,0.12); background:#000; cursor:pointer; flex:0 0 auto;">
-                ${isVideo
-                    ? `<div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:20px;">${label}</div>`
-                    : `<img src="${src}" alt="" style="width:100%; height:100%; object-fit:cover; display:block;">`
-                }
+                ${thumb}
+                ${lockBadge}
               </div>
             `;
         }).join('');
@@ -5106,22 +5203,85 @@ function createMessageBubble(textOrMsg, type, sentAtIso) {
         `;
     }
 
+    const unlockCta = (!unlocked && isLockedMessage && (ppvPriceCents > 0) && msgId)
+        ? `<button type="button" class="tm-ppv-unlock-btn" data-mid="${escapeHtml(msgId)}"
+             style="
+                margin-top:10px;
+                width:100%;
+                padding:10px 12px;
+                border-radius:12px;
+                border:1px solid rgba(255,255,255,0.18);
+                background: rgba(100,233,238,0.12);
+                color:#fff;
+                font-weight:800;
+                cursor:pointer;
+              ">
+              Unlock PPV (${fmtPrice(ppvPriceCents, ppvCurrency)})
+           </button>`
+        : '';
+
     bubble.innerHTML = `
         ${hasText ? `<div class="bubble-text">${escapeHtml(text)}</div>` : ''}
         ${mediaHtml}
+        ${unlockCta}
         <div class="bubble-meta">${time}</div>
     `;
 
-    // Media click -> preview
+    // Unlock handler (received locked PPV)
+    const unlockBtn = bubble.querySelector('.tm-ppv-unlock-btn');
+    if (unlockBtn && typeof Swal !== 'undefined' && Swal?.fire) {
+        unlockBtn.addEventListener('click', async () => {
+            try {
+                if (!activePeerEmail) return;
+                const mid = String(unlockBtn.getAttribute('data-mid') || '').trim();
+                if (!mid) return;
+
+                const priceLabel = fmtPrice(ppvPriceCents, ppvCurrency);
+                const confirm = await Swal.fire({
+                    title: 'Unlock PPV',
+                    html: `Unlock this content for <b>${priceLabel}</b>?<br><span style="opacity:0.75; font-size:12px;">(Demo: unlock just marks this message as unlocked.)</span>`,
+                    showCancelButton: true,
+                    confirmButtonText: 'Unlock',
+                    cancelButtonText: 'Cancel',
+                    background: '#0b1220',
+                    color: '#fff'
+                });
+
+                if (!confirm.isConfirmed) return;
+
+                // Server-backed unlock (if available) + local fallback
+                await tmPpvUnlockServer(activePeerEmail, mid).catch(() => {});
+                tmPpvSetUnlocked(mid);
+
+                toastInstance?.fire?.({ icon: 'success', title: 'Unlocked' });
+
+                // Refresh the thread so the bubble re-renders unblurred
+                try { await loadChat(activePeerEmail); } catch (_) {}
+            } catch (e) {
+                toastInstance?.fire?.({ icon: 'error', title: e?.message || 'Unable to unlock' });
+            }
+        });
+    }
+
+    // Media click -> preview (blocked if locked for viewer)
     if (hasMedia && typeof Swal !== 'undefined' && Swal?.fire) {
         bubble.querySelectorAll('.tm-bubble-media-item').forEach((node) => {
-            node.addEventListener('click', () => {
+            node.addEventListener('click', async () => {
+                const lockedForViewer = String(node.getAttribute('data-locked') || '') === '1';
+                if (lockedForViewer) {
+                    // Mirror the unlock CTA
+                    const btn = bubble.querySelector('.tm-ppv-unlock-btn');
+                    if (btn) btn.click();
+                    return;
+                }
+
                 const idx = Number(node.getAttribute('data-idx') || 0);
                 const it = media[idx];
                 if (!it) return;
                 const src = String(it?.url || it?.src || it?.thumb || '');
                 const t = String(it?.type || '').toLowerCase();
                 const isVideo = t.includes('video');
+
                 Swal.fire({
                     title: String(it?.name || 'Media'),
                     html: isVideo
@@ -5584,10 +5744,188 @@ function initEmojiPicker() {
 // -------------------------------
 function initPPV() {
     if (!DOM.btnPPV) return;
-    DOM.btnPPV.addEventListener('click', () => {
-        toastInstance?.fire?.({ icon: 'info', title: 'PPV coming soon' });
+
+    DOM.btnPPV.addEventListener('click', async () => {
+        try {
+            if (!activePeerEmail) {
+                toastInstance?.fire?.({ icon: 'info', title: 'Select a conversation' });
+                return;
+            }
+            if (!(typeof Swal !== 'undefined' && Swal?.fire)) {
+                toastInstance?.fire?.({ icon: 'info', title: 'PPV unavailable (modal not loaded)' });
+                return;
+            }
+
+            const vault = __chatGetLocalVaultMedia().slice(0, 60);
+            if (!vault.length) {
+                toastInstance?.fire?.({ icon: 'info', title: 'Your Vault is empty (Collections → Vault)' });
+                return;
+            }
+
+            const picked = new Set();
+
+            const itemsHtml = vault.map((m, i) => {
+                const key = String(m?.id ?? i);
+                const src = String(m?.src || '');
+                const t = String(m?.type || '').toLowerCase();
+                const isVideo = t.includes('video');
+
+                const thumb = isVideo
+                    ? `<div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:18px;">▶</div>`
+                    : `<img src="${src}" alt="" style="width:100%; height:100%; object-fit:cover; display:block;">`;
+
+                return `
+                  <div class="tm-ppv-pick-item" data-key="${encodeURIComponent(key)}"
+                       style="position:relative; border-radius:12px; overflow:hidden; border:1px solid rgba(255,255,255,0.12); background:#000; cursor:pointer; aspect-ratio:1/1;">
+                    ${thumb}
+                    <div class="tm-ppv-pick-check"
+                         style="position:absolute; top:8px; right:8px; width:18px; height:18px; border-radius:999px; border:1px solid rgba(255,255,255,0.6); background:rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center; font-size:12px;"></div>
+                  </div>
+                `;
+            }).join('');
+
+            const html = `
+              <div style="text-align:left; margin-bottom:10px; color:rgba(255,255,255,0.75); font-size:13px;">
+                Select media to send as <b>Pay-Per-View</b>. (max 6)
+              </div>
+
+              <div id="tmPpvGrid" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-bottom:12px;">
+                ${itemsHtml}
+              </div>
+
+              <div style="text-align:left; display:flex; gap:10px; align-items:flex-start; margin-bottom:12px;">
+                <div style="flex:1;">
+                  <div style="font-size:12px; opacity:0.85; margin-bottom:6px;">Price (USD)</div>
+                  <input id="tmPpvPrice" type="number" min="1" step="0.01" placeholder="5.00"
+                         style="width:100%; padding:10px 12px; border-radius:12px; border:1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.35); color:#fff; outline:none;">
+                </div>
+              </div>
+
+              <div style="text-align:left;">
+                <div style="font-size:12px; opacity:0.85; margin-bottom:6px;">Caption (optional)</div>
+                <textarea id="tmPpvCaption" rows="3" placeholder="Write a short caption…"
+                          style="width:100%; padding:10px 12px; border-radius:12px; border:1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.35); color:#fff; outline:none; resize:none;"></textarea>
+                <div style="margin-top:8px; font-size:12px; opacity:0.75;">
+                  Recipients will see blurred content until they unlock it.
+                </div>
+              </div>
+            `;
+
+            const result = await Swal.fire({
+                title: 'Send PPV',
+                html,
+                showCancelButton: true,
+                confirmButtonText: 'Send PPV',
+                cancelButtonText: 'Cancel',
+                background: '#0b1220',
+                color: '#fff',
+                didOpen: () => {
+                    try {
+                        const priceEl = document.getElementById('tmPpvPrice');
+                        if (priceEl && !priceEl.value) priceEl.value = '5.00';
+
+                        const grid = document.getElementById('tmPpvGrid');
+                        if (!grid) return;
+                        grid.addEventListener('click', (e) => {
+                            const it = e.target && e.target.closest ? e.target.closest('.tm-ppv-pick-item') : null;
+                            if (!it) return;
+
+                            const key = decodeURIComponent(String(it.getAttribute('data-key') || ''));
+                            if (!key) return;
+
+                            const isOn = picked.has(key);
+                            if (isOn) picked.delete(key);
+                            else {
+                                if (picked.size >= 6) return;
+                                picked.add(key);
+                            }
+
+                            const check = it.querySelector('.tm-ppv-pick-check');
+                            if (check) check.innerHTML = picked.has(key) ? '✓' : '';
+                            it.style.outline = picked.has(key) ? '2px solid rgba(100,233,238,0.55)' : 'none';
+                        });
+                    } catch (_) {}
+                },
+                preConfirm: () => {
+                    const priceStr = String(document.getElementById('tmPpvPrice')?.value || '').trim();
+                    const caption = String(document.getElementById('tmPpvCaption')?.value || '').trim();
+
+                    if (!picked.size) {
+                        Swal.showValidationMessage('Select at least 1 media item.');
+                        return null;
+                    }
+
+                    const price = Number(priceStr);
+                    if (!Number.isFinite(price) || price <= 0) {
+                        Swal.showValidationMessage('Enter a valid price.');
+                        return null;
+                    }
+
+                    const priceCents = Math.max(1, Math.floor(price * 100));
+                    return { keys: Array.from(picked), priceCents, caption };
+                }
+            });
+
+            if (!result.isConfirmed || !result.value) return;
+
+            const keys = Array.isArray(result.value.keys) ? result.value.keys : [];
+            const priceCents = Number(result.value.priceCents || 0) || 0;
+            const caption = String(result.value.caption || '').trim();
+
+            const selected = [];
+            keys.slice(0, 6).forEach((k) => {
+                const item = vault.find((x, i) => String(x?.id ?? i) === String(k));
+                if (!item) return;
+                selected.push({
+                    id: item.id ?? k,
+                    src: item.src || '',
+                    type: item.type || '',
+                    name: item.name || '',
+                    locked: true
+                });
+            });
+
+            if (!selected.length) {
+                toastInstance?.fire?.({ icon: 'error', title: 'No media selected' });
+                return;
+            }
+
+            // Optimistic: disable briefly
+            if (DOM.btnPPV) DOM.btnPPV.disabled = true;
+
+            const res = await sendMessageTo(activePeerEmail, {
+                text: caption,
+                mediaIds: selected.map(x => x.id).filter(Boolean),
+                media: selected,
+                ppv: { priceCents, currency: 'USD' }
+            });
+
+            const msg = res?.message || { id: `ppv_${Date.now()}`, text: caption, media: selected, ppv: { priceCents, currency: 'USD' }, sentAt: new Date().toISOString() };
+            const sentIso =
+                safeStr(msg.sentAt)
+                || (Number.isFinite(Number(msg.createdAtMs)) ? new Date(Number(msg.createdAtMs)).toISOString() : new Date().toISOString());
+
+            createMessageBubble(msg, 'sent', sentIso);
+            DOM.chatHistoryContainer.scrollTop = DOM.chatHistoryContainer.scrollHeight;
+
+            // Update preview/time in list
+            const u = __msgUsers.find(x => x.email === activePeerEmail);
+            if (u) {
+                u.preview = '[PPV]';
+                u.time = formatListTime(sentIso);
+            }
+            renderMessageList();
+
+            toastInstance?.fire?.({ icon: 'success', title: 'PPV sent' });
+
+        } catch (e) {
+            toastInstance?.fire?.({ icon: 'error', title: e?.message || 'Unable to send PPV' });
+        } finally {
+            if (DOM.btnPPV) DOM.btnPPV.disabled = false;
+        }
     });
 }
+
 
 // -------------------------------
 // Star conversation (local-only stub)
