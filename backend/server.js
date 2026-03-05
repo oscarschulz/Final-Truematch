@@ -11784,6 +11784,237 @@ app.post('/api/collections/remove', async (req, res) => {
   }
 });
 
+
+// ---------------- Vault (Collections -> Vault media) API ----------------
+// Notes:
+// - Stores Vault media in Firebase Storage (binary), and metadata in Firestore subcollection under the user doc.
+// - Falls back to in-memory demo store when Firebase/Storage is unavailable (so UI still works in dev).
+
+const VAULT_MEDIA_SUBCOL = 'vaultMedia';
+
+function _demoVaultFor(email) {
+  DB.vaultMediaByEmail = DB.vaultMediaByEmail || {};
+  DB.vaultMediaByEmail[email] = Array.isArray(DB.vaultMediaByEmail[email]) ? DB.vaultMediaByEmail[email] : [];
+  return DB.vaultMediaByEmail[email];
+}
+
+function _vaultTypeFromMime(mime, fallbackType) {
+  const m = String(mime || '').toLowerCase();
+  if (m.startsWith('image/')) return 'image';
+  if (m.startsWith('video/')) return 'video';
+  if (m.startsWith('audio/')) return 'audio';
+  const fb = String(fallbackType || '').toLowerCase();
+  if (fb === 'image' || fb === 'video' || fb === 'audio' || fb === 'other') return fb;
+  return 'other';
+}
+
+function _vaultExtFromMime(mime) {
+  const m = String(mime || '').toLowerCase();
+  if (m === 'image/png') return 'png';
+  if (m === 'image/webp') return 'webp';
+  if (m === 'image/gif') return 'gif';
+  if (m === 'image/jpeg' || m === 'image/jpg') return 'jpg';
+  if (m === 'video/mp4') return 'mp4';
+  if (m === 'video/webm') return 'webm';
+  if (m === 'video/quicktime') return 'mov';
+  if (m === 'audio/mpeg' || m === 'audio/mp3') return 'mp3';
+  if (m === 'audio/wav') return 'wav';
+  if (m === 'audio/ogg') return 'ogg';
+  return 'bin';
+}
+
+async function uploadVaultDataUrlToStorage(email, dataUrl, prevPath) {
+  if (!hasFirebase || !admin) throw new Error('firebase not configured');
+  if (!hasStorage || !storageBucket) throw new Error('storage not configured');
+
+  const raw = String(dataUrl || '');
+  const m = raw.match(/^data:([^;]+);base64,(.+)$/);
+  if (!m) throw new Error('invalid dataUrl');
+
+  const mime = String(m[1] || '').toLowerCase();
+  const b64 = m[2] || '';
+  const buf = Buffer.from(b64, 'base64');
+
+  // Safety: decoded <= 10MB
+  const maxBytes = 10 * 1024 * 1024;
+  if (buf.length > maxBytes) throw new Error('file too large');
+
+  // Best-effort cleanup
+  if (prevPath) {
+    try { await storageBucket.file(prevPath).delete({ ignoreNotFound: true }); } catch {}
+  }
+
+  const token = (crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex'));
+  const safeEmail = String(email || 'user').toLowerCase().replace(/[^a-z0-9]/g, '_');
+  const ext = _vaultExtFromMime(mime);
+  const filePath = `vault/${safeEmail}/${Date.now()}_${Math.random().toString(16).slice(2)}.${ext}`;
+  const file = storageBucket.file(filePath);
+
+  await file.save(buf, {
+    resumable: false,
+    metadata: {
+      contentType: mime,
+      metadata: { firebaseStorageDownloadTokens: token }
+    }
+  });
+
+  const url =
+    `https://firebasestorage.googleapis.com/v0/b/${storageBucket.name}/o/${encodeURIComponent(filePath)}?alt=media&token=${token}`;
+
+  return { url, path: filePath, mime, bytes: buf.length };
+}
+
+function _vaultClientItem(id, data) {
+  const d = (data && typeof data === 'object') ? data : {};
+  return pruneUndefinedDeep({
+    id: String(id || ''),
+    src: safeStr(d.url || d.src || '').trim(),
+    url: safeStr(d.url || '').trim() || undefined,
+    name: safeStr(d.name || '').trim(),
+    type: safeStr(d.type || '').trim(),
+    locked: !!d.locked,
+    createdAt: Number(d.createdAtMs || 0) || 0,
+    createdAtMs: Number(d.createdAtMs || 0) || undefined,
+    date: safeStr(d.date || '').trim() || undefined,
+    mime: safeStr(d.mime || '').trim() || undefined,
+  });
+}
+
+app.get('/api/collections/vault', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req));
+    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+
+    // Demo fallback (or storage not configured)
+    if (!hasFirebase || !firestore || !usersCollection || !hasStorage || !storageBucket) {
+      const list = _demoVaultFor(me);
+      const items = (Array.isArray(list) ? list : []).map(x => _vaultClientItem(x.id, x));
+      items.sort((a, b) => (Number(b.createdAt || 0) - Number(a.createdAt || 0)));
+      return res.json({ ok: true, items });
+    }
+
+    const u = await findUserByEmail(me);
+    if (!u || !u.id) return res.json({ ok: true, items: [] });
+
+    const ref = usersCollection.doc(String(u.id)).collection(VAULT_MEDIA_SUBCOL);
+    const snap = await ref.orderBy('createdAtMs', 'desc').limit(400).get();
+
+    const items = snap.docs.map((d) => _vaultClientItem(d.id, d.data() || {}));
+    return res.json({ ok: true, items });
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+app.post('/api/collections/vault/add', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req));
+    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+
+    const media = (req.body && (req.body.media || req.body.item || req.body.payload)) ? (req.body.media || req.body.item || req.body.payload) : {};
+    const name = safeStr(media?.name || '').trim().slice(0, 120);
+    const typeIn = safeStr(media?.type || '').trim().toLowerCase();
+    const dataUrl = safeStr(media?.dataUrl || media?.src || '').trim();
+    const locked = !!media?.locked;
+
+    if (!dataUrl) return res.status(400).json({ ok: false, error: 'Missing dataUrl.' });
+
+    // Demo fallback (or storage not configured)
+    if (!hasFirebase || !firestore || !usersCollection || !hasStorage || !storageBucket) {
+      const list = _demoVaultFor(me);
+      const id = `v_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      const nowMs = Date.now();
+      const item = {
+        id,
+        name,
+        type: _vaultTypeFromMime('', typeIn),
+        src: dataUrl,
+        url: '',
+        locked,
+        createdAtMs: nowMs,
+        date: new Date(nowMs).toLocaleDateString()
+      };
+      list.unshift(item);
+      // cap
+      DB.vaultMediaByEmail[me] = list.slice(0, 400);
+      return res.json({ ok: true, id, item: _vaultClientItem(id, item) });
+    }
+
+    // Firebase-backed: upload bytes to Storage, write metadata to Firestore subcollection
+    const u = await findUserByEmail(me);
+    if (!u || !u.id) return res.status(404).json({ ok: false, error: 'user_not_found' });
+
+    const up = await uploadVaultDataUrlToStorage(me, dataUrl, '');
+    const nowMs = Date.now();
+
+    const docRef = usersCollection.doc(String(u.id)).collection(VAULT_MEDIA_SUBCOL).doc();
+    const docId = docRef.id;
+
+    const mime = up.mime || '';
+    const type = _vaultTypeFromMime(mime, typeIn);
+
+    await docRef.set(pruneUndefinedDeep({
+      name,
+      type,
+      locked,
+      url: up.url,
+      path: up.path,
+      mime,
+      bytes: up.bytes,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAtMs: nowMs,
+    }), { merge: true });
+
+    const item = _vaultClientItem(docId, { name, type, locked, url: up.url, path: up.path, mime, createdAtMs: nowMs, date: new Date(nowMs).toLocaleDateString() });
+    return res.json({ ok: true, id: docId, item });
+
+  } catch (e) {
+    const msg = String(e?.message || e);
+    return res.status(400).json({ ok: false, error: msg });
+  }
+});
+
+app.post('/api/collections/vault/delete', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req));
+    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+
+    const id = safeStr(req.body?.id || '').trim();
+    if (!id) return res.status(400).json({ ok: false, error: 'Missing id.' });
+
+    // Demo fallback
+    if (!hasFirebase || !firestore || !usersCollection) {
+      const list = _demoVaultFor(me);
+      const before = list.length;
+      DB.vaultMediaByEmail[me] = list.filter(x => String(x?.id) !== id);
+      return res.json({ ok: true, removed: before !== DB.vaultMediaByEmail[me].length });
+    }
+
+    // If storage is missing, we can still delete metadata if present
+    const u = await findUserByEmail(me);
+    if (!u || !u.id) return res.json({ ok: true, removed: true });
+
+    const docRef = usersCollection.doc(String(u.id)).collection(VAULT_MEDIA_SUBCOL).doc(id);
+    const snap = await docRef.get();
+    if (!snap.exists) return res.json({ ok: true, removed: true });
+
+    const data = snap.data() || {};
+    const path = safeStr(data.path || '').trim();
+
+    await docRef.delete();
+
+    if (hasStorage && storageBucket && path) {
+      try { await storageBucket.file(path).delete({ ignoreNotFound: true }); } catch {}
+    }
+
+    return res.json({ ok: true, removed: true });
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// ---------------- End Vault (Collections -> Vault media) API ----------------
+
 // ---------------- End Collections (Lists) API ----------------
 
 // =============== NEW HELPERS + IMAGE/AVATAR ENDPOINTS (non-breaking) ===============

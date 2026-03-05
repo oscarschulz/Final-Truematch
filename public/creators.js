@@ -5096,6 +5096,121 @@ function tmInitCollectionsBackendFirst() {
   });
 }
 
+
+// ===============================
+// Backend-first Vault (Collections -> Vault media) cache + API wiring
+// - Keeps the Vault "real" (server-backed) when backend is available
+// - Falls back to localStorage when offline / backend not configured
+// ===============================
+const TM_VAULT_API_CACHE_KEY = 'tm_vault_api_cache_v1';
+
+let __vaultApiItems = null;     // cached API vault items
+let __vaultApiLoaded = false;
+let __vaultApiLoading = false;
+
+function _tmVaultLocalRead() {
+  try { return JSON.parse(localStorage.getItem('tm_uploaded_media') || '[]'); } catch { return []; }
+}
+function _tmVaultLocalWrite(list) {
+  try { localStorage.setItem('tm_uploaded_media', JSON.stringify(Array.isArray(list) ? list : [])); } catch {}
+}
+
+async function tmSyncVaultFromApi({ silent = false } = {}) {
+  if (__vaultApiLoading) return __vaultApiItems || [];
+  __vaultApiLoading = true;
+  try {
+    const out = await apiGetJson('/api/collections/vault');
+    const items = Array.isArray(out?.items) ? out.items : [];
+    __vaultApiItems = items;
+    __vaultApiLoaded = true;
+    tmLsWrite(TM_VAULT_API_CACHE_KEY, items);
+    return items;
+  } catch (e) {
+    if (!silent) {
+      try { rsToast('error', 'Vault offline'); } catch {}
+    }
+    return __vaultApiItems || [];
+  } finally {
+    __vaultApiLoading = false;
+  }
+}
+
+function tmInitVaultBackendFirst() {
+  // Prime from cache then background-sync.
+  const cached = tmLsRead(TM_VAULT_API_CACHE_KEY, null);
+  if (Array.isArray(cached)) {
+    __vaultApiItems = cached;
+    __vaultApiLoaded = true;
+  }
+  tmSyncVaultFromApi({ silent: true }).then(() => {
+    try { renderCollections(DOM.colSearchInput?.value || ''); } catch (_) {}
+    try { rsRenderMedia(); } catch (_) {}
+  });
+}
+
+async function tmVaultAddToApi(mediaItem) {
+  const m = mediaItem && typeof mediaItem === 'object' ? mediaItem : {};
+  const payload = {
+    media: {
+      name: String(m.name || '').slice(0, 120),
+      type: String(m.type || '').toLowerCase(),
+      dataUrl: String(m.src || m.dataUrl || ''),
+      locked: !!m.locked
+    }
+  };
+
+  if (!payload.media.dataUrl || !payload.media.type) throw new Error('Missing media payload');
+
+  const out = await apiPostJson('/api/collections/vault/add', payload);
+  if (!out?.ok) throw new Error(out?.error || out?.message || 'Upload failed');
+
+  // optimistic cache update
+  const item = out?.item || out?.media || null;
+  if (item) {
+    const next = Array.isArray(__vaultApiItems) ? __vaultApiItems.slice() : [];
+    next.unshift(item);
+    __vaultApiItems = next;
+    __vaultApiLoaded = true;
+    tmLsWrite(TM_VAULT_API_CACHE_KEY, next);
+  } else {
+    // if server didn't return item, refresh
+    await tmSyncVaultFromApi({ silent: true });
+  }
+
+  return out;
+}
+
+async function tmVaultDeleteFromApi(id) {
+  const out = await apiPostJson('/api/collections/vault/delete', { id: String(id || '').trim() });
+  if (!out?.ok) throw new Error(out?.error || out?.message || 'Delete failed');
+  return out;
+}
+
+// Fire-and-forget delete (keeps old sync call sites working)
+function tmVaultDelete(id) {
+  const key = String(id || '').trim();
+  if (!key) return;
+
+  // Optimistic remove from API cache
+  try {
+    if (Array.isArray(__vaultApiItems) && __vaultApiItems.length) {
+      __vaultApiItems = __vaultApiItems.filter(x => String(x?.id) !== key);
+      tmLsWrite(TM_VAULT_API_CACHE_KEY, __vaultApiItems);
+    }
+  } catch {}
+
+  // Also remove from local fallback
+  try {
+    const local = _tmVaultLocalRead();
+    _tmVaultLocalWrite(local.filter(x => String(x?.id) !== key));
+  } catch {}
+
+  // Best-effort remote delete
+  tmVaultDeleteFromApi(key)
+    .then(() => tmSyncVaultFromApi({ silent: true }))
+    .catch(() => {});
+}
+
 async function tmCreateUserList(name) {
   const nm = String(name || '').trim().slice(0, 60);
   if (!nm) throw new Error('Missing list name');
@@ -5969,6 +6084,9 @@ function rsBindMediaSidebar() {
 
     // Backend-first: load cached API lists then sync in background
     try { tmInitCollectionsBackendFirst(); } catch(e) {}
+     // Backend-first: Vault media cache then sync in background
+     try { tmInitVaultBackendFirst(); } catch(e) {}
+
 
     
     // 1. EVENT LISTENERS FOR SEARCH
@@ -6060,6 +6178,7 @@ function rsBindMediaSidebar() {
             if (rsSuggestions) rsSuggestions.classList.add('hidden');
             if (rsCollections) rsCollections.classList.remove('hidden');
             rsShowMediaView();
+            try { tmSyncVaultFromApi({ silent: true }); } catch(e) {}
             rsRenderMedia();
 
             renderCollections();
@@ -6110,9 +6229,18 @@ function rsBindMediaSidebar() {
                     createdAt: Date.now(),
                     date: new Date().toLocaleDateString()
                 };
-                saveMediaToStorage(mediaItem);
-                TopToast.fire({ icon: 'success', title: 'Saved to Vault!' });
-                renderCollections();
+                (async () => {
+                    try {
+                        await tmVaultAddToApi(mediaItem);
+                        TopToast.fire({ icon: 'success', title: 'Uploaded to Vault!' });
+                    } catch (e) {
+                        // Offline / backend not configured -> local fallback
+                        saveMediaToStorage(mediaItem);
+                        TopToast.fire({ icon: 'success', title: 'Saved to Vault!' });
+                    }
+                    try { renderCollections(); } catch(_) {}
+                    try { rsRenderMedia(); } catch(_) {}
+                })();
             };
             reader.readAsDataURL(file);
             fileInput.value = '';
@@ -6408,19 +6536,52 @@ function deleteCollectionFromStorage(id) {
 }
 
 function getMediaFromStorage() {
-    return JSON.parse(localStorage.getItem('tm_uploaded_media') || '[]');
+    // Backend-first: start from server-cached items if available,
+    // then merge local offline items (so newly-added offline uploads still show).
+    let apiItems = [];
+    try {
+        if (__vaultApiLoaded && Array.isArray(__vaultApiItems)) apiItems = __vaultApiItems.slice();
+    } catch {}
+
+    let localItems = [];
+    try {
+        localItems = JSON.parse(localStorage.getItem('tm_uploaded_media') || '[]');
+        if (!Array.isArray(localItems)) localItems = [];
+    } catch { localItems = []; }
+
+    if (!apiItems.length) return localItems;
+
+    const seen = new Set(apiItems.map(x => String(x?.id)));
+    const merged = apiItems.slice();
+    localItems.forEach((x) => {
+        const k = String(x?.id);
+        if (!seen.has(k)) merged.unshift(x);
+    });
+    return merged;
 }
 
 function saveMediaToStorage(media) {
-    const list = getMediaFromStorage();
-    list.unshift(media);
-    localStorage.setItem('tm_uploaded_media', JSON.stringify(list));
+    // Legacy local cache (offline fallback ONLY)
+    try {
+        const raw = localStorage.getItem('tm_uploaded_media') || '[]';
+        let list = JSON.parse(raw);
+        if (!Array.isArray(list)) list = [];
+        list.unshift(media);
+        localStorage.setItem('tm_uploaded_media', JSON.stringify(list));
+    } catch {}
 }
 
 function deleteMediaFromStorage(id) {
-    let list = getMediaFromStorage();
-    list = list.filter(m => m.id !== id);
-    localStorage.setItem('tm_uploaded_media', JSON.stringify(list));
+    // Keep old sync signature, but make it "real" by calling backend delete (best-effort)
+    try { tmVaultDelete(id); } catch {}
+
+    // Also ensure legacy local key is cleaned (in case we're offline)
+    try {
+        let list = JSON.parse(localStorage.getItem('tm_uploaded_media') || '[]');
+        list = Array.isArray(list) ? list : [];
+        list = list.filter(m => String(m?.id) !== String(id));
+        localStorage.setItem('tm_uploaded_media', JSON.stringify(list));
+    } catch {}
 }
 
 // Update the Right Sidebar (Only used for User Lists)
