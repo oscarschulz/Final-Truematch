@@ -813,12 +813,14 @@ try {
   const params = new URLSearchParams(window.location.search || '');
   const open = String(params.get('open') || '').trim();
   const peer = String(params.get('peer') || '').trim().toLowerCase();
+  const focus = String(params.get('focus') || params.get('match') || '').trim().toLowerCase();
 
   if (open) {
     if (open === 'messages') {
       // Messages live under Matches UI (chat modal)
       try { setActiveTab('matches'); } catch {}
       try { await loadMatchesPanel(); } catch {}
+      try { if (focus || peer) focusMatchCardByEmail(focus || peer); } catch {}
 
       if (peer) {
         const cards = Array.from(document.querySelectorAll('.match-card')) || [];
@@ -838,6 +840,10 @@ try {
     } else {
       // Open a panel directly (home, swipe, matches, creators, premium, concierge, settings, etc.)
       try { setActiveTab(open); } catch {}
+      if (open === 'matches') {
+        try { await loadMatchesPanel(); } catch {}
+        if (focus) { try { focusMatchCardByEmail(focus); } catch {} }
+      }
     }
 
     // Clean URL so refresh/back doesn't keep reopening
@@ -845,6 +851,8 @@ try {
       const url = new URL(window.location.href);
       url.searchParams.delete('open');
       url.searchParams.delete('peer');
+      url.searchParams.delete('focus');
+      url.searchParams.delete('match');
       window.history.replaceState({}, document.title, url.toString());
     } catch {}
   }
@@ -1464,6 +1472,72 @@ function applyMatchesSearch(rawQuery) {
       item.style.display = show ? '' : 'none';
     });
   }
+}
+
+
+// ---------------------------------------------------------------------
+// MATCH FOCUS (NOTIFICATION DEEP-LINK): auto-clear search, scroll, highlight
+// ---------------------------------------------------------------------
+let __tmMatchFocusStyleInjected = false;
+
+function ensureMatchFocusStyles() {
+  if (__tmMatchFocusStyleInjected) return;
+  __tmMatchFocusStyleInjected = true;
+
+  try {
+    if (document.getElementById('tm-match-focus-style')) return;
+    const style = document.createElement('style');
+    style.id = 'tm-match-focus-style';
+    style.textContent = `
+      .match-card.tm-focus {
+        outline: 2px solid rgba(255, 215, 0, 0.85);
+        box-shadow: 0 0 0 4px rgba(255, 215, 0, 0.18);
+        border-radius: 18px;
+      }
+    `;
+    document.head.appendChild(style);
+  } catch (_) {}
+}
+
+function focusMatchCardByEmail(emailRaw) {
+  const email = String(emailRaw || '').trim().toLowerCase();
+  if (!email) return false;
+
+  // If Matches list is filtered, clear it so the focused card won't be hidden.
+  try {
+    const q = String((DOM.matchSearch && DOM.matchSearch.value) || '').trim();
+    if (q) {
+      if (DOM.matchSearch) DOM.matchSearch.value = '';
+      try { applyMatchesSearch(''); } catch (_) {}
+    }
+  } catch (_) {}
+
+  const cards = Array.from(document.querySelectorAll('.match-card')) || [];
+  const card = cards.find(el => String(el?.dataset?.email || '').trim().toLowerCase() === email) || null;
+  if (!card) return false;
+
+  ensureMatchFocusStyles();
+
+  // Remove prior focus
+  try {
+    document.querySelectorAll('.match-card.tm-focus').forEach(el => el.classList.remove('tm-focus'));
+  } catch (_) {}
+
+  try { card.classList.add('tm-focus'); } catch (_) {}
+
+  // Auto-scroll into view
+  try {
+    card.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+  } catch (_) {
+    try { card.scrollIntoView(); } catch (_) {}
+  }
+
+  // Auto-remove highlight
+  setTimeout(() => {
+    try { card.classList.remove('tm-focus'); } catch (_) {}
+  }, 2000);
+
+  return true;
 }
 
 
