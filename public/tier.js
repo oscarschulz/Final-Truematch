@@ -371,7 +371,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   attachPlanButtons();
   renderUpgradeView();
 
-    // Mobile-only: turn the tier cards into a swipe carousel with 4 pills
+    
+
+// Determine current user plan tier (for carousel initial focus)
+// NOTE: tier cards use data-plan-card="free|tier1|tier2|tier3"
+let userPlanTier = 'free';
+try {
+  const me = await TMAPI.apiMe();
+  const rawPlan = String((me?.user?.plan || me?.plan || '')).toLowerCase().trim();
+  if (rawPlan) userPlanTier = normalizePlanName(rawPlan);
+} catch {}
+
+// Fallback: local storage plan hint (dev/testing)
+try {
+  const local = JSON.parse(localStorage.getItem('tm_user') || '{}');
+  const lp = String(local?.plan || '').toLowerCase().trim();
+  if (lp) userPlanTier = normalizePlanName(lp);
+} catch {}
+
+// Mobile-only: turn the tier cards into a swipe carousel with 4 pills
     initTierCarousel(userPlanTier);
 });
 
