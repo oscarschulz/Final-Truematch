@@ -7443,6 +7443,110 @@ function bindNotificationsControls(container, me) {
 }
 
 
+function bindSubscriptionControls(container, me) {
+  if (!container) return;
+
+  const user = (me && me.user) ? me.user : (me || {});
+  const ca = (user && user.creatorApplication && typeof user.creatorApplication === 'object') ? user.creatorApplication : {};
+
+  const priceInput = container.querySelector('#tm-sub-price') || container.querySelector('input[type=number]');
+  const promoOn = container.querySelector('#tm-sub-promo-on');
+  const bundle3 = container.querySelector('#tm-sub-bundle-3');
+  const bundle6 = container.querySelector('#tm-sub-bundle-6');
+  const bundle12 = container.querySelector('#tm-sub-bundle-12');
+  const saveBtn = container.querySelector('#tm-sub-save') || Array.from(container.querySelectorAll('button.btn-submit-card')).find(b => /save/i.test(b.textContent || ''));
+  const promoCreateBtn = container.querySelector('#tm-sub-promo-create');
+
+  // Hydrate
+  const currentPrice = Number(ca.price);
+  const priceVal = Number.isFinite(currentPrice) && currentPrice > 0 ? currentPrice : 9.99;
+  if (priceInput) {
+    priceInput.value = String(Math.round(priceVal * 100) / 100);
+    priceInput.setAttribute('min', '4.99');
+    priceInput.setAttribute('step', '0.01');
+  }
+
+  const cfg = (ca.subscriptionConfig && typeof ca.subscriptionConfig === 'object') ? ca.subscriptionConfig : {};
+  const bundles = (cfg.bundles && typeof cfg.bundles === 'object') ? cfg.bundles : {};
+
+  if (promoOn) promoOn.checked = !!cfg.promoEnabled;
+  if (bundle3) bundle3.checked = !!bundles.m3;
+  if (bundle6) bundle6.checked = !!bundles.m6;
+  if (bundle12) bundle12.checked = !!bundles.m12;
+
+  // Create campaign is not implemented yet (keeps UI honest)
+  if (promoCreateBtn && !promoCreateBtn.__tmBound) {
+    promoCreateBtn.__tmBound = true;
+    promoCreateBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      tmToast('Campaign builder is coming soon.', 'info');
+    });
+  }
+
+  if (!saveBtn || saveBtn.__tmBound) return;
+  saveBtn.__tmBound = true;
+
+  saveBtn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const raw = priceInput ? String(priceInput.value || '').trim() : '';
+    const nextPrice = parseFloat(raw);
+    if (!Number.isFinite(nextPrice) || nextPrice < 4.99) {
+      tmToast('Minimum subscription price is $4.99.', 'error');
+      return;
+    }
+
+    const payload = {
+      price: Math.round(nextPrice * 100) / 100,
+      subscriptionConfig: {
+        promoEnabled: !!(promoOn && promoOn.checked),
+        bundles: {
+          m3: !!(bundle3 && bundle3.checked),
+          m6: !!(bundle6 && bundle6.checked),
+          m12: !!(bundle12 && bundle12.checked),
+        }
+      }
+    };
+
+    const orig = saveBtn.textContent;
+    saveBtn.disabled = true;
+    saveBtn.classList.add('loading');
+    saveBtn.textContent = 'SAVING...';
+
+    try {
+      const out = await apiPost('/api/me/creator/profile', payload).catch(() => null);
+      if (!out || !out.ok) {
+        const msg = (out && (out.message || out.error)) ? (out.message || out.error) : 'Failed to save.';
+        tmToast(msg, 'error');
+        return;
+      }
+
+      // Refresh cache + UI
+      __meCache = null;
+      const meFresh = await ensureMe(true);
+
+      // Update payment modal price label if present
+      try {
+        const strong = document.querySelector('#payment-modal .muted-text strong');
+        const p = Number(meFresh && meFresh.user && meFresh.user.creatorApplication ? meFresh.user.creatorApplication.price : NaN);
+        if (strong && Number.isFinite(p) && p > 0) strong.textContent = '$' + (Math.round(p * 100) / 100).toFixed(2) + '/mo';
+      } catch (_) {}
+
+      tmToast('Subscription settings saved.', 'success');
+      tmDispatchMeUpdated({ source: 'settings', reason: 'subscription' });
+    } catch (err) {
+      console.error(err);
+      tmToast((err && err.message) ? err.message : 'Failed to save.', 'error');
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.classList.remove('loading');
+      saveBtn.textContent = orig;
+    }
+  });
+}
+
 
 
 function setActiveMenuItem(el) {
@@ -7519,6 +7623,7 @@ function openMobileDetail(target, me) {
   if (target === 'privacy') bindPrivacyControls(clone, me);
   if (target === 'notifications') bindNotificationsControls(clone, me);
   if (target === 'account') bindAccountControls(clone, me);
+  if (target === 'subscription') bindSubscriptionControls(clone, me);
 
   // Slide in
   requestAnimationFrame(() => host.classList.add('is-open'));
@@ -7543,6 +7648,7 @@ function renderSettingsTargetDesktop(target, me) {
   if (target === 'privacy') bindPrivacyControls(clone, me);
   if (target === 'notifications') bindNotificationsControls(clone, me);
   if (target === 'account') bindAccountControls(clone, me);
+  if (target === 'subscription') bindSubscriptionControls(clone, me);
 }
 
 function bindMetaCounter(fieldEl) {

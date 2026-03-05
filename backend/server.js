@@ -7271,8 +7271,24 @@ app.post('/api/me/creator/profile', authMiddleware, async (req, res) => {
     if (!meEmail) return res.status(401).json({ ok: false, message: 'Not logged in' });
 
     const body = (req.body && typeof req.body === 'object') ? req.body : {};
+
+    // packed (legacy) + partial update support
     const packed = safeStr(body.packed || body.contentStyle || body.style || '');
-    if (!packed) return res.status(400).json({ ok: false, message: 'Missing packed style' });
+    const hasPacked = !!packed;
+
+    const priceRaw = body.price;
+    const priceNum = (priceRaw === null || priceRaw === undefined || priceRaw === '') ? NaN : Number(priceRaw);
+    const hasPrice = Number.isFinite(priceNum);
+
+    const cfg = (body.subscriptionConfig && typeof body.subscriptionConfig === 'object') ? body.subscriptionConfig : null;
+
+    if (!hasPacked && !hasPrice && !cfg) {
+      return res.status(400).json({ ok: false, message: 'Nothing to update' });
+    }
+
+    if (hasPrice && priceNum < 4.99) {
+      return res.status(400).json({ ok: false, message: 'Minimum price is 4.99' });
+    }
 
     const nowMs = Date.now();
 
@@ -7281,11 +7297,30 @@ app.post('/api/me/creator/profile', authMiddleware, async (req, res) => {
 
     const prevCA = (meDoc.creatorApplication && typeof meDoc.creatorApplication === 'object') ? meDoc.creatorApplication : {};
 
-    const nextCA = {
-      ...prevCA,
-      contentStyle: packed,
-      contentStyleUpdatedAt: new Date(nowMs)
-    };
+    const nextCA = { ...prevCA };
+
+    if (hasPacked) {
+      nextCA.contentStyle = packed;
+      nextCA.contentStyleUpdatedAt = new Date(nowMs);
+    }
+
+    if (hasPrice) {
+      nextCA.price = Math.round(priceNum * 100) / 100;
+      nextCA.priceUpdatedAt = new Date(nowMs);
+    }
+
+    if (cfg) {
+      const bundlesIn = (cfg.bundles && typeof cfg.bundles === 'object') ? cfg.bundles : {};
+      nextCA.subscriptionConfig = {
+        promoEnabled: !!cfg.promoEnabled,
+        bundles: {
+          m3: !!bundlesIn.m3,
+          m6: !!bundlesIn.m6,
+          m12: !!bundlesIn.m12
+        }
+      };
+      nextCA.subscriptionConfigUpdatedAt = new Date(nowMs);
+    }
 
     await updateUserByEmail(meEmail, { creatorApplication: nextCA, updatedAt: new Date(nowMs) });
 
@@ -7299,7 +7334,7 @@ app.post('/api/me/creator/profile', authMiddleware, async (req, res) => {
       DB.user.updatedAt = nowMs;
     }
 
-    return res.json({ ok: true, packed, creatorApplication: nextCA });
+    return res.json({ ok: true, packed: hasPacked ? packed : (prevCA.contentStyle || ''), creatorApplication: nextCA });
   } catch (e) {
     console.error('POST /api/me/creator/profile error', e);
     return res.status(500).json({ ok: false, message: 'Server error' });
