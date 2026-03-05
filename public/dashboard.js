@@ -804,6 +804,53 @@ await loadHomePanels(true);
     setActiveTab('home');
   }
 
+
+// Deep-link handling from notifications (optional)
+// Examples:
+//   dashboard.html?open=concierge
+//   dashboard.html?open=messages&peer=user@example.com
+try {
+  const params = new URLSearchParams(window.location.search || '');
+  const open = String(params.get('open') || '').trim();
+  const peer = String(params.get('peer') || '').trim().toLowerCase();
+
+  if (open) {
+    if (open === 'messages') {
+      // Messages live under Matches UI (chat modal)
+      try { setActiveTab('matches'); } catch {}
+      try { await loadMatchesPanel(); } catch {}
+
+      if (peer) {
+        const cards = Array.from(document.querySelectorAll('.match-card')) || [];
+        const card = cards.find(el => String(el?.dataset?.email || '').trim().toLowerCase() === peer) || null;
+        if (card) {
+          const name = card.dataset.name || 'Match';
+          const msg = card.dataset.msg || '';
+          const photoUrl = card.dataset.photoUrl || '';
+          const lastSeenAtMs = Number(card.dataset.lastSeenAtMs || 0);
+          const seedColor = (typeof getRandomColor === 'function') ? getRandomColor() : '#3AAFB9';
+          await openChatModal(name, seedColor, msg, peer, photoUrl, lastSeenAtMs);
+        } else {
+          const seedColor = (typeof getRandomColor === 'function') ? getRandomColor() : '#3AAFB9';
+          await openChatModal(peer, seedColor, '', peer, '', 0);
+        }
+      }
+    } else {
+      // Open a panel directly (home, swipe, matches, creators, premium, concierge, settings, etc.)
+      try { setActiveTab(open); } catch {}
+    }
+
+    // Clean URL so refresh/back doesn't keep reopening
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('open');
+      url.searchParams.delete('peer');
+      window.history.replaceState({}, document.title, url.toString());
+    } catch {}
+  }
+} catch (_) {}
+
+
   // Remove Loader
   setTimeout(() => {
       const loader = document.getElementById('app-loader');

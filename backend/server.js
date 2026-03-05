@@ -3827,6 +3827,51 @@ async function _seedWelcomeNotifIfMissing(userId, emailNorm) {
   }
 }
 
+
+// Push a notification to a user by email (Firestore-first; safe JSON fallback).
+// Payload fields: { type, title, message, href }
+async function _pushNotifToEmail(targetEmail, payload = {}, docId = '') {
+  try {
+    const emailNorm = String(targetEmail || '').trim().toLowerCase();
+    if (!emailNorm) return;
+
+    const p = payload && typeof payload === 'object' ? payload : {};
+    const clean = {
+      type: String(p.type || 'system'),
+      title: String(p.title || 'Notification'),
+      message: String(p.message || p.text || ''),
+      href: p.href ? String(p.href) : '',
+      createdAt: (admin && admin.firestore) ? admin.firestore.FieldValue.serverTimestamp() : Date.now(),
+      readAt: null
+    };
+
+    // Local JSON fallback (when Firebase is OFF)
+    if (!hasFirebase || !usersCollection) {
+      DB.notificationsByEmail = (DB.notificationsByEmail && typeof DB.notificationsByEmail === 'object') ? DB.notificationsByEmail : {};
+      const arr = Array.isArray(DB.notificationsByEmail[emailNorm]) ? DB.notificationsByEmail[emailNorm] : [];
+      const id = String(docId || (`n_${Date.now()}_${Math.random().toString(16).slice(2)}`));
+      arr.unshift(_normalizeNotif(id, { ...clean, createdAtMs: Date.now(), readAtMs: 0 }));
+      DB.notificationsByEmail[emailNorm] = arr.slice(0, 200);
+      return;
+    }
+
+    const user = await findUserByEmail(emailNorm);
+    const userId = user && user.id ? String(user.id) : '';
+    if (!userId) return;
+
+    const col = usersCollection.doc(userId).collection(NOTIFS_SUBCOL);
+    const id = String(docId || '').trim();
+    if (id) {
+      await col.doc(id).set(clean, { merge: true });
+    } else {
+      await col.add(clean);
+    }
+  } catch (e) {
+    console.warn('push notif failed:', e?.message || e);
+  }
+}
+
+
 app.get('/api/me/notifications', authMiddleware, async (req, res) => {
   try {
     const email = String(req.user && req.user.email ? req.user.email : '').trim().toLowerCase();
@@ -5643,6 +5688,18 @@ app.post('/api/admin/confirmed-date', async (req, res) => {
 
     await saveScheduledDates(emailNorm, scheduledDates);
 
+
+// Notify user (dashboard bell)
+try {
+  const locPart = nextItem.location ? ` at ${String(nextItem.location)}` : '';
+  await _pushNotifToEmail(emailNorm, {
+    type: 'concierge',
+    title: 'Date confirmed',
+    message: `Your concierge date with ${nextItem.name} is scheduled for ${nextItem.scheduledAt}${locPart}.`,
+    href: 'dashboard.html?open=concierge'
+  }, `concierge_${nextItem.id}`);
+} catch (_) {}
+
     return res.json({ ok: true, updated: idx >= 0, id: nextItem.id });
   } catch (err) {
     console.error('admin confirmed-date error:', err);
@@ -5872,6 +5929,17 @@ app.get('/api/messages', async (req, res) => {
           lastReadAtMs: Number(v.lastReadAtMs || 0),
         };
       });
+
+
+// Notify recipient (dashboard bell)
+try {
+  await _pushNotifToEmail(peerEmail, {
+    type: 'message',
+    title: 'New message',
+    message: `${(user && user.name) ? String(user.name) : email}: ${String(text).slice(0, 120)}`,
+    href: `dashboard.html?open=messages&peer=${encodeURIComponent(email)}`
+  }, `msg_${msgRef.id}`);
+} catch (_) {}
 
       return res.json({
         ok: true,
@@ -6241,6 +6309,17 @@ app.post('/api/messages/send', async (req, res) => {
 
     DB.messages[email][peerEmail].push(msg);
     DB.messages[peerEmail][email].push(msg);
+
+
+// Notify recipient (dashboard bell)
+try {
+  await _pushNotifToEmail(peerEmail, {
+    type: 'message',
+    title: 'New message',
+    message: `${(user && user.name) ? String(user.name) : email}: ${String(text).slice(0, 120)}`,
+    href: `dashboard.html?open=messages&peer=${encodeURIComponent(email)}`
+  }, `msg_${msg.id}`);
+} catch (_) {}
 
     return res.json({
       ok: true,
