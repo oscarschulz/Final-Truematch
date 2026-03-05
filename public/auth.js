@@ -836,12 +836,14 @@ if (await tryDemoLogin(email, password)) {
       text: 'continue_with',
       shape: 'pill',
       locale: 'en',
-    width: Math.min(420, (wrap.getBoundingClientRect().width || 420))
-  });
-    whenReady(() => {
+      width: Math.min(420, (wrap.getBoundingClientRect().width || 420))
+    });
+  }
+
+  whenReady(() => {
     tmInitGoogleGSI();
   });
-  }
+
 
 
   whenReady(() => {
