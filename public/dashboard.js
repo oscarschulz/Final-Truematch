@@ -19,7 +19,7 @@ const DAILY_SWIPE_LIMIT = 20;
 //   localStorage.setItem('tm_creator_apps_open', '0')  // close
 //
 // Optional URL override (does NOT persist): ?creatorApps=1 / 0
-const CREATOR_APPLICATION_OPEN_DEFAULT = true;
+const CREATOR_APPLICATION_OPEN_DEFAULT = false;
 const TM_CREATOR_APPS_FLAG_KEY = 'tm_creator_apps_open';
 
 function isCreatorApplicationsOpen() {
