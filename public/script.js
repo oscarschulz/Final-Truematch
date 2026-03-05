@@ -399,6 +399,107 @@
     qsa(".snap-carousel").forEach(initSnapCarousel);
   }
 
+
+// ------------------------
+// [NEW] Landing pricing pills (mobile indicator for swipeable tiers)
+// Same behavior/style as tier page pills
+// ------------------------
+function initLandingPricingPills() {
+  const grid = document.querySelector('#pricing .pricing-grid');
+  const pillsWrap = document.querySelector('#pricing .tier-carousel-pills');
+  if (!grid || !pillsWrap) return;
+
+  const cards = Array.from(grid.querySelectorAll('.price-card'));
+  const pills = Array.from(pillsWrap.querySelectorAll('.tier-pill'));
+  if (!cards.length || !pills.length) return;
+
+  const mq = window.matchMedia ? window.matchMedia('(max-width: 768px)') : { matches: false };
+  let observer = null;
+
+  const setActive = (idx) => {
+    pills.forEach((p, i) => p.classList.toggle('is-active', i === idx));
+  };
+
+  const scrollToIndex = (idx, behavior = 'smooth') => {
+    const card = cards[idx];
+    if (!card) return;
+    card.scrollIntoView({ behavior, block: 'nearest', inline: 'center' });
+  };
+
+  pills.forEach((p, idx) => {
+    p.addEventListener('click', () => scrollToIndex(idx, 'smooth'));
+  });
+
+  const pickByCenter = () => {
+    const center = grid.scrollLeft + grid.clientWidth / 2;
+    let bestIdx = 0;
+    let bestDist = Infinity;
+
+    cards.forEach((c, idx) => {
+      const cx = c.offsetLeft + c.offsetWidth / 2;
+      const d = Math.abs(cx - center);
+      if (d < bestDist) {
+        bestDist = d;
+        bestIdx = idx;
+      }
+    });
+
+    return bestIdx;
+  };
+
+  const setupObserver = () => {
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
+
+    if (!mq.matches) return;
+
+    // initial
+    setActive(pickByCenter());
+
+    if ('IntersectionObserver' in window) {
+      observer = new IntersectionObserver(
+        (entries) => {
+          let best = null;
+          for (const e of entries) {
+            if (!e.isIntersecting) continue;
+            if (!best || e.intersectionRatio > best.intersectionRatio) best = e;
+          }
+          if (!best) return;
+
+          const idx = cards.indexOf(best.target);
+          if (idx >= 0) setActive(idx);
+        },
+        { root: grid, threshold: [0.55, 0.7, 0.85] }
+      );
+
+      cards.forEach((c) => observer.observe(c));
+      return;
+    }
+
+    // Fallback: scroll listener
+    let raf = null;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = null;
+        if (!mq.matches) return;
+        setActive(pickByCenter());
+      });
+    };
+
+    grid.addEventListener('scroll', onScroll, { passive: true });
+  };
+
+  setupObserver();
+
+  if (mq.addEventListener) mq.addEventListener('change', setupObserver);
+  else if (mq.addListener) mq.addListener(setupObserver);
+}
+
+
+
   // ------------------------
   // FAQ accordion
   // ------------------------
@@ -565,7 +666,8 @@
     initNavDropdown();
     initGetStartedRouting();
     initCarousels();
-    initFaqAccordion();
+        initLandingPricingPills();
+initFaqAccordion();
     initFooterYear();
     initLegalModals();
     
