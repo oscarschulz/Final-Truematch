@@ -835,14 +835,13 @@ if (await tryDemoLogin(email, password)) {
       size: 'large',
       text: 'continue_with',
       shape: 'pill',
-      width: Math.min(420, (wrap.getBoundingClientRect().width || 420))
-    });
-  }
-
-  whenReady(() => {
+      locale: 'en',
+    width: Math.min(420, (wrap.getBoundingClientRect().width || 420))
+  });
+    whenReady(() => {
     tmInitGoogleGSI();
   });
-
+  }
 
 
   whenReady(() => {
