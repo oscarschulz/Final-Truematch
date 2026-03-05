@@ -440,22 +440,68 @@ function showToast(msg, type = 'success') {
 // Backwards-compat: some code calls toast(...) instead of showToast(...)
 function toast(msg, type = 'success') { showToast(msg, type); }
 
-// Upgrade helper: always route to tier page in upgrade mode (and preserve demo=1 when present)
-function goToUpgrade() {
+// ---------------------------------------------------------------------
+// DEEP-LINK UX: Focus a specific match card (scroll + highlight)
+// Used by notification hrefs like:
+//   dashboard.html?open=matches&focus=user@example.com
+//   dashboard.html?open=messages&peer=user@example.com&focus=user@example.com
+// ---------------------------------------------------------------------
+let __matchFocusTimer = null;
+
+function ensureMatchFocusStyles() {
   try {
-    const target = new URL('tier.html', window.location.href);
-    target.searchParams.set('upgrade', '1');
+    if (document.getElementById('tm-match-focus-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'tm-match-focus-styles';
+    style.textContent = `
+      .match-card.tm-focus {
+        outline: 2px solid rgba(100, 233, 238, 0.85) !important;
+        box-shadow: 0 0 0 6px rgba(100, 233, 238, 0.14), 0 16px 40px rgba(0,0,0,0.55) !important;
+        transform: translateZ(0) scale(1.01);
+      }
+    `;
+    document.head.appendChild(style);
+  } catch (_) {}
+}
 
-    // Preserve demo=1 (demo mode) so tier/pay pages stay consistent.
-    try {
-      const cur = new URL(window.location.href);
-      if (cur.searchParams.get('demo') === '1') target.searchParams.set('demo', '1');
-    } catch {}
+function focusMatchCardByEmail(emailRaw) {
+  const email = String(emailRaw || '').trim().toLowerCase();
+  if (!email) return false;
 
-    window.location.href = target.toString();
-  } catch {
-    window.location.href = './tier.html?upgrade=1';
+  ensureMatchFocusStyles();
+
+  // Clear previous focus
+  try {
+    document.querySelectorAll('.match-card.tm-focus').forEach(el => el.classList.remove('tm-focus'));
+  } catch (_) {}
+  try { if (__matchFocusTimer) clearTimeout(__matchFocusTimer); } catch (_) {}
+  __matchFocusTimer = null;
+
+  // If search is filtering the list, clear it so the match isn't hidden.
+  try {
+    if (DOM.matchSearch && String(DOM.matchSearch.value || '').trim()) {
+      DOM.matchSearch.value = '';
+      DOM.matchSearch.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  } catch (_) {}
+
+  const cards = Array.from(document.querySelectorAll('.match-card')) || [];
+  const card = cards.find(el => String(el?.dataset?.email || '').trim().toLowerCase() === email) || null;
+  if (!card) return false;
+
+  try { card.classList.add('tm-focus'); } catch (_) {}
+
+  try {
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } catch (_) {
+    try { card.scrollIntoView(true); } catch (_) {}
   }
+
+  __matchFocusTimer = setTimeout(() => {
+    try { card.classList.remove('tm-focus'); } catch (_) {}
+  }, 2200);
+
+  return true;
 }
 
 function normalizePlanKey(rawPlan) {
@@ -804,55 +850,70 @@ await loadHomePanels(true);
     setActiveTab('home');
   }
 
+  
+  // -------------------------------------------------------------------
+  // Deep-link handling (from notification hrefs)
+  // Examples:
+  //   dashboard.html?open=concierge
+  //   dashboard.html?open=matches&focus=user@example.com
+  //   dashboard.html?open=messages&peer=user@example.com&focus=user@example.com
+  // -------------------------------------------------------------------
+  try {
+    const params = new URLSearchParams(window.location.search || '');
+    const open = String(params.get('open') || params.get('tab') || '').trim().toLowerCase();
+    const peer = String(params.get('peer') || '').trim().toLowerCase();
+    const focus = String(params.get('focus') || params.get('match') || '').trim().toLowerCase();
 
-// Deep-link handling from notifications (optional)
-// Examples:
-//   dashboard.html?open=concierge
-//   dashboard.html?open=messages&peer=user@example.com
-try {
-  const params = new URLSearchParams(window.location.search || '');
-  const open = String(params.get('open') || params.get('tab') || '').trim().toLowerCase();
-  const peer = String(params.get('peer') || '').trim().toLowerCase();
+    if (open) {
+      if (open === 'messages' || open === 'chat') {
+        // Messages live under Matches UI (chat modal)
+        try { setActiveTab('matches'); } catch (_) {}
+        try { await loadMatchesPanel(); } catch (_) {}
 
-  if (open) {
-    if (open === 'messages' || open === 'chat') {
-      // Messages live under Matches UI (chat modal)
-      try { setActiveTab('matches'); } catch {}
-      try { await loadMatchesPanel(); } catch {}
+        // Optional: highlight + auto-scroll to the match card
+        try { focusMatchCardByEmail(focus || peer); } catch (_) {}
 
-      if (peer) {
-        const cards = Array.from(document.querySelectorAll('.match-card')) || [];
-        const card = cards.find(el => String(el?.dataset?.email || '').trim().toLowerCase() === peer) || null;
-        if (card) {
-          const name = card.dataset.name || 'Match';
-          const msg = card.dataset.msg || '';
-          const photoUrl = card.dataset.photoUrl || '';
-          const lastSeenAtMs = Number(card.dataset.lastSeenAtMs || 0);
+        if (peer) {
+          const cards = Array.from(document.querySelectorAll('.match-card')) || [];
+          const card = cards.find(el => String(el?.dataset?.email || '').trim().toLowerCase() === peer) || null;
           const seedColor = (typeof getRandomColor === 'function') ? getRandomColor() : '#3AAFB9';
-          await openChatModal(name, seedColor, msg, peer, photoUrl, lastSeenAtMs);
-        } else {
-          const seedColor = (typeof getRandomColor === 'function') ? getRandomColor() : '#3AAFB9';
-          await openChatModal(peer, seedColor, '', peer, '', 0);
+
+          if (card) {
+            const name = card.dataset.name || 'Match';
+            const msg = card.dataset.msg || '';
+            const photoUrl = card.dataset.photoUrl || '';
+            const lastSeenAtMs = Number(card.dataset.lastSeenAtMs || 0);
+            await openChatModal(name, seedColor, msg, peer, photoUrl, lastSeenAtMs);
+          } else {
+            await openChatModal(peer, seedColor, '', peer, '', 0);
+          }
+        }
+      } else {
+        // Open a panel directly (home, swipe, matches, creators, premium, concierge, settings, etc.)
+        try { setActiveTab(open); } catch (_) {}
+
+        // If we're deep-linking into Matches with a focus target, ensure list is loaded then focus it.
+        if (open === 'matches' && focus) {
+          try { await loadMatchesPanel(); } catch (_) {}
+          try { focusMatchCardByEmail(focus); } catch (_) {}
         }
       }
-    } else {
-      // Open a panel directly (home, swipe, matches, creators, premium, concierge, settings, etc.)
-      try { setActiveTab(open); } catch {}
+
+      // Clean URL so refresh/back doesn't keep reopening
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('open');
+        url.searchParams.delete('tab');
+        url.searchParams.delete('peer');
+        url.searchParams.delete('focus');
+        url.searchParams.delete('match');
+        window.history.replaceState({}, document.title, url.toString());
+      } catch (_) {}
     }
-
-    // Clean URL so refresh/back doesn't keep reopening
-    try {
-      const url = new URL(window.location.href);
-      url.searchParams.delete('open');
-      url.searchParams.delete('tab');
-      url.searchParams.delete('peer');
-      window.history.replaceState({}, document.title, url.toString());
-    } catch {}
-  }
-} catch (_) {}
+  } catch (_) {}
 
 
-  // Remove Loader
+// Remove Loader
   setTimeout(() => {
       const loader = document.getElementById('app-loader');
       if(loader) {
@@ -954,68 +1015,8 @@ const NotificationsController = (() => {
       // Optional click-through
       if (notif.href) {
         row.style.cursor = 'pointer';
-        row.addEventListener('click', async () => {
-          // Optimistically mark as read (server + local) then follow deep-link.
-          try { await apiPost('/api/me/notifications/mark-read', { id: notif.id }); } catch (_) {}
-          try { notif.readAtMs = Date.now(); } catch (_) {}
-
-          const href = String(notif.href || '').trim();
-          if (!href) {
-            try { NotificationsController.load({ force: true }).catch(() => {}); } catch (_) {}
-            return;
-          }
-
-          // If the href points back to dashboard, handle it in-app (no full reload).
-          try {
-            const u = new URL(href, window.location.origin);
-            const path = (u.pathname || '').toLowerCase();
-
-            if (path.endsWith('/dashboard.html') || path === '/dashboard.html' || path.endsWith('dashboard.html')) {
-              const open = String(u.searchParams.get('open') || u.searchParams.get('tab') || '').trim().toLowerCase();
-              const peer = String(u.searchParams.get('peer') || '').trim().toLowerCase();
-
-              if (open) {
-                if (open === 'messages' || open === 'chat') {
-                  try { setActiveTab('matches'); } catch (_) {}
-                  try { await loadMatchesPanel(); } catch (_) {}
-
-                  if (peer) {
-                    const cards = Array.from(document.querySelectorAll('.match-card')) || [];
-                    const card = cards.find(el => String(el?.dataset?.email || '').trim().toLowerCase() === peer) || null;
-                    const seedColor = (typeof getRandomColor === 'function') ? getRandomColor() : '#3AAFB9';
-
-                    if (card) {
-                      const name = card.dataset.name || 'Match';
-                      const msg = card.dataset.msg || '';
-                      const photoUrl = card.dataset.photoUrl || '';
-                      const lastSeenAtMs = Number(card.dataset.lastSeenAtMs || 0);
-                      await openChatModal(name, seedColor, msg, peer, photoUrl, lastSeenAtMs);
-                    } else {
-                      await openChatModal(peer, seedColor, '', peer, '', 0);
-                    }
-                  }
-                } else {
-                  try { setActiveTab(open); } catch (_) {}
-                }
-
-                try {
-                  // Clean URL so refresh/back doesn't keep reopening
-                  const url = new URL(window.location.href);
-                  url.searchParams.delete('open');
-                  url.searchParams.delete('tab');
-                  url.searchParams.delete('peer');
-                  window.history.replaceState({}, document.title, url.toString());
-                } catch (_) {}
-
-                try { if (DOM.notifDropdown) DOM.notifDropdown.hidden = true; } catch (_) {}
-                try { NotificationsController.load({ force: true }).catch(() => {}); } catch (_) {}
-                return;
-              }
-            }
-          } catch (_) {}
-
-          // Fallback: navigate normally.
-          try { window.location.href = href; } catch (_) {}
+        row.addEventListener('click', () => {
+          try { window.location.href = notif.href; } catch (_) {}
         });
       }
 
@@ -1096,7 +1097,7 @@ function setupEventListeners() {
     btnUpgradeNav.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      goToUpgrade();
+      window.location.href = './tier.html?upgrade=1';
     });
   }
 
@@ -1327,7 +1328,7 @@ if (DOM.frmPassword) DOM.frmPassword.addEventListener('submit', async (e) => {
   const openPremium = (e) => {
       // Sidebar "Subscribe" should always go to plans
       if (e && e.currentTarget && (e.currentTarget.id === 'btnSidebarSubscribe' || e.currentTarget.id === 'btnSidebarSubscribeMobile')) {
-          goToUpgrade();
+          window.location.href = './tier.html?upgrade=1';
           return;
       }
 
@@ -3532,7 +3533,7 @@ async function handlePremiumApplicationSubmit() {
   const isEligibleByUiRule = (planKey === 'tier2' || planKey === 'tier3');
   if (!isEligibleByUiRule) {
     showToast('Premium Society applications are available for Elite (Tier 2) and Concierge (Tier 3) members only.', 'error');
-    goToUpgrade();
+    window.location.href = './tier.html?upgrade=1';
     return;
   }
 
@@ -3582,14 +3583,14 @@ async function handlePremiumApplicationSubmit() {
       // Keep UX consistent with the intentional gating rule.
       if (res && res.code === 'not_eligible') {
         showToast('Premium Society applications are available for Elite (Tier 2) and Concierge (Tier 3) members only.', 'error');
-        goToUpgrade();
+        window.location.href = './tier.html?upgrade=1';
         return;
       }
 
       // Common server-side eligibility failure (inactive plan, etc.)
       if (/requires?\s+an\s+ACTIVE/i.test(msgStr) || (/plan/i.test(msgStr) && /active/i.test(msgStr))) {
         showToast('Your plan must be active to submit a Premium Society application. Please upgrade/renew and try again.', 'error');
-        goToUpgrade();
+        window.location.href = './tier.html?upgrade=1';
         return;
       }
 

@@ -1085,12 +1085,52 @@ app.get('/api/config', (req, res) => {
 // Returns occasional fake activity notifications for the landing page.
 // Frontend polls every 5s (public/fomo.js) and shows only when the returned `id` changes.
 const FOMO_NAMES = [
-  'Ayo','Tobi','Chi','Kemi','Zara','Mika','Nina','Aria','Jay','Santi','Noah','Liam','Ethan','Maya','Ivy','Aisha','Fatima','Amaka','Ola','Rina'
+  'Emily',
+  'Sophia',
+  'Olivia',
+  'Ava',
+  'Mia',
+  'Isabella',
+  'Charlotte',
+  'Amelia',
+  'Noah',
+  'Liam',
+  'Ethan',
+  'Lucas',
+  'Mason',
+  'James',
+  'Benjamin',
+  'Henry',
+  'Chloe',
+  'Grace',
+  'Hannah',
+  'Zoe',
+  'Ella',
+  'Victoria',
+  'Samantha',
+  'Natalie'
 ];
 
 const FOMO_LOCATIONS = [
-  'Lagos','Abuja','Ibadan','Port Harcourt','Accra','Nairobi','Johannesburg','Cape Town',
-  'Manila','Cebu','Davao','BGC','Quezon City','Makati','Dubai','London','Toronto'
+  'New York, USA',
+  'Los Angeles, USA',
+  'San Francisco, USA',
+  'Chicago, USA',
+  'Austin, USA',
+  'Miami, USA',
+  'Toronto, Canada',
+  'Vancouver, Canada',
+  'Montreal, Canada',
+  'London, UK',
+  'Manchester, UK',
+  'Edinburgh, UK',
+  'Paris, France',
+  'Berlin, Germany',
+  'Amsterdam, Netherlands',
+  'Stockholm, Sweden',
+  'Sydney, Australia',
+  'Melbourne, Australia',
+  'Auckland, New Zealand'
 ];
 
 const FOMO_ACTIONS = [
@@ -1125,8 +1165,8 @@ function _makeFomoEvent() {
 }
 
 function _scheduleNextRotate(now) {
-  // "Occasional": new event every 3–6 minutes (frontend polls every 5s).
-  return now + (_randInt(180, 360) * 1000);
+  // "Occasional": new event every ~25–55 seconds (frontend polls every 5s).
+  return now + (_randInt(25, 55) * 1000);
 }
 
 app.get('/api/fomo', (req, res) => {

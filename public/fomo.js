@@ -5,37 +5,117 @@
 
   const textEl = fomo.querySelector('.fomo-text');
   const timeEl = fomo.querySelector('.fomo-time');
-  
-  let lastId = null;
 
-  async function checkServer() {
+  let lastId = null;
+  let usingFallback = false;
+
+  // Western-market mock data (fallback if /api/fomo is not reachable in local static previews)
+  const FOMO_NAMES = [
+    'Emily','Sophia','Olivia','Ava','Mia','Isabella','Charlotte','Amelia',
+    'Noah','Liam','Ethan','Lucas','Mason','James','Benjamin','Henry',
+    'Chloe','Grace','Hannah','Zoe','Ella','Victoria','Samantha','Natalie'
+  ];
+
+  const FOMO_LOCATIONS = [
+    'New York, USA','Los Angeles, USA','San Francisco, USA','Chicago, USA','Austin, USA','Miami, USA',
+    'Toronto, Canada','Vancouver, Canada','Montreal, Canada',
+    'London, UK','Manchester, UK','Edinburgh, UK',
+    'Paris, France','Berlin, Germany','Amsterdam, Netherlands','Stockholm, Sweden',
+    'Sydney, Australia','Melbourne, Australia','Auckland, New Zealand'
+  ];
+
+  const FOMO_ACTIONS = [
+    'just signed up',
+    'just joined',
+    'just completed onboarding',
+    'just upgraded to Plus',
+    'just upgraded to Elite',
+    'just unlocked Concierge',
+    'just purchased a plan',
+    'just got matched',
+    'just booked a curated date'
+  ];
+
+  function pick(arr) {
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
+
+  function timeAgoLabel() {
+    const mins = [1, 2, 3, 4, 6, 8, 10, 12];
+    const m = pick(mins);
+    return m === 1 ? '1 min ago' : `${m} mins ago`;
+  }
+
+  function showEvent(data) {
+    if (!data) return;
+
+    const id = data.id || `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+    if (id === lastId) return;
+
+    lastId = id;
+
+    const name = data.name || pick(FOMO_NAMES);
+    const location = data.location || pick(FOMO_LOCATIONS);
+    const action = data.action || pick(FOMO_ACTIONS);
+
+    textEl.innerHTML = `<strong>${name}</strong> from <strong>${location}</strong> ${action}`;
+    timeEl.textContent = data.timeLabel || 'Just now';
+
+    fomo.classList.add('is-active');
+
+    setTimeout(() => {
+      fomo.classList.remove('is-active');
+    }, 5200);
+  }
+
+  async function checkServerOnce() {
     try {
-      // Tatawag sa server every 5 seconds
-      const res = await fetch('/api/fomo');
+      const res = await fetch('/api/fomo', { cache: 'no-store' });
+      if (!res.ok) throw new Error('bad_status');
       const data = await res.json();
 
-      if (!data || !data.id) return;
-      if (data.id === lastId) return; // Kung parehas lang sa dati, wag ipakita
+      if (!data || !data.id) throw new Error('no_payload');
 
-      // Kung luma na (sobra 1 oras), wag ipakita
-      const diff = (Date.now() - data.timestamp) / 1000;
-      if (diff > 3600) return;
+      // Ignore events older than 1 hour
+      const diff = (Date.now() - Number(data.timestamp || 0)) / 1000;
+      if (diff > 3600) throw new Error('stale');
 
-      lastId = data.id;
-      textEl.innerHTML = `<strong>${data.name}</strong> from <strong>${data.location}</strong> ${data.action}`;
-      timeEl.textContent = "Just now";
+      usingFallback = false;
 
-      fomo.classList.add('is-active');
-      
-      setTimeout(() => { 
-        fomo.classList.remove('is-active'); 
-      }, 5000);
+      showEvent({
+        id: data.id,
+        name: data.name,
+        location: data.location,
+        action: data.action,
+        timeLabel: 'Just now'
+      });
 
-    } catch (e) {
-      // ignore errors
+      return true;
+    } catch (_) {
+      // In local previews like Live Server (127.0.0.1:5500), /api/fomo doesn't exist.
+      // We'll gracefully switch to fallback mock activity.
+      usingFallback = true;
+      return false;
     }
   }
 
-  // Polling: Every 5 seconds
-  setInterval(checkServer, 5000);
+  function scheduleFallback() {
+    if (!usingFallback) return;
+
+    // "Occasional": every ~12–20s show a new mock event (looks alive but not spammy)
+    const delay = 12000 + Math.floor(Math.random() * 8000);
+
+    setTimeout(() => {
+      if (!usingFallback) return;
+      showEvent({ timeLabel: timeAgoLabel() });
+      scheduleFallback();
+    }, delay);
+  }
+
+  // Start: try server immediately, then poll every 5s.
+  (async () => {
+    const ok = await checkServerOnce();
+    if (!ok) scheduleFallback();
+    setInterval(checkServerOnce, 5000);
+  })();
 })();
