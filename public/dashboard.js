@@ -8,8 +8,59 @@ import { apiGet, apiPost, apiUpdateProfile, apiSavePrefs } from './tm-api.js';
 
 const DAILY_SWIPE_LIMIT = 20; 
 
-// Feature flag: set to true kapag bukas na ulit ang Creators application.
-const CREATOR_APPLICATION_OPEN = false;
+// Creators application gate (feature flag)
+// Default is CLOSED. You can toggle WITHOUT redeploy via localStorage:
+//
+//   tmSetCreatorAppsOpen(true)   // open
+//   tmSetCreatorAppsOpen(false)  // close
+//
+// Or manually:
+//   localStorage.setItem('tm_creator_apps_open', '1')  // open
+//   localStorage.setItem('tm_creator_apps_open', '0')  // close
+//
+// Optional URL override (does NOT persist): ?creatorApps=1 / 0
+const CREATOR_APPLICATION_OPEN_DEFAULT = false;
+const TM_CREATOR_APPS_FLAG_KEY = 'tm_creator_apps_open';
+
+function isCreatorApplicationsOpen() {
+  // 1) URL override (temporary)
+  try {
+    const url = new URL(window.location.href);
+    const q = url.searchParams.get('creatorApps') || url.searchParams.get('creator_apps') || url.searchParams.get('creator');
+    if (q !== null && q !== undefined && String(q).trim() !== '') {
+      const v = String(q).trim().toLowerCase();
+      if (['1', 'true', 'open', 'on', 'yes'].includes(v)) return true;
+      if (['0', 'false', 'closed', 'off', 'no'].includes(v)) return false;
+    }
+  } catch {}
+
+  // 2) HTML global override (optional): window.TM_FEATURES = { creatorAppsOpen: true/false }
+  try {
+    const g = window.TM_FEATURES;
+    if (g && typeof g.creatorAppsOpen === 'boolean') return g.creatorAppsOpen;
+  } catch {}
+
+  // 3) localStorage override (persistent per-browser)
+  try {
+    const raw = localStorage.getItem(TM_CREATOR_APPS_FLAG_KEY);
+    if (raw !== null && raw !== undefined && String(raw).trim() !== '') {
+      const v = String(raw).trim().toLowerCase();
+      if (['1', 'true', 'open', 'on', 'yes'].includes(v)) return true;
+      if (['0', 'false', 'closed', 'off', 'no'].includes(v)) return false;
+    }
+  } catch {}
+
+  return !!CREATOR_APPLICATION_OPEN_DEFAULT;
+}
+
+// Console helpers (safe no-ops if blocked)
+try {
+  window.tmSetCreatorAppsOpen = (open) => {
+    try { localStorage.setItem(TM_CREATOR_APPS_FLAG_KEY, open ? '1' : '0'); } catch {}
+    try { renderCreatorEntryCard(); } catch {}
+  };
+  window.tmGetCreatorAppsOpen = () => isCreatorApplicationsOpen();
+} catch {}
 
 // --- Email helper: shorten + mask to avoid UI overlap (Settings header) ---
 function maskEmail(email) {
@@ -542,7 +593,7 @@ function renderCreatorEntryCard() {
   const btnApply = DOM.btnOpenCreatorApply;
   const btnGo = DOM.btnGoCreatorsPage;
 
-  const appsOpen = !!CREATOR_APPLICATION_OPEN;
+  const appsOpen = isCreatorApplicationsOpen();
 
   // Defaults
   if (row) row.style.display = 'none';
@@ -1302,7 +1353,7 @@ if (DOM.frmPassword) DOM.frmPassword.addEventListener('submit', async (e) => {
     const cs = normalizeStatus(state.me && state.me.creatorStatus);
 
     // Feature flag: kapag sarado ang applications, huwag mag-open ng apply modal (except pending/approved)
-    if (!CREATOR_APPLICATION_OPEN && cs !== 'pending' && cs !== 'approved') {
+    if (!isCreatorApplicationsOpen() && cs !== 'pending' && cs !== 'approved') {
       showToast('Creator applications are currently closed.', 'info');
       return;
     }
