@@ -3719,6 +3719,13 @@ async function handleProfileSave() {
     showToast('Preferred city is required.', 'error');
     return;
   }
+  // NEW users (schemaVersion >= 2) must provide profileGender to satisfy backend validation
+  const schemaV = Number(state?.me?.schemaVersion || state?.me?.schema_version || 0);
+  if (schemaV >= 2 && !profileGender) {
+    showToast('Please select a value for “I am”.', 'error');
+    return;
+  }
+
   if (profileGender && !['women','men'].includes(profileGender)) {
     showToast('Please select a valid value for “I am”.', 'error');
     return;
