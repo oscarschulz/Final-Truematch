@@ -1348,10 +1348,561 @@ async function tmFetchCreatorsFeed(limit = 40) {
 }
 
 
+
+// =============================================================
+// COMPOSER MEDIA + POST PAYWALL (Locked Vault items on Feed)
+// - Attach Vault items to posts via mediaIds[]
+// - Feed renders post.media[] and blurs locked items for unsubscribed viewers
+// =============================================================
+const TM_COMPOSE_MEDIA = { ids: [] };
+
+function tmComposeGetMediaIds() {
+    const arr = Array.isArray(TM_COMPOSE_MEDIA.ids) ? TM_COMPOSE_MEDIA.ids : [];
+    return arr.filter(Boolean).map(x => String(x)).slice(0, 12);
+}
+
+function tmComposeSetMediaIds(ids) {
+    const next = Array.isArray(ids) ? ids : [];
+    const clean = [];
+    const seen = new Set();
+    next.forEach((x) => {
+        const id = String(x || '').trim();
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        clean.push(id);
+    });
+    TM_COMPOSE_MEDIA.ids = clean.slice(0, 12);
+    tmComposeRenderAttachmentBar();
+    try {
+        // Update POST button enablement in Home
+        const input = DOM.composeInput;
+        if (input) input.dispatchEvent(new Event('input', { bubbles: true }));
+    } catch (_) {}
+}
+
+function tmComposeAddMediaIds(idsToAdd) {
+    const cur = tmComposeGetMediaIds();
+    const next = cur.slice();
+    (Array.isArray(idsToAdd) ? idsToAdd : []).forEach((x) => next.push(x));
+    tmComposeSetMediaIds(next);
+}
+
+function tmComposeClearMedia() {
+    TM_COMPOSE_MEDIA.ids = [];
+    tmComposeRenderAttachmentBar();
+    try {
+        const input = DOM.composeInput;
+        if (input) input.dispatchEvent(new Event('input', { bubbles: true }));
+    } catch (_) {}
+}
+
+function tmVaultGetCachedItemsUnified() {
+    // Prefer API cache; fallback to local storage vault
+    if (typeof __vaultApiItems !== 'undefined' && Array.isArray(__vaultApiItems) && __vaultApiItems.length) return __vaultApiItems;
+    try {
+        const raw = (typeof getMediaFromStorage === 'function') ? getMediaFromStorage() : [];
+        return Array.isArray(raw) ? raw : [];
+    } catch (_) {
+        return [];
+    }
+}
+
+function tmVaultFindItemById(id) {
+    const key = String(id || '').trim();
+    if (!key) return null;
+    const items = tmVaultGetCachedItemsUnified();
+    return items.find((x) => String(x?.id) === key) || null;
+}
+
+function tmComposeEnsureAttachmentBar() {
+    const actions = DOM.composeActions;
+    if (!actions) return null;
+
+    let bar = document.getElementById('tm-compose-attachments');
+    if (bar) return bar;
+
+    bar = document.createElement('div');
+    bar.id = 'tm-compose-attachments';
+    bar.style.paddingLeft = '60px';
+    bar.style.marginTop = '10px';
+    bar.style.display = 'none';
+    bar.style.flexWrap = 'wrap';
+    bar.style.gap = '8px';
+    bar.style.alignItems = 'center';
+
+    actions.insertAdjacentElement('afterend', bar);
+
+    // Remove handler
+    bar.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-action="tm-compose-remove"]');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const id = btn.getAttribute('data-id') || '';
+        const cur = tmComposeGetMediaIds();
+        tmComposeSetMediaIds(cur.filter(x => String(x) !== String(id)));
+    });
+
+    return bar;
+}
+
+function tmComposeRenderAttachmentBar() {
+    const bar = tmComposeEnsureAttachmentBar();
+    if (!bar) return;
+
+    const ids = tmComposeGetMediaIds();
+    if (!ids.length) {
+        bar.style.display = 'none';
+        bar.innerHTML = '';
+        return;
+    }
+
+    const items = ids.map(id => tmVaultFindItemById(id)).filter(Boolean);
+
+    // Keep ids even if item isn't currently loaded; show placeholder chip
+    bar.style.display = 'flex';
+    bar.innerHTML = `
+        <div style="width:100%; display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+            <div style="font-size:12px; color:var(--muted); font-weight:700;">Attachments (${ids.length})</div>
+            <button data-action="tm-compose-clear" style="border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.03); color:var(--text); padding:6px 10px; border-radius:999px; font-weight:800; cursor:pointer;">Clear</button>
+        </div>
+        <div id="tm-compose-attachments-grid" style="display:flex; flex-wrap:wrap; gap:8px; width:100%;"></div>
+    `;
+
+    const clearBtn = bar.querySelector('[data-action="tm-compose-clear"]');
+    if (clearBtn && !clearBtn.__tmBound) {
+        clearBtn.__tmBound = true;
+        clearBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            tmComposeClearMedia();
+        });
+    }
+
+    const grid = bar.querySelector('#tm-compose-attachments-grid');
+    if (!grid) return;
+
+    ids.forEach((id) => {
+        const it = tmVaultFindItemById(id);
+        const locked = !!it?.locked;
+        const type = String(it?.type || '').toLowerCase();
+        const src = String(it?.src || it?.url || '').trim();
+
+        const cell = document.createElement('div');
+        cell.style.position = 'relative';
+        cell.style.width = '72px';
+        cell.style.height = '72px';
+        cell.style.borderRadius = '14px';
+        cell.style.overflow = 'hidden';
+        cell.style.border = '1px solid rgba(255,255,255,0.12)';
+        cell.style.background = 'rgba(0,0,0,0.55)';
+
+        if (src && (type === 'image' || type === 'photo')) {
+            const img = document.createElement('img');
+            img.src = src;
+            img.alt = '';
+            img.style.width = '100%';
+            img.style.height = '100%';
+            img.style.objectFit = 'cover';
+            cell.appendChild(img);
+        } else if (src && type === 'video') {
+            const v = document.createElement('video');
+            v.src = src;
+            v.muted = true;
+            v.playsInline = true;
+            v.preload = 'metadata';
+            v.style.width = '100%';
+            v.style.height = '100%';
+            v.style.objectFit = 'cover';
+            cell.appendChild(v);
+
+            const play = document.createElement('div');
+            play.style.position = 'absolute';
+            play.style.right = '8px';
+            play.style.bottom = '8px';
+            play.style.width = '26px';
+            play.style.height = '26px';
+            play.style.borderRadius = '999px';
+            play.style.background = 'rgba(0,0,0,0.55)';
+            play.style.display = 'flex';
+            play.style.alignItems = 'center';
+            play.style.justifyContent = 'center';
+            play.style.border = '1px solid rgba(255,255,255,0.12)';
+            play.innerHTML = '<i class="fa-solid fa-play" style="font-size:11px; color:#fff;"></i>';
+            cell.appendChild(play);
+        } else {
+            const ph = document.createElement('div');
+            ph.style.width = '100%';
+            ph.style.height = '100%';
+            ph.style.display = 'flex';
+            ph.style.alignItems = 'center';
+            ph.style.justifyContent = 'center';
+            ph.style.color = 'var(--muted)';
+            ph.innerHTML = '<i class="fa-solid fa-file-lines"></i>';
+            cell.appendChild(ph);
+        }
+
+        if (locked) {
+            const lock = document.createElement('div');
+            lock.style.position = 'absolute';
+            lock.style.left = '8px';
+            lock.style.top = '8px';
+            lock.style.width = '26px';
+            lock.style.height = '26px';
+            lock.style.borderRadius = '999px';
+            lock.style.background = 'rgba(0,0,0,0.55)';
+            lock.style.display = 'flex';
+            lock.style.alignItems = 'center';
+            lock.style.justifyContent = 'center';
+            lock.style.border = '1px solid rgba(255,255,255,0.12)';
+            lock.innerHTML = '<i class="fa-solid fa-lock" style="font-size:12px; color:#fff;"></i>';
+            cell.appendChild(lock);
+        }
+
+        const remove = document.createElement('button');
+        remove.setAttribute('data-action', 'tm-compose-remove');
+        remove.setAttribute('data-id', String(id));
+        remove.title = 'Remove';
+        remove.style.position = 'absolute';
+        remove.style.right = '6px';
+        remove.style.top = '6px';
+        remove.style.width = '26px';
+        remove.style.height = '26px';
+        remove.style.borderRadius = '999px';
+        remove.style.border = '1px solid rgba(255,255,255,0.12)';
+        remove.style.background = 'rgba(0,0,0,0.55)';
+        remove.style.color = '#fff';
+        remove.style.cursor = 'pointer';
+        remove.style.display = 'flex';
+        remove.style.alignItems = 'center';
+        remove.style.justifyContent = 'center';
+        remove.innerHTML = '<i class="fa-solid fa-xmark" style="font-size:12px;"></i>';
+        cell.appendChild(remove);
+
+        grid.appendChild(cell);
+    });
+}
+
+function tmComposeMediaToSnapshot(ids) {
+    const out = [];
+    const clean = Array.isArray(ids) ? ids : [];
+    clean.forEach((id) => {
+        const it = tmVaultFindItemById(id);
+        if (!it) return;
+        out.push({
+            id: String(it.id || id),
+            src: String(it.src || it.url || ''),
+            type: String(it.type || ''),
+            locked: !!it.locked,
+            name: String(it.name || '')
+        });
+    });
+    return out;
+}
+
+function tmReadFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => resolve(ev.target.result);
+        reader.onerror = () => reject(new Error('Read failed'));
+        reader.readAsDataURL(file);
+    });
+}
+
+async function tmComposerHandleUploadFiles(files, TopToast) {
+    const list = Array.from(files || []).filter(Boolean);
+    if (!list.length) return;
+
+    // Basic size guard (matches Vault UX)
+    const tooBig = list.find(f => (f.size || 0) > 10 * 1024 * 1024);
+    if (tooBig) {
+        tmToast(TopToast, 'error', 'Each file must be under 10MB');
+        return;
+    }
+
+    const ask = await Swal.fire({
+        title: 'Upload media',
+        text: 'Do you want these uploads to be Locked (paywalled) for fans?',
+        input: 'checkbox',
+        inputPlaceholder: 'Locked (paywall)',
+        showCancelButton: true,
+        confirmButtonText: 'Upload',
+        confirmButtonColor: '#64E9EE',
+        cancelButtonText: 'Cancel',
+        background: '#0d1423',
+        color: '#fff'
+    });
+
+    if (!ask.isConfirmed) return;
+    const isLocked = !!ask.value;
+
+    const addedIds = [];
+
+    for (const f of list) {
+        const type = (f.type || '').toLowerCase();
+        const kind = type.startsWith('video') ? 'video' : (type.startsWith('image') ? 'image' : (type.startsWith('audio') ? 'audio' : 'other'));
+
+        try {
+            let dataUrl = '';
+            if (kind === 'image' && typeof tmCompressImageFile === 'function') {
+                dataUrl = await tmCompressImageFile(f, { maxDim: 1600, quality: 0.82 });
+            } else {
+                dataUrl = await tmReadFileAsDataUrl(f);
+            }
+
+            const out = await tmVaultAddToApi({
+                name: f.name || '',
+                type: kind,
+                src: dataUrl,
+                locked: isLocked
+            });
+
+            const item = out?.item || out?.media || null;
+            const id = String(item?.id || out?.id || '').trim();
+            if (id) addedIds.push(id);
+        } catch (e) {
+            tmToast(TopToast, 'error', e?.message || 'Upload failed');
+        }
+    }
+
+    if (addedIds.length) {
+        tmComposeAddMediaIds(addedIds);
+        tmToast(TopToast, 'success', `Added ${addedIds.length} attachment${addedIds.length === 1 ? '' : 's'}`);
+    }
+}
+
+async function tmComposerPickFromVault(TopToast) {
+    // ensure cache is primed
+    try { await tmSyncVaultFromApi({ silent: true }); } catch (_) {}
+
+    const itemsRaw = tmVaultGetCachedItemsUnified();
+    const items = (Array.isArray(itemsRaw) ? itemsRaw : [])
+        .map((typeof rsMediaNormalize === 'function') ? rsMediaNormalize : (x) => x)
+        .filter((x) => !!x && !!x.id && (String(x.type || '').toLowerCase() === 'image' || String(x.type || '').toLowerCase() === 'video' || String(x.type || '').toLowerCase() === 'audio' || String(x.type || '').toLowerCase() === 'photo'))
+        .slice(0, 160);
+
+    if (!items.length) {
+        tmToast(TopToast, 'info', 'Your Vault is empty');
+        return;
+    }
+
+    const selected = new Set(tmComposeGetMediaIds());
+
+    const cellHtml = (m) => {
+        const type = String(m.type || '').toLowerCase();
+        const src = String(m.src || m.url || '').trim();
+        const locked = !!m.locked;
+
+        let inner = '';
+        if (src && (type === 'image' || type === 'photo')) inner = `<img src="${tmEscapeHtml(src)}" style="width:100%;height:100%;object-fit:cover;" />`;
+        else if (src && type === 'video') inner = `<video src="${tmEscapeHtml(src)}" muted playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;"></video>`;
+        else inner = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);"><i class="fa-solid fa-file-lines"></i></div>`;
+
+        const sel = selected.has(String(m.id)) ? 'tm-vault-sel' : '';
+        const lock = locked ? `<div style="position:absolute;left:8px;top:8px;width:26px;height:26px;border-radius:999px;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,0.12);"><i class="fa-solid fa-lock" style="font-size:12px;color:#fff;"></i></div>` : '';
+
+        return `
+            <div class="tm-vault-pick ${sel}" data-id="${tmEscapeHtml(m.id)}" style="position:relative;aspect-ratio:1/1;border-radius:14px;overflow:hidden;cursor:pointer;border:1px solid rgba(255,255,255,0.12);">
+                ${inner}
+                ${lock}
+                <div class="tm-vault-check" style="position:absolute;right:8px;top:8px;width:26px;height:26px;border-radius:999px;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,0.12);">
+                    <i class="fa-solid fa-check" style="font-size:12px;color:#fff;opacity:${selected.has(String(m.id)) ? '1' : '0'};"></i>
+                </div>
+            </div>
+        `;
+    };
+
+    const html = `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;">
+            <div style="color:var(--muted);font-size:12px;">Click to select. Locked items will be blurred for unsubscribed fans.</div>
+            <div id="tm-vault-picked-count" style="font-size:12px;font-weight:800;color:var(--text);">${selected.size} selected</div>
+        </div>
+        <div id="tm-vault-picker-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-height:420px;overflow:auto;padding-right:4px;">
+            ${items.map(cellHtml).join('')}
+        </div>
+    `;
+
+    const resp = await Swal.fire({
+        title: 'Attach from Vault',
+        html,
+        showCancelButton: true,
+        confirmButtonText: 'Attach selected',
+        confirmButtonColor: '#64E9EE',
+        cancelButtonText: 'Cancel',
+        background: '#0d1423',
+        color: '#fff',
+        width: 760,
+        didOpen: () => {
+            const grid = document.getElementById('tm-vault-picker-grid');
+            const counter = document.getElementById('tm-vault-picked-count');
+            if (!grid) return;
+
+            const refresh = () => {
+                if (counter) counter.textContent = `${selected.size} selected`;
+                grid.querySelectorAll('.tm-vault-pick').forEach((el) => {
+                    const id = el.getAttribute('data-id');
+                    const on = id && selected.has(String(id));
+                    const check = el.querySelector('.tm-vault-check i');
+                    if (check) check.style.opacity = on ? '1' : '0';
+                    if (on) el.classList.add('tm-vault-sel');
+                    else el.classList.remove('tm-vault-sel');
+                });
+            };
+
+            grid.addEventListener('click', (e) => {
+                const cell = e.target.closest('.tm-vault-pick');
+                if (!cell) return;
+                const id = cell.getAttribute('data-id');
+                if (!id) return;
+                if (selected.has(String(id))) selected.delete(String(id));
+                else selected.add(String(id));
+                refresh();
+            });
+
+            refresh();
+        },
+        preConfirm: () => Array.from(selected),
+    });
+
+    if (!resp.isConfirmed) return;
+
+    const ids = Array.isArray(resp.value) ? resp.value : [];
+    tmComposeSetMediaIds(ids);
+    tmToast(TopToast, 'success', 'Attachments updated');
+}
+
+async function tmComposerOpenMediaMenu(TopToast) {
+    const resp = await Swal.fire({
+        title: 'Add media',
+        text: 'Choose from your Vault or upload new media.',
+        showCancelButton: true,
+        showDenyButton: true,
+        confirmButtonText: 'Choose from Vault',
+        denyButtonText: 'Upload new',
+        confirmButtonColor: '#64E9EE',
+        denyButtonColor: '#3AAFB9',
+        background: '#0d1423',
+        color: '#fff',
+    });
+
+    if (resp.isConfirmed) {
+        await tmComposerPickFromVault(TopToast);
+        return;
+    }
+    if (resp.isDenied) {
+        if (DOM.mediaUploadInput) DOM.mediaUploadInput.click();
+        return;
+    }
+}
+
+async function tmSubscribeToCreator(creatorEmail, durationDays = 30) {
+    const out = await apiPostJson('/api/creator/subscribe', {
+        creatorEmail: String(creatorEmail || '').trim(),
+        durationDays: Number(durationDays || 30) || 30,
+    });
+    return out;
+}
+
+async function tmRunSubscribeFlow({ creatorEmail, creatorName, TopToast } = {}) {
+    const email = String(creatorEmail || '').trim();
+    if (!email) return;
+
+    const name = String(creatorName || '').trim() || email;
+
+    const confirm = await Swal.fire({
+        title: 'Subscribe to unlock',
+        html: `<div style="color:var(--text); line-height:1.45;">Unlock <b>${tmEscapeHtml(name)}</b>'s locked posts for <b>30 days</b>.</div>`,
+        showCancelButton: true,
+        confirmButtonText: 'Subscribe',
+        confirmButtonColor: '#64E9EE',
+        cancelButtonText: 'Cancel',
+        background: '#0d1423',
+        color: '#fff'
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+        const out = await tmSubscribeToCreator(email, 30);
+        if (!out?.ok) throw new Error(out?.message || out?.error || 'Subscribe failed');
+        tmToast(TopToast, 'success', 'Subscribed');
+        if (typeof loadPosts === 'function') await loadPosts();
+    } catch (e) {
+        tmToast(TopToast, 'error', e?.message || 'Subscribe failed');
+    }
+}
+
+function tmRenderPostMediaBlock(post, meEmail) {
+    const arr = Array.isArray(post?.media) ? post.media : [];
+    if (!arr.length) return '';
+
+    const viewer = String(meEmail || '').toLowerCase();
+    const creator = String(post?.creatorEmail || '').toLowerCase();
+    const isOwner = !!(viewer && creator && viewer === creator);
+    const isSubscribed = !!post?.isSubscribed || isOwner;
+
+    const cols = arr.length === 1 ? 1 : (arr.length === 2 ? 2 : 3);
+    const gridCols = `grid-template-columns: repeat(${cols}, 1fr);`;
+
+    const one = (m) => {
+        const id = String(m?.id || '').trim();
+        const src = String(m?.src || m?.url || '').trim();
+        const type = String(m?.type || '').toLowerCase();
+        const locked = !!m?.locked;
+
+        const lockedForViewer = locked && !isSubscribed;
+
+        const mediaStyle = lockedForViewer
+            ? 'filter: blur(18px); transform: scale(1.08);'
+            : '';
+
+        let mediaEl = '';
+        if (src && (type === 'image' || type === 'photo')) {
+            mediaEl = `<img src="${tmEscapeHtml(src)}" alt="" style="width:100%;height:100%;object-fit:cover;${mediaStyle}" />`;
+        } else if (src && type === 'video') {
+            mediaEl = lockedForViewer
+                ? `<video src="${tmEscapeHtml(src)}" muted playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;${mediaStyle}"></video>`
+                : `<video src="${tmEscapeHtml(src)}" controls playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;"></video>`;
+        } else if (src && type === 'audio') {
+            mediaEl = lockedForViewer
+                ? `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);background:rgba(0,0,0,0.35);${mediaStyle}"><i class="fa-solid fa-music"></i></div>`
+                : `<audio src="${tmEscapeHtml(src)}" controls style="width:100%;"></audio>`;
+        } else {
+            mediaEl = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);background:rgba(0,0,0,0.35);"><i class="fa-solid fa-file-lines"></i></div>`;
+        }
+
+        const overlay = lockedForViewer ? `
+            <div class="tm-paywall-overlay" data-action="tm-unlock" data-creator-email="${tmEscapeHtml(post?.creatorEmail || '')}" data-creator-name="${tmEscapeHtml(post?.creatorName || '')}" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;padding:14px;background:rgba(0,0,0,0.55);">
+                <div style="width:46px;height:46px;border-radius:999px;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,0.15);">
+                    <i class="fa-solid fa-lock" style="color:#fff;"></i>
+                </div>
+                <div style="font-weight:900;color:#fff;">Locked</div>
+                <div style="font-size:0.82rem;color:rgba(255,255,255,0.82);">Subscribe to unlock</div>
+                <button data-action="tm-unlock" data-creator-email="${tmEscapeHtml(post?.creatorEmail || '')}" data-creator-name="${tmEscapeHtml(post?.creatorName || '')}" style="margin-top:4px;padding:10px 14px;border-radius:999px;background:rgba(100,233,238,0.12);border:1px solid rgba(100,233,238,0.35);color:var(--primary-cyan);font-weight:900;cursor:pointer;">Unlock</button>
+            </div>
+        ` : '';
+
+        return `
+            <div class="tm-post-media-item ${lockedForViewer ? 'tm-media-locked' : ''}" data-media-id="${tmEscapeHtml(id)}" style="position:relative;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.10);background:#000;aspect-ratio: 1/1;">
+                ${mediaEl}
+                ${overlay}
+            </div>
+        `;
+    };
+
+    return `
+        <div class="tm-post-media-grid" style="display:grid;${gridCols}gap:10px;margin:0 0 15px 0;">
+            ${arr.slice(0, 9).map(one).join('')}
+        </div>
+    `;
+}
  function initHome(TopToast) {
     
     // 0. LOAD POSTS FROM STORAGE (With 24h Check)
     loadPosts();
+
+    // Composer attachments UI
+    try { tmComposeEnsureAttachmentBar(); tmComposeRenderAttachmentBar(); } catch (_) {}
 
     // 1. ENABLE/DISABLE POST BUTTON (Text + Poll Options)
     function syncPostButtonState() {
@@ -1363,7 +1914,9 @@ async function tmFetchCreatorsFeed(limit = 40) {
         const pollInputs = pollIsOpen ? Array.from(DOM.pollUI.querySelectorAll('input[type="text"]')) : [];
         const pollOptions = pollInputs.map(i => (i.value || '').trim()).filter(Boolean);
 
-        const canPost = (text.length > 0) || (pollIsOpen && pollOptions.length >= 2);
+        const hasMedia = tmComposeGetMediaIds().length > 0;
+
+        const canPost = (text.length > 0) || hasMedia || (pollIsOpen && pollOptions.length >= 2);
 
         if (canPost) {
             DOM.btnPostSubmit.removeAttribute('disabled');
@@ -1408,13 +1961,16 @@ async function tmFetchCreatorsFeed(limit = 40) {
             const isPollDraft = pollIsOpen && pollOptions.length > 0;
             const isPollPost = pollIsOpen && pollOptions.length >= 2;
 
+            const mediaIds = tmComposeGetMediaIds();
+            const hasMedia = mediaIds.length > 0;
+
             if (isPollDraft && pollOptions.length < 2) {
                 tmToast(TopToast, 'warning', 'Add at least 2 poll options');
                 return;
             }
 
-            if (!text && !isPollPost) {
-                tmToast(TopToast, 'warning', 'Write something or add a poll');
+            if (!text && !isPollPost && !hasMedia) {
+                tmToast(TopToast, 'warning', 'Write something, add media, or add a poll');
                 return;
             }
 
@@ -1423,6 +1979,10 @@ async function tmFetchCreatorsFeed(limit = 40) {
                 type: isPollPost ? 'poll' : 'text',
                 text: text,
             };
+
+            if (hasMedia) {
+                draft.mediaIds = mediaIds;
+            }
 
             if (isPollPost) {
                 draft.poll = { options: pollOptions.slice(0, 6) };
@@ -1444,6 +2004,8 @@ async function tmFetchCreatorsFeed(limit = 40) {
                     text: text,
                     timestamp: Date.now(),
                     comments: [],
+                    mediaIds: hasMedia ? mediaIds.slice() : [],
+                    media: hasMedia ? tmComposeMediaToSnapshot(mediaIds) : [],
                 };
 
                 if (isPollPost) {
@@ -1468,7 +2030,9 @@ async function tmFetchCreatorsFeed(limit = 40) {
 
             // Reset composer
             DOM.composeInput.value = '';
+            tmComposeClearMedia();
             syncPostButtonState();
+            try { if (DOM.mediaUploadInput) DOM.mediaUploadInput.value = ''; } catch(_) {}
 
             // Reset poll UI
             if (isPollPost && DOM.pollUI) {
@@ -1486,21 +2050,14 @@ async function tmFetchCreatorsFeed(limit = 40) {
 
 // 3. Compose Actions (Redirect Image to Bookmarks, Poll, Text)
     if (DOM.composeActions) {
-        DOM.composeActions.addEventListener('click', (e) => {
+        DOM.composeActions.addEventListener('click', async (e) => {
             const target = e.target;
             const el = target.closest('i, span');
             if (!el) return;
-
-            // --- UPDATED: IMAGE ICON -> GO TO COLLECTIONS > BOOKMARKS ---
+            // --- MEDIA: Attach from Vault / Upload ---
             if (el.classList.contains('fa-image')) {
-                if (DOM.navCollections) {
-                    DOM.navCollections.click();
-                    setTimeout(() => {
-                        if (DOM.colTabBookmarks) {
-                            DOM.colTabBookmarks.click();
-                        }
-                    }, 100);
-                }
+                await tmComposerOpenMediaMenu(TopToast);
+                return;
             }
             // Poll Toggle
             else if (el.classList.contains('fa-square-poll-horizontal') || el.id === 'btn-trigger-poll') {
@@ -1515,6 +2072,17 @@ async function tmFetchCreatorsFeed(limit = 40) {
             else if (el.id === 'btn-trigger-text' || (el.textContent || '').trim() === 'Aa') {
                 if(DOM.textTools) DOM.textTools.classList.toggle('hidden');
             }
+        });
+    }
+
+    // Media upload input (uploads to Vault then attaches to post)
+    if (DOM.mediaUploadInput && !DOM.mediaUploadInput.__tmBound) {
+        DOM.mediaUploadInput.__tmBound = true;
+        DOM.mediaUploadInput.addEventListener('change', async (e) => {
+            const files = e.target?.files;
+            try { e.target.value = ''; } catch(_) {}
+            if (!files || !files.length) return;
+            await tmComposerHandleUploadFiles(files, TopToast);
         });
     }
 
@@ -1591,6 +2159,18 @@ async function tmFetchCreatorsFeed(limit = 40) {
         // CLICK HANDLER
         feed.addEventListener('click', async (e) => {
             const target = e.target;
+
+            // --- PAYWALL UNLOCK (Locked media) ---
+            const unlock = target.closest('[data-action="tm-unlock"], .tm-paywall-overlay');
+            if (unlock) {
+                e.preventDefault();
+                e.stopPropagation();
+                const postCard = target.closest('.post-card');
+                const creatorEmail = unlock.getAttribute('data-creator-email') || postCard?.getAttribute('data-creator-email') || postCard?.dataset?.creatorEmail || '';
+                const creatorName = unlock.getAttribute('data-creator-name') || '';
+                await tmRunSubscribeFlow({ creatorEmail, creatorName, TopToast });
+                return;
+            }
 
             // --- POST MENU ACTIONS (Copy Link / Pin) ---
             const menuCopy = target.closest('.action-copy-link');
@@ -2603,6 +3183,8 @@ async function loadPosts() {
                 'pollMyVote',
                 'quizVotes',
                 'quizMyAnswer',
+                'media',
+                'mediaIds',
                 'pinned',
             ];
 
@@ -2656,8 +3238,10 @@ function renderPost(post, animate) {
                     : (post.type === 'quiz') ? renderQuizBlock(post)
                     : '';
 
+    const mediaBlock = tmRenderPostMediaBlock(post, meEmail);
+
     const postHTML = `
-        <div class="post-card" id="post-${post.id}" data-post-id="${tmEscapeHtml(post.id)}" style="padding: 20px; border-bottom: var(--border); ${animationStyle}">
+        <div class="post-card" id="post-${post.id}" data-post-id="${tmEscapeHtml(post.id)}" data-creator-email="${tmEscapeHtml(post.creatorEmail || '')}" style="padding: 20px; border-bottom: var(--border); ${animationStyle}">
             <div class="post-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
                 <div style="display: flex; gap: 12px;">
                     <img src="${tmEscapeHtml(avatarUrl)}" style="width: 45px; height: 45px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary-cyan);">
@@ -2678,6 +3262,8 @@ function renderPost(post, animate) {
             </div>
 
             ${safeText ? `<div class="post-content" style="font-size: 0.95rem; line-height: 1.5; margin-bottom: 15px; white-space: normal;">${safeText}</div>` : ''}
+
+            ${mediaBlock}
 
             ${extraBlock}
 
@@ -5186,49 +5772,6 @@ async function tmVaultDeleteFromApi(id) {
   return out;
 }
 
-async function tmVaultSetLockedFromApi(id, locked) {
-  const payload = { id: String(id || '').trim(), locked: !!locked };
-  if (!payload.id) throw new Error('Missing id');
-  const out = await apiPostJson('/api/collections/vault/lock', payload);
-  if (!out?.ok) throw new Error(out?.error || out?.message || 'Update failed');
-  return out;
-}
-
-// Fire-and-forget lock toggle (keeps UI actions simple)
-function tmVaultSetLocked(id, locked) {
-  const key = String(id || '').trim();
-  if (!key) return;
-
-  const nextLocked = !!locked;
-
-  // Optimistic update API cache
-  try {
-    if (Array.isArray(__vaultApiItems) && __vaultApiItems.length) {
-      __vaultApiItems = __vaultApiItems.map((x) => {
-        if (String(x?.id) !== key) return x;
-        return { ...x, locked: nextLocked };
-      });
-      tmLsWrite(TM_VAULT_API_CACHE_KEY, __vaultApiItems);
-    }
-  } catch {}
-
-  // Also update local fallback cache
-  try {
-    const local = _tmVaultLocalRead();
-    const updated = local.map((x) => {
-      if (String(x?.id) !== key) return x;
-      return { ...x, locked: nextLocked };
-    });
-    _tmVaultLocalWrite(updated);
-  } catch {}
-
-  // Best-effort remote update
-  tmVaultSetLockedFromApi(key, nextLocked)
-    .then(() => tmSyncVaultFromApi({ silent: true }))
-    .catch(() => {});
-}
-
-
 // Fire-and-forget delete (keeps old sync call sites working)
 function tmVaultDelete(id) {
   const key = String(id || '').trim();
@@ -5887,80 +6430,6 @@ function rsMediaApply(items) {
   return list;
 }
 
-
-function tmGetMyCreatorSubPrice() {
-  // Best-effort: read from Subscription Price setting input if present.
-  try {
-    const el = document.getElementById('tm-sub-price');
-    if (el) {
-      const n = Number(String(el.value || '').replace(/[^\d.]/g, ''));
-      if (Number.isFinite(n) && n > 0) return n;
-    }
-  } catch {}
-
-  // Fallback: attempt to read from cached /api/me payload if available
-  try {
-    const me = window.__tmMe || window.__meCache || null;
-    const ca = me?.user?.creatorApplication || me?.creatorApplication || null;
-    const n = Number(ca?.price || ca?.subscriptionPrice || ca?.subPrice || 0);
-    if (Number.isFinite(n) && n > 0) return n;
-  } catch {}
-
-  // Default UX fallback
-  return 9.99;
-}
-
-function tmShowLockedPaywallPreview(item) {
-  const m = item || {};
-  const price = tmGetMyCreatorSubPrice();
-  const type = String(m.type || '').toLowerCase();
-  const src = String(m.src || '');
-
-  let preview = `<div style="padding:8px 0; color:rgba(255,255,255,0.85); font-size:13px;">Locked content preview</div>`;
-  if (type === 'image' && src) {
-    preview = `
-      <div style="position:relative; border-radius:14px; overflow:hidden;">
-        <img src="${src}" style="width:100%; max-height:360px; object-fit:cover; filter: blur(16px); transform: scale(1.05);" />
-        <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; background:rgba(0,0,0,0.35);">
-          <div style="width:44px; height:44px; border-radius:999px; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.55); border:1px solid rgba(255,255,255,0.18);">
-            <i class="fa-solid fa-lock" style="color:#fff;"></i>
-          </div>
-          <div style="font-weight:800; color:#fff; letter-spacing:0.3px;">Subscribe to unlock</div>
-          <div style="font-size:12px; color:rgba(255,255,255,0.85);">$${price.toFixed(2)} / month</div>
-        </div>
-      </div>
-    `;
-  } else if (type === 'video' && src) {
-    preview = `
-      <div style="position:relative; border-radius:14px; overflow:hidden;">
-        <video src="${src}" muted playsinline preload="metadata" style="width:100%; max-height:360px; object-fit:cover; filter: blur(16px); transform: scale(1.05);"></video>
-        <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; background:rgba(0,0,0,0.35);">
-          <div style="width:44px; height:44px; border-radius:999px; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.55); border:1px solid rgba(255,255,255,0.18);">
-            <i class="fa-solid fa-lock" style="color:#fff;"></i>
-          </div>
-          <div style="font-weight:800; color:#fff; letter-spacing:0.3px;">Subscribe to unlock</div>
-          <div style="font-size:12px; color:rgba(255,255,255,0.85);">$${price.toFixed(2)} / month</div>
-        </div>
-      </div>
-    `;
-  }
-
-  Swal.fire({
-    title: 'Locked content',
-    html: preview,
-    showCancelButton: true,
-    confirmButtonText: 'Go to Subscriptions',
-    confirmButtonColor: '#64E9EE',
-    cancelButtonText: 'Close',
-    background: '#0d1423',
-    color: '#fff'
-  }).then((r) => {
-    if (!r.isConfirmed) return;
-    const btn = document.getElementById('nav-link-subs') || document.getElementById('nav-link-add-card');
-    if (btn && typeof btn.click === 'function') btn.click();
-  });
-}
-
 function rsRenderMedia() {
   const view = document.getElementById('rs-view-type-media');
   if (!view) return;
@@ -6062,11 +6531,6 @@ function rsRenderMedia() {
     }
 
     if (m.locked) {
-      // Blur the underlying thumbnail (img/video) and add lock overlay
-      try {
-        const el = cell.querySelector('img, video');
-        if (el) el.style.filter = 'blur(10px)';
-      } catch {}
       const lock = document.createElement('div');
       lock.style.position = 'absolute';
       lock.style.inset = '0';
@@ -6080,13 +6544,13 @@ function rsRenderMedia() {
     }
 
     cell.addEventListener('click', () => {
-      const title = (m.name || '').trim() || 'Vault item';
-      const isLocked = !!m.locked;
-
+      let title = (m.name || '').trim() || 'Vault item';
       let html = '';
       let imageUrl = null;
 
-      if (m.type === 'image') {
+      if (m.locked) {
+        html = `<div style="padding:10px 0; color:var(--text);">This item is locked.</div>`;
+      } else if (m.type === 'image') {
         imageUrl = m.src;
       } else if (m.type === 'video') {
         html = `<video src="${m.src}" controls autoplay style="width:100%; border-radius:12px;"></video>`;
@@ -6096,55 +6560,23 @@ function rsRenderMedia() {
         html = `<div style="padding:10px 0; color:var(--text);">Preview not available for this file type.</div>`;
       }
 
-      if (isLocked) {
-        html = (html || '') + `
-          <div style="margin-top:10px; padding:10px; border-radius:12px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.03); color:rgba(255,255,255,0.86); font-size:12px;">
-            This item is <strong>Locked</strong>. Fans will see a blur + “Subscribe to unlock”.
-            <div style="margin-top:10px;">
-              <button type="button" id="tm-paywall-preview-btn" style="padding:10px 12px; border-radius:12px; border:1px solid rgba(100,233,238,0.25); background:rgba(100,233,238,0.12); color:#fff; cursor:pointer;">Preview paywall</button>
-            </div>
-          </div>`;
-      }
-
       Swal.fire({
         title,
         html: html || undefined,
         imageUrl: imageUrl || undefined,
         imageAlt: 'media',
-        showConfirmButton: true,
-        confirmButtonText: isLocked ? 'Unlock item' : 'Lock item',
-        confirmButtonColor: '#64E9EE',
+        showConfirmButton: false,
         showDenyButton: true,
         denyButtonText: 'Delete',
         denyButtonColor: '#ff4d6d',
-        showCancelButton: true,
-        cancelButtonText: 'Close',
         background: '#0d1423',
-        color: '#fff',
-        didOpen: () => {
-          const btn = document.getElementById('tm-paywall-preview-btn');
-          if (btn) {
-            btn.addEventListener('click', (e) => {
-              e.preventDefault();
-              try { Swal.close(); } catch {}
-              try { tmShowLockedPaywallPreview(m); } catch {}
-            });
-          }
-        }
+        color: '#fff'
       }).then((r) => {
-        if (r.isConfirmed) {
-          tmVaultSetLocked(m.id, !isLocked);
-          try { rsToast('success', (!isLocked ? 'Locked' : 'Unlocked')); } catch(e) {}
-          try { renderCollections(); } catch(e) {}
-          try { rsRenderMedia(); } catch(e) {}
-          return;
-        }
-        if (r.isDenied) {
-          deleteMediaFromStorage(m.id);
-          try { rsToast('success', 'Deleted'); } catch(e) {}
-          try { renderCollections(); } catch(e) {}
-          try { rsRenderMedia(); } catch(e) {}
-        }
+        if (!r.isDenied) return;
+        deleteMediaFromStorage(m.id);
+        try { rsToast('success', 'Deleted'); } catch(e) {}
+        try { renderCollections(); } catch(e) {}
+        try { rsRenderMedia(); } catch(e) {}
       });
     });
 
@@ -6372,51 +6804,32 @@ function rsBindMediaSidebar() {
                 return;
             }
 
-                        (async () => {
-                // Ask if this upload should be Locked (paywalled)
-                const ask = await Swal.fire({
-                    title: 'Upload to Vault',
-                    text: 'Do you want this item to be Locked (paywalled) for fans?',
-                    input: 'checkbox',
-                    inputPlaceholder: 'Locked (paywall)',
-                    showCancelButton: true,
-                    confirmButtonText: 'Continue',
-                    confirmButtonColor: '#64E9EE',
-                    cancelButtonText: 'Cancel',
-                    background: '#0d1423',
-                    color: '#fff'
-                });
-                if (!ask.isConfirmed) { try { fileInput.value = ''; } catch(_) {} return; }
-                const isLocked = !!ask.value;
-            
-                const reader = new FileReader();
-                reader.onload = function(event) {
-                    const base64String = event.target.result;
-                    const mediaItem = {
-                        id: Date.now(),
-                        src: base64String,
-                        name: file.name || '',
-                        type: file.type.startsWith('video') ? 'video' : (file.type.startsWith('image') ? 'image' : (file.type.startsWith('audio') ? 'audio' : 'other')),
-                        locked: isLocked,
-                        createdAt: Date.now(),
-                        date: new Date().toLocaleDateString()
-                    };
-                    (async () => {
-                        try {
-                            await tmVaultAddToApi(mediaItem);
-                            TopToast.fire({ icon: 'success', title: 'Uploaded to Vault!' });
-                        } catch (e) {
-                            // Offline / backend not configured -> local fallback
-                            saveMediaToStorage(mediaItem);
-                            TopToast.fire({ icon: 'success', title: 'Saved to Vault!' });
-                        }
-                        try { renderCollections(); } catch(_) {}
-                        try { rsRenderMedia(); } catch(_) {}
-                    })();
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const base64String = event.target.result;
+                const mediaItem = {
+                    id: Date.now(),
+                    src: base64String,
+                    name: file.name || '',
+                    type: file.type.startsWith('video') ? 'video' : (file.type.startsWith('image') ? 'image' : (file.type.startsWith('audio') ? 'audio' : 'other')),
+                    createdAt: Date.now(),
+                    date: new Date().toLocaleDateString()
                 };
-                reader.readAsDataURL(file);
-                try { fileInput.value = ''; } catch(_) {}
-            })();
+                (async () => {
+                    try {
+                        await tmVaultAddToApi(mediaItem);
+                        TopToast.fire({ icon: 'success', title: 'Uploaded to Vault!' });
+                    } catch (e) {
+                        // Offline / backend not configured -> local fallback
+                        saveMediaToStorage(mediaItem);
+                        TopToast.fire({ icon: 'success', title: 'Saved to Vault!' });
+                    }
+                    try { renderCollections(); } catch(_) {}
+                    try { rsRenderMedia(); } catch(_) {}
+                })();
+            };
+            reader.readAsDataURL(file);
+            fileInput.value = '';
         });
     }
 
@@ -6541,91 +6954,22 @@ function rsBindMediaSidebar() {
             }
 
             div.innerHTML = contentHTML;
-
-            // Locked overlay + blur (Vault grid)
-            try {
-                if (media.locked) {
-                    const el = div.querySelector('img, video');
-                    if (el) el.style.filter = 'blur(12px)';
-                    const lock = document.createElement('div');
-                    lock.style.position = 'absolute';
-                    lock.style.inset = '0';
-                    lock.style.display = 'flex';
-                    lock.style.alignItems = 'center';
-                    lock.style.justifyContent = 'center';
-                    lock.style.background = 'rgba(0,0,0,0.45)';
-                    lock.style.color = '#fff';
-                    lock.innerHTML = '<i class="fa-solid fa-lock"></i>';
-                    div.appendChild(lock);
-                }
-            } catch(e) {}
-
             
             div.onclick = () => {
-                const title = (media.name || '').trim() || 'Vault item';
-                const isLocked = !!media.locked;
-
-                let html = '';
-                let imageUrl = null;
-
-                if (media.type === 'image') {
-                    imageUrl = media.src;
-                } else if (media.type === 'video') {
-                    html = `<video src="${media.src}" controls autoplay style="width:100%; border-radius:12px;"></video>`;
-                } else if (media.type === 'audio') {
-                    html = `<audio src="${media.src}" controls autoplay style="width:100%;"></audio>`;
-                } else {
-                    html = `<div style="padding:10px 0; color:var(--text);">Preview not available for this file type.</div>`;
-                }
-
-                if (isLocked) {
-                    html = (html || '') + `
-                      <div style="margin-top:10px; padding:10px; border-radius:12px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.03); color:rgba(255,255,255,0.86); font-size:12px;">
-                        This item is <strong>Locked</strong>. Fans will see a blur + “Subscribe to unlock”.
-                        <div style="margin-top:10px;">
-                          <button type="button" id="tm-paywall-preview-btn-main" style="padding:10px 12px; border-radius:12px; border:1px solid rgba(100,233,238,0.25); background:rgba(100,233,238,0.12); color:#fff; cursor:pointer;">Preview paywall</button>
-                        </div>
-                      </div>`;
-                }
-
                 Swal.fire({
-                    title,
-                    html: html || undefined,
-                    imageUrl: (media.type === 'image') ? imageUrl : undefined,
-                    showConfirmButton: true,
-                    confirmButtonText: isLocked ? 'Unlock item' : 'Lock item',
-                    confirmButtonColor: '#64E9EE',
+                    imageUrl: media.type === 'image' ? media.src : null,
+                    html: media.type === 'video' ? `<video src="${media.src}" controls autoplay style="width:100%"></video>` : '',
                     showDenyButton: true,
+                    showConfirmButton: false,
                     denyButtonText: 'Delete from Vault',
                     denyButtonColor: '#ff4757',
-                    showCancelButton: true,
-                    cancelButtonText: 'Close',
                     background: '#0d1423',
-                    color: '#fff',
                     showCloseButton: true,
-                    customClass: { popup: 'swal-media-preview' },
-                    didOpen: () => {
-                      const btn = document.getElementById('tm-paywall-preview-btn-main');
-                      if (btn) {
-                        btn.addEventListener('click', (e) => {
-                          e.preventDefault();
-                          try { Swal.close(); } catch {}
-                          try { tmShowLockedPaywallPreview(media); } catch {}
-                        });
-                      }
-                    }
+                    customClass: { popup: 'swal-media-preview' }
                 }).then((result) => {
-                    if (result.isConfirmed) {
-                        tmVaultSetLocked(media.id, !isLocked);
-                        try { TopToast.fire({ icon: 'success', title: (!isLocked ? 'Locked' : 'Unlocked') }); } catch(_) {}
-                        try { renderCollections(); } catch(_) {}
-                        try { rsRenderMedia(); } catch(_) {}
-                        return;
-                    }
                     if (result.isDenied) {
                         deleteMediaFromStorage(media.id);
-                        try { renderCollections(); } catch(_) {}
-                        try { rsRenderMedia(); } catch(_) {}
+                        renderCollections();
                     }
                 });
             };

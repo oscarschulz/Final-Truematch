@@ -8383,6 +8383,22 @@ function _sanitizeCreatorPostPayload(body) {
 
   const text = safeStr(String(b.text || '')).trim().slice(0, 2400);
 
+  // Media attachments (Vault ids)
+  const mediaRaw = (b.mediaIds !== undefined) ? b.mediaIds : ((b.media !== undefined) ? b.media : []);
+  const mediaArr = Array.isArray(mediaRaw)
+    ? mediaRaw
+    : ((typeof mediaRaw === 'string') ? mediaRaw.split(',') : []);
+
+  const mediaIds = [];
+  const seen = new Set();
+  for (const x of mediaArr) {
+    const id = safeStr(String(x || '')).trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    mediaIds.push(id);
+    if (mediaIds.length >= 12) break;
+  }
+
   let poll = null;
   let pollVotes = null;
 
@@ -8424,11 +8440,11 @@ function _sanitizeCreatorPostPayload(body) {
     quizVotes = new Array(clean.length).fill(0);
   }
 
-  if (type === 'text' && !text) {
+  if (type === 'text' && !text && !mediaIds.length) {
     throw new Error('Post text is required.');
   }
 
-  return { type, text, poll, pollVotes, quiz, quizVotes };
+  return { type, text, poll, pollVotes, quiz, quizVotes, mediaIds };
 }
 
 function _creatorPostToClient(id, d) {
@@ -8449,6 +8465,14 @@ function _creatorPostToClient(id, d) {
     pollVotes: Array.isArray(d?.pollVotes) ? d.pollVotes : null,
     quiz: d?.quiz || null,
     quizVotes: Array.isArray(d?.quizVotes) ? d.quizVotes : null,
+    media: Array.isArray(d?.media) ? d.media.map(m => ({
+      id: safeStr(m?.id || ''),
+      src: safeStr(m?.src || m?.url || ''),
+      type: safeStr(m?.type || ''),
+      locked: !!m?.locked,
+      name: safeStr(m?.name || ''),
+    })).filter(x => !!x.id) : [],
+    mediaIds: Array.isArray(d?.mediaIds) ? d.mediaIds.map(x => safeStr(String(x || '')).trim()).filter(Boolean) : [],
     reactionCounts: (d && d.reactionCounts && typeof d.reactionCounts === 'object') ? d.reactionCounts : {},
     reactionCount: Number.isFinite(d?.reactionCount) ? d.reactionCount : 0,
     commentCount: Number.isFinite(d?.commentCount) ? d.commentCount : 0,
@@ -8547,6 +8571,10 @@ app.post('/api/creator/posts', async (req, res) => {
     const nowMs = Date.now();
     const id = _newPostId();
 
+    // Optional: attach Vault media snapshots to post (supports locked paywall)
+    let media = [];
+    try { media = await _resolveVaultMediaSnapshotForCreator(me, payload.mediaIds); } catch (e) { media = []; }
+
     const doc = {
       id,
       creatorEmail: me,
@@ -8557,6 +8585,8 @@ app.post('/api/creator/posts', async (req, res) => {
       pollVotes: payload.pollVotes,
       quiz: payload.quiz,
       quizVotes: payload.quizVotes,
+      media: Array.isArray(media) ? media : [],
+      mediaIds: Array.isArray(media) ? media.map(x => String(x.id || '')).filter(Boolean) : [],
       reactionCounts: {},
       reactionCount: 0,
       commentCount: 0,
@@ -11880,6 +11910,78 @@ function _vaultClientItem(id, data) {
   });
 }
 
+
+async function _resolveVaultMediaSnapshotForCreator(creatorEmail, ids) {
+  const email = _normalizeEmail(creatorEmail || '');
+  const raw = Array.isArray(ids) ? ids : [];
+  const want = raw
+    .map(x => safeStr(String(x || '')).trim())
+    .filter(Boolean)
+    .slice(0, 12);
+
+  if (!want.length || !email) return [];
+
+  // Demo fallback (no Firebase / no usersCollection)
+  if (!hasFirebase || !firestore || !usersCollection) {
+    const list = _demoVaultFor(email);
+    const map = new Map((Array.isArray(list) ? list : []).map(x => [String(x?.id || ''), x]));
+    const out = [];
+    for (const id of want) {
+      const d = map.get(String(id));
+      if (!d) continue;
+      const item = _vaultClientItem(d.id, d);
+      out.push({
+        id: String(item.id || id),
+        src: safeStr(item.src || '').trim(),
+        type: safeStr(item.type || '').trim(),
+        locked: !!item.locked,
+        name: safeStr(item.name || '').trim(),
+      });
+    }
+    return out;
+  }
+
+  // Firebase-backed: read from creator's Vault subcollection (by id)
+  let u = null;
+  try { u = await findUserByEmail(email); } catch (e) { u = null; }
+  if (!u || !u.id) return [];
+
+  const ref = usersCollection.doc(String(u.id)).collection(VAULT_MEDIA_SUBCOL);
+
+  // getAll preserves neither order nor missing docs; we'll remap to keep caller order
+  const refs = want.map((id) => ref.doc(String(id)));
+  let snaps = [];
+  try {
+    snaps = await firestore.getAll(...refs);
+  } catch (e) {
+    // fallback: sequential gets
+    snaps = [];
+    for (const r of refs) {
+      try { snaps.push(await r.get()); } catch (_) {}
+    }
+  }
+
+  const byId = new Map();
+  for (const s of snaps) {
+    if (!s || !s.exists) continue;
+    const item = _vaultClientItem(s.id, s.data() || {});
+    byId.set(String(item.id), {
+      id: String(item.id),
+      src: safeStr(item.src || '').trim(),
+      type: safeStr(item.type || '').trim(),
+      locked: !!item.locked,
+      name: safeStr(item.name || '').trim(),
+    });
+  }
+
+  const out = [];
+  for (const id of want) {
+    const v = byId.get(String(id));
+    if (v) out.push(v);
+  }
+  return out;
+}
+
 app.get('/api/collections/vault', async (req, res) => {
   try {
     const me = _normalizeEmail(getSessionEmail(req));
@@ -11971,51 +12073,6 @@ app.post('/api/collections/vault/add', async (req, res) => {
   } catch (e) {
     const msg = String(e?.message || e);
     return res.status(400).json({ ok: false, error: msg });
-  }
-});
-
-
-
-app.post('/api/collections/vault/lock', async (req, res) => {
-  try {
-    const me = _normalizeEmail(getSessionEmail(req));
-    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
-
-    const id = safeStr(req.body?.id || '').trim();
-    const locked = !!req.body?.locked;
-    if (!id) return res.status(400).json({ ok: false, error: 'Missing id.' });
-
-    // Demo fallback
-    if (!hasFirebase || !firestore || !usersCollection) {
-      const list = _demoVaultFor(me);
-      const idx = list.findIndex(x => String(x?.id) === String(id));
-      if (idx >= 0) {
-        list[idx].locked = locked;
-        DB.vaultMediaByEmail[me] = list.slice(0, 400);
-        return res.json({ ok: true, item: _vaultClientItem(id, list[idx]) });
-      }
-      return res.status(404).json({ ok: false, error: 'not_found' });
-    }
-
-    const u = await findUserByEmail(me);
-    if (!u || !u.id) return res.status(404).json({ ok: false, error: 'user_not_found' });
-
-    const docRef = usersCollection.doc(String(u.id)).collection(VAULT_MEDIA_SUBCOL).doc(String(id));
-    const snap = await docRef.get();
-    if (!snap.exists) return res.status(404).json({ ok: false, error: 'not_found' });
-
-    const nowMs = Date.now();
-    await docRef.set(pruneUndefinedDeep({
-      locked,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAtMs: nowMs,
-    }), { merge: true });
-
-    const nextSnap = await docRef.get();
-    const item = nextSnap.exists ? _vaultClientItem(id, nextSnap.data() || {}) : null;
-    return res.json({ ok: true, item });
-  } catch (e) {
-    return res.status(400).json({ ok: false, error: String(e?.message || e) });
   }
 });
 
