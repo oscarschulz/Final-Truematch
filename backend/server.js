@@ -455,6 +455,29 @@ app.use(express.static(PUBLIC_DIR));
 app.use('/public', express.static(PUBLIC_DIR));
 
 
+// =========================
+// Message media storage (disk) - MVP
+// - Stores small data: URLs returned to clients to avoid Firestore 1MB doc limit
+// - Protected by session cookie (must be logged in)
+// =========================
+const MSG_MEDIA_DIR = process.env.MSG_MEDIA_DIR || path.join(__dirname, '_msg_media');
+try { if (!fs.existsSync(MSG_MEDIA_DIR)) fs.mkdirSync(MSG_MEDIA_DIR, { recursive: true }); } catch (_) {}
+
+app.use('/msg-media', (req, res, next) => {
+  try {
+    const email = getSessionEmail(req) || (DB.user && DB.user.email);
+    if (!email) return res.status(401).send('Unauthorized');
+    // No-store
+    res.setHeader('Cache-Control', 'no-store, no-cache, max-age=0, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    return next();
+  } catch (_) {
+    return res.status(401).send('Unauthorized');
+  }
+}, express.static(MSG_MEDIA_DIR, { etag: false, maxAge: 0 }));
+
+
 // static files
 
 // ---------------- In-memory "DB" (demo + cache) ----------------
@@ -491,6 +514,7 @@ const DB = {
   approvedState: {},
   messages: {},
   messageMetaByEmail: {},
+  ppvUnlocks: {},
   creatorPostVotesByUser: {},
   messageUsage: {},
   emailVerify: {},
@@ -5276,23 +5300,6 @@ app.post('/api/me/password', async (req, res) => {
   }
 });
 
-// Read settings used by Settings UI (persisted cross-device)
-app.get('/api/me/settings', authMiddleware, async (req, res) => {
-  try {
-    const meEmail = _normalizeEmail((req.user && req.user.email) || '');
-    if (!meEmail) return res.status(401).json({ ok: false, message: 'Not authenticated' });
-
-    const meDoc = await findUserByEmail(meEmail);
-    if (!meDoc) return res.status(404).json({ ok: false, message: 'User not found' });
-
-    const settings = (meDoc.settings && typeof meDoc.settings === 'object') ? meDoc.settings : {};
-    return res.json({ ok: true, settings });
-  } catch (e) {
-    console.error('GET /api/me/settings error', e);
-    return res.status(500).json({ ok: false, message: 'Failed to load settings' });
-  }
-});
-
 // Update settings used by Settings UI (persisted cross-device)
 app.post('/api/me/settings', authMiddleware, async (req, res) => {
   try {
@@ -5308,10 +5315,8 @@ app.post('/api/me/settings', authMiddleware, async (req, res) => {
     if (body.maxAge !== undefined) incoming.maxAge = Number(body.maxAge || 0);
     if (body.theme !== undefined) incoming.theme = safeStr(body.theme || '');
     if (body.language !== undefined) incoming.language = safeStr(body.language || '');
-    if (body.lastActiveTab !== undefined) incoming.lastActiveTab = safeStr(body.lastActiveTab || '').toLowerCase();
     if (body.privacy && typeof body.privacy === 'object') incoming.privacy = body.privacy;
     if (body.notifications && typeof body.notifications === 'object') incoming.notifications = body.notifications;
-    if (body.dashboard && typeof body.dashboard === 'object') incoming.dashboard = body.dashboard;
 
     // Normalize numeric settings
     if (incoming.distanceKm !== undefined) {
@@ -5337,27 +5342,6 @@ app.post('/api/me/settings', authMiddleware, async (req, res) => {
     }
     if (incoming.notifications && typeof incoming.notifications === 'object') {
       next.notifications = { ...(prev.notifications || {}), ...(incoming.notifications || {}) };
-    }
-    if (incoming.dashboard && typeof incoming.dashboard === 'object') {
-      next.dashboard = { ...(prev.dashboard || {}), ...(incoming.dashboard || {}) };
-    }
-
-    const allowedDashboardTabs = new Set(['home', 'swipe', 'matches', 'premium', 'shortlist', 'concierge', 'settings', 'creators']);
-    if (Object.prototype.hasOwnProperty.call(incoming, 'lastActiveTab')) {
-      const safeTab = String(incoming.lastActiveTab || '').trim().toLowerCase();
-      if (!allowedDashboardTabs.has(safeTab)) {
-        return res.status(400).json({ ok: false, message: 'invalid_last_active_tab' });
-      }
-      next.dashboard = { ...(next.dashboard || {}), lastActiveTab: safeTab };
-      delete next.lastActiveTab;
-    }
-    if (next.dashboard && Object.prototype.hasOwnProperty.call(next.dashboard, 'lastActiveTab')) {
-      const safeTab = String(next.dashboard.lastActiveTab || '').trim().toLowerCase();
-      if (!allowedDashboardTabs.has(safeTab)) {
-        delete next.dashboard.lastActiveTab;
-      } else {
-        next.dashboard.lastActiveTab = safeTab;
-      }
     }
 
     const nowMs = Date.now();
@@ -6002,6 +5986,7 @@ const MSG_THREAD_INDEX_SUBCOL = process.env.MSG_THREAD_INDEX_SUBCOL || 'msgThrea
 const MSGS_SUBCOL = process.env.MSGS_SUBCOL || 'messages';
 const MSG_META_SUBCOL = process.env.MSG_META_SUBCOL || 'messageMeta';
 const MSG_USAGE_COLLECTION = process.env.MSG_USAGE_COLLECTION || 'tmMessageUsage';
+const MSG_PPV_UNLOCKS_SUBCOL = process.env.MSG_PPV_UNLOCKS_SUBCOL || 'ppvUnlocks';
 
 function _msg_normEmail(v) {
   return String(v || '').trim().toLowerCase();
@@ -6035,45 +6020,67 @@ async function _msg_getUserDoc(emailNorm) {
   if (typeof hasFirebase === 'undefined' || !hasFirebase) return null;
   if (typeof findUserByEmail !== 'function') return null;
   try { return await findUserByEmail(emailNorm); } catch { return null; }
-
-
-// -------------------------------
-// Restrict / Block (Messages Meta)
-// - Stored per-user per-peer in usersCollection/{userId}/messageMeta/{peerEmail}
-// - Fields: blocked:boolean, restricted:boolean
-// - Semantics:
-//   * blocked (either side) => cannot message each other
-//   * restricted (recipient restricted sender) => sender cannot message recipient
-// -------------------------------
-async function _msg_getMetaFlags(userDoc, peerEmailNorm) {
-  try {
-    if (!hasFirebase || !firestore || !usersCollection) return { blocked: false, restricted: false };
-    if (!userDoc || !userDoc.id) return { blocked: false, restricted: false };
-    const peer = _msg_normEmail(peerEmailNorm);
-    if (!peer) return { blocked: false, restricted: false };
-
-    const ref = usersCollection.doc(String(userDoc.id)).collection(MSG_META_SUBCOL).doc(peer);
-    const snap = await ref.get();
-    if (!snap.exists) return { blocked: false, restricted: false };
-    const d = snap.data() || {};
-    return { blocked: !!d.blocked, restricted: !!d.restricted };
-  } catch {
-    return { blocked: false, restricted: false };
-  }
 }
 
-function _msg_getMetaFlagsDemo(ownerEmailNorm, peerEmailNorm) {
+
+
+// -------------------------------
+// Messaging policy helpers (Restrict/Block via message meta)
+// - blocked: either side set meta.blocked=true
+// - restricted: recipient set meta.restricted=true for sender's threadKey (prevents sender from messaging)
+// -------------------------------
+async function _msg_getThreadMeta(ownerEmailNorm, threadKeyNorm) {
+  const owner = _msg_normEmail(ownerEmailNorm);
+  const key = _msg_normEmail(threadKeyNorm);
+  if (!owner || !key) return {};
+
+  // Firestore-backed
+  if (hasFirebase && firestore && usersCollection) {
+    try {
+      const ownerDoc = await _msg_getUserDoc(owner);
+      if (!ownerDoc || !ownerDoc.id) return {};
+      const ref = usersCollection.doc(String(ownerDoc.id)).collection(MSG_META_SUBCOL).doc(key);
+      const snap = await ref.get();
+      return snap.exists ? (snap.data() || {}) : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  // Demo fallback
   try {
-    const owner = _msg_normEmail(ownerEmailNorm);
-    const peer = _msg_normEmail(peerEmailNorm);
     DB.messageMetaByEmail = DB.messageMetaByEmail || {};
     const map = DB.messageMetaByEmail[owner] || {};
-    const d = (map && typeof map === 'object') ? (map[peer] || {}) : {};
-    return { blocked: !!d.blocked, restricted: !!d.restricted };
-  } catch {
-    return { blocked: false, restricted: false };
+    const m = map && typeof map === 'object' ? map[key] : null;
+    return (m && typeof m === 'object') ? m : {};
+  } catch (_) {
+    return {};
   }
 }
+
+async function _msg_getPairPolicy(meEmail, peerEmail) {
+  const me = _msg_normEmail(meEmail);
+  const peer = _msg_normEmail(peerEmail);
+  if (!me || !peer) {
+    return { blocked: false, blockedByMe: false, blockedByPeer: false, restrictedByMe: false, restrictedByPeer: false };
+  }
+
+  const meMeta = await _msg_getThreadMeta(me, peer);
+  const peerMeta = await _msg_getThreadMeta(peer, me);
+
+  const blockedByMe = !!(meMeta && meMeta.blocked);
+  const blockedByPeer = !!(peerMeta && peerMeta.blocked);
+
+  const restrictedByMe = !!(meMeta && meMeta.restricted);
+  const restrictedByPeer = !!(peerMeta && peerMeta.restricted);
+
+  return {
+    blocked: blockedByMe || blockedByPeer,
+    blockedByMe,
+    blockedByPeer,
+    restrictedByMe,
+    restrictedByPeer
+  };
 }
 
 // Persisted daily usage (free plan only has a cap).
@@ -6249,7 +6256,7 @@ app.get('/api/messages', async (req, res) => {
       const list = byPeer[peerEmail] || [];
       const last = list.length ? list[list.length - 1] : null;
 
-      const lastMessage = last ? String(last.text || '') : '';
+      const lastMessage = last ? (String(last.text || '') || ((last.media && last.media.length) ? '[Media]' : '')) : '';
       const lastMessageAtMs = last ? Number(last.createdAtMs || 0) : 0;
 
       // Approx last read = max readAt among messages sent TO me
@@ -6295,6 +6302,14 @@ app.get('/api/messages/thread/:peer', async (req, res) => {
     const peerEmail = _msg_normEmail(req.params.peer || '');
     if (!peerEmail) return res.status(400).json({ ok: false, message: 'peer required' });
 
+    // Restrict/Block policy (server-enforced)
+    const policy = await _msg_getPairPolicy(email, peerEmail);
+    if (policy && policy.blocked) {
+      return res.status(403).json({ ok: false, message: 'blocked', policy });
+    }
+
+    const threadId = _msg_threadId(email, peerEmail);
+
     const user = (DB.users && DB.users[email]) || DB.user || {};
     const plan = user.plan || null;
     const planKey = normalizePlanKey(plan);
@@ -6303,31 +6318,9 @@ app.get('/api/messages/thread/:peer', async (req, res) => {
 
     // Firestore-backed thread
     if (hasFirebase && firestore && usersCollection) {
-      const meDoc = __meDocCache || await _msg_getUserDoc(email);
-      const peerDoc = __peerDocCache || await _msg_getUserDoc(peerEmail);
-      // Restrict/Block enforcement (Messages Meta)
-      const myFlags = await _msg_getMetaFlags(meDoc, peerEmail);
-      const peerFlags = await _msg_getMetaFlags(peerDoc, email);
+      const meDoc = await _msg_getUserDoc(email);
+      const peerDoc = await _msg_getUserDoc(peerEmail);
 
-      // If either side blocked the other => no access
-      if (myFlags.blocked || peerFlags.blocked) {
-        return res.status(403).json({
-          ok: false,
-          message: 'blocked',
-          relations: {
-            youBlocked: !!myFlags.blocked,
-            youRestricted: !!myFlags.restricted,
-            peerBlocked: !!peerFlags.blocked,
-            peerRestricted: !!peerFlags.restricted,
-            canSend: false
-          }
-        });
-      }
-
-      // If peer restricted me => I can view thread but cannot send
-      // (We still return messages; UI can lock send based on 403 from send endpoint.)
-
-      const threadId = _msg_threadId(email, peerEmail);
       const threadRef = firestore.collection(MSG_THREADS_COLLECTION).doc(threadId);
 
       // Load messages
@@ -6339,8 +6332,11 @@ app.get('/api/messages/thread/:peer', async (req, res) => {
           from: String(v.from || ''),
           to: String(v.to || ''),
           text: String(v.text || ''),
+          media: Array.isArray(v.media) ? v.media : [],
+          sentAt: String(v.sentAt || '') || (Number(v.createdAtMs || 0) ? new Date(Number(v.createdAtMs || 0)).toISOString() : ''),
           createdAtMs: Number(v.createdAtMs || _msg_tsToMs(v.createdAt) || Date.now()),
           createdAt: v.createdAt || null,
+          ppv: (v.ppv && typeof v.ppv === 'object') ? v.ppv : null,
           readAt: v.readAt || null
         };
       });
@@ -6398,29 +6394,54 @@ app.get('/api/messages/thread/:peer', async (req, res) => {
         });
       }
 
+
+      // PPV unlock flags (server-backed)
+      try {
+        const ppvIds = out
+          .filter((m) => m && m.ppv && Number((m.ppv || {}).priceCents || 0) > 0 && m.id)
+          .map((m) => String(m.id));
+
+        const meLower = _msg_normEmail(email);
+        let unlockedSet = new Set();
+
+        if (ppvIds.length && meDoc && meDoc.id) {
+          try {
+            const ref = usersCollection.doc(String(meDoc.id)).collection(MSG_PPV_UNLOCKS_SUBCOL);
+            const docRefs = ppvIds.map((id) => ref.doc(`${threadId}__${id}`));
+
+            let snaps = [];
+            if (firestore && typeof firestore.getAll === 'function') {
+              snaps = await firestore.getAll(...docRefs);
+            } else {
+              snaps = await Promise.all(docRefs.map((dr) => dr.get()));
+            }
+
+            snaps.forEach((s, i) => {
+              if (s && s.exists) unlockedSet.add(ppvIds[i]);
+            });
+          } catch (_) {}
+        }
+
+        if (ppvIds.length) {
+          out = out.map((m) => {
+            if (!m || !m.ppv || !m.id) return m;
+            const fromMe = _msg_normEmail(m.from) === meLower;
+            const unlocked = fromMe || unlockedSet.has(String(m.id));
+            return { ...m, ppv: { ...(m.ppv || {}), unlocked } };
+          });
+        }
+      } catch (_) {}
+
 return res.json({
         ok: true,
         plan: planKey,
         usage: { dayKey: usage.dayKey, sentToday: usage.sentToday || 0, limit: usage.limit },
-        relations: {
-          youBlocked: !!(typeof myFlags !== 'undefined' && myFlags && myFlags.blocked),
-          youRestricted: !!(typeof myFlags !== 'undefined' && myFlags && myFlags.restricted),
-          peerBlocked: !!(typeof peerFlags !== 'undefined' && peerFlags && peerFlags.blocked),
-          peerRestricted: !!(typeof peerFlags !== 'undefined' && peerFlags && peerFlags.restricted),
-          canSend: !(typeof peerFlags !== 'undefined' && peerFlags && (peerFlags.blocked || peerFlags.restricted)) && !(typeof myFlags !== 'undefined' && myFlags && myFlags.blocked)
-        },
-        messages: out
+        messages: out,
+        policy
       });
     }
 
     // Demo fallback thread (in-memory, preserves current behavior)
-    // Restrict/Block enforcement (demo)
-    const myFlags = _msg_getMetaFlagsDemo(email, peerEmail);
-    const peerFlags = _msg_getMetaFlagsDemo(peerEmail, email);
-    if (myFlags.blocked || peerFlags.blocked) {
-      return res.status(403).json({ ok: false, message: 'blocked' });
-    }
-
     const byPeer = DB.messages[email] || {};
     const list = byPeer[peerEmail] || [];
 
@@ -6438,11 +6459,24 @@ return res.json({
       DB.messages[email][peerEmail] = list;
     }
 
+    // PPV unlock flags (demo fallback)
+    const unlockMap = (DB.ppvUnlocks && DB.ppvUnlocks[email]) ? DB.ppvUnlocks[email] : {};
+    const meLower = _msg_normEmail(email);
+    const outList = (Array.isArray(list) ? list : []).map((m) => {
+      if (!m || typeof m !== 'object' || !m.ppv || !m.id) return m;
+      const cents = Number((m.ppv || {}).priceCents || 0) || 0;
+      if (cents <= 0) return m;
+      const fromMe = _msg_normEmail(m.from) === meLower;
+      const unlocked = fromMe || !!unlockMap[`${threadId}__${String(m.id)}`];
+      return { ...m, ppv: { ...(m.ppv || {}), unlocked } };
+    });
+
     return res.json({
       ok: true,
       plan: planKey,
       usage: { dayKey: usage.dayKey, sentToday: usage.sentToday || 0, limit: usage.limit },
-      messages: list
+      messages: outList,
+      policy
     });
   } catch (e) {
     console.error('GET /api/messages/thread error:', e);
@@ -6526,9 +6560,58 @@ app.post('/api/messages/send', async (req, res) => {
     const peerEmail = _msg_normEmail(peerRaw);
     const text = String(textRaw).trim();
 
-    if (!peerEmail || !text) {
-      return res.status(400).json({ ok: false, message: 'to and text are required' });
+    // Restrict/Block policy (server-enforced)
+    const policy = await _msg_getPairPolicy(email, peerEmail);
+    if (policy && policy.blocked) {
+      return res.status(403).json({ ok: false, message: 'blocked', policy });
     }
+    if (policy && policy.restrictedByPeer) {
+      return res.status(403).json({ ok: false, message: 'restricted', policy });
+    }
+
+const mediaIdsRaw = body.mediaIds || body.media_ids || body.mediaIDs || [];
+const mediaInlineRaw = body.media || body.mediaItems || body.attachments || [];
+
+// Optional PPV payload (demo unlock flow)
+// Accepts:
+//  - { ppv: { priceCents, currency } }  OR
+//  - { ppv: { price, currency } } where price is in major units (e.g. 5.00 USD)
+const ppvRaw = body.ppv || null;
+let ppv = null;
+try {
+  if (ppvRaw && typeof ppvRaw === 'object') {
+    const cur = String(ppvRaw.currency || 'USD').trim().toUpperCase().slice(0, 10) || 'USD';
+    let cents = null;
+
+    if (ppvRaw.priceCents !== undefined || ppvRaw.price_cents !== undefined) {
+      const n = Number(ppvRaw.priceCents ?? ppvRaw.price_cents);
+      if (Number.isFinite(n)) cents = Math.floor(n);
+    } else {
+      const n = Number(ppvRaw.price ?? ppvRaw.amount ?? 0);
+      if (Number.isFinite(n) && n > 0) cents = Math.floor(n * 100);
+    }
+
+    if (Number.isFinite(cents) && cents > 0) {
+      ppv = { priceCents: Math.max(1, cents), currency: cur };
+    }
+  }
+} catch (_) {
+  ppv = null;
+}
+
+const mediaIds = Array.isArray(mediaIdsRaw) ? mediaIdsRaw.map((x) => String(x || '').trim()).filter(Boolean) : [];
+const mediaInline = Array.isArray(mediaInlineRaw)
+  ? (ppv
+      ? mediaInlineRaw.map((it) => {
+          if (it && typeof it === 'object') return { ...it, locked: true };
+          return { src: String(it || ''), locked: true };
+        })
+      : mediaInlineRaw)
+  : [];
+
+if (!peerEmail || (!text && !mediaIds.length && !mediaInline.length)) {
+  return res.status(400).json({ ok: false, message: 'to and content are required' });
+}
 
     // Optional guard: only allow chat with matches. Uncomment to enforce strictly:
     // const matchEmails = await _getMatchEmails(email);
@@ -6537,41 +6620,6 @@ app.post('/api/messages/send', async (req, res) => {
     const user = (DB.users && DB.users[email]) || DB.user || {};
     const plan = user.plan || null;
     const planKey = normalizePlanKey(plan);
-
-    // Restrict/Block enforcement (Messages Meta)
-    let __meDocCache = null;
-    let __peerDocCache = null;
-
-    // If either side BLOCKED the other => cannot message.
-    // If recipient RESTRICTED sender => sender cannot message recipient.
-    if (hasFirebase && firestore && usersCollection) {
-      __meDocCache = await _msg_getUserDoc(email);
-      __peerDocCache = await _msg_getUserDoc(peerEmail);
-
-      if (!__meDocCache || !__meDocCache.id) return res.status(400).json({ ok: false, message: 'user_not_found' });
-      if (!__peerDocCache || !__peerDocCache.id) return res.status(404).json({ ok: false, message: 'peer_not_found' });
-
-      const myFlags = await _msg_getMetaFlags(__meDocCache, peerEmail);
-      const peerFlags = await _msg_getMetaFlags(__peerDocCache, email);
-
-      if (myFlags.blocked || peerFlags.blocked) {
-        return res.status(403).json({ ok: false, message: 'blocked' });
-      }
-      if (peerFlags.restricted) {
-        return res.status(403).json({ ok: false, message: 'restricted' });
-      }
-    } else {
-      // Demo mode
-      const myFlags = _msg_getMetaFlagsDemo(email, peerEmail);
-      const peerFlags = _msg_getMetaFlagsDemo(peerEmail, email);
-      if (myFlags.blocked || peerFlags.blocked) {
-        return res.status(403).json({ ok: false, message: 'blocked' });
-      }
-      if (peerFlags.restricted) {
-        return res.status(403).json({ ok: false, message: 'restricted' });
-      }
-    }
-
 
     // Atomic daily cap increment (free only)
     let usage = null;
@@ -6585,20 +6633,118 @@ app.post('/api/messages/send', async (req, res) => {
       return res.status(500).json({ ok: false, message: 'server error' });
     }
 
-    const nowMs = Date.now();
-    const threadId = _msg_threadId(email, peerEmail);
-    const msgObj = {
-      from: email,
-      to: peerEmail,
-      text,
-      createdAtMs: nowMs,
-      createdAt: admin && admin.firestore ? admin.firestore.FieldValue.serverTimestamp() : nowMs
-    };
+const nowMs = Date.now();
+const threadId = _msg_threadId(email, peerEmail);
+
+// Build media array (URLs), so Firestore doc size stays safe.
+const MAX_MEDIA = 6;
+const MAX_BYTES_PER_ITEM = 2 * 1024 * 1024; // 2MB
+const MAX_TOTAL_BYTES = 6 * 1024 * 1024;    // 6MB
+
+function _extFromMime(mime) {
+  const m = String(mime || '').toLowerCase();
+  if (m.includes('jpeg')) return 'jpg';
+  if (m.includes('png')) return 'png';
+  if (m.includes('webp')) return 'webp';
+  if (m.includes('gif')) return 'gif';
+  if (m.includes('mp4')) return 'mp4';
+  if (m.includes('quicktime')) return 'mov';
+  if (m.includes('webm')) return 'webm';
+  if (m.includes('mpeg')) return 'mp3';
+  if (m.includes('wav')) return 'wav';
+  return 'bin';
+}
+
+function _typeFromMime(mime) {
+  const m = String(mime || '').toLowerCase();
+  if (m.startsWith('image/')) return 'image';
+  if (m.startsWith('video/')) return 'video';
+  if (m.startsWith('audio/')) return 'audio';
+  return 'other';
+}
+
+function _safePickInlineMedia(arr) {
+  const out = [];
+  let total = 0;
+
+  for (const it of (arr || []).slice(0, MAX_MEDIA)) {
+    const src = String(it?.src || it?.url || '');
+    const name = String(it?.name || '').slice(0, 120);
+    const locked = !!it?.locked;
+
+    if (!src) continue;
+
+    // If already a /msg-media url, keep as-is (no re-write)
+    if (src.startsWith('/msg-media/')) {
+      const type = String(it?.type || '').toLowerCase() || 'other';
+      out.push({ id: String(it?.id || ''), url: src, type, name, locked });
+      continue;
+    }
+
+    // Only accept data URLs in this MVP
+    const m = src.match(/^data:([^;]+);base64,(.+)$/);
+    if (!m) continue;
+
+    const mime = m[1];
+    const b64 = m[2] || '';
+    // Rough byte estimate for base64
+    const bytes = Math.floor((b64.length * 3) / 4);
+    if (bytes <= 0) continue;
+    if (bytes > MAX_BYTES_PER_ITEM) continue;
+    if (total + bytes > MAX_TOTAL_BYTES) break;
+
+    const ext = _extFromMime(mime);
+    const type = _typeFromMime(mime);
+
+    const fileName = `msg_${nowMs}_${Math.random().toString(16).slice(2)}.${ext}`;
+    const absPath = path.join(MSG_MEDIA_DIR, fileName);
+
+    try {
+      const buf = Buffer.from(b64, 'base64');
+      if (!buf || !buf.length) continue;
+      if (buf.length > MAX_BYTES_PER_ITEM) continue;
+      fs.writeFileSync(absPath, buf);
+      total += buf.length;
+      out.push({
+        id: String(it?.id || fileName),
+        url: `/msg-media/${fileName}`,
+        type: String(it?.type || type),
+        name,
+        locked
+      });
+    } catch (_) {
+      // skip
+    }
+  }
+
+  return out;
+}
+
+const media = _safePickInlineMedia(mediaInline);
+
+// PPV messages must include at least 1 media item
+if (ppv && !media.length) {
+  return res.status(400).json({ ok: false, message: 'ppv_requires_media' });
+}
+
+const sentAt = new Date(nowMs).toISOString();
+const previewText = text || (media.length ? '[Media]' : '');
+
+const msgObj = {
+  from: email,
+  to: peerEmail,
+  text,
+  media,
+  ppv,
+  sentAt,
+  createdAtMs: nowMs,
+  createdAt: admin && admin.firestore ? admin.firestore.FieldValue.serverTimestamp() : nowMs
+};
 
     // Firestore-backed write
     if (hasFirebase && firestore && usersCollection) {
-      const meDoc = __meDocCache || await _msg_getUserDoc(email);
-      const peerDoc = __peerDocCache || await _msg_getUserDoc(peerEmail);
+      const meDoc = await _msg_getUserDoc(email);
+      const peerDoc = await _msg_getUserDoc(peerEmail);
       if (!meDoc || !meDoc.id) return res.status(400).json({ ok: false, message: 'user_not_found' });
       if (!peerDoc || !peerDoc.id) return res.status(404).json({ ok: false, message: 'peer_not_found' });
 
@@ -6620,7 +6766,7 @@ app.post('/api/messages/send', async (req, res) => {
 
         // Update thread doc last message
         tx.set(threadRef, {
-          lastMessageText: text,
+          lastMessageText: previewText,
           lastMessageAtMs: nowMs,
           lastMessageFrom: email,
           lastMessageTo: peerEmail,
@@ -6633,7 +6779,7 @@ app.post('/api/messages/send', async (req, res) => {
         tx.set(myIdxRef, {
           threadId,
           peerEmail,
-          lastMessageText: text,
+          lastMessageText: previewText,
           lastMessageAtMs: nowMs,
           lastMessageFrom: email,
           lastMessageTo: peerEmail,
@@ -6646,7 +6792,7 @@ app.post('/api/messages/send', async (req, res) => {
         tx.set(peerIdxRef, {
           threadId,
           peerEmail: email,
-          lastMessageText: text,
+          lastMessageText: previewText,
           lastMessageAtMs: nowMs,
           lastMessageFrom: email,
           lastMessageTo: peerEmail,
@@ -6659,7 +6805,8 @@ app.post('/api/messages/send', async (req, res) => {
       // 🔔 Notify recipient (dashboard bell) - deep link to open chat
       try {
         const senderName = String((user && (user.name || user.fullName)) || (DB.user && (DB.user.name || DB.user.fullName)) || 'Someone').trim() || 'Someone';
-        const preview = text.length > 90 ? (text.slice(0, 90) + '…') : text;
+        const basePreview = previewText || text || 'Sent media';
+        const preview = basePreview.length > 90 ? (basePreview.slice(0, 90) + '…') : basePreview;
         await _pushNotifToEmail(peerEmail, {
           type: 'message',
           title: 'New message',
@@ -6706,6 +6853,52 @@ app.post('/api/messages/send', async (req, res) => {
     });
   } catch (e) {
     console.error('POST /api/messages/send error:', e);
+    return res.status(500).json({ ok: false, message: 'server error' });
+  }
+});
+
+
+// PPV unlock (demo)
+// - Marks a specific message as unlocked for the current user.
+// - Real payment/charge can be integrated later; this endpoint only records unlock state.
+app.post('/api/messages/ppv/unlock', async (req, res) => {
+  try {
+    const email = DB.user && DB.user.email;
+    if (!email) return res.status(401).json({ ok: false, message: 'not logged in' });
+
+    const body = req.body || {};
+    const peerEmail = _msg_normEmail(body.peerEmail || body.peer || body.to || '');
+    const messageId = String(body.messageId || body.mid || '').trim();
+    if (!peerEmail || !messageId) {
+      return res.status(400).json({ ok: false, message: 'peerEmail and messageId are required' });
+    }
+
+    const nowMs = Date.now();
+    const threadId = _msg_threadId(email, peerEmail);
+    const key = `${threadId}__${messageId}`;
+
+    // Firestore-backed
+    if (hasFirebase && firestore && usersCollection) {
+      const meDoc = await _msg_getUserDoc(email);
+      if (meDoc && meDoc.id) {
+        const ref = usersCollection.doc(String(meDoc.id)).collection(MSG_PPV_UNLOCKS_SUBCOL).doc(key);
+        await ref.set({
+          threadId,
+          messageId,
+          peerEmail,
+          unlockedAtMs: nowMs
+        }, { merge: true });
+      }
+    }
+
+    // Demo fallback (in-memory)
+    DB.ppvUnlocks = DB.ppvUnlocks || {};
+    DB.ppvUnlocks[email] = DB.ppvUnlocks[email] || {};
+    DB.ppvUnlocks[email][key] = 1;
+
+    return res.json({ ok: true, threadId, messageId });
+  } catch (e) {
+    console.error('POST /api/messages/ppv/unlock error:', e);
     return res.status(500).json({ ok: false, message: 'server error' });
   }
 });
@@ -7420,8 +7613,24 @@ app.post('/api/me/creator/profile', authMiddleware, async (req, res) => {
     if (!meEmail) return res.status(401).json({ ok: false, message: 'Not logged in' });
 
     const body = (req.body && typeof req.body === 'object') ? req.body : {};
+
+    // packed (legacy) + partial update support
     const packed = safeStr(body.packed || body.contentStyle || body.style || '');
-    if (!packed) return res.status(400).json({ ok: false, message: 'Missing packed style' });
+    const hasPacked = !!packed;
+
+    const priceRaw = body.price;
+    const priceNum = (priceRaw === null || priceRaw === undefined || priceRaw === '') ? NaN : Number(priceRaw);
+    const hasPrice = Number.isFinite(priceNum);
+
+    const cfg = (body.subscriptionConfig && typeof body.subscriptionConfig === 'object') ? body.subscriptionConfig : null;
+
+    if (!hasPacked && !hasPrice && !cfg) {
+      return res.status(400).json({ ok: false, message: 'Nothing to update' });
+    }
+
+    if (hasPrice && priceNum < 4.99) {
+      return res.status(400).json({ ok: false, message: 'Minimum price is 4.99' });
+    }
 
     const nowMs = Date.now();
 
@@ -7430,11 +7639,30 @@ app.post('/api/me/creator/profile', authMiddleware, async (req, res) => {
 
     const prevCA = (meDoc.creatorApplication && typeof meDoc.creatorApplication === 'object') ? meDoc.creatorApplication : {};
 
-    const nextCA = {
-      ...prevCA,
-      contentStyle: packed,
-      contentStyleUpdatedAt: new Date(nowMs)
-    };
+    const nextCA = { ...prevCA };
+
+    if (hasPacked) {
+      nextCA.contentStyle = packed;
+      nextCA.contentStyleUpdatedAt = new Date(nowMs);
+    }
+
+    if (hasPrice) {
+      nextCA.price = Math.round(priceNum * 100) / 100;
+      nextCA.priceUpdatedAt = new Date(nowMs);
+    }
+
+    if (cfg) {
+      const bundlesIn = (cfg.bundles && typeof cfg.bundles === 'object') ? cfg.bundles : {};
+      nextCA.subscriptionConfig = {
+        promoEnabled: !!cfg.promoEnabled,
+        bundles: {
+          m3: !!bundlesIn.m3,
+          m6: !!bundlesIn.m6,
+          m12: !!bundlesIn.m12
+        }
+      };
+      nextCA.subscriptionConfigUpdatedAt = new Date(nowMs);
+    }
 
     await updateUserByEmail(meEmail, { creatorApplication: nextCA, updatedAt: new Date(nowMs) });
 
@@ -7448,7 +7676,7 @@ app.post('/api/me/creator/profile', authMiddleware, async (req, res) => {
       DB.user.updatedAt = nowMs;
     }
 
-    return res.json({ ok: true, packed, creatorApplication: nextCA });
+    return res.json({ ok: true, packed: hasPacked ? packed : (prevCA.contentStyle || ''), creatorApplication: nextCA });
   } catch (e) {
     console.error('POST /api/me/creator/profile error', e);
     return res.status(500).json({ ok: false, message: 'Server error' });
@@ -8497,6 +8725,22 @@ function _sanitizeCreatorPostPayload(body) {
 
   const text = safeStr(String(b.text || '')).trim().slice(0, 2400);
 
+  // Media attachments (Vault ids)
+  const mediaRaw = (b.mediaIds !== undefined) ? b.mediaIds : ((b.media !== undefined) ? b.media : []);
+  const mediaArr = Array.isArray(mediaRaw)
+    ? mediaRaw
+    : ((typeof mediaRaw === 'string') ? mediaRaw.split(',') : []);
+
+  const mediaIds = [];
+  const seen = new Set();
+  for (const x of mediaArr) {
+    const id = safeStr(String(x || '')).trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    mediaIds.push(id);
+    if (mediaIds.length >= 12) break;
+  }
+
   let poll = null;
   let pollVotes = null;
 
@@ -8538,11 +8782,11 @@ function _sanitizeCreatorPostPayload(body) {
     quizVotes = new Array(clean.length).fill(0);
   }
 
-  if (type === 'text' && !text) {
+  if (type === 'text' && !text && !mediaIds.length) {
     throw new Error('Post text is required.');
   }
 
-  return { type, text, poll, pollVotes, quiz, quizVotes };
+  return { type, text, poll, pollVotes, quiz, quizVotes, mediaIds };
 }
 
 function _creatorPostToClient(id, d) {
@@ -8563,6 +8807,14 @@ function _creatorPostToClient(id, d) {
     pollVotes: Array.isArray(d?.pollVotes) ? d.pollVotes : null,
     quiz: d?.quiz || null,
     quizVotes: Array.isArray(d?.quizVotes) ? d.quizVotes : null,
+    media: Array.isArray(d?.media) ? d.media.map(m => ({
+      id: safeStr(m?.id || ''),
+      src: safeStr(m?.src || m?.url || ''),
+      type: safeStr(m?.type || ''),
+      locked: !!m?.locked,
+      name: safeStr(m?.name || ''),
+    })).filter(x => !!x.id) : [],
+    mediaIds: Array.isArray(d?.mediaIds) ? d.mediaIds.map(x => safeStr(String(x || '')).trim()).filter(Boolean) : [],
     reactionCounts: (d && d.reactionCounts && typeof d.reactionCounts === 'object') ? d.reactionCounts : {},
     reactionCount: Number.isFinite(d?.reactionCount) ? d.reactionCount : 0,
     commentCount: Number.isFinite(d?.commentCount) ? d.commentCount : 0,
@@ -8661,6 +8913,10 @@ app.post('/api/creator/posts', async (req, res) => {
     const nowMs = Date.now();
     const id = _newPostId();
 
+    // Optional: attach Vault media snapshots to post (supports locked paywall)
+    let media = [];
+    try { media = await _resolveVaultMediaSnapshotForCreator(me, payload.mediaIds); } catch (e) { media = []; }
+
     const doc = {
       id,
       creatorEmail: me,
@@ -8671,6 +8927,8 @@ app.post('/api/creator/posts', async (req, res) => {
       pollVotes: payload.pollVotes,
       quiz: payload.quiz,
       quizVotes: payload.quizVotes,
+      media: Array.isArray(media) ? media : [],
+      mediaIds: Array.isArray(media) ? media.map(x => String(x.id || '')).filter(Boolean) : [],
       reactionCounts: {},
       reactionCount: 0,
       commentCount: 0,
@@ -11897,6 +12155,309 @@ app.post('/api/collections/remove', async (req, res) => {
     return res.status(400).json({ ok: false, error: msg });
   }
 });
+
+
+// ---------------- Vault (Collections -> Vault media) API ----------------
+// Notes:
+// - Stores Vault media in Firebase Storage (binary), and metadata in Firestore subcollection under the user doc.
+// - Falls back to in-memory demo store when Firebase/Storage is unavailable (so UI still works in dev).
+
+const VAULT_MEDIA_SUBCOL = 'vaultMedia';
+
+function _demoVaultFor(email) {
+  DB.vaultMediaByEmail = DB.vaultMediaByEmail || {};
+  DB.vaultMediaByEmail[email] = Array.isArray(DB.vaultMediaByEmail[email]) ? DB.vaultMediaByEmail[email] : [];
+  return DB.vaultMediaByEmail[email];
+}
+
+function _vaultTypeFromMime(mime, fallbackType) {
+  const m = String(mime || '').toLowerCase();
+  if (m.startsWith('image/')) return 'image';
+  if (m.startsWith('video/')) return 'video';
+  if (m.startsWith('audio/')) return 'audio';
+  const fb = String(fallbackType || '').toLowerCase();
+  if (fb === 'image' || fb === 'video' || fb === 'audio' || fb === 'other') return fb;
+  return 'other';
+}
+
+function _vaultExtFromMime(mime) {
+  const m = String(mime || '').toLowerCase();
+  if (m === 'image/png') return 'png';
+  if (m === 'image/webp') return 'webp';
+  if (m === 'image/gif') return 'gif';
+  if (m === 'image/jpeg' || m === 'image/jpg') return 'jpg';
+  if (m === 'video/mp4') return 'mp4';
+  if (m === 'video/webm') return 'webm';
+  if (m === 'video/quicktime') return 'mov';
+  if (m === 'audio/mpeg' || m === 'audio/mp3') return 'mp3';
+  if (m === 'audio/wav') return 'wav';
+  if (m === 'audio/ogg') return 'ogg';
+  return 'bin';
+}
+
+async function uploadVaultDataUrlToStorage(email, dataUrl, prevPath) {
+  if (!hasFirebase || !admin) throw new Error('firebase not configured');
+  if (!hasStorage || !storageBucket) throw new Error('storage not configured');
+
+  const raw = String(dataUrl || '');
+  const m = raw.match(/^data:([^;]+);base64,(.+)$/);
+  if (!m) throw new Error('invalid dataUrl');
+
+  const mime = String(m[1] || '').toLowerCase();
+  const b64 = m[2] || '';
+  const buf = Buffer.from(b64, 'base64');
+
+  // Safety: decoded <= 10MB
+  const maxBytes = 10 * 1024 * 1024;
+  if (buf.length > maxBytes) throw new Error('file too large');
+
+  // Best-effort cleanup
+  if (prevPath) {
+    try { await storageBucket.file(prevPath).delete({ ignoreNotFound: true }); } catch {}
+  }
+
+  const token = (crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex'));
+  const safeEmail = String(email || 'user').toLowerCase().replace(/[^a-z0-9]/g, '_');
+  const ext = _vaultExtFromMime(mime);
+  const filePath = `vault/${safeEmail}/${Date.now()}_${Math.random().toString(16).slice(2)}.${ext}`;
+  const file = storageBucket.file(filePath);
+
+  await file.save(buf, {
+    resumable: false,
+    metadata: {
+      contentType: mime,
+      metadata: { firebaseStorageDownloadTokens: token }
+    }
+  });
+
+  const url =
+    `https://firebasestorage.googleapis.com/v0/b/${storageBucket.name}/o/${encodeURIComponent(filePath)}?alt=media&token=${token}`;
+
+  return { url, path: filePath, mime, bytes: buf.length };
+}
+
+function _vaultClientItem(id, data) {
+  const d = (data && typeof data === 'object') ? data : {};
+  return pruneUndefinedDeep({
+    id: String(id || ''),
+    src: safeStr(d.url || d.src || '').trim(),
+    url: safeStr(d.url || '').trim() || undefined,
+    name: safeStr(d.name || '').trim(),
+    type: safeStr(d.type || '').trim(),
+    locked: !!d.locked,
+    createdAt: Number(d.createdAtMs || 0) || 0,
+    createdAtMs: Number(d.createdAtMs || 0) || undefined,
+    date: safeStr(d.date || '').trim() || undefined,
+    mime: safeStr(d.mime || '').trim() || undefined,
+  });
+}
+
+
+async function _resolveVaultMediaSnapshotForCreator(creatorEmail, ids) {
+  const email = _normalizeEmail(creatorEmail || '');
+  const raw = Array.isArray(ids) ? ids : [];
+  const want = raw
+    .map(x => safeStr(String(x || '')).trim())
+    .filter(Boolean)
+    .slice(0, 12);
+
+  if (!want.length || !email) return [];
+
+  // Demo fallback (no Firebase / no usersCollection)
+  if (!hasFirebase || !firestore || !usersCollection) {
+    const list = _demoVaultFor(email);
+    const map = new Map((Array.isArray(list) ? list : []).map(x => [String(x?.id || ''), x]));
+    const out = [];
+    for (const id of want) {
+      const d = map.get(String(id));
+      if (!d) continue;
+      const item = _vaultClientItem(d.id, d);
+      out.push({
+        id: String(item.id || id),
+        src: safeStr(item.src || '').trim(),
+        type: safeStr(item.type || '').trim(),
+        locked: !!item.locked,
+        name: safeStr(item.name || '').trim(),
+      });
+    }
+    return out;
+  }
+
+  // Firebase-backed: read from creator's Vault subcollection (by id)
+  let u = null;
+  try { u = await findUserByEmail(email); } catch (e) { u = null; }
+  if (!u || !u.id) return [];
+
+  const ref = usersCollection.doc(String(u.id)).collection(VAULT_MEDIA_SUBCOL);
+
+  // getAll preserves neither order nor missing docs; we'll remap to keep caller order
+  const refs = want.map((id) => ref.doc(String(id)));
+  let snaps = [];
+  try {
+    snaps = await firestore.getAll(...refs);
+  } catch (e) {
+    // fallback: sequential gets
+    snaps = [];
+    for (const r of refs) {
+      try { snaps.push(await r.get()); } catch (_) {}
+    }
+  }
+
+  const byId = new Map();
+  for (const s of snaps) {
+    if (!s || !s.exists) continue;
+    const item = _vaultClientItem(s.id, s.data() || {});
+    byId.set(String(item.id), {
+      id: String(item.id),
+      src: safeStr(item.src || '').trim(),
+      type: safeStr(item.type || '').trim(),
+      locked: !!item.locked,
+      name: safeStr(item.name || '').trim(),
+    });
+  }
+
+  const out = [];
+  for (const id of want) {
+    const v = byId.get(String(id));
+    if (v) out.push(v);
+  }
+  return out;
+}
+
+app.get('/api/collections/vault', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req));
+    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+
+    // Demo fallback (or storage not configured)
+    if (!hasFirebase || !firestore || !usersCollection || !hasStorage || !storageBucket) {
+      const list = _demoVaultFor(me);
+      const items = (Array.isArray(list) ? list : []).map(x => _vaultClientItem(x.id, x));
+      items.sort((a, b) => (Number(b.createdAt || 0) - Number(a.createdAt || 0)));
+      return res.json({ ok: true, items });
+    }
+
+    const u = await findUserByEmail(me);
+    if (!u || !u.id) return res.json({ ok: true, items: [] });
+
+    const ref = usersCollection.doc(String(u.id)).collection(VAULT_MEDIA_SUBCOL);
+    const snap = await ref.orderBy('createdAtMs', 'desc').limit(400).get();
+
+    const items = snap.docs.map((d) => _vaultClientItem(d.id, d.data() || {}));
+    return res.json({ ok: true, items });
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+app.post('/api/collections/vault/add', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req));
+    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+
+    const media = (req.body && (req.body.media || req.body.item || req.body.payload)) ? (req.body.media || req.body.item || req.body.payload) : {};
+    const name = safeStr(media?.name || '').trim().slice(0, 120);
+    const typeIn = safeStr(media?.type || '').trim().toLowerCase();
+    const dataUrl = safeStr(media?.dataUrl || media?.src || '').trim();
+    const locked = !!media?.locked;
+
+    if (!dataUrl) return res.status(400).json({ ok: false, error: 'Missing dataUrl.' });
+
+    // Demo fallback (or storage not configured)
+    if (!hasFirebase || !firestore || !usersCollection || !hasStorage || !storageBucket) {
+      const list = _demoVaultFor(me);
+      const id = `v_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      const nowMs = Date.now();
+      const item = {
+        id,
+        name,
+        type: _vaultTypeFromMime('', typeIn),
+        src: dataUrl,
+        url: '',
+        locked,
+        createdAtMs: nowMs,
+        date: new Date(nowMs).toLocaleDateString()
+      };
+      list.unshift(item);
+      // cap
+      DB.vaultMediaByEmail[me] = list.slice(0, 400);
+      return res.json({ ok: true, id, item: _vaultClientItem(id, item) });
+    }
+
+    // Firebase-backed: upload bytes to Storage, write metadata to Firestore subcollection
+    const u = await findUserByEmail(me);
+    if (!u || !u.id) return res.status(404).json({ ok: false, error: 'user_not_found' });
+
+    const up = await uploadVaultDataUrlToStorage(me, dataUrl, '');
+    const nowMs = Date.now();
+
+    const docRef = usersCollection.doc(String(u.id)).collection(VAULT_MEDIA_SUBCOL).doc();
+    const docId = docRef.id;
+
+    const mime = up.mime || '';
+    const type = _vaultTypeFromMime(mime, typeIn);
+
+    await docRef.set(pruneUndefinedDeep({
+      name,
+      type,
+      locked,
+      url: up.url,
+      path: up.path,
+      mime,
+      bytes: up.bytes,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAtMs: nowMs,
+    }), { merge: true });
+
+    const item = _vaultClientItem(docId, { name, type, locked, url: up.url, path: up.path, mime, createdAtMs: nowMs, date: new Date(nowMs).toLocaleDateString() });
+    return res.json({ ok: true, id: docId, item });
+
+  } catch (e) {
+    const msg = String(e?.message || e);
+    return res.status(400).json({ ok: false, error: msg });
+  }
+});
+
+app.post('/api/collections/vault/delete', async (req, res) => {
+  try {
+    const me = _normalizeEmail(getSessionEmail(req));
+    if (!me) return res.status(401).json({ ok: false, error: 'Not signed in.' });
+
+    const id = safeStr(req.body?.id || '').trim();
+    if (!id) return res.status(400).json({ ok: false, error: 'Missing id.' });
+
+    // Demo fallback
+    if (!hasFirebase || !firestore || !usersCollection) {
+      const list = _demoVaultFor(me);
+      const before = list.length;
+      DB.vaultMediaByEmail[me] = list.filter(x => String(x?.id) !== id);
+      return res.json({ ok: true, removed: before !== DB.vaultMediaByEmail[me].length });
+    }
+
+    // If storage is missing, we can still delete metadata if present
+    const u = await findUserByEmail(me);
+    if (!u || !u.id) return res.json({ ok: true, removed: true });
+
+    const docRef = usersCollection.doc(String(u.id)).collection(VAULT_MEDIA_SUBCOL).doc(id);
+    const snap = await docRef.get();
+    if (!snap.exists) return res.json({ ok: true, removed: true });
+
+    const data = snap.data() || {};
+    const path = safeStr(data.path || '').trim();
+
+    await docRef.delete();
+
+    if (hasStorage && storageBucket && path) {
+      try { await storageBucket.file(path).delete({ ignoreNotFound: true }); } catch {}
+    }
+
+    return res.json({ ok: true, removed: true });
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// ---------------- End Vault (Collections -> Vault media) API ----------------
 
 // ---------------- End Collections (Lists) API ----------------
 
