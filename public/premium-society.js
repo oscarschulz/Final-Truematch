@@ -1597,40 +1597,191 @@ export function initGlobalSwipeBack() {
 export function initSettingsLogic() {
   console.log("Settings Logic (Integrated) Initialized");
 
-  // --- A. DOM ELEMENTS ---
   const distInput = document.getElementById("psRangeDist");
   const distVal = document.getElementById("psDistVal");
   const ageInput = document.getElementById("psRangeAge");
   const ageVal = document.getElementById("psAgeVal");
-  const toggles = document.querySelectorAll(".ps-setting-toggle, .ps-switch-cyan input, .ps-switch-mini input");
 
   if (!distInput || !ageInput) return;
 
-  // --- B. BACKEND IDENTITY & LOADING ---
   const me = (() => {
     try { return JSON.parse(localStorage.getItem('tm_user')); } catch (e) { return null; }
   })();
   const email = me?.email || null;
+  const settingsCacheKey = email ? `ps_settings_cache:${String(email).trim().toLowerCase()}` : 'ps_settings_cache:guest';
 
-  // LOAD SAVED PREFS: I-load ang settings galing sa session storage/cloud
-  if (email && typeof loadPrefsForUser === 'function') {
-    const prefs = loadPrefsForUser(email) || {};
-    if (prefs.distanceKm != null) {
-      distInput.value = prefs.distanceKm;
-      if (distVal) distVal.textContent = prefs.distanceKm;
+  const settingsScope = document.querySelector('.ps-panel[data-panel="settings"]') || document;
+  const toggleRows = Array.from(settingsScope.querySelectorAll('.ps-toggle-row, .ps-legal-row'));
+
+  function findToggleByLabel(label) {
+    const wanted = String(label || '').trim().toLowerCase();
+    for (const row of toggleRows) {
+      const textEl = row.querySelector('span');
+      const input = row.querySelector('input[type="checkbox"]');
+      const rowLabel = String(textEl?.textContent || '').trim().toLowerCase();
+      if (input && rowLabel === wanted) return input;
     }
-    if (prefs.maxAge != null) {
-      ageInput.value = prefs.maxAge;
-      if (ageVal) ageVal.textContent = prefs.maxAge;
+    return null;
+  }
+
+  const toggleMap = {
+    matches: findToggleByLabel('Matches'),
+    messages: findToggleByLabel('Messages'),
+    soundEffects: findToggleByLabel('Sound Effects'),
+    hapticFeedback: findToggleByLabel('Haptic Feedback'),
+  };
+
+  Object.entries(toggleMap).forEach(([key, input]) => {
+    if (input) {
+      input.dataset.settingKey = key;
+      if (!input.dataset.name) {
+        const labelMap = {
+          matches: 'Matches notifications',
+          messages: 'Messages notifications',
+          soundEffects: 'Sound Effects',
+          hapticFeedback: 'Haptic Feedback',
+        };
+        input.dataset.name = labelMap[key] || key;
+      }
+    }
+  });
+
+  const defaults = {
+    distanceKm: Number(distInput.value) || 15,
+    maxAge: Number(ageInput.value) || 26,
+    notifications: {
+      matches: toggleMap.matches ? !!toggleMap.matches.checked : true,
+      messages: toggleMap.messages ? !!toggleMap.messages.checked : true,
+    },
+    appPreferences: {
+      soundEffects: toggleMap.soundEffects ? !!toggleMap.soundEffects.checked : true,
+      hapticFeedback: toggleMap.hapticFeedback ? !!toggleMap.hapticFeedback.checked : false,
+    },
+  };
+
+  function cloneSettings(v) {
+    return JSON.parse(JSON.stringify(v));
+  }
+
+  function mergeSettings(base, incoming) {
+    const next = cloneSettings(base || defaults);
+    const src = (incoming && typeof incoming === 'object') ? incoming : {};
+
+    if (src.distanceKm != null && Number.isFinite(Number(src.distanceKm))) next.distanceKm = Number(src.distanceKm);
+    if (src.maxAge != null && Number.isFinite(Number(src.maxAge))) next.maxAge = Number(src.maxAge);
+
+    if (src.notifications && typeof src.notifications === 'object') {
+      next.notifications = {
+        ...next.notifications,
+        ...src.notifications,
+      };
+    }
+
+    const appPrefs = (src.appPreferences && typeof src.appPreferences === 'object')
+      ? src.appPreferences
+      : ((src.preferences && typeof src.preferences === 'object') ? src.preferences : null);
+    if (appPrefs) {
+      next.appPreferences = {
+        ...next.appPreferences,
+        ...appPrefs,
+      };
+    }
+
+    return next;
+  }
+
+  function applySettingsToUi(settings) {
+    const safe = mergeSettings(defaults, settings);
+
+    distInput.value = String(Number(safe.distanceKm) || defaults.distanceKm);
+    ageInput.value = String(Number(safe.maxAge) || defaults.maxAge);
+    if (distVal) distVal.textContent = String(Number(safe.distanceKm) || defaults.distanceKm);
+    if (ageVal) ageVal.textContent = String(Number(safe.maxAge) || defaults.maxAge);
+
+    if (toggleMap.matches) toggleMap.matches.checked = !!safe.notifications.matches;
+    if (toggleMap.messages) toggleMap.messages.checked = !!safe.notifications.messages;
+    if (toggleMap.soundEffects) toggleMap.soundEffects.checked = !!safe.appPreferences.soundEffects;
+    if (toggleMap.hapticFeedback) toggleMap.hapticFeedback.checked = !!safe.appPreferences.hapticFeedback;
+  }
+
+  function captureSettingsFromUi() {
+    return {
+      distanceKm: Number(distInput.value),
+      maxAge: Number(ageInput.value),
+      notifications: {
+        matches: toggleMap.matches ? !!toggleMap.matches.checked : defaults.notifications.matches,
+        messages: toggleMap.messages ? !!toggleMap.messages.checked : defaults.notifications.messages,
+      },
+      appPreferences: {
+        soundEffects: toggleMap.soundEffects ? !!toggleMap.soundEffects.checked : defaults.appPreferences.soundEffects,
+        hapticFeedback: toggleMap.hapticFeedback ? !!toggleMap.hapticFeedback.checked : defaults.appPreferences.hapticFeedback,
+      },
+    };
+  }
+
+  function readLocalSettings() {
+    let merged = cloneSettings(defaults);
+
+    try {
+      if (email && typeof loadPrefsForUser === 'function') {
+        merged = mergeSettings(merged, loadPrefsForUser(email) || {});
+      }
+    } catch (e) {
+      console.warn('Failed to load local prefs cache:', e);
+    }
+
+    try {
+      const raw = localStorage.getItem(settingsCacheKey);
+      if (raw) merged = mergeSettings(merged, JSON.parse(raw));
+    } catch (e) {
+      console.warn('Failed to load premium settings cache:', e);
+    }
+
+    return merged;
+  }
+
+  function saveLocalSettings(next) {
+    const safe = mergeSettings(defaults, next);
+
+    try {
+      if (email && typeof savePrefsForUser === 'function') {
+        savePrefsForUser(email, {
+          distanceKm: safe.distanceKm,
+          maxAge: safe.maxAge,
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to save legacy prefs cache:', e);
+    }
+
+    try {
+      localStorage.setItem(settingsCacheKey, JSON.stringify(safe));
+    } catch (e) {
+      console.warn('Failed to save premium settings cache:', e);
     }
   }
 
-  // --- C. PERSISTENCE SAVE ACTION ---
-// ==========================================
-  // START: SETTINGS CLOUD SYNC (Phase 2)
-  // ==========================================
+  applySettingsToUi(readLocalSettings());
 
-  // 1. Debounce Helper (Para hindi flood ang request sa server)
+  async function loadSettingsFromServer() {
+    if (!email) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/api/me/settings`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data || data.ok !== true) return;
+
+      const merged = mergeSettings(readLocalSettings(), data.settings || {});
+      applySettingsToUi(merged);
+      saveLocalSettings(merged);
+    } catch (e) {
+      console.warn('Failed to load settings from server:', e);
+    }
+  }
+
   function debounce(func, wait = 500) {
     let timeout;
     return (...args) => {
@@ -1639,71 +1790,78 @@ export function initSettingsLogic() {
     };
   }
 
-  // 2. Updated Persist Action (Async with Cloud Sync)
-  const persistSettings = async () => {
-    if (!email) return;
-
-    const nextPrefs = {
-      distanceKm: Number(distInput.value),
-      maxAge: Number(ageInput.value),
-    };
-
-    // A. Local Save (Backup)
-    if (typeof savePrefsForUser === 'function') {
-      savePrefsForUser(email, nextPrefs);
+  async function persistSettings(options = {}) {
+    const { silent = false, trigger = '' } = options;
+    if (!email) {
+      if (!silent) showToast('Session expired. Please sign in again.');
+      return { ok: false };
     }
 
-    // B. Cloud Sync (Laravel Backend)
+    const nextPrefs = captureSettingsFromUi();
+    saveLocalSettings(nextPrefs);
+
     try {
       const res = await fetch(`${API_BASE}/api/me/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(nextPrefs)
+        body: JSON.stringify(nextPrefs),
       });
 
-      if (res.ok) {
-        showToast("Preferences synced to cloud ☁️✨");
-      } else {
-        throw new Error("Server Error");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data || data.ok !== true) {
+        throw new Error((data && (data.message || data.error)) || 'Server Error');
       }
+
+      const merged = mergeSettings(nextPrefs, data.settings || nextPrefs);
+      saveLocalSettings(merged);
+
+      if (!silent) {
+        if (trigger) {
+          showToast(trigger);
+        } else {
+          showToast('Preferences synced to cloud ☁️✨');
+        }
+      }
+
+      return { ok: true, settings: merged };
     } catch (e) {
-      console.error("Cloud Sync Failed:", e);
-      showToast("Saved locally (Sync error)");
+      console.error('Cloud Sync Failed:', e);
+      if (!silent) showToast('Saved locally (Sync error)');
+      return { ok: false, error: e };
     }
-  };
+  }
 
-  // Gamitin ang debounce para sa 'input' event pero save agad sa 'change'
-  const debouncedPersist = debounce(persistSettings, 800);
+  const debouncedPersist = debounce(() => {
+    persistSettings({ silent: true });
+  }, 800);
 
-  // --- D. EVENT LISTENERS (Sliders & Toggles) ---
-  distInput.addEventListener("input", (e) => { 
-    if (distVal) distVal.textContent = e.target.value; 
-    debouncedPersist(); // Sync habang hinihila
+  distInput.addEventListener('input', (e) => {
+    if (distVal) distVal.textContent = e.target.value;
+    debouncedPersist();
   });
-  distInput.addEventListener("change", persistSettings); // Siguradong save pagbitaw
-
-  ageInput.addEventListener("input", (e) => { 
-    if (ageVal) ageVal.textContent = e.target.value; 
-    debouncedPersist(); // Sync habang hinihila
+  distInput.addEventListener('change', () => {
+    persistSettings({ trigger: 'Discovery distance updated ✨' });
   });
-  ageInput.addEventListener("change", persistSettings); // Siguradong save pagbitaw
 
-  toggles.forEach((toggle) => {
-    toggle.addEventListener("change", (e) => {
-      const settingName = e.target.dataset.name || "Setting";
-      const status = e.target.checked ? "Enabled" : "Disabled";
-      
-      // Dito mo rin pwedeng i-sync ang toggles sa backend kung may endpoint ka na
-      showToast(`${settingName} ${status}`);
+  ageInput.addEventListener('input', (e) => {
+    if (ageVal) ageVal.textContent = e.target.value;
+    debouncedPersist();
+  });
+  ageInput.addEventListener('change', () => {
+    persistSettings({ trigger: 'Max age preference updated ✨' });
+  });
+
+  Object.values(toggleMap).filter(Boolean).forEach((toggle) => {
+    toggle.addEventListener('change', (e) => {
+      const settingName = e.target.dataset.name || 'Setting';
+      const status = e.target.checked ? 'enabled' : 'disabled';
+      persistSettings({ trigger: `${settingName} ${status}` });
     });
   });
 
-  // ==========================================
-  // END: SETTINGS CLOUD SYNC
-  // ==========================================
+  loadSettingsFromServer();
 
-  // --- E. SUPPORT & HELP POPUPS ---
   window.openSafetyTips = () => {
     Swal.fire({
       title: '<i class="fa-solid fa-shield-halved" style="color:#00aff0"></i> Safety Guidelines',
@@ -1722,7 +1880,7 @@ export function initSettingsLogic() {
       title: '<i class="fa-solid fa-gem" style="color:#FFD700"></i> Premium Society',
       html: `<div style="text-align: left; font-size: 0.85rem; color: #ccc;">
                 <p><b>Membership:</b> Auto-renew monthly ang iyong subscription.</p>
-                <p><b>Member Perks:</b> Additional paid extras are currently unavailable on this page.</p>
+                <p><b>Diamonds:</b> Digital gifts are final and non-refundable.</p>
             </div>`,
       background: "#15151e", color: "#fff", confirmButtonColor: "#FFD700",
     });
@@ -1747,10 +1905,25 @@ export function initSettingsLogic() {
     });
   };
 
-  // --- F. CACHE ACTION ---
-  window.clearAppCache = () => {
-    showToast("Clearing Media Cache...");
-    setTimeout(() => { showToast("Cache Cleared Successfully ✨"); }, 1200);
+  window.clearAppCache = async () => {
+    showToast('Clearing Media Cache...');
+    try {
+      localStorage.removeItem('ps_chat_history');
+      localStorage.removeItem('ps_reset_time');
+      localStorage.removeItem('ps_swipes_left');
+      localStorage.removeItem(settingsCacheKey);
+      if ('caches' in window && typeof window.caches.keys === 'function') {
+        const keys = await window.caches.keys();
+        await Promise.all(
+          keys
+            .filter((key) => /premium|story|moment|msg-media|ps-/i.test(String(key || '')))
+            .map((key) => window.caches.delete(key))
+        );
+      }
+    } catch (e) {
+      console.warn('Clear cache failed:', e);
+    }
+    setTimeout(() => { showToast('Cache Cleared Successfully ✨'); }, 700);
   };
 }
 
@@ -1911,6 +2084,7 @@ window.openChangePassword = () => {
                 <input type="password" id="swal-curr-pass" class="swal2-input" placeholder="Current Password" style="color:#000;">
                 <input type="password" id="swal-new-pass" class="swal2-input" placeholder="New Password" style="color:#000;">
                 <input type="password" id="swal-conf-pass" class="swal2-input" placeholder="Confirm New Password" style="color:#000;">
+                <p style="margin:8px 0 0; font-size:0.8rem; color:#9fb3c8; text-align:left;">Use at least 8 characters with uppercase, lowercase, and a number.</p>
             `,
     confirmButtonText: "Update Password",
     confirmButtonColor: "#00aff0",
@@ -1918,10 +2092,12 @@ window.openChangePassword = () => {
     background: "#15151e",
     color: "#fff",
     customClass: { container: "ps-swal-on-top" },
-    preConfirm: () => {
-      const curr = document.getElementById("swal-curr-pass").value;
-      const newP = document.getElementById("swal-new-pass").value;
-      const confP = document.getElementById("swal-conf-pass").value;
+    focusConfirm: false,
+    showLoaderOnConfirm: true,
+    preConfirm: async () => {
+      const curr = String(document.getElementById("swal-curr-pass")?.value || '').trim();
+      const newP = String(document.getElementById("swal-new-pass")?.value || '').trim();
+      const confP = String(document.getElementById("swal-conf-pass")?.value || '').trim();
 
       if (!curr || !newP || !confP) {
         Swal.showValidationMessage("Fill up mo lahat ng fields.");
@@ -1931,13 +2107,55 @@ window.openChangePassword = () => {
         Swal.showValidationMessage("Hindi match ang password, paps.");
         return false;
       }
-      return true;
+      if (newP.length < 8) {
+        Swal.showValidationMessage("Password must be at least 8 characters.");
+        return false;
+      }
+      if (!/[a-z]/.test(newP) || !/[A-Z]/.test(newP) || !/\d/.test(newP)) {
+        Swal.showValidationMessage("Use uppercase, lowercase, and at least one number.");
+        return false;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/api/me/password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ currentPassword: curr, newPassword: newP })
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data && data.ok) {
+          return { ok: true };
+        }
+
+        const code = String((data && (data.message || data.error || data.code)) || '');
+        if (code === 'wrong_password') {
+          Swal.showValidationMessage('Current password is incorrect.');
+        } else if (code === 'weak_password') {
+          Swal.showValidationMessage('Use at least 8 characters with uppercase, lowercase, and a number.');
+        } else if (code === 'too_many_requests') {
+          Swal.showValidationMessage('Too many attempts. Please try again later.');
+        } else if (code === 'not_logged_in') {
+          Swal.showValidationMessage('Session expired. Please sign in again.');
+        } else if (code === 'auth_backend_misconfigured') {
+          Swal.showValidationMessage('Password updates are temporarily unavailable. Please try again later.');
+        } else {
+          Swal.showValidationMessage('Unable to update password. Please try again.');
+        }
+        return false;
+      } catch (e) {
+        console.error('Change password failed:', e);
+        Swal.showValidationMessage('Unable to update password. Please try again.');
+        return false;
+      }
     },
   }).then((result) => {
     if (result.isConfirmed) {
       Swal.fire({
         icon: "success",
         title: "Password Updated",
+        text: "Your password has been changed successfully.",
         background: "#15151e",
         color: "#fff",
         confirmButtonColor: "#00aff0",
