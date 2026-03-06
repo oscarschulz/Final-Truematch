@@ -1123,7 +1123,11 @@ DOM.notifList.appendChild(row);
     setDot(0);
   }
 
-  return { load, render, markAllRead };
+  function invalidate() {
+    cache.ts = 0;
+  }
+
+  return { load, render, markAllRead, invalidate };
 })();
 
 // ---------------------------------------------------------------------
@@ -1165,7 +1169,9 @@ function setupEventListeners() {
          DOM.notifDropdown.classList.toggle('is-visible');
 
          if (willOpen) {
-           await NotificationsController.load();
+           await NotificationsController.load({ force: true });
+         } else {
+           try { NotificationsController.invalidate(); } catch (_) {}
          }
       });
 
@@ -1178,7 +1184,11 @@ function setupEventListeners() {
       }
 
       window.addEventListener('click', () => {
+          const wasOpen = DOM.notifDropdown.classList.contains('is-visible');
           DOM.notifDropdown.classList.remove('is-visible');
+          if (wasOpen) {
+            try { NotificationsController.invalidate(); } catch (_) {}
+          }
       });
   }
 
@@ -1216,7 +1226,27 @@ function setupEventListeners() {
 
   // 5. Modals Close
   if (DOM.btnCloseChat && DOM.dlgChat) DOM.btnCloseChat.addEventListener('click', () => { stopChatPolling(); DOM.dlgChat.close(); });
-  if (DOM.dlgChat) DOM.dlgChat.addEventListener('close', () => { stopChatPolling(); });
+  if (DOM.dlgChat) DOM.dlgChat.addEventListener('close', () => {
+    stopChatPolling();
+    refreshInboxPollingLifecycle({ immediate: true });
+  });
+
+  // Keep inbox polling bounded to visible dashboard lifecycle.
+  document.addEventListener('visibilitychange', () => {
+    refreshInboxPollingLifecycle({ immediate: !document.hidden });
+  });
+  window.addEventListener('pageshow', () => {
+    refreshInboxPollingLifecycle({ immediate: true });
+  });
+  window.addEventListener('focus', () => {
+    refreshInboxPollingLifecycle({ immediate: true });
+  });
+  window.addEventListener('pagehide', () => {
+    stopInboxPolling();
+  });
+  window.addEventListener('beforeunload', () => {
+    stopInboxPolling();
+  });
 
   // Chat Send
   if (DOM.btnChatSend) DOM.btnChatSend.addEventListener('click', (e) => { e.preventDefault(); sendChatMessage(); });
@@ -1619,6 +1649,14 @@ function setupMobileMenu() {
 // ---------------------------------------------------------------------
 
 function setActiveTab(tabName) {
+  const prevTab = normalizeDashboardTabName(state.activeTab || 'home');
+  const nextTab = normalizeDashboardTabName(tabName);
+
+  if (prevTab === 'home' && nextTab !== 'home') {
+    invalidateHomeWidgetCache('all');
+  }
+
+  tabName = nextTab;
 
   // Access redirect (when approved by admin)
   if (state && state.me) {
@@ -1718,6 +1756,14 @@ function onPanelActivated(tabName) {
 // HOME: REAL DATA (Who Liked You + Active Nearby)
 // ---------------------------------------------------------------------
 const HOME_CACHE_MS = 15000;
+
+function invalidateHomeWidgetCache(which = 'all') {
+  try {
+    if (!state.homeCache) return;
+    if (which === 'all' || which === 'admirers') state.homeCache.admirersTs = 0;
+    if (which === 'all' || which === 'nearby') state.homeCache.nearbyTs = 0;
+  } catch {}
+}
 
 async function loadHomePanels(force = false) {
   // Home widgets are safe to load in parallel.
@@ -2070,12 +2116,47 @@ function setMatchUnread(peerEmail, hasUnread) {
   }
 }
 
+function shouldRunInboxPolling() {
+  if (!state.me || !state.me.email) return false;
+
+  try {
+    if (document.hidden || document.visibilityState === 'hidden') return false;
+  } catch {}
+
+  if (isChatModalOpen()) return false;
+
+  return true;
+}
+
+function refreshInboxPollingLifecycle({ immediate = false } = {}) {
+  const canRun = shouldRunInboxPolling();
+  const isRunning = !!state.inboxPollTimer;
+
+  if (!canRun) {
+    if (isRunning) stopInboxPolling();
+    return;
+  }
+
+  if (!isRunning) {
+    startInboxPolling({ immediate });
+    return;
+  }
+
+  if (immediate) {
+    pollInboxOnce();
+  }
+}
+
 function startInboxPolling({ immediate = false } = {}) {
   stopInboxPolling();
 
-  if (!state.me || !state.me.email) return;
+  if (!shouldRunInboxPolling()) return;
 
   state.inboxPollTimer = setInterval(() => {
+    if (!shouldRunInboxPolling()) {
+      stopInboxPolling();
+      return;
+    }
     pollInboxOnce();
   }, INBOX_POLL_MS);
 
@@ -2176,6 +2257,27 @@ function stopChatPresencePolling() {
   }
 }
 
+function shouldRunChatPresencePolling() {
+  try {
+    const planKey = normalizePlanKey(state.plan || (state.me && state.me.plan));
+    if (planKey !== 'free') return false;
+    if (!isChatModalOpen()) return false;
+    if (!state.currentChatPeerEmail) return false;
+    if (typeof document !== 'undefined' && (document.hidden || document.visibilityState === 'hidden')) return false;
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function refreshChatPresencePollingLifecycle({ immediate = false } = {}) {
+  if (!shouldRunChatPresencePolling()) {
+    stopChatPresencePolling();
+    return;
+  }
+  startChatPresencePolling({ immediate });
+}
+
 async function refreshChatPresenceOnce() {
   try {
     if (!isChatModalOpen()) return;
@@ -2193,7 +2295,12 @@ async function refreshChatPresenceOnce() {
 
 function startChatPresencePolling({ immediate = false } = {}) {
   stopChatPresencePolling();
+  if (!shouldRunChatPresencePolling()) return;
   state.chatPresenceTimer = setInterval(() => {
+    if (!shouldRunChatPresencePolling()) {
+      stopChatPresencePolling();
+      return;
+    }
     refreshChatPresenceOnce();
   }, CHAT_PRESENCE_POLL_MS);
   if (immediate) refreshChatPresenceOnce();
@@ -2245,6 +2352,7 @@ async function openChatModal(name, imgColor, lastMsg, peerEmail, peerPhotoUrl, p
   // Clear body and show initial hint
   if (DOM.chatBody) DOM.chatBody.innerHTML = '';
   DOM.dlgChat.showModal();
+  refreshInboxPollingLifecycle();
 
   // Track user scroll so refreshes don't yank the view.
   bindChatScrollTracker();
@@ -2265,8 +2373,8 @@ async function openChatModal(name, imgColor, lastMsg, peerEmail, peerPhotoUrl, p
 
   // Keep the thread fresh while modal is open.
   startChatPolling();
-  // Keep presence indicator fresh while modal is open.
-  startChatPresencePolling({ immediate: true });
+  // Keep presence indicator fresh while modal is open (free plan only, visible page only).
+  refreshChatPresencePollingLifecycle({ immediate: true });
 
   try { DOM.chatInput && DOM.chatInput.focus(); } catch {}
 }
