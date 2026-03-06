@@ -179,7 +179,7 @@ async function fileToOptimizedSquareDataUrl(file, maxSize = 768, quality = 0.85,
   }
 }
 
-const state = { me: null, prefs: null, plan: 'free', activeTab: 'home', isLoading: false, selectedAvatarDataUrl: null, homeCache: { admirersTs: 0, nearbyTs: 0 }, homeLoading: { admirers: false, nearby: false } };
+const state = { me: null, prefs: null, plan: 'free', activeTab: 'home', lastPersistedActiveTab: '', isLoading: false, selectedAvatarDataUrl: null, homeCache: { admirersTs: 0, nearbyTs: 0 }, homeLoading: { admirers: false, nearby: false } };
 
 // --- Chat (modal) runtime state (polling + smart scroll) ---
 state.chatPollTimer = null;
@@ -823,6 +823,64 @@ function ensureHomeMobileWidgets() {
 }
 
 
+
+const DASHBOARD_TAB_ORDER = ['home', 'swipe', 'matches', 'premium', 'shortlist', 'concierge', 'settings', 'creators'];
+
+function normalizeDashboardTabName(tabName) {
+  const normalized = String(tabName || '').trim().toLowerCase();
+  return DASHBOARD_TAB_ORDER.includes(normalized) ? normalized : '';
+}
+
+function getRememberedDashboardTab() {
+  const serverRemembered = normalizeDashboardTabName(
+    state?.me?.settings?.dashboard?.lastActiveTab || state?.lastPersistedActiveTab || ''
+  );
+  if (serverRemembered) return serverRemembered;
+
+  try {
+    return normalizeDashboardTabName(localStorage.getItem('tm_activeTab') || '') || 'home';
+  } catch {
+    return 'home';
+  }
+}
+
+async function persistRememberedDashboardTab(tabName) {
+  const normalized = normalizeDashboardTabName(tabName);
+  if (!normalized) return;
+
+  try { localStorage.setItem('tm_activeTab', normalized); } catch {}
+
+  if (state.lastPersistedActiveTab === normalized) return;
+  state.lastPersistedActiveTab = normalized;
+
+  try {
+    const res = await apiPost('/api/me/settings', {
+      settings: {
+        dashboard: {
+          lastActiveTab: normalized
+        }
+      }
+    });
+
+    if (res && res.ok && state.me) {
+      const prevSettings = (state.me.settings && typeof state.me.settings === 'object') ? state.me.settings : {};
+      const prevDashboard = (prevSettings.dashboard && typeof prevSettings.dashboard === 'object') ? prevSettings.dashboard : {};
+      state.me = {
+        ...state.me,
+        settings: {
+          ...prevSettings,
+          dashboard: {
+            ...prevDashboard,
+            lastActiveTab: normalized
+          }
+        }
+      };
+    }
+  } catch {
+    // localStorage fallback is already written above
+  }
+}
+
 // ---------------------------------------------------------------------
 // CORE INIT
 // ---------------------------------------------------------------------
@@ -847,11 +905,11 @@ await loadHomePanels(true);
 
   // Restore last opened tab if allowed for this plan
   try {
-    const remembered = await loadRememberedDashboardTab();
+    const remembered = normalizeDashboardTabName(getRememberedDashboardTab()) || 'home';
     const allowedBtn = Array.from(DOM.tabs || []).find(b => b && b.dataset && b.dataset.panel === remembered && b.style.display !== 'none');
-    const fallbackBtn = Array.from(DOM.tabs || []).find(b => b && b.dataset && b.dataset.panel && b.style.display !== 'none');
-    const safeTab = allowedBtn ? remembered : (fallbackBtn ? fallbackBtn.dataset.panel : 'home');
-    setActiveTab(safeTab);
+    const fallbackBtn = Array.from(DOM.tabs || []).find(b => b && b.dataset && b.style.display !== 'none');
+    const safeTab = allowedBtn ? remembered : (fallbackBtn ? normalizeDashboardTabName(fallbackBtn.dataset.panel) : 'home');
+    setActiveTab(safeTab || 'home');
   } catch {
     setActiveTab('home');
   }
@@ -1699,6 +1757,7 @@ function setupMobileMenu() {
 // ---------------------------------------------------------------------
 
 function setActiveTab(tabName) {
+  tabName = normalizeDashboardTabName(tabName) || 'home';
 
   // Access redirect (when approved by admin)
   if (state && state.me) {
@@ -1768,7 +1827,7 @@ function setActiveTab(tabName) {
   }
 
 
-  // 4. Persist last active tab (server-backed with local fallback)
+  // 4. Persist last active tab (used on reload and across devices)
   try { persistRememberedDashboardTab(tabName); } catch {}
 
   // 5. Lazy-load panel data when the tab becomes active
@@ -3073,45 +3132,6 @@ function isProfileCompleteForOnboarding(user) {
   return ageOk && cityOk && avatarOk;
 }
 
-
-const DASHBOARD_TAB_KEYS = new Set(['home', 'swipe', 'matches', 'premium', 'shortlist', 'concierge', 'settings', 'creators']);
-
-function normalizeRememberedDashboardTab(tabName) {
-  const tab = String(tabName || '').trim().toLowerCase();
-  return DASHBOARD_TAB_KEYS.has(tab) ? tab : '';
-}
-
-async function loadRememberedDashboardTab() {
-  try {
-    const data = await apiGet('/api/me/settings');
-    const tab = normalizeRememberedDashboardTab(data?.settings?.dashboard?.lastActiveTab || '');
-    if (tab) return tab;
-  } catch (_) {}
-  try {
-    return normalizeRememberedDashboardTab(localStorage.getItem('tm_activeTab') || 'home') || 'home';
-  } catch (_) {
-    return 'home';
-  }
-}
-
-function persistRememberedDashboardTab(tabName) {
-  const normalized = normalizeRememberedDashboardTab(tabName);
-  if (!normalized) return;
-  if (state.lastPersistedActiveTab === normalized) return;
-
-  state.lastPersistedActiveTab = normalized;
-
-  try { localStorage.setItem('tm_activeTab', normalized); } catch {}
-
-  apiPost('/api/me/settings', {
-    settings: {
-      dashboard: {
-        lastActiveTab: normalized
-      }
-    }
-  }).catch(() => {});
-}
-
 async function loadMe() {
   try {
     const data = await apiGet('/api/me');
@@ -3157,6 +3177,7 @@ async function loadMe() {
 
     state.me = user;
     state.prefs = prefs;
+    state.lastPersistedActiveTab = normalizeDashboardTabName(user?.settings?.dashboard?.lastActiveTab || '');
 
     const rawPlan = (user && (user.plan ?? user.planKey ?? user.tier ?? user.level ?? user.subscriptionTier ?? user.subscription ?? user.currentPlan)) || 'free';
     state.plan = normalizePlanKey(rawPlan);
@@ -3224,7 +3245,7 @@ function applyPlanNavGating() {
   });
 
   // If current active tab is not allowed anymore, jump to first allowed
-  const activeNow = state.activeTab || normalizeRememberedDashboardTab(state.lastPersistedActiveTab) || normalizeRememberedDashboardTab(localStorage.getItem('tm_activeTab')) || 'home';
+  const activeNow = normalizeDashboardTabName(state.activeTab) || normalizeDashboardTabName(getRememberedDashboardTab()) || 'home';
   if (!allowed.has(activeNow)) {
     const first = ['home', 'swipe', 'matches', 'premium', 'shortlist', 'concierge', 'settings', 'creators']
       .find(t => allowed.has(t)) || 'home';
