@@ -1153,10 +1153,14 @@ export async function initUI() {
   initGlobalSwipeBack();
 
   // 3. Render Sections (Backend-ready)
-  // Papalitan mo ito ng "await fetchFromBackend()" pagkatapos
-  renderStories([]);   
+  renderStories([]);
   renderMessages([]);
   renderAdmirers([]);
+  renderActiveNearby([]);
+  renderDailyPick(null);
+
+  // Load real home widgets from backend
+  await psLoadHomeWidgets(true);
 
   // 4. Tab Restoration
   const lastTab = localStorage.getItem("ps_last_tab") || "home";
@@ -1244,23 +1248,148 @@ function renderMessages(messages = []) {
 // 3. Render Admirers
 function renderAdmirers(admirers = []) {
     if (!PS_DOM.admirerContainer) return;
-    
-    if (admirers.length === 0) {
+
+    if (!Array.isArray(admirers) || admirers.length === 0) {
         PS_DOM.admirerContainer.innerHTML = `<div style="grid-column:span 3; text-align:center; color:#666; font-size:0.8rem;">No admirers yet. Boost your profile!</div>`;
-        if (PS_DOM.admirerCount) PS_DOM.admirerCount.innerText = "0";
+        if (PS_DOM.admirerCount) PS_DOM.admirerCount.innerText = "0 New";
         return;
     }
 
-    // Update the count badge
-    if (PS_DOM.admirerCount) PS_DOM.admirerCount.innerText = `${admirers.length} New`;
+    if (PS_DOM.admirerCount) {
+        PS_DOM.admirerCount.innerText = `${admirers.length} New`;
+    }
 
-    // Render cards with Lock Icon and Click-to-Upgrade interaction
-    PS_DOM.admirerContainer.innerHTML = admirers.map(a => `
-    <div class="ps-admirer-card" onclick="switchTab('premium')" style="cursor:pointer;">
-        <div class="ps-admirer-icon"><i class="fa-solid fa-lock"></i></div> <img class="ps-admirer-img" src="assets/images/truematch-mark.png" style="background:${a.color || getRandomColor()}">
-        <h4 style="margin:5px 0 0; font-size:0.85rem;">${a.name || 'Secret'}</h4>
-        <p class="ps-tiny ps-muted" style="margin:0;">${a.loc || 'Nearby'}</p>
-    </div>`).join("");
+    PS_DOM.admirerContainer.innerHTML = admirers.map((a) => {
+        const name = psEscapeHtml(_psSafeName(a.name || a.fullName || a.username || 'Member'));
+        const city = psEscapeHtml(String(a.city || a.loc || a.location || 'Nearby').trim() || 'Nearby');
+        const age = (a.age !== undefined && a.age !== null && String(a.age).trim() !== '') ? `, ${psEscapeHtml(String(a.age))}` : '';
+        const avatar = psEscapeHtml(String(a.photoUrl || a.avatarUrl || a.avatar || 'assets/images/truematch-mark.png'));
+        return `
+    <div class="ps-admirer-card" title="${name}">
+        <img class="ps-admirer-img" src="${avatar}" alt="${name}" onerror="this.src='assets/images/truematch-mark.png'" style="background:${a.color || getRandomColor()}">
+        <h4 style="margin:8px 0 0; font-size:0.85rem;">${name}</h4>
+        <p class="ps-tiny ps-muted" style="margin:0;">${city}${age}</p>
+    </div>`;
+    }).join("");
+}
+
+function renderActiveNearby(items = []) {
+  if (!PS_DOM.activeNearbyContainer) return;
+
+  if (!Array.isArray(items) || items.length === 0) {
+    PS_DOM.activeNearbyContainer.innerHTML = `<div style="grid-column:span 3; text-align:center; color:#666; font-size:0.82rem; padding:14px 8px;">No active members nearby right now.</div>`;
+    return;
+  }
+
+  PS_DOM.activeNearbyContainer.innerHTML = items.map((item) => {
+    const name = psEscapeHtml(_psSafeName(item.name || item.fullName || item.username || 'Member'));
+    const avatar = psEscapeHtml(String(item.photoUrl || item.avatarUrl || item.avatar || 'assets/images/truematch-mark.png'));
+    const city = psEscapeHtml(String(item.city || item.location || 'Nearby').trim() || 'Nearby');
+    const onlineLabel = item.isOnline ? 'Online now' : 'Recently active';
+
+    return `
+      <div class="ps-active-item" title="${name} • ${city}">
+        <img class="ps-active-img" src="${avatar}" alt="${name}" onerror="this.src='assets/images/truematch-mark.png'">
+        <div style="position:absolute; inset:auto 0 0 0; padding:8px; background:linear-gradient(to top, rgba(0,0,0,.78), rgba(0,0,0,0));">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+            <strong style="font-size:.8rem; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${name}</strong>
+            <span style="display:inline-flex; align-items:center; gap:5px; font-size:.66rem; color:${item.isOnline ? '#00ff88' : '#9be7ff'}; flex-shrink:0;">
+              <i class="fa-solid fa-circle" style="font-size:.45rem;"></i>${onlineLabel}
+            </span>
+          </div>
+          <div style="font-size:.68rem; color:#d4d7dd; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${city}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderDailyPick(profile) {
+  if (!PS_DOM.dailyPickContainer) return;
+
+  if (!profile) {
+    PS_DOM.dailyPickContainer.innerHTML = `
+      <div style="padding:18px; border:1px solid rgba(255,255,255,.08); border-radius:18px; background:rgba(255,255,255,.03); text-align:center; color:#9aa0a6;">
+        Daily Pick will appear here once we find a strong match for you.
+      </div>`;
+    return;
+  }
+
+  const name = psEscapeHtml(_psSafeName(profile.name || profile.fullName || profile.username || 'Member'));
+  const city = psEscapeHtml(String(profile.city || profile.location || 'Nearby').trim() || 'Nearby');
+  const avatar = psEscapeHtml(String(profile.photoUrl || profile.avatarUrl || profile.avatar || 'assets/images/truematch-mark.png'));
+  const age = (profile.age !== undefined && profile.age !== null && String(profile.age).trim() !== '') ? ` • ${psEscapeHtml(String(profile.age))}` : '';
+  const badge = profile.isOnline ? 'Online now' : "Today's Highlight";
+
+  PS_DOM.dailyPickContainer.innerHTML = `
+    <div style="display:flex; align-items:center; gap:16px; padding:18px; border:1px solid rgba(255,255,255,.08); border-radius:18px; background:linear-gradient(135deg, rgba(0,175,240,.15), rgba(255,255,255,.02));">
+      <img src="${avatar}" alt="${name}" onerror="this.src='assets/images/truematch-mark.png'" style="width:72px; height:72px; border-radius:20px; object-fit:cover; border:1px solid rgba(255,255,255,.12); background:#111; flex-shrink:0;">
+      <div style="min-width:0; flex:1;">
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+          <span style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:rgba(0,175,240,.15); color:#9be7ff; font-size:.7rem; font-weight:700; letter-spacing:.02em;">✨ ${badge}</span>
+        </div>
+        <h3 style="margin:0; font-size:1.05rem; color:#fff;">${name}</h3>
+        <p style="margin:6px 0 0; color:#c9d1d9; font-size:.88rem;">${city}${age}</p>
+      </div>
+    </div>`;
+}
+
+let _psHomeWidgetsLastFetched = 0;
+
+async function psLoadHomeWidgets(force = false) {
+  const now = Date.now();
+  if (!force && (now - _psHomeWidgetsLastFetched) < 5000) return;
+  _psHomeWidgetsLastFetched = now;
+
+  const admirerPromise = fetch(`${API_BASE}/api/me/admirers?limit=12`, {
+    method: 'GET',
+    credentials: 'include'
+  }).then(async (res) => {
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data || data.ok !== true) {
+      throw new Error((data && (data.error || data.message)) || 'Failed to load admirers.');
+    }
+    return {
+      items: Array.isArray(data.items) ? data.items : [],
+      count: Math.max(0, Number(data.count || 0))
+    };
+  });
+
+  const activePromise = fetch(`${API_BASE}/api/me/active-nearby?limit=9`, {
+    method: 'GET',
+    credentials: 'include'
+  }).then(async (res) => {
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data || data.ok !== true) {
+      throw new Error((data && (data.error || data.message)) || 'Failed to load active nearby.');
+    }
+    return Array.isArray(data.items) ? data.items : [];
+  });
+
+  const [admirersResult, activeResult] = await Promise.allSettled([admirerPromise, activePromise]);
+
+  let admirers = [];
+  let admirerCount = 0;
+  if (admirersResult.status === 'fulfilled') {
+    admirers = admirersResult.value.items;
+    admirerCount = admirersResult.value.count;
+  } else {
+    renderAdmirers([]);
+  }
+
+  let activeNearby = [];
+  if (activeResult.status === 'fulfilled') {
+    activeNearby = activeResult.value;
+  } else {
+    renderActiveNearby([]);
+  }
+
+  renderAdmirers(admirers);
+  if (PS_DOM.admirerCount) {
+    const countToShow = admirerCount || admirers.length;
+    PS_DOM.admirerCount.innerText = `${countToShow} New`;
+  }
+  renderActiveNearby(activeNearby);
+  renderDailyPick(admirers[0] || activeNearby[0] || null);
 }
 // ==========================================
 // 1. THE GLOBAL GESTURE ENGINE (Swipe Back)
@@ -2669,6 +2798,10 @@ function switchTab(panelName) {
   // Load Premium Society matches (isolated from dashboard matches)
   if (panelName === "matches") {
     psLoadMatches();
+  }
+
+  if (panelName === "home") {
+    psLoadHomeWidgets();
   }
 }
 
