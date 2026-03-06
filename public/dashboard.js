@@ -1129,7 +1129,7 @@ const NotificationsController = (() => {
                 }
 
                 // Close dropdown + refresh list/dot
-                try { closeNotifDropdown(); } catch (_) {}
+                try { if (DOM.notifDropdown) DOM.notifDropdown.classList.remove('is-visible'); } catch (_) {}
                 try { await load({ force: true }); } catch (_) {}
                 return;
               }
@@ -1203,60 +1203,6 @@ DOM.notifList.appendChild(row);
   return { load, render, markAllRead, invalidate, isOpen };
 })();
 
-function ensureNotifOverlay() {
-  let overlay = document.getElementById('notifOverlay');
-  if (overlay) return overlay;
-
-  overlay = document.createElement('div');
-  overlay.id = 'notifOverlay';
-  overlay.className = 'notif-overlay';
-  overlay.setAttribute('aria-hidden', 'true');
-  overlay.addEventListener('click', () => closeNotifDropdown());
-  document.body.appendChild(overlay);
-  return overlay;
-}
-
-function positionNotifDropdown() {
-  if (!DOM.btnNotifToggle || !DOM.notifDropdown) return;
-
-  const rect = DOM.btnNotifToggle.getBoundingClientRect();
-  const mobile = window.matchMedia('(max-width: 520px)').matches;
-  const top = Math.max(16, Math.round(rect.bottom + 12));
-
-  DOM.notifDropdown.style.top = `${top}px`;
-
-  if (mobile) {
-    DOM.notifDropdown.style.left = '50%';
-    DOM.notifDropdown.style.right = 'auto';
-    DOM.notifDropdown.style.transform = 'translateX(-50%)';
-    return;
-  }
-
-  const gutter = 16;
-  const width = Math.min(360, Math.max(280, window.innerWidth - (gutter * 2)));
-  let left = rect.right - width;
-  left = Math.max(gutter, Math.min(left, window.innerWidth - width - gutter));
-
-  DOM.notifDropdown.style.left = `${Math.round(left)}px`;
-  DOM.notifDropdown.style.right = 'auto';
-  DOM.notifDropdown.style.transform = 'none';
-}
-
-function openNotifDropdown() {
-  if (!DOM.notifDropdown) return;
-  ensureNotifOverlay();
-  document.body.classList.add('notif-open');
-  DOM.notifDropdown.classList.add('is-visible');
-  positionNotifDropdown();
-}
-
-function closeNotifDropdown() {
-  if (!DOM.notifDropdown) return;
-  DOM.notifDropdown.classList.remove('is-visible');
-  document.body.classList.remove('notif-open');
-  try { NotificationsController.invalidate(); } catch (_) {}
-}
-
 // ---------------------------------------------------------------------
 // EVENT LISTENERS
 // ---------------------------------------------------------------------
@@ -1293,8 +1239,6 @@ function setupEventListeners() {
 
   // 2. Notifications (Dashboard bell)
   if (DOM.btnNotifToggle && DOM.notifDropdown) {
-      ensureNotifOverlay();
-
       // Prevent inside clicks from closing the dropdown
       DOM.notifDropdown.addEventListener('click', (e) => e.stopPropagation());
 
@@ -1303,14 +1247,13 @@ function setupEventListeners() {
          e.stopPropagation();
 
          const willOpen = !DOM.notifDropdown.classList.contains('is-visible');
+         DOM.notifDropdown.classList.toggle('is-visible');
 
          if (willOpen) {
-           openNotifDropdown();
            try { NotificationsController.invalidate(); } catch (_) {}
            await NotificationsController.load({ force: true });
-           positionNotifDropdown();
          } else {
-           closeNotifDropdown();
+           try { NotificationsController.invalidate(); } catch (_) {}
          }
       });
 
@@ -1322,20 +1265,9 @@ function setupEventListeners() {
         });
       }
 
-      window.addEventListener('resize', () => {
-        if (NotificationsController.isOpen && NotificationsController.isOpen()) {
-          positionNotifDropdown();
-        }
-      }, { passive: true });
-
-      window.addEventListener('scroll', () => {
-        if (NotificationsController.isOpen && NotificationsController.isOpen()) {
-          positionNotifDropdown();
-        }
-      }, { passive: true });
-
       window.addEventListener('click', () => {
-          closeNotifDropdown();
+          DOM.notifDropdown.classList.remove('is-visible');
+          try { NotificationsController.invalidate(); } catch (_) {}
       });
   }
 
@@ -2003,11 +1935,10 @@ function renderAdmirersPanel(payload) {
     }
     DOM.admirerContainer.innerHTML = html;
 
-    // Clicking any row -> Premium tab
+    // Clicking any locked row -> Tier page upgrade flow
     DOM.admirerContainer.querySelectorAll('.admirer-row').forEach(row => {
       row.addEventListener('click', () => {
-        const btn = document.querySelector('button[data-panel="premium"]');
-        if (btn) btn.click();
+        goToUpgrade();
       });
     });
     return;
@@ -3954,7 +3885,7 @@ async function handlePremiumApplicationSubmit() {
   }
 
   // Intentional product rule: only Elite (Tier 2) and Concierge (Tier 3) can apply from the dashboard.
-  const planKey = String(state.me.planKey || '').toLowerCase();
+  const planKey = normalizePlanKey(state.plan || state.me?.planKey || state.me?.plan || state.me?.tier || state.me?.subscriptionTier || 'free');
   const isEligibleByUiRule = (planKey === 'tier2' || planKey === 'tier3');
   if (!isEligibleByUiRule) {
     showToast('Premium Society applications are available for Elite (Tier 2) and Concierge (Tier 3) members only.', 'error');
