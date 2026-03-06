@@ -4494,5 +4494,3 @@ if (lastLimit === null) {
 
 // ONE SINGLE ENTRY POINT
 window.addEventListener('DOMContentLoaded', initApp);
-
-
