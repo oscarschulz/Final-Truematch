@@ -179,7 +179,7 @@ async function fileToOptimizedSquareDataUrl(file, maxSize = 768, quality = 0.85,
   }
 }
 
-const state = { me: null, prefs: null, plan: 'free', activeTab: 'home', lastPersistedActiveTab: '', isLoading: false, selectedAvatarDataUrl: null, homeCache: { admirersTs: 0, nearbyTs: 0 }, homeLoading: { admirers: false, nearby: false } };
+const state = { me: null, prefs: null, plan: 'free', activeTab: 'home', isLoading: false, selectedAvatarDataUrl: null, homeCache: { admirersTs: 0, nearbyTs: 0 }, homeLoading: { admirers: false, nearby: false } };
 
 // --- Chat (modal) runtime state (polling + smart scroll) ---
 state.chatPollTimer = null;
@@ -223,35 +223,6 @@ function closeAvatarLightbox() {
   document.documentElement.style.overflow = '';
   document.body.style.overflow = '';
 }
-
-function getPhotoUrlFromElement(el) {
-  if (!el) return '';
-  const direct = String(el.dataset?.photoUrl || el.getAttribute?.('data-photo-url') || '').trim();
-  if (direct) return direct;
-
-  const nearest = el.closest?.('[data-photo-url]');
-  const nearestUrl = String(nearest?.dataset?.photoUrl || nearest?.getAttribute?.('data-photo-url') || '').trim();
-  if (nearestUrl) return nearestUrl;
-
-  if (el.tagName && el.tagName.toLowerCase() === 'img') {
-    const src = String(el.getAttribute('src') || '').trim();
-    if (src && !/truematch-mark\.png(?:$|[?#])/i.test(src)) return src;
-  }
-
-  const bg = String(el.style?.backgroundImage || '').trim();
-  const m = bg.match(/url\((['"]?)(.*?)\1\)/i);
-  if (m && m[2]) return m[2];
-
-  return '';
-}
-
-function openProfilePhotoViewerFromElement(el) {
-  const photoUrl = getPhotoUrlFromElement(el);
-  if (!photoUrl) return false;
-  openAvatarLightbox(photoUrl);
-  return true;
-}
-
 
 function ensureConciergeTab() {
   const tabbar = document.getElementById('tabbar');
@@ -852,64 +823,6 @@ function ensureHomeMobileWidgets() {
 }
 
 
-
-const DASHBOARD_TAB_ORDER = ['home', 'swipe', 'matches', 'premium', 'shortlist', 'concierge', 'settings', 'creators'];
-
-function normalizeDashboardTabName(tabName) {
-  const normalized = String(tabName || '').trim().toLowerCase();
-  return DASHBOARD_TAB_ORDER.includes(normalized) ? normalized : '';
-}
-
-function getRememberedDashboardTab() {
-  const serverRemembered = normalizeDashboardTabName(
-    state?.me?.settings?.dashboard?.lastActiveTab || state?.lastPersistedActiveTab || ''
-  );
-  if (serverRemembered) return serverRemembered;
-
-  try {
-    return normalizeDashboardTabName(localStorage.getItem('tm_activeTab') || '') || 'home';
-  } catch {
-    return 'home';
-  }
-}
-
-async function persistRememberedDashboardTab(tabName) {
-  const normalized = normalizeDashboardTabName(tabName);
-  if (!normalized) return;
-
-  try { localStorage.setItem('tm_activeTab', normalized); } catch {}
-
-  if (state.lastPersistedActiveTab === normalized) return;
-  state.lastPersistedActiveTab = normalized;
-
-  try {
-    const res = await apiPost('/api/me/settings', {
-      settings: {
-        dashboard: {
-          lastActiveTab: normalized
-        }
-      }
-    });
-
-    if (res && res.ok && state.me) {
-      const prevSettings = (state.me.settings && typeof state.me.settings === 'object') ? state.me.settings : {};
-      const prevDashboard = (prevSettings.dashboard && typeof prevSettings.dashboard === 'object') ? prevSettings.dashboard : {};
-      state.me = {
-        ...state.me,
-        settings: {
-          ...prevSettings,
-          dashboard: {
-            ...prevDashboard,
-            lastActiveTab: normalized
-          }
-        }
-      };
-    }
-  } catch {
-    // localStorage fallback is already written above
-  }
-}
-
 // ---------------------------------------------------------------------
 // CORE INIT
 // ---------------------------------------------------------------------
@@ -934,11 +847,11 @@ await loadHomePanels(true);
 
   // Restore last opened tab if allowed for this plan
   try {
-    const remembered = normalizeDashboardTabName(getRememberedDashboardTab()) || 'home';
+    const remembered = await loadRememberedDashboardTab();
     const allowedBtn = Array.from(DOM.tabs || []).find(b => b && b.dataset && b.dataset.panel === remembered && b.style.display !== 'none');
-    const fallbackBtn = Array.from(DOM.tabs || []).find(b => b && b.dataset && b.style.display !== 'none');
-    const safeTab = allowedBtn ? remembered : (fallbackBtn ? normalizeDashboardTabName(fallbackBtn.dataset.panel) : 'home');
-    setActiveTab(safeTab || 'home');
+    const fallbackBtn = Array.from(DOM.tabs || []).find(b => b && b.dataset && b.dataset.panel && b.style.display !== 'none');
+    const safeTab = allowedBtn ? remembered : (fallbackBtn ? fallbackBtn.dataset.panel : 'home');
+    setActiveTab(safeTab);
   } catch {
     setActiveTab('home');
   }
@@ -1236,6 +1149,69 @@ DOM.notifList.appendChild(row);
 // EVENT LISTENERS
 // ---------------------------------------------------------------------
 
+
+function ensureNotifOverlay() {
+  let overlay = document.getElementById('notifOverlay');
+  if (overlay) return overlay;
+
+  overlay = document.createElement('div');
+  overlay.id = 'notifOverlay';
+  overlay.className = 'notif-overlay';
+  overlay.setAttribute('aria-hidden', 'true');
+  overlay.addEventListener('click', () => closeNotifDropdown());
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function ensureNotifDropdownPortal() {
+  if (!DOM.notifDropdown) return;
+  if (DOM.notifDropdown.parentElement !== document.body) {
+    document.body.appendChild(DOM.notifDropdown);
+  }
+}
+
+function positionNotifDropdown() {
+  if (!DOM.btnNotifToggle || !DOM.notifDropdown) return;
+
+  const rect = DOM.btnNotifToggle.getBoundingClientRect();
+  const mobile = window.matchMedia('(max-width: 520px)').matches;
+  const top = Math.max(16, Math.round(rect.bottom + 12));
+
+  DOM.notifDropdown.style.top = `${top}px`;
+
+  if (mobile) {
+    DOM.notifDropdown.style.left = '50%';
+    DOM.notifDropdown.style.right = 'auto';
+    DOM.notifDropdown.style.transform = 'translateX(-50%)';
+    return;
+  }
+
+  const gutter = 16;
+  const width = Math.min(360, Math.max(280, window.innerWidth - (gutter * 2)));
+  let left = rect.right - width;
+  left = Math.max(gutter, Math.min(left, window.innerWidth - width - gutter));
+
+  DOM.notifDropdown.style.left = `${Math.round(left)}px`;
+  DOM.notifDropdown.style.right = 'auto';
+  DOM.notifDropdown.style.transform = 'none';
+}
+
+function openNotifDropdown() {
+  if (!DOM.notifDropdown) return;
+  ensureNotifDropdownPortal();
+  ensureNotifOverlay();
+  document.body.classList.add('notif-open');
+  DOM.notifDropdown.classList.add('is-visible');
+  positionNotifDropdown();
+}
+
+function closeNotifDropdown() {
+  if (!DOM.notifDropdown) return;
+  DOM.notifDropdown.classList.remove('is-visible');
+  document.body.classList.remove('notif-open');
+  try { NotificationsController.invalidate(); } catch (_) {}
+}
+
 function setupEventListeners() {
   // 1. Tabs
   DOM.tabs.forEach(tab => {
@@ -1268,6 +1244,9 @@ function setupEventListeners() {
 
   // 2. Notifications (Dashboard bell)
   if (DOM.btnNotifToggle && DOM.notifDropdown) {
+      ensureNotifDropdownPortal();
+      ensureNotifOverlay();
+
       // Prevent inside clicks from closing the dropdown
       DOM.notifDropdown.addEventListener('click', (e) => e.stopPropagation());
 
@@ -1276,13 +1255,14 @@ function setupEventListeners() {
          e.stopPropagation();
 
          const willOpen = !DOM.notifDropdown.classList.contains('is-visible');
-         DOM.notifDropdown.classList.toggle('is-visible');
 
          if (willOpen) {
+           openNotifDropdown();
            try { NotificationsController.invalidate(); } catch (_) {}
            await NotificationsController.load({ force: true });
+           positionNotifDropdown();
          } else {
-           try { NotificationsController.invalidate(); } catch (_) {}
+           closeNotifDropdown();
          }
       });
 
@@ -1294,24 +1274,20 @@ function setupEventListeners() {
         });
       }
 
+      window.addEventListener('resize', () => {
+        if (DOM.notifDropdown.classList.contains('is-visible')) positionNotifDropdown();
+      });
+      window.addEventListener('scroll', () => {
+        if (DOM.notifDropdown.classList.contains('is-visible')) positionNotifDropdown();
+      }, { passive: true });
+
       window.addEventListener('click', () => {
-          DOM.notifDropdown.classList.remove('is-visible');
-          try { NotificationsController.invalidate(); } catch (_) {}
+          closeNotifDropdown();
       });
   }
 
   // 4. Matches & Chat Click
   const handleMatchClick = (e) => {
-      const photoTrigger = e.target.closest('.js-open-photo');
-      if (photoTrigger) {
-          const opened = openProfilePhotoViewerFromElement(photoTrigger);
-          if (opened) {
-              e.preventDefault();
-              e.stopPropagation();
-              return;
-          }
-      }
-
       const btn = e.target.closest('.btn-chat-action');
       const card = e.target.closest('.match-card');
       const item = e.target.closest('.story-item');
@@ -1453,26 +1429,6 @@ function setupEventListeners() {
     avatarZoomTarget.addEventListener('click', (e) => {
       e.preventDefault();
       openAvatarLightbox(DOM.dlgAvatarPreview.src);
-    });
-  }
-
-  // Own + other-user photo viewer hooks
-  if (DOM.sAvatar) {
-    DOM.sAvatar.addEventListener('click', (e) => {
-      const opened = openProfilePhotoViewerFromElement(DOM.sAvatar);
-      if (opened) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    });
-  }
-  if (DOM.chatUserImg) {
-    DOM.chatUserImg.addEventListener('click', (e) => {
-      const opened = openProfilePhotoViewerFromElement(DOM.chatUserImg);
-      if (opened) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
     });
   }
 
@@ -1816,7 +1772,6 @@ function setupMobileMenu() {
 // ---------------------------------------------------------------------
 
 function setActiveTab(tabName) {
-  tabName = normalizeDashboardTabName(tabName) || 'home';
 
   // Access redirect (when approved by admin)
   if (state && state.me) {
@@ -1886,7 +1841,7 @@ function setActiveTab(tabName) {
   }
 
 
-  // 4. Persist last active tab (used on reload and across devices)
+  // 4. Persist last active tab (server-backed with local fallback)
   try { persistRememberedDashboardTab(tabName); } catch {}
 
   // 5. Lazy-load panel data when the tab becomes active
@@ -2257,10 +2212,9 @@ function updateMatchPreview(peerEmail, lastText, { bumpToTop = true } = {}) {
   const card = cards.find(c => String(c.dataset.email || '').trim().toLowerCase() === email);
   if (!card) return;
 
-  // Update stored preview (used by click handler + search)
+  // Keep last message stored for click/search behavior, but render presence-based status on the card.
   card.dataset.msg = text;
-  const lastEl = card.querySelector('.match-last');
-  if (lastEl) lastEl.textContent = text;
+  renderMatchCardPresence(card);
 
   // Optional: move active conversation to top (like real inbox behavior)
   if (bumpToTop && card.parentElement) {
@@ -2482,9 +2436,6 @@ async function openChatModal(name, imgColor, lastMsg, peerEmail, peerPhotoUrl, p
       avatarEl.src = hasPhoto ? state.currentChatPeerPhoto : 'assets/images/truematch-mark.png';
       avatarEl.style.backgroundColor = hasPhoto ? 'transparent' : (imgColor || '#3AAFB9');
       avatarEl.style.objectFit = hasPhoto ? 'cover' : 'contain';
-      avatarEl.classList.toggle('photo-viewable', hasPhoto);
-      if (hasPhoto) avatarEl.dataset.photoUrl = state.currentChatPeerPhoto;
-      else delete avatarEl.dataset.photoUrl;
     } else {
       avatarEl.style.background = imgColor || '#3AAFB9';
       avatarEl.style.backgroundImage = hasPhoto ? `url('${state.currentChatPeerPhoto}')` : 'none';
@@ -2631,7 +2582,7 @@ function renderMatchesFromApi(matches, kpi) {
         return `
           <div class="story-item" data-name="${safeName}" data-email="${m.email || ''}" data-photo-url="${photoUrl}" data-last-seen-at-ms="${m.lastSeenAtMs || 0}">
             <div class="story-ring">
-              <div class="story-img ${photoUrl ? 'photo-viewable js-open-photo' : ''}" data-photo-url="${photoUrl}" aria-label="View ${safeName} photo" style="${photoUrl ? `background-image:url('${photoUrl}')` : ''}"></div>
+              <div class="story-img" style="${photoUrl ? `background-image:url('${photoUrl}')` : ''}"></div>
             </div>
             <div class="story-name">${safeName}</div>
           </div>
@@ -2658,14 +2609,15 @@ function renderMatchesFromApi(matches, kpi) {
       const seedColor = getRandomColor();
       const unreadBadge = `<div class="match-unread-badge" style="position:absolute; top:12px; right:12px; width:10px; height:10px; border-radius:999px; background:#3AAFB9; box-shadow:0 0 0 4px rgba(58,175,185,0.15); ${hasUnread ? '' : 'display:none;'}"></div>`;
       const lastStyle = hasUnread ? 'font-weight:700; color:#fff;' : '';
+      const presenceText = getMatchPresenceStatusText(Number(m.lastSeenAtMs || 0));
       return `
         <div class="match-card" data-name="${safeName}" data-email="${m.email || ''}" data-photo-url="${photoUrl}" data-last-seen-at-ms="${m.lastSeenAtMs || 0}" data-msg="${msg}" data-unread="${hasUnread ? '1' : '0'}">
           ${unreadBadge}
-          <div class="match-img ${photoUrl ? 'photo-viewable js-open-photo' : ''}" data-photo-url="${photoUrl}" aria-label="View ${safeName} photo" style="background-color:${seedColor}; ${photoUrl ? `background-image:url('${photoUrl}'); background-size:cover; background-position:center;` : ''}"></div>
+          <div class="match-img" style="background-color:${seedColor}; ${photoUrl ? `background-image:url('${photoUrl}'); background-size:cover; background-position:center;` : ''}"></div>
           <div class="match-info">
             <div class="match-name">${safeName}</div>
             <div class="match-sub">${safeSub}</div>
-            <div class="match-last" style="${lastStyle}">${msg || 'Tap to chat'}</div>
+            <div class="match-last" style="${lastStyle}">${presenceText}</div>
           </div>
         </div>
       `;
@@ -3194,6 +3146,45 @@ function isProfileCompleteForOnboarding(user) {
   return ageOk && cityOk && avatarOk;
 }
 
+
+const DASHBOARD_TAB_KEYS = new Set(['home', 'swipe', 'matches', 'premium', 'shortlist', 'concierge', 'settings', 'creators']);
+
+function normalizeRememberedDashboardTab(tabName) {
+  const tab = String(tabName || '').trim().toLowerCase();
+  return DASHBOARD_TAB_KEYS.has(tab) ? tab : '';
+}
+
+async function loadRememberedDashboardTab() {
+  try {
+    const data = await apiGet('/api/me/settings');
+    const tab = normalizeRememberedDashboardTab(data?.settings?.dashboard?.lastActiveTab || '');
+    if (tab) return tab;
+  } catch (_) {}
+  try {
+    return normalizeRememberedDashboardTab(localStorage.getItem('tm_activeTab') || 'home') || 'home';
+  } catch (_) {
+    return 'home';
+  }
+}
+
+function persistRememberedDashboardTab(tabName) {
+  const normalized = normalizeRememberedDashboardTab(tabName);
+  if (!normalized) return;
+  if (state.lastPersistedActiveTab === normalized) return;
+
+  state.lastPersistedActiveTab = normalized;
+
+  try { localStorage.setItem('tm_activeTab', normalized); } catch {}
+
+  apiPost('/api/me/settings', {
+    settings: {
+      dashboard: {
+        lastActiveTab: normalized
+      }
+    }
+  }).catch(() => {});
+}
+
 async function loadMe() {
   try {
     const data = await apiGet('/api/me');
@@ -3239,7 +3230,6 @@ async function loadMe() {
 
     state.me = user;
     state.prefs = prefs;
-    state.lastPersistedActiveTab = normalizeDashboardTabName(user?.settings?.dashboard?.lastActiveTab || '');
 
     const rawPlan = (user && (user.plan ?? user.planKey ?? user.tier ?? user.level ?? user.subscriptionTier ?? user.subscription ?? user.currentPlan)) || 'free';
     state.plan = normalizePlanKey(rawPlan);
@@ -3307,7 +3297,7 @@ function applyPlanNavGating() {
   });
 
   // If current active tab is not allowed anymore, jump to first allowed
-  const activeNow = normalizeDashboardTabName(state.activeTab) || normalizeDashboardTabName(getRememberedDashboardTab()) || 'home';
+  const activeNow = state.activeTab || normalizeRememberedDashboardTab(state.lastPersistedActiveTab) || normalizeRememberedDashboardTab(localStorage.getItem('tm_activeTab')) || 'home';
   if (!allowed.has(activeNow)) {
     const first = ['home', 'swipe', 'matches', 'premium', 'shortlist', 'concierge', 'settings', 'creators']
       .find(t => allowed.has(t)) || 'home';
@@ -3371,12 +3361,7 @@ function renderSettingsDisplay(user, prefs) {
     const rawEmail = user?.email || '';
     DOM.sEmailDisplay.textContent = maskEmail(rawEmail) || '—';
   }
-  if (DOM.sAvatar) {
-    DOM.sAvatar.src = user?.avatarUrl || 'assets/images/truematch-mark.png';
-    DOM.sAvatar.classList.toggle('photo-viewable', !!(user?.avatarUrl));
-    if (user?.avatarUrl) DOM.sAvatar.dataset.photoUrl = user.avatarUrl;
-    else delete DOM.sAvatar.dataset.photoUrl;
-  }
+  if (DOM.sAvatar) DOM.sAvatar.src = user?.avatarUrl || 'assets/images/truematch-mark.png';
 
   // Profile fields (matches Preferences "Your profile")
   if (DOM.dispCity) DOM.dispCity.textContent = user?.city || '—';
@@ -4471,5 +4456,3 @@ if (lastLimit === null) {
 
 // ONE SINGLE ENTRY POINT
 window.addEventListener('DOMContentLoaded', initApp);
-
-
