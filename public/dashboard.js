@@ -8,6 +8,62 @@ import { apiGet, apiPost, apiUpdateProfile, apiSavePrefs } from './tm-api.js';
 
 const DAILY_SWIPE_LIMIT = 20; 
 
+const TM_ACTIVE_TAB_STORAGE_KEY = 'tm_activeTab';
+const TM_ALLOWED_DASHBOARD_TABS = new Set(['home', 'swipe', 'matches', 'premium', 'shortlist', 'concierge', 'settings', 'creators']);
+
+function normalizeDashboardTabName(tabName) {
+  const v = String(tabName || '').trim().toLowerCase();
+  return TM_ALLOWED_DASHBOARD_TABS.has(v) ? v : 'home';
+}
+
+function getLocalRememberedActiveTab() {
+  try {
+    return normalizeDashboardTabName(localStorage.getItem(TM_ACTIVE_TAB_STORAGE_KEY) || 'home');
+  } catch {
+    return 'home';
+  }
+}
+
+function saveLocalRememberedActiveTab(tabName) {
+  try { localStorage.setItem(TM_ACTIVE_TAB_STORAGE_KEY, normalizeDashboardTabName(tabName)); } catch {}
+}
+
+async function loadServerRememberedActiveTab() {
+  try {
+    const res = await apiGet('/api/me/settings');
+    if (!res || !res.ok) return '';
+    const settings = (res.settings && typeof res.settings === 'object') ? res.settings : {};
+    const remembered = settings?.dashboard?.lastActiveTab ?? settings?.lastActiveTab ?? '';
+    const safe = normalizeDashboardTabName(remembered);
+    if (safe) {
+      state.lastPersistedActiveTab = safe;
+      state.rememberedActiveTab = safe;
+      saveLocalRememberedActiveTab(safe);
+      return safe;
+    }
+    return '';
+  } catch {
+    return '';
+  }
+}
+
+function persistRememberedActiveTab(tabName) {
+  const safe = normalizeDashboardTabName(tabName);
+  saveLocalRememberedActiveTab(safe);
+
+  if (state.lastPersistedActiveTab === safe) return;
+  state.lastPersistedActiveTab = safe;
+
+  Promise.resolve(apiPost('/api/me/settings', {
+    settings: {
+      dashboard: {
+        lastActiveTab: safe
+      }
+    }
+  })).catch(() => {});
+}
+
+
 // Creators application gate (feature flag)
 // Default is CLOSED. You can toggle WITHOUT redeploy via localStorage:
 //
@@ -844,14 +900,17 @@ await loadHomePanels(true);
   setupEventListeners();
   setupMobileMenu();
 
-  // Restore last opened tab if allowed for this plan
+  // Restore last opened tab (server-backed first, then local fallback)
   try {
-    const remembered = localStorage.getItem('tm_activeTab') || 'home';
+    const serverRemembered = await loadServerRememberedActiveTab();
+    const remembered = normalizeDashboardTabName(serverRemembered || getLocalRememberedActiveTab() || 'home');
     const allowedBtn = Array.from(DOM.tabs || []).find(b => b && b.dataset && b.dataset.panel === remembered && b.style.display !== 'none');
     const fallbackBtn = Array.from(DOM.tabs || []).find(b => b && b.dataset && b.style.display !== 'none');
-    const safeTab = allowedBtn ? remembered : (fallbackBtn ? fallbackBtn.dataset.panel : 'home');
+    const safeTab = normalizeDashboardTabName(allowedBtn ? remembered : (fallbackBtn ? fallbackBtn.dataset.panel : 'home'));
+    state.rememberedActiveTab = safeTab;
     setActiveTab(safeTab);
   } catch {
+    state.rememberedActiveTab = 'home';
     setActiveTab('home');
   }
 
@@ -1643,7 +1702,9 @@ function setActiveTab(tabName) {
       return;
     }
   }
+  tabName = normalizeDashboardTabName(tabName);
   state.activeTab = tabName;
+  state.rememberedActiveTab = tabName;
   // Creators watcher should only run while user is on Creators tab.
   if (tabName === 'creators') startCreatorApprovalWatcher();
   else stopCreatorApprovalWatcher();
@@ -1698,8 +1759,8 @@ function setActiveTab(tabName) {
   }
 
 
-  // 4. Persist last active tab (used on reload)
-  try { localStorage.setItem('tm_activeTab', tabName); } catch {}
+  // 4. Persist last active tab (server-backed + local fallback)
+  persistRememberedActiveTab(tabName);
 
   // 5. Lazy-load panel data when the tab becomes active
   try { onPanelActivated(tabName); } catch {}
@@ -3015,7 +3076,7 @@ function applyPlanNavGating() {
   });
 
   // If current active tab is not allowed anymore, jump to first allowed
-  const activeNow = state.activeTab || localStorage.getItem('tm_activeTab') || 'home';
+  const activeNow = normalizeDashboardTabName(state.activeTab || state.rememberedActiveTab || getLocalRememberedActiveTab() || 'home');
   if (!allowed.has(activeNow)) {
     const first = ['home', 'swipe', 'matches', 'premium', 'shortlist', 'concierge', 'settings', 'creators']
       .find(t => allowed.has(t)) || 'home';

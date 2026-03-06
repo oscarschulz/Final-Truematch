@@ -5276,6 +5276,23 @@ app.post('/api/me/password', async (req, res) => {
   }
 });
 
+// Read settings used by Settings UI (persisted cross-device)
+app.get('/api/me/settings', authMiddleware, async (req, res) => {
+  try {
+    const meEmail = _normalizeEmail((req.user && req.user.email) || '');
+    if (!meEmail) return res.status(401).json({ ok: false, message: 'Not authenticated' });
+
+    const meDoc = await findUserByEmail(meEmail);
+    if (!meDoc) return res.status(404).json({ ok: false, message: 'User not found' });
+
+    const settings = (meDoc.settings && typeof meDoc.settings === 'object') ? meDoc.settings : {};
+    return res.json({ ok: true, settings });
+  } catch (e) {
+    console.error('GET /api/me/settings error', e);
+    return res.status(500).json({ ok: false, message: 'Failed to load settings' });
+  }
+});
+
 // Update settings used by Settings UI (persisted cross-device)
 app.post('/api/me/settings', authMiddleware, async (req, res) => {
   try {
@@ -5291,8 +5308,10 @@ app.post('/api/me/settings', authMiddleware, async (req, res) => {
     if (body.maxAge !== undefined) incoming.maxAge = Number(body.maxAge || 0);
     if (body.theme !== undefined) incoming.theme = safeStr(body.theme || '');
     if (body.language !== undefined) incoming.language = safeStr(body.language || '');
+    if (body.lastActiveTab !== undefined) incoming.lastActiveTab = safeStr(body.lastActiveTab || '').toLowerCase();
     if (body.privacy && typeof body.privacy === 'object') incoming.privacy = body.privacy;
     if (body.notifications && typeof body.notifications === 'object') incoming.notifications = body.notifications;
+    if (body.dashboard && typeof body.dashboard === 'object') incoming.dashboard = body.dashboard;
 
     // Normalize numeric settings
     if (incoming.distanceKm !== undefined) {
@@ -5318,6 +5337,27 @@ app.post('/api/me/settings', authMiddleware, async (req, res) => {
     }
     if (incoming.notifications && typeof incoming.notifications === 'object') {
       next.notifications = { ...(prev.notifications || {}), ...(incoming.notifications || {}) };
+    }
+    if (incoming.dashboard && typeof incoming.dashboard === 'object') {
+      next.dashboard = { ...(prev.dashboard || {}), ...(incoming.dashboard || {}) };
+    }
+
+    const allowedDashboardTabs = new Set(['home', 'swipe', 'matches', 'premium', 'shortlist', 'concierge', 'settings', 'creators']);
+    if (Object.prototype.hasOwnProperty.call(incoming, 'lastActiveTab')) {
+      const safeTab = String(incoming.lastActiveTab || '').trim().toLowerCase();
+      if (!allowedDashboardTabs.has(safeTab)) {
+        return res.status(400).json({ ok: false, message: 'invalid_last_active_tab' });
+      }
+      next.dashboard = { ...(next.dashboard || {}), lastActiveTab: safeTab };
+      delete next.lastActiveTab;
+    }
+    if (next.dashboard && Object.prototype.hasOwnProperty.call(next.dashboard, 'lastActiveTab')) {
+      const safeTab = String(next.dashboard.lastActiveTab || '').trim().toLowerCase();
+      if (!allowedDashboardTabs.has(safeTab)) {
+        delete next.dashboard.lastActiveTab;
+      } else {
+        next.dashboard.lastActiveTab = safeTab;
+      }
     }
 
     const nowMs = Date.now();
