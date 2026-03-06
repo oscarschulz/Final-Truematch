@@ -179,7 +179,7 @@ async function fileToOptimizedSquareDataUrl(file, maxSize = 768, quality = 0.85,
   }
 }
 
-const state = { me: null, prefs: null, plan: 'free', activeTab: 'home', lastPersistedActiveTab: '', isLoading: false, selectedAvatarDataUrl: null, homeCache: { admirersTs: 0, nearbyTs: 0 }, homeLoading: { admirers: false, nearby: false } };
+const state = { me: null, prefs: null, plan: 'free', activeTab: 'home', isLoading: false, selectedAvatarDataUrl: null, homeCache: { admirersTs: 0, nearbyTs: 0 }, homeLoading: { admirers: false, nearby: false } };
 
 // --- Chat (modal) runtime state (polling + smart scroll) ---
 state.chatPollTimer = null;
@@ -823,64 +823,6 @@ function ensureHomeMobileWidgets() {
 }
 
 
-
-const DASHBOARD_TAB_ORDER = ['home', 'swipe', 'matches', 'premium', 'shortlist', 'concierge', 'settings', 'creators'];
-
-function normalizeDashboardTabName(tabName) {
-  const normalized = String(tabName || '').trim().toLowerCase();
-  return DASHBOARD_TAB_ORDER.includes(normalized) ? normalized : '';
-}
-
-function getRememberedDashboardTab() {
-  const serverRemembered = normalizeDashboardTabName(
-    state?.me?.settings?.dashboard?.lastActiveTab || state?.lastPersistedActiveTab || ''
-  );
-  if (serverRemembered) return serverRemembered;
-
-  try {
-    return normalizeDashboardTabName(localStorage.getItem('tm_activeTab') || '') || 'home';
-  } catch {
-    return 'home';
-  }
-}
-
-async function persistRememberedDashboardTab(tabName) {
-  const normalized = normalizeDashboardTabName(tabName);
-  if (!normalized) return;
-
-  try { localStorage.setItem('tm_activeTab', normalized); } catch {}
-
-  if (state.lastPersistedActiveTab === normalized) return;
-  state.lastPersistedActiveTab = normalized;
-
-  try {
-    const res = await apiPost('/api/me/settings', {
-      settings: {
-        dashboard: {
-          lastActiveTab: normalized
-        }
-      }
-    });
-
-    if (res && res.ok && state.me) {
-      const prevSettings = (state.me.settings && typeof state.me.settings === 'object') ? state.me.settings : {};
-      const prevDashboard = (prevSettings.dashboard && typeof prevSettings.dashboard === 'object') ? prevSettings.dashboard : {};
-      state.me = {
-        ...state.me,
-        settings: {
-          ...prevSettings,
-          dashboard: {
-            ...prevDashboard,
-            lastActiveTab: normalized
-          }
-        }
-      };
-    }
-  } catch {
-    // localStorage fallback is already written above
-  }
-}
-
 // ---------------------------------------------------------------------
 // CORE INIT
 // ---------------------------------------------------------------------
@@ -905,11 +847,11 @@ await loadHomePanels(true);
 
   // Restore last opened tab if allowed for this plan
   try {
-    const remembered = normalizeDashboardTabName(getRememberedDashboardTab()) || 'home';
+    const remembered = await loadRememberedDashboardTab();
     const allowedBtn = Array.from(DOM.tabs || []).find(b => b && b.dataset && b.dataset.panel === remembered && b.style.display !== 'none');
-    const fallbackBtn = Array.from(DOM.tabs || []).find(b => b && b.dataset && b.style.display !== 'none');
-    const safeTab = allowedBtn ? remembered : (fallbackBtn ? normalizeDashboardTabName(fallbackBtn.dataset.panel) : 'home');
-    setActiveTab(safeTab || 'home');
+    const fallbackBtn = Array.from(DOM.tabs || []).find(b => b && b.dataset && b.dataset.panel && b.style.display !== 'none');
+    const safeTab = allowedBtn ? remembered : (fallbackBtn ? fallbackBtn.dataset.panel : 'home');
+    setActiveTab(safeTab);
   } catch {
     setActiveTab('home');
   }
@@ -1207,6 +1149,69 @@ DOM.notifList.appendChild(row);
 // EVENT LISTENERS
 // ---------------------------------------------------------------------
 
+
+function ensureNotifOverlay() {
+  let overlay = document.getElementById('notifOverlay');
+  if (overlay) return overlay;
+
+  overlay = document.createElement('div');
+  overlay.id = 'notifOverlay';
+  overlay.className = 'notif-overlay';
+  overlay.setAttribute('aria-hidden', 'true');
+  overlay.addEventListener('click', () => closeNotifDropdown());
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function ensureNotifDropdownPortal() {
+  if (!DOM.notifDropdown) return;
+  if (DOM.notifDropdown.parentElement !== document.body) {
+    document.body.appendChild(DOM.notifDropdown);
+  }
+}
+
+function positionNotifDropdown() {
+  if (!DOM.btnNotifToggle || !DOM.notifDropdown) return;
+
+  const rect = DOM.btnNotifToggle.getBoundingClientRect();
+  const mobile = window.matchMedia('(max-width: 520px)').matches;
+  const top = Math.max(16, Math.round(rect.bottom + 12));
+
+  DOM.notifDropdown.style.top = `${top}px`;
+
+  if (mobile) {
+    DOM.notifDropdown.style.left = '50%';
+    DOM.notifDropdown.style.right = 'auto';
+    DOM.notifDropdown.style.transform = 'translateX(-50%)';
+    return;
+  }
+
+  const gutter = 16;
+  const width = Math.min(360, Math.max(280, window.innerWidth - (gutter * 2)));
+  let left = rect.right - width;
+  left = Math.max(gutter, Math.min(left, window.innerWidth - width - gutter));
+
+  DOM.notifDropdown.style.left = `${Math.round(left)}px`;
+  DOM.notifDropdown.style.right = 'auto';
+  DOM.notifDropdown.style.transform = 'none';
+}
+
+function openNotifDropdown() {
+  if (!DOM.notifDropdown) return;
+  ensureNotifDropdownPortal();
+  ensureNotifOverlay();
+  document.body.classList.add('notif-open');
+  DOM.notifDropdown.classList.add('is-visible');
+  positionNotifDropdown();
+}
+
+function closeNotifDropdown() {
+  if (!DOM.notifDropdown) return;
+  DOM.notifDropdown.classList.remove('is-visible');
+  document.body.classList.remove('notif-open');
+  try { NotificationsController.invalidate(); } catch (_) {}
+}
+
 function setupEventListeners() {
   // 1. Tabs
   DOM.tabs.forEach(tab => {
@@ -1239,6 +1244,9 @@ function setupEventListeners() {
 
   // 2. Notifications (Dashboard bell)
   if (DOM.btnNotifToggle && DOM.notifDropdown) {
+      ensureNotifDropdownPortal();
+      ensureNotifOverlay();
+
       // Prevent inside clicks from closing the dropdown
       DOM.notifDropdown.addEventListener('click', (e) => e.stopPropagation());
 
@@ -1247,13 +1255,14 @@ function setupEventListeners() {
          e.stopPropagation();
 
          const willOpen = !DOM.notifDropdown.classList.contains('is-visible');
-         DOM.notifDropdown.classList.toggle('is-visible');
 
          if (willOpen) {
+           openNotifDropdown();
            try { NotificationsController.invalidate(); } catch (_) {}
            await NotificationsController.load({ force: true });
+           positionNotifDropdown();
          } else {
-           try { NotificationsController.invalidate(); } catch (_) {}
+           closeNotifDropdown();
          }
       });
 
@@ -1265,9 +1274,15 @@ function setupEventListeners() {
         });
       }
 
+      window.addEventListener('resize', () => {
+        if (DOM.notifDropdown.classList.contains('is-visible')) positionNotifDropdown();
+      });
+      window.addEventListener('scroll', () => {
+        if (DOM.notifDropdown.classList.contains('is-visible')) positionNotifDropdown();
+      }, { passive: true });
+
       window.addEventListener('click', () => {
-          DOM.notifDropdown.classList.remove('is-visible');
-          try { NotificationsController.invalidate(); } catch (_) {}
+          closeNotifDropdown();
       });
   }
 
@@ -1757,7 +1772,6 @@ function setupMobileMenu() {
 // ---------------------------------------------------------------------
 
 function setActiveTab(tabName) {
-  tabName = normalizeDashboardTabName(tabName) || 'home';
 
   // Access redirect (when approved by admin)
   if (state && state.me) {
@@ -1827,7 +1841,7 @@ function setActiveTab(tabName) {
   }
 
 
-  // 4. Persist last active tab (used on reload and across devices)
+  // 4. Persist last active tab (server-backed with local fallback)
   try { persistRememberedDashboardTab(tabName); } catch {}
 
   // 5. Lazy-load panel data when the tab becomes active
@@ -1935,10 +1949,11 @@ function renderAdmirersPanel(payload) {
     }
     DOM.admirerContainer.innerHTML = html;
 
-    // Clicking any locked row -> Tier page upgrade flow
+    // Clicking any row -> Premium tab
     DOM.admirerContainer.querySelectorAll('.admirer-row').forEach(row => {
       row.addEventListener('click', () => {
-        goToUpgrade();
+        const btn = document.querySelector('button[data-panel="premium"]');
+        if (btn) btn.click();
       });
     });
     return;
@@ -3131,6 +3146,45 @@ function isProfileCompleteForOnboarding(user) {
   return ageOk && cityOk && avatarOk;
 }
 
+
+const DASHBOARD_TAB_KEYS = new Set(['home', 'swipe', 'matches', 'premium', 'shortlist', 'concierge', 'settings', 'creators']);
+
+function normalizeRememberedDashboardTab(tabName) {
+  const tab = String(tabName || '').trim().toLowerCase();
+  return DASHBOARD_TAB_KEYS.has(tab) ? tab : '';
+}
+
+async function loadRememberedDashboardTab() {
+  try {
+    const data = await apiGet('/api/me/settings');
+    const tab = normalizeRememberedDashboardTab(data?.settings?.dashboard?.lastActiveTab || '');
+    if (tab) return tab;
+  } catch (_) {}
+  try {
+    return normalizeRememberedDashboardTab(localStorage.getItem('tm_activeTab') || 'home') || 'home';
+  } catch (_) {
+    return 'home';
+  }
+}
+
+function persistRememberedDashboardTab(tabName) {
+  const normalized = normalizeRememberedDashboardTab(tabName);
+  if (!normalized) return;
+  if (state.lastPersistedActiveTab === normalized) return;
+
+  state.lastPersistedActiveTab = normalized;
+
+  try { localStorage.setItem('tm_activeTab', normalized); } catch {}
+
+  apiPost('/api/me/settings', {
+    settings: {
+      dashboard: {
+        lastActiveTab: normalized
+      }
+    }
+  }).catch(() => {});
+}
+
 async function loadMe() {
   try {
     const data = await apiGet('/api/me');
@@ -3176,7 +3230,6 @@ async function loadMe() {
 
     state.me = user;
     state.prefs = prefs;
-    state.lastPersistedActiveTab = normalizeDashboardTabName(user?.settings?.dashboard?.lastActiveTab || '');
 
     const rawPlan = (user && (user.plan ?? user.planKey ?? user.tier ?? user.level ?? user.subscriptionTier ?? user.subscription ?? user.currentPlan)) || 'free';
     state.plan = normalizePlanKey(rawPlan);
@@ -3244,7 +3297,7 @@ function applyPlanNavGating() {
   });
 
   // If current active tab is not allowed anymore, jump to first allowed
-  const activeNow = normalizeDashboardTabName(state.activeTab) || normalizeDashboardTabName(getRememberedDashboardTab()) || 'home';
+  const activeNow = state.activeTab || normalizeRememberedDashboardTab(state.lastPersistedActiveTab) || normalizeRememberedDashboardTab(localStorage.getItem('tm_activeTab')) || 'home';
   if (!allowed.has(activeNow)) {
     const first = ['home', 'swipe', 'matches', 'premium', 'shortlist', 'concierge', 'settings', 'creators']
       .find(t => allowed.has(t)) || 'home';
@@ -3885,7 +3938,7 @@ async function handlePremiumApplicationSubmit() {
   }
 
   // Intentional product rule: only Elite (Tier 2) and Concierge (Tier 3) can apply from the dashboard.
-  const planKey = normalizePlanKey(state.plan || state.me?.planKey || state.me?.plan || state.me?.tier || state.me?.subscriptionTier || 'free');
+  const planKey = String(state.me.planKey || '').toLowerCase();
   const isEligibleByUiRule = (planKey === 'tier2' || planKey === 'tier3');
   if (!isEligibleByUiRule) {
     showToast('Premium Society applications are available for Elite (Tier 2) and Concierge (Tier 3) members only.', 'error');
