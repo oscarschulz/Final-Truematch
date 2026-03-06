@@ -5300,6 +5300,31 @@ app.post('/api/me/password', async (req, res) => {
   }
 });
 
+// Read settings used by Settings UI (persisted cross-device)
+app.get('/api/me/settings', authMiddleware, async (req, res) => {
+  try {
+    const meEmail = _normalizeEmail((req.user && req.user.email) || '');
+    if (!meEmail) return res.status(401).json({ ok: false, message: 'Not authenticated' });
+
+    const meDoc = await findUserByEmail(meEmail);
+    if (!meDoc) return res.status(404).json({ ok: false, message: 'User not found' });
+
+    const settings = (meDoc.settings && typeof meDoc.settings === 'object') ? meDoc.settings : {};
+
+    if (DB && DB.users && DB.users[meEmail]) {
+      DB.users[meEmail].settings = settings;
+    }
+    if (DB && DB.user && _normalizeEmail(DB.user.email) === meEmail) {
+      DB.user.settings = settings;
+    }
+
+    return res.json({ ok: true, settings });
+  } catch (e) {
+    console.error('GET /api/me/settings error', e);
+    return res.status(500).json({ ok: false, message: 'Failed to read settings' });
+  }
+});
+
 // Update settings used by Settings UI (persisted cross-device)
 app.post('/api/me/settings', authMiddleware, async (req, res) => {
   try {
@@ -5329,6 +5354,18 @@ app.post('/api/me/settings', authMiddleware, async (req, res) => {
       if (!Number.isFinite(age) || age < 18 || age > 99) return res.status(400).json({ ok: false, message: 'maxAge must be between 18 and 99' });
       incoming.maxAge = age;
     }
+    if (incoming.dashboard && typeof incoming.dashboard === 'object') {
+      const dash = { ...incoming.dashboard };
+      if (dash.lastActiveTab !== undefined) {
+        const allowedTabs = new Set(['home', 'swipe', 'matches', 'premium', 'shortlist', 'concierge', 'settings', 'creators']);
+        const tab = safeStr(dash.lastActiveTab || '').toLowerCase();
+        if (tab && !allowedTabs.has(tab)) {
+          return res.status(400).json({ ok: false, message: 'Invalid lastActiveTab' });
+        }
+        dash.lastActiveTab = tab || '';
+      }
+      incoming.dashboard = dash;
+    }
 
     const meDoc = await findUserByEmail(meEmail);
     if (!meDoc) return res.status(404).json({ ok: false, message: 'User not found' });
@@ -5342,6 +5379,9 @@ app.post('/api/me/settings', authMiddleware, async (req, res) => {
     }
     if (incoming.notifications && typeof incoming.notifications === 'object') {
       next.notifications = { ...(prev.notifications || {}), ...(incoming.notifications || {}) };
+    }
+    if (incoming.dashboard && typeof incoming.dashboard === 'object') {
+      next.dashboard = { ...(prev.dashboard || {}), ...(incoming.dashboard || {}) };
     }
 
     const nowMs = Date.now();

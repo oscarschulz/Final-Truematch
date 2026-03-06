@@ -2,7 +2,7 @@
 // iTrueMatch Dashboard – Main Controller (FINAL: UI WIDTHS & BG FIXED)
 // ---------------------------------------------------------------------
 
-import { clearSession } from './tm-session.js';
+import { getLocalPlan, saveLocalUser, savePrefsForCurrentUser, clearSession } from './tm-session.js';
 import { apiGet, apiPost, apiUpdateProfile, apiSavePrefs } from './tm-api.js';
 
 
@@ -192,6 +192,17 @@ state.chatIsNearBottom = true;
 // --- Inbox (unread) runtime state ---
 state.inboxPollTimer = null;
 state.inboxThreadState = {}; // { peerEmail: { lastMessageAtMs, lastReadAtMs } }
+state.chatPresenceTimer = null;
+
+
+// Read the last known user from localStorage
+function safeGetLocalUser() {
+  try {
+    return JSON.parse(localStorage.getItem('tm_user') || 'null');
+  } catch (_) {
+    return null;
+  }
+}
 
 const DOM = {};
 
@@ -824,7 +835,7 @@ async function initApp() {
   DOM.btnSidebarSubscribeMobile = document.getElementById('btnSidebarSubscribeMobile');
   await loadMe();
   // Background unread updater (safe even if Matches tab isn't open yet).
-  try { startInboxPolling({ immediate: true }); } catch {}
+  try { refreshInboxPollingLifecycle({ immediate: true }); } catch {}
   // Prefetch notifications so the bell dot is accurate even before opening the dropdown.
   try { NotificationsController.load({ force: true }).catch(() => {}); } catch {}
   
@@ -836,9 +847,9 @@ await loadHomePanels(true);
 
   // Restore last opened tab if allowed for this plan
   try {
-    const remembered = localStorage.getItem('tm_activeTab') || 'home';
+    const remembered = await loadRememberedDashboardTab();
     const allowedBtn = Array.from(DOM.tabs || []).find(b => b && b.dataset && b.dataset.panel === remembered && b.style.display !== 'none');
-    const fallbackBtn = Array.from(DOM.tabs || []).find(b => b && b.dataset && b.style.display !== 'none');
+    const fallbackBtn = Array.from(DOM.tabs || []).find(b => b && b.dataset && b.dataset.panel && b.style.display !== 'none');
     const safeTab = allowedBtn ? remembered : (fallbackBtn ? fallbackBtn.dataset.panel : 'home');
     setActiveTab(safeTab);
   } catch {
@@ -1123,7 +1134,15 @@ DOM.notifList.appendChild(row);
     setDot(0);
   }
 
-  return { load, render, markAllRead };
+  function invalidate() {
+    cache = { ts: 0, items: [] };
+  }
+
+  function isOpen() {
+    return !!(DOM.notifDropdown && DOM.notifDropdown.classList.contains('is-visible'));
+  }
+
+  return { load, render, markAllRead, invalidate, isOpen };
 })();
 
 // ---------------------------------------------------------------------
@@ -1141,6 +1160,7 @@ function setupEventListeners() {
 
             if (targetPanel === 'home' && currentPanel === 'home') {
               invalidateHomeWidgetCache('all');
+              loadHomePanels(true).catch(() => {});
             }
 
             setActiveTab(tab.dataset.panel);
@@ -1172,7 +1192,10 @@ function setupEventListeners() {
          DOM.notifDropdown.classList.toggle('is-visible');
 
          if (willOpen) {
-           await NotificationsController.load();
+           try { NotificationsController.invalidate(); } catch (_) {}
+           await NotificationsController.load({ force: true });
+         } else {
+           try { NotificationsController.invalidate(); } catch (_) {}
          }
       });
 
@@ -1186,6 +1209,7 @@ function setupEventListeners() {
 
       window.addEventListener('click', () => {
           DOM.notifDropdown.classList.remove('is-visible');
+          try { NotificationsController.invalidate(); } catch (_) {}
       });
   }
 
@@ -1222,41 +1246,56 @@ function setupEventListeners() {
   }
 
   // 5. Modals Close
-  if (DOM.btnCloseChat && DOM.dlgChat) DOM.btnCloseChat.addEventListener('click', () => { stopChatPolling(); DOM.dlgChat.close(); });
-  if (DOM.dlgChat) DOM.dlgChat.addEventListener('close', () => { stopChatPolling(); });
+  if (DOM.btnCloseChat && DOM.dlgChat) DOM.btnCloseChat.addEventListener('click', () => {
+    stopChatPolling();
+    DOM.dlgChat.close();
+    refreshInboxPollingLifecycle({ immediate: true });
+  });
+  if (DOM.dlgChat) DOM.dlgChat.addEventListener('close', () => {
+    stopChatPolling();
+    refreshInboxPollingLifecycle({ immediate: true });
+  });
 
-  // Home panel refresh behavior: keep Home widgets fresh when the page returns,
-  // but avoid overly aggressive refetching while the user stays on the page.
+  // Keep runtime watchers lean across tab/page lifecycle.
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-      invalidateHomeWidgetCache('all');
+      cleanupDashboardRuntimeWatchers({ dropCaches: true });
       return;
     }
 
-    if (String(state.activeTab || 'home').trim().toLowerCase() === 'home') {
-      loadHomePanels(true).catch(() => {});
-    }
+    refreshDashboardRuntimeWatchers({
+      hardHome: isHomeTabActive(),
+      hardNotifications: true,
+      immediateInbox: true,
+      immediateChat: true,
+    });
   });
 
   window.addEventListener('pageshow', () => {
-    if (String(state.activeTab || 'home').trim().toLowerCase() === 'home') {
-      loadHomePanels(true).catch(() => {});
-    }
+    refreshDashboardRuntimeWatchers({
+      hardHome: isHomeTabActive(),
+      hardNotifications: true,
+      immediateInbox: true,
+      immediateChat: true,
+    });
   });
 
   window.addEventListener('focus', () => {
     if (document.hidden) return;
-    if (String(state.activeTab || 'home').trim().toLowerCase() === 'home') {
-      loadHomePanels(false).catch(() => {});
-    }
+    refreshDashboardRuntimeWatchers({
+      hardHome: isHomeTabActive(),
+      hardNotifications: false,
+      immediateInbox: true,
+      immediateChat: true,
+    });
   });
 
   window.addEventListener('pagehide', () => {
-    invalidateHomeWidgetCache('all');
+    cleanupDashboardRuntimeWatchers({ dropCaches: true });
   });
 
   window.addEventListener('beforeunload', () => {
-    invalidateHomeWidgetCache('all');
+    cleanupDashboardRuntimeWatchers({ dropCaches: true });
   });
 
   // Chat Send
@@ -1660,14 +1699,6 @@ function setupMobileMenu() {
 // ---------------------------------------------------------------------
 
 function setActiveTab(tabName) {
-  const prevTab = normalizeDashboardTabName(state.activeTab || 'home');
-  const nextTab = normalizeDashboardTabName(tabName);
-
-  if (prevTab === 'home' && nextTab !== 'home') {
-    invalidateHomeWidgetCache('all');
-  }
-
-  tabName = nextTab;
 
   // Access redirect (when approved by admin)
   if (state && state.me) {
@@ -1737,8 +1768,8 @@ function setActiveTab(tabName) {
   }
 
 
-  // 4. Persist last active tab (used on reload)
-  try { localStorage.setItem('tm_activeTab', tabName); } catch {}
+  // 4. Persist last active tab (server-backed with local fallback)
+  try { persistRememberedDashboardTab(tabName); } catch {}
 
   // 5. Lazy-load panel data when the tab becomes active
   try { onPanelActivated(tabName); } catch {}
@@ -1766,15 +1797,22 @@ function onPanelActivated(tabName) {
 // ---------------------------------------------------------------------
 // HOME: REAL DATA (Who Liked You + Active Nearby)
 // ---------------------------------------------------------------------
-const HOME_CACHE_MS = 15000;
+function isHomeTabActive() {
+  return String(state.activeTab || 'home').trim().toLowerCase() === 'home';
+}
 
 function invalidateHomeWidgetCache(which = 'all') {
-  try {
-    if (!state.homeCache) return;
-    if (which === 'all' || which === 'admirers') state.homeCache.admirersTs = 0;
-    if (which === 'all' || which === 'nearby') state.homeCache.nearbyTs = 0;
-  } catch {}
+  if (!state.homeCache) return;
+  if (which === 'all' || which === 'admirers') state.homeCache.admirersTs = 0;
+  if (which === 'all' || which === 'nearby') state.homeCache.nearbyTs = 0;
 }
+
+async function refreshHomePanelsOnResume(force = false) {
+  if (!isHomeTabActive()) return;
+  await loadHomePanels(!!force);
+}
+
+const HOME_CACHE_MS = 15000;
 
 async function loadHomePanels(force = false) {
   // Home widgets are safe to load in parallel.
@@ -2050,13 +2088,28 @@ async function pollChatThreadOnce() {
   await loadAndRenderThread(state.currentChatPeerEmail);
 }
 
+function shouldRunChatPolling() {
+  return !!(!document.hidden && isChatModalOpen() && state.currentChatPeerEmail);
+}
+
+function refreshChatPollingLifecycle({ immediate = false } = {}) {
+  if (shouldRunChatPolling()) {
+    startChatPolling({ immediate });
+  } else {
+    stopChatPolling();
+  }
+}
+
 function startChatPolling({ immediate = false } = {}) {
   stopChatPolling();
 
-  if (!isChatModalOpen()) return;
-  if (!state.currentChatPeerEmail) return;
+  if (!shouldRunChatPolling()) return;
 
   state.chatPollTimer = setInterval(() => {
+    if (!shouldRunChatPolling()) {
+      stopChatPolling();
+      return;
+    }
     // Don't await inside interval; loadAndRenderThread already has its own try/catch.
     pollChatThreadOnce();
   }, CHAT_POLL_MS);
@@ -2127,12 +2180,28 @@ function setMatchUnread(peerEmail, hasUnread) {
   }
 }
 
+function shouldRunInboxPolling() {
+  return !!(state.me && state.me.email && !document.hidden && !isChatModalOpen());
+}
+
+function refreshInboxPollingLifecycle({ immediate = false } = {}) {
+  if (shouldRunInboxPolling()) {
+    startInboxPolling({ immediate });
+  } else {
+    stopInboxPolling();
+  }
+}
+
 function startInboxPolling({ immediate = false } = {}) {
   stopInboxPolling();
 
-  if (!state.me || !state.me.email) return;
+  if (!shouldRunInboxPolling()) return;
 
   state.inboxPollTimer = setInterval(() => {
+    if (!shouldRunInboxPolling()) {
+      stopInboxPolling();
+      return;
+    }
     pollInboxOnce();
   }, INBOX_POLL_MS);
 
@@ -2248,9 +2317,27 @@ async function refreshChatPresenceOnce() {
   } catch (_) {}
 }
 
+function shouldRunChatPresencePolling() {
+  const planKey = normalizePlanKey(state.plan || (state.me && state.me.plan));
+  return !!(shouldRunChatPolling() && planKey === 'free');
+}
+
+function refreshChatPresencePollingLifecycle({ immediate = false } = {}) {
+  if (shouldRunChatPresencePolling()) {
+    startChatPresencePolling({ immediate });
+  } else {
+    stopChatPresencePolling();
+  }
+}
+
 function startChatPresencePolling({ immediate = false } = {}) {
   stopChatPresencePolling();
+  if (!shouldRunChatPresencePolling()) return;
   state.chatPresenceTimer = setInterval(() => {
+    if (!shouldRunChatPresencePolling()) {
+      stopChatPresencePolling();
+      return;
+    }
     refreshChatPresenceOnce();
   }, CHAT_PRESENCE_POLL_MS);
   if (immediate) refreshChatPresenceOnce();
@@ -2321,11 +2408,47 @@ async function openChatModal(name, imgColor, lastMsg, peerEmail, peerPhotoUrl, p
   try { setMatchUnread(state.currentChatPeerEmail, false); } catch {}
 
   // Keep the thread fresh while modal is open.
-  startChatPolling();
+  refreshChatPollingLifecycle({ immediate: false });
   // Keep presence indicator fresh while modal is open.
-  startChatPresencePolling({ immediate: true });
+  refreshChatPresencePollingLifecycle({ immediate: true });
+  // Pause inbox watcher while the active chat modal is open.
+  refreshInboxPollingLifecycle({ immediate: false });
 
   try { DOM.chatInput && DOM.chatInput.focus(); } catch {}
+}
+
+
+function cleanupDashboardRuntimeWatchers({ dropCaches = false } = {}) {
+  try { stopInboxPolling(); } catch (_) {}
+  try { stopChatPolling(); } catch (_) {}
+  try { stopChatPresencePolling(); } catch (_) {}
+
+  if (dropCaches) {
+    try { invalidateHomeWidgetCache('all'); } catch (_) {}
+    try { NotificationsController.invalidate(); } catch (_) {}
+  }
+}
+
+function refreshDashboardRuntimeWatchers({ hardHome = false, hardNotifications = false, immediateInbox = false, immediateChat = false } = {}) {
+  try { refreshInboxPollingLifecycle({ immediate: immediateInbox }); } catch (_) {}
+  try { refreshChatPollingLifecycle({ immediate: immediateChat }); } catch (_) {}
+  try { refreshChatPresencePollingLifecycle({ immediate: immediateChat }); } catch (_) {}
+
+  if (isHomeTabActive()) {
+    try { refreshHomePanelsOnResume(!!hardHome).catch(() => {}); } catch (_) {}
+  }
+
+  if (hardNotifications) {
+    try { NotificationsController.invalidate(); } catch (_) {}
+  }
+
+  if (typeof NotificationsController !== 'undefined') {
+    try {
+      if (NotificationsController.isOpen && NotificationsController.isOpen()) {
+        NotificationsController.load({ force: true }).catch(() => {});
+      }
+    } catch (_) {}
+  }
 }
 
 
@@ -2950,22 +3073,71 @@ function isProfileCompleteForOnboarding(user) {
   return ageOk && cityOk && avatarOk;
 }
 
+
+const DASHBOARD_TAB_KEYS = new Set(['home', 'swipe', 'matches', 'premium', 'shortlist', 'concierge', 'settings', 'creators']);
+
+function normalizeRememberedDashboardTab(tabName) {
+  const tab = String(tabName || '').trim().toLowerCase();
+  return DASHBOARD_TAB_KEYS.has(tab) ? tab : '';
+}
+
+async function loadRememberedDashboardTab() {
+  try {
+    const data = await apiGet('/api/me/settings');
+    const tab = normalizeRememberedDashboardTab(data?.settings?.dashboard?.lastActiveTab || '');
+    if (tab) return tab;
+  } catch (_) {}
+  try {
+    return normalizeRememberedDashboardTab(localStorage.getItem('tm_activeTab') || 'home') || 'home';
+  } catch (_) {
+    return 'home';
+  }
+}
+
+function persistRememberedDashboardTab(tabName) {
+  const normalized = normalizeRememberedDashboardTab(tabName);
+  if (!normalized) return;
+  if (state.lastPersistedActiveTab === normalized) return;
+
+  state.lastPersistedActiveTab = normalized;
+
+  try { localStorage.setItem('tm_activeTab', normalized); } catch {}
+
+  apiPost('/api/me/settings', {
+    settings: {
+      dashboard: {
+        lastActiveTab: normalized
+      }
+    }
+  }).catch(() => {});
+}
+
 async function loadMe() {
   try {
     const data = await apiGet('/api/me');
+    const local = safeGetLocalUser();
 
-    if (!data || data.error === 'Request timeout' || (Number(data.status || 0) >= 500)) {
-      showToast('Failed to load your account. Please refresh and try again.', 'error');
-      return;
+    let user = null;
+    let prefs = {};
+
+    if (!data || !data.ok || !data.user) {
+      // If session cookie is missing/expired but local cache exists, allow a soft render
+      // (user will still be redirected on any authenticated API calls).
+      if (local && (local.email || local.name)) {
+        user = local;
+        prefs = {};
+      } else {
+        window.location.href = 'auth.html?mode=login';
+        return;
+      }
+    } else {
+      user = data.user;
+      prefs = data.prefs || user.preferences || {};
+      if (local) {
+        if (!user.name && local.name) user.name = local.name;
+        if (!user.email && local.email) user.email = local.email;
+      }
     }
-
-    if (!data.ok || !data.user) {
-      window.location.href = 'auth.html?mode=login';
-      return;
-    }
-
-    const user = data.user;
-    const prefs = data.prefs || user.preferences || {};
 
     // Onboarding enforcement: require preferences + profile photo before showing dashboard
     // (Skip this for demo accounts.)
@@ -3052,7 +3224,7 @@ function applyPlanNavGating() {
   });
 
   // If current active tab is not allowed anymore, jump to first allowed
-  const activeNow = state.activeTab || localStorage.getItem('tm_activeTab') || 'home';
+  const activeNow = state.activeTab || normalizeRememberedDashboardTab(state.lastPersistedActiveTab) || normalizeRememberedDashboardTab(localStorage.getItem('tm_activeTab')) || 'home';
   if (!allowed.has(activeNow)) {
     const first = ['home', 'swipe', 'matches', 'premium', 'shortlist', 'concierge', 'settings', 'creators']
       .find(t => allowed.has(t)) || 'home';
@@ -3866,6 +4038,8 @@ async function handleProfileSave() {
     state.me = updatedUser;
     state.prefs = updatedPrefs;
 
+    saveLocalUser(state.me);
+    savePrefsForCurrentUser(state.prefs);
 
     showToast('Saved successfully!');
     renderSettingsDisplay(state.me, state.prefs);
