@@ -1935,11 +1935,10 @@ function renderAdmirersPanel(payload) {
     }
     DOM.admirerContainer.innerHTML = html;
 
-    // Clicking any row -> Premium tab
+    // Clicking any locked row -> Tier page upgrade flow
     DOM.admirerContainer.querySelectorAll('.admirer-row').forEach(row => {
       row.addEventListener('click', () => {
-        const btn = document.querySelector('button[data-panel="premium"]');
-        if (btn) btn.click();
+        goToUpgrade();
       });
     });
     return;
@@ -3886,7 +3885,7 @@ async function handlePremiumApplicationSubmit() {
   }
 
   // Intentional product rule: only Elite (Tier 2) and Concierge (Tier 3) can apply from the dashboard.
-  const planKey = String(state.me.planKey || '').toLowerCase();
+  const planKey = normalizePlanKey(state.plan || state.me?.planKey || state.me?.plan || state.me?.tier || state.me?.subscriptionTier || 'free');
   const isEligibleByUiRule = (planKey === 'tier2' || planKey === 'tier3');
   if (!isEligibleByUiRule) {
     showToast('Premium Society applications are available for Elite (Tier 2) and Concierge (Tier 3) members only.', 'error');
