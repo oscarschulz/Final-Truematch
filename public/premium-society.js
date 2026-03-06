@@ -897,6 +897,240 @@ function saveHistory() {
   localStorage.setItem("ps_chat_history", JSON.stringify(conversationHistory));
 }
 
+function psDisableGiftFeatures() {
+  if (PS_DOM.btnPPV) {
+    PS_DOM.btnPPV.style.display = 'none';
+    PS_DOM.btnPPV.disabled = true;
+    PS_DOM.btnPPV.setAttribute('aria-hidden', 'true');
+    PS_DOM.btnPPV.setAttribute('aria-disabled', 'true');
+    PS_DOM.btnPPV.onclick = null;
+  }
+
+  if (PS_DOM.giftModal) {
+    PS_DOM.giftModal.classList.remove('active');
+    PS_DOM.giftModal.style.display = 'none';
+    PS_DOM.giftModal.setAttribute('aria-hidden', 'true');
+  }
+}
+
+
+const PS_CHAT_STATE = {
+  activePeerEmail: '',
+  activePeerLabel: '',
+  activeAvatar: 'assets/images/truematch-mark.png',
+  peersByLabel: {},
+  avatarsByLabel: {},
+  lastThread: [],
+  matchOverlayTarget: null
+};
+
+function psEscapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function psRememberPeer(peerEmail, label, avatar) {
+  const peer = String(peerEmail || '').trim().toLowerCase();
+  const safeLabel = String(label || '').trim() || 'Member';
+  const safeAvatar = String(avatar || 'assets/images/truematch-mark.png').trim() || 'assets/images/truematch-mark.png';
+
+  if (peer) PS_CHAT_STATE.peersByLabel[safeLabel] = peer;
+  PS_CHAT_STATE.avatarsByLabel[safeLabel] = safeAvatar;
+  return { peerEmail: peer, label: safeLabel, avatar: safeAvatar };
+}
+
+function psResolvePeer(target) {
+  if (target && typeof target === 'object') {
+    const label = String(target.name || target.label || target.username || 'Member').trim() || 'Member';
+    const peerEmail = String(target.peerEmail || target.email || target.id || '').trim().toLowerCase();
+    const avatar = String(target.avatar || target.photoUrl || PS_CHAT_STATE.avatarsByLabel[label] || 'assets/images/truematch-mark.png').trim() || 'assets/images/truematch-mark.png';
+    if (peerEmail || label) return psRememberPeer(peerEmail, label, avatar);
+  }
+
+  const label = String(target || '').trim() || 'Member';
+  const peerEmail = String(PS_CHAT_STATE.peersByLabel[label] || '').trim().toLowerCase();
+  const avatar = String(PS_CHAT_STATE.avatarsByLabel[label] || 'assets/images/truematch-mark.png').trim() || 'assets/images/truematch-mark.png';
+  return { peerEmail, label, avatar };
+}
+
+function psFormatMessageTime(value) {
+  const ts = Number(value || 0);
+  if (!ts) return '';
+  try {
+    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch (_) {
+    return '';
+  }
+}
+
+function psMapServerThreadToLocalHistory(list) {
+  const me = String((PS_STATE.me && PS_STATE.me.email) || '').trim().toLowerCase();
+  return (Array.isArray(list) ? list : []).map((m) => {
+    const fromMe = String(m && m.from || '').trim().toLowerCase() === me;
+    let text = String((m && m.text) || '').trim();
+
+    if (!text) {
+      if (Array.isArray(m && m.media) && m.media.length) {
+        text = '[Media]';
+      } else if (m && m.ppv) {
+        text = '[Media]';
+      } else {
+        text = '';
+      }
+    }
+
+    return {
+      type: fromMe ? 'sent' : 'received',
+      text
+    };
+  });
+}
+
+function psRenderChatThread(msgs = []) {
+  if (!PS_DOM.chatBody) return;
+
+  const me = String((PS_STATE.me && PS_STATE.me.email) || '').trim().toLowerCase();
+  PS_DOM.chatBody.innerHTML = '';
+
+  (Array.isArray(msgs) ? msgs : []).forEach((msg) => {
+    const fromMe = String(msg && msg.from || '').trim().toLowerCase() === me;
+    const bubble = document.createElement('div');
+    bubble.className = `ps-msg-bubble ${fromMe ? 'sent' : 'received'}`;
+
+    const media = Array.isArray(msg && msg.media) ? msg.media : [];
+
+    const text = String((msg && msg.text) || '').trim();
+    const safeText = text ? psEscapeHtml(text).replace(/\n/g, '<br>') : '';
+
+    const mediaLine = media.length
+      ? `<div class="ps-msg-media-note">[Media]</div>`
+      : '';
+
+    const textLine = safeText ? `<div class="ps-msg-text">${safeText}</div>` : '';
+    const readLine = fromMe && msg && msg.readAt
+      ? `<div class="ps-msg-read" style="margin-top:6px; font-size:0.7rem; opacity:0.7;">Seen</div>`
+      : '';
+    const timeLine = `<div class="ps-msg-time-mini" style="margin-top:6px; font-size:0.7rem; opacity:0.7;">${psEscapeHtml(psFormatMessageTime(msg && msg.createdAtMs))}</div>`;
+
+    const bodyHtml = `${mediaLine}${textLine}${timeLine}${readLine}`;
+
+    bubble.innerHTML = bodyHtml || '<div class="ps-msg-text"></div>';
+    PS_DOM.chatBody.appendChild(bubble);
+  });
+
+  PS_DOM.chatBody.scrollTop = PS_DOM.chatBody.scrollHeight;
+}
+
+async function psLoadChatThread(target, opts = {}) {
+  const resolved = psResolvePeer(target);
+  const peerEmail = String(resolved.peerEmail || '').trim().toLowerCase();
+  const label = String(opts.label || resolved.label || 'Member').trim() || 'Member';
+  const avatar = String(opts.avatar || resolved.avatar || 'assets/images/truematch-mark.png').trim() || 'assets/images/truematch-mark.png';
+
+  PS_CHAT_STATE.activePeerEmail = peerEmail;
+  PS_CHAT_STATE.activePeerLabel = label;
+  PS_CHAT_STATE.activeAvatar = avatar;
+  psRememberPeer(peerEmail, label, avatar);
+
+  if (PS_DOM.chatName) PS_DOM.chatName.textContent = label;
+  if (PS_DOM.chatAvatar) PS_DOM.chatAvatar.src = avatar;
+
+  if (!peerEmail) {
+    const localMsgs = conversationHistory[label] || [];
+    psRenderChatThread(localMsgs.map((m) => ({
+      from: m.type === 'sent' ? (PS_STATE.me && PS_STATE.me.email) || 'me' : label,
+      to: m.type === 'sent' ? label : (PS_STATE.me && PS_STATE.me.email) || 'me',
+      text: m.text,
+      createdAtMs: Date.now()
+    })));
+    return { ok: false, localOnly: true, messages: localMsgs };
+  }
+
+  if (PS_DOM.chatBody) {
+    PS_DOM.chatBody.innerHTML = `<div style="text-align:center; color:#555; margin-top:20px;">Loading conversation...</div>`;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/messages/thread/${encodeURIComponent(peerEmail)}`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data || data.ok !== true) {
+      const msg = (data && (data.message || data.error)) ? (data.message || data.error) : 'Failed to load conversation.';
+      throw new Error(String(msg || 'Failed to load conversation.'));
+    }
+
+    const messages = Array.isArray(data.messages) ? data.messages : [];
+    PS_CHAT_STATE.lastThread = messages;
+    conversationHistory[label] = psMapServerThreadToLocalHistory(messages);
+    saveHistory();
+    psRenderChatThread(messages);
+    return { ok: true, data };
+  } catch (err) {
+    console.error('psLoadChatThread error:', err);
+    const fallback = conversationHistory[label] || [];
+    if (fallback.length) {
+      psRenderChatThread(fallback.map((m) => ({
+        from: m.type === 'sent' ? (PS_STATE.me && PS_STATE.me.email) || 'me' : label,
+        to: m.type === 'sent' ? label : (PS_STATE.me && PS_STATE.me.email) || 'me',
+        text: m.text,
+        createdAtMs: Date.now()
+      })));
+      showToast('Using saved chat cache.', 'warning');
+      return { ok: false, localOnly: true, messages: fallback };
+    }
+
+    if (PS_DOM.chatBody) {
+      PS_DOM.chatBody.innerHTML = `<div style="text-align:center; color:#555; margin-top:20px;">Failed to load conversation.</div>`;
+    }
+    showToast(String(err && err.message ? err.message : 'Failed to load conversation.'), 'error');
+    return { ok: false, error: err };
+  }
+}
+
+async function psSendMessageToActivePeer(payload = {}) {
+  const peerEmail = String(PS_CHAT_STATE.activePeerEmail || '').trim().toLowerCase();
+  const label = String(PS_CHAT_STATE.activePeerLabel || (PS_DOM.chatName ? PS_DOM.chatName.textContent : '') || 'Member').trim() || 'Member';
+  if (!peerEmail) {
+    showToast('Unable to resolve this conversation.', 'error');
+    return { ok: false, error: 'peer_missing' };
+  }
+
+  const body = { to: peerEmail };
+  if (payload.text !== undefined) body.text = String(payload.text || '');
+  if (payload.media !== undefined) body.media = payload.media;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/messages/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(body)
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data || data.ok !== true) {
+      const msg = (data && (data.message || data.error)) ? (data.message || data.error) : 'Failed to send message.';
+      throw new Error(String(msg || 'Failed to send message.'));
+    }
+
+    await psLoadChatThread({ peerEmail, name: label, avatar: PS_CHAT_STATE.activeAvatar });
+    _psMatchesLastFetched = 0;
+    try { await psLoadMatches(true); } catch (_) {}
+    return { ok: true, data };
+  } catch (err) {
+    console.error('psSendMessageToActivePeer error:', err);
+    showToast(String(err && err.message ? err.message : 'Failed to send message.'), 'error');
+    return { ok: false, error: err };
+  }
+}
+
 
 // ==========================================
 export async function initUI() {
@@ -928,12 +1162,8 @@ export async function initUI() {
   const lastTab = localStorage.getItem("ps_last_tab") || "home";
   switchTab(lastTab);
 
-  // PPV/Gift trigger binding
-  if (PS_DOM.btnPPV) {
-    PS_DOM.btnPPV.onclick = () => {
-      if (PS_DOM.giftModal) PS_DOM.giftModal.classList.add("active");
-    };
-  }
+  // Gift / PPV disabled until dedicated purchase or debit logic exists
+  psDisableGiftFeatures();
 }
 
 // ==========================================
@@ -976,20 +1206,39 @@ function renderMessages(messages = []) {
         return;
     }
 
-    PS_DOM.matchesContainer.innerHTML = messages.map(m => `
-    <div class="ps-message-item ${m.unread ? "unread" : ""}" onclick="openChat('${m.name}')">
+    PS_DOM.matchesContainer.innerHTML = messages.map((m) => {
+        const label = String(m.name || 'Member');
+        const avatar = String(m.avatar || 'assets/images/truematch-mark.png');
+        const peerEmail = String(m.peerEmail || '').trim().toLowerCase();
+        const escapedLabel = psEscapeHtml(label);
+        const escapedAvatar = psEscapeHtml(avatar);
+        const escapedPeer = psEscapeHtml(peerEmail);
+        const escapedText = psEscapeHtml(String(m.text || ''));
+        const escapedTime = psEscapeHtml(String(m.time || ''));
+        return `
+    <div class="ps-message-item ${m.unread ? "unread" : ""}" data-name="${escapedLabel}" data-peer="${escapedPeer}" data-avatar="${escapedAvatar}">
         <div class="ps-msg-avatar-wrapper">
-            <img class="ps-msg-avatar" src="${m.avatar || 'assets/images/truematch-mark.png'}">
+            <img class="ps-msg-avatar" src="${escapedAvatar}">
             <div class="ps-online-badge"></div>
         </div>
         <div class="ps-msg-content">
             <div class="ps-msg-header">
-                <span class="ps-msg-name">${m.name}</span>
-                <span class="ps-msg-time">${m.time}</span>
+                <span class="ps-msg-name">${escapedLabel}</span>
+                <span class="ps-msg-time">${escapedTime}</span>
             </div>
-            <span class="ps-msg-preview">${m.text}</span>
+            <span class="ps-msg-preview">${escapedText}</span>
         </div>
-    </div>`).join("");
+    </div>`;
+    }).join("");
+
+    PS_DOM.matchesContainer.querySelectorAll('.ps-message-item').forEach((item) => {
+        item.addEventListener('click', () => {
+            const label = item.getAttribute('data-name') || 'Member';
+            const peerEmail = item.getAttribute('data-peer') || '';
+            const avatar = item.getAttribute('data-avatar') || 'assets/images/truematch-mark.png';
+            if (window.openChat) window.openChat({ name: label, peerEmail, avatar });
+        });
+    });
 }
 
 // 3. Render Admirers
@@ -1190,7 +1439,7 @@ export function initSettingsLogic() {
       title: '<i class="fa-solid fa-gem" style="color:#FFD700"></i> Premium Society',
       html: `<div style="text-align: left; font-size: 0.85rem; color: #ccc;">
                 <p><b>Membership:</b> Auto-renew monthly ang iyong subscription.</p>
-                <p><b>Diamonds:</b> Digital gifts are final and non-refundable.</p>
+                <p><b>Member Perks:</b> Additional paid extras are currently unavailable on this page.</p>
             </div>`,
       background: "#15151e", color: "#fff", confirmButtonColor: "#FFD700",
     });
@@ -1613,72 +1862,284 @@ function initCreatorProfileModal() {
   };
 }
 
-function initNotifications() {
-  const btnNotif = document.getElementById("psBtnNotif");
-  const popover = document.getElementById("psNotifPopover");
+function psEscapeHtml(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
-  if (btnNotif && popover) {
-    // Alisin muna ang lumang listener para iwas "double-trigger"
-    const newBtn = btnNotif.cloneNode(true);
-    btnNotif.parentNode.replaceChild(newBtn, btnNotif);
+function psFormatNotifTime(ts) {
+  const ms = Number(ts || 0);
+  if (!Number.isFinite(ms) || ms <= 0) return '—';
 
-    newBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      // I-toggle ang active classes
-      newBtn.classList.toggle("active");
-      popover.classList.toggle("active");
+  const diff = Date.now() - ms;
+  const sec = Math.max(1, Math.floor(diff / 1000));
+  if (sec < 60) return 'Just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d ago`;
 
-      console.log(
-        "Notification toggled:",
-        popover.classList.contains("active"),
-      );
+  try {
+    return new Date(ms).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric'
     });
-
-    // Isara ang popover kapag nag-click kahit saan sa labas
-    document.addEventListener("click", (e) => {
-      if (!popover.contains(e.target) && !newBtn.contains(e.target)) {
-        popover.classList.remove("active");
-        newBtn.classList.remove("active");
-      }
-    });
+  } catch (_) {
+    return '—';
   }
 }
 
+function psGetNotifEls() {
+  const btn = document.getElementById('psBtnNotif');
+  const popover = document.getElementById('psNotifPopover');
+  if (!btn || !popover) return null;
+
+  return {
+    btn,
+    popover,
+    badge: document.getElementById('psNotifCount'),
+    list: popover.querySelector('.ps-notif-list'),
+    markAllBtn: popover.querySelector('.ps-popover-header .ps-btn-text')
+  };
+}
+
+function psSetNotifBadge(unreadCount) {
+  const els = psGetNotifEls();
+  if (!els || !els.badge) return;
+
+  const count = Math.max(0, Number(unreadCount || 0));
+  els.badge.textContent = String(count);
+  els.badge.style.display = count > 0 ? 'inline-flex' : 'none';
+  els.btn.setAttribute('aria-label', count > 0 ? `Notifications (${count} unread)` : 'Notifications');
+}
+
+function psRenderNotifications(items, unreadCount) {
+  const els = psGetNotifEls();
+  if (!els || !els.list) return;
+
+  const safeItems = Array.isArray(items) ? items : [];
+  psSetNotifBadge(unreadCount);
+
+  if (!safeItems.length) {
+    els.list.innerHTML = `
+      <div class="ps-notif-item" style="cursor:default; opacity:.85;">
+        <div class="ps-notif-icon"><i class="fa-solid fa-bell-slash"></i></div>
+        <div class="ps-notif-text">
+          <p><strong>No notifications yet</strong><br>You’re all caught up.</p>
+          <span>—</span>
+        </div>
+      </div>`;
+    return;
+  }
+
+  els.list.innerHTML = safeItems.map((item) => {
+    const id = psEscapeHtml(item && item.id ? item.id : '');
+    const title = psEscapeHtml(item && item.title ? item.title : 'Notification');
+    const message = psEscapeHtml(item && item.message ? item.message : '');
+    const href = psEscapeHtml(item && item.href ? item.href : '');
+    const when = psEscapeHtml(psFormatNotifTime(item && item.createdAtMs ? item.createdAtMs : 0));
+    const isUnread = !(item && item.readAtMs);
+    const icon = isUnread ? 'fa-bell' : 'fa-check';
+
+    return `
+      <div
+        class="ps-notif-item${isUnread ? ' is-unread' : ''}"
+        data-notif-id="${id}"
+        data-notif-href="${href}"
+        style="cursor:pointer; ${isUnread ? 'background:rgba(0,175,240,.08);' : ''}"
+      >
+        <div class="ps-notif-icon"><i class="fa-solid ${icon}"></i></div>
+        <div class="ps-notif-text">
+          <p><strong>${title}</strong><br>${message || 'Open notification'}</p>
+          <span>${when}</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function psFetchNotifications(limit = 30) {
+  const res = await fetch(`${API_BASE}/api/me/notifications?limit=${encodeURIComponent(limit)}`, {
+    method: 'GET',
+    credentials: 'include'
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data || data.ok !== true) {
+    throw new Error((data && (data.error || data.message)) || 'Failed to load notifications.');
+  }
+
+  return {
+    items: Array.isArray(data.items) ? data.items : [],
+    unreadCount: Math.max(0, Number(data.unreadCount || 0))
+  };
+}
+
+async function psReloadNotifications(limit = 30, { silent = false } = {}) {
+  const els = psGetNotifEls();
+  if (!els) return;
+
+  try {
+    const isPopoverOpen = els.popover.classList.contains('active');
+    if (isPopoverOpen && els.list && !silent) {
+      els.list.innerHTML = `<div style="padding:16px; text-align:center; color:#8a8a8a;">Loading notifications.</div>`;
+    }
+
+    const { items, unreadCount } = await psFetchNotifications(limit);
+    psRenderNotifications(items, unreadCount);
+  } catch (err) {
+    if (!silent) {
+      if (els.list) {
+        els.list.innerHTML = `<div style="padding:16px; text-align:center; color:#8a8a8a;">Failed to load notifications.</div>`;
+      }
+      showToast('Failed to load notifications.');
+    }
+  }
+}
+
+async function psMarkNotificationRead(id) {
+  const notifId = String(id || '').trim();
+  if (!notifId) return false;
+
+  const res = await fetch(`${API_BASE}/api/me/notifications/mark-read`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: notifId })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data || data.ok !== true) {
+    throw new Error((data && (data.error || data.message)) || 'Failed to mark notification as read.');
+  }
+
+  return true;
+}
+
+async function psMarkAllNotificationsRead() {
+  const res = await fetch(`${API_BASE}/api/me/notifications/mark-all-read`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ all: true })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data || data.ok !== true) {
+    throw new Error((data && (data.error || data.message)) || 'Failed to mark all notifications as read.');
+  }
+
+  return true;
+}
+
+function initNotifications() {
+  const btnNotif = document.getElementById('psBtnNotif');
+  const popover = document.getElementById('psNotifPopover');
+  if (!btnNotif || !popover) return;
+
+  const newBtn = btnNotif.cloneNode(true);
+  btnNotif.parentNode.replaceChild(newBtn, btnNotif);
+
+  const markAllBtn = popover.querySelector('.ps-popover-header .ps-btn-text');
+  const list = popover.querySelector('.ps-notif-list');
+
+  psSetNotifBadge(Number((newBtn.querySelector('#psNotifCount') || {}).textContent || 0));
+  psReloadNotifications(30, { silent: true });
+
+  newBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const willOpen = !popover.classList.contains('active');
+
+    newBtn.classList.toggle('active');
+    popover.classList.toggle('active');
+
+    if (willOpen) {
+      await psReloadNotifications(30);
+    }
+  });
+
+  if (markAllBtn) {
+    markAllBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      try {
+        markAllBtn.disabled = true;
+        await psMarkAllNotificationsRead();
+        await psReloadNotifications(30, { silent: true });
+        showToast('All notifications marked as read.');
+      } catch (err) {
+        showToast('Failed to mark all notifications as read.');
+      } finally {
+        markAllBtn.disabled = false;
+      }
+    });
+  }
+
+  if (list) {
+    list.addEventListener('click', async (e) => {
+      const item = e.target.closest('.ps-notif-item[data-notif-id]');
+      if (!item) return;
+      e.stopPropagation();
+
+      const notifId = String(item.getAttribute('data-notif-id') || '').trim();
+      const href = String(item.getAttribute('data-notif-href') || '').trim();
+      const wasUnread = item.classList.contains('is-unread');
+
+      try {
+        if (wasUnread && notifId) {
+          await psMarkNotificationRead(notifId);
+          item.classList.remove('is-unread');
+          item.style.background = '';
+          await psReloadNotifications(30, { silent: true });
+        }
+      } catch (err) {
+        showToast('Failed to mark notification as read.');
+        return;
+      }
+
+      if (href) {
+        window.location.href = href;
+      }
+    });
+  }
+
+  document.addEventListener('click', (e) => {
+    if (!popover.contains(e.target) && !newBtn.contains(e.target)) {
+      popover.classList.remove('active');
+      newBtn.classList.remove('active');
+    }
+  });
+}
+
 function initChat() {
-  const openChatAction = (name) => {
+  const openChatAction = async (target) => {
     if (!PS_DOM.chatWindow) return;
-    PS_DOM.chatName.textContent = name;
-    PS_DOM.chatAvatar.src = "assets/images/truematch-mark.png";
+
+    const resolved = psResolvePeer(target);
+    const label = String(resolved.label || 'Member').trim() || 'Member';
+    const avatar = String(resolved.avatar || 'assets/images/truematch-mark.png').trim() || 'assets/images/truematch-mark.png';
+
+    if (PS_DOM.chatName) PS_DOM.chatName.textContent = label;
+    if (PS_DOM.chatAvatar) PS_DOM.chatAvatar.src = avatar;
 
     // Siguraduhing naka-reset ang position kapag binuksan
     PS_DOM.chatWindow.style.transform = "translateX(0)";
     PS_DOM.chatWindow.style.transition = "transform 0.3s ease";
 
-    if (conversationHistory[name]) {
-      renderMessages(conversationHistory[name]);
-    } else {
-      PS_DOM.chatBody.innerHTML = `<div style="text-align:center; color:#555; margin-top:20px;">Start a conversation with ${name}</div>`;
-    }
     PS_DOM.chatWindow.classList.add("active");
     document.body.classList.add("ps-chat-open");
+
+    await psLoadChatThread(resolved, { label, avatar });
   };
 
   const renderMessages = (msgs) => {
-    PS_DOM.chatBody.innerHTML = "";
-    msgs.forEach((msg) => {
-      const msgDiv = document.createElement("div");
-      msgDiv.className = `ps-msg-bubble ${msg.type}`;
-      if (msg.text.includes('<i class="fa-solid fa-gift"></i>')) {
-        msgDiv.innerHTML = msg.text;
-        msgDiv.style.background = "linear-gradient(135deg, #FFD700, #FFA500)";
-        msgDiv.style.color = "#000";
-        msgDiv.style.fontWeight = "bold";
-      } else {
-        msgDiv.textContent = msg.text;
-      }
-      PS_DOM.chatBody.appendChild(msgDiv);
-    });
-    PS_DOM.chatBody.scrollTop = PS_DOM.chatBody.scrollHeight;
+    psRenderChatThread(msgs);
   };
 
   const closeChatAction = () => {
@@ -1769,27 +2230,27 @@ function initChat() {
     });
   }
 
-  window.sendChatMessage = function () {
+  window.sendChatMessage = async function () {
     const text = PS_DOM.chatInput ? PS_DOM.chatInput.value.trim() : "";
     if (!text) return;
 
-    const currentName = PS_DOM.chatName.textContent;
-    const msgDiv = document.createElement("div");
-    msgDiv.className = "ps-msg-bubble sent";
-    msgDiv.textContent = text;
-    PS_DOM.chatBody.appendChild(msgDiv);
-    PS_DOM.chatBody.scrollTop = PS_DOM.chatBody.scrollHeight;
+    const currentName = String((PS_DOM.chatName && PS_DOM.chatName.textContent) || PS_CHAT_STATE.activePeerLabel || 'Member').trim() || 'Member';
 
+    // optimistic local cache while server request is in flight
     if (!conversationHistory[currentName]) {
       conversationHistory[currentName] = [];
     }
     conversationHistory[currentName].push({ type: "sent", text: text });
     saveHistory();
 
-    moveMatchToMessages(currentName, text);
-
-    PS_DOM.chatInput.value = "";
+    if (PS_DOM.chatInput) PS_DOM.chatInput.value = "";
     if (emojiPicker) emojiPicker.classList.remove("active");
+
+    const out = await psSendMessageToActivePeer({ text });
+    if (!out.ok) {
+      // keep local optimistic cache; thread loader fallback will still use it
+      return;
+    }
   };
 
   function moveMatchToMessages(name, lastText) {
@@ -2116,7 +2577,10 @@ async function psLoadMatches(force = false) {
 
         btn.addEventListener('click', () => {
           const label = _psSafeName(m.name || (m.username ? '@' + String(m.username).replace(/^@/, '') : 'Member'));
-          if (window.openChat) window.openChat(label);
+          const peerEmail = String(m.email || m.id || '').trim().toLowerCase();
+          const avatar = m.photoUrl || 'assets/images/truematch-mark.png';
+          psRememberPeer(peerEmail, label, avatar);
+          if (window.openChat) window.openChat({ name: label, peerEmail, avatar });
           // keep tab on matches - chat UI will overlay
         });
 
@@ -2126,15 +2590,38 @@ async function psLoadMatches(force = false) {
 
     if (PS_DOM.newMatchCount) PS_DOM.newMatchCount.textContent = String(matches.length);
 
+    let messageMeta = {};
+    try {
+      const metaRes = await fetch(`${API_BASE}/api/me/messages/meta`, {
+        method: 'GET',
+        credentials: 'include'
+      });
+      const metaData = await metaRes.json().catch(() => ({}));
+      if (metaRes.ok && metaData && metaData.ok && metaData.items && typeof metaData.items === 'object') {
+        messageMeta = metaData.items;
+      }
+    } catch (_) {}
+
     // MESSAGES LIST (use existing renderMessages UI)
     const messages = matches.map((m) => {
       const label = _psSafeName(m.name || (m.username ? '@' + String(m.username).replace(/^@/, '') : 'Member'));
+      const peerEmail = String(m.email || m.id || '').trim().toLowerCase();
+      const avatar = m.photoUrl || 'assets/images/truematch-mark.png';
+      psRememberPeer(peerEmail, label, avatar);
+
+      const meta = (peerEmail && messageMeta && typeof messageMeta === 'object') ? (messageMeta[peerEmail] || {}) : {};
+      const lastAt = Number(meta.lastMessageAtMs || m.updatedAtMs || m.createdAtMs || 0) || 0;
+      const lastRead = Number(meta.lastReadAtMs || 0) || 0;
+      const preview = String(meta.lastMessageText || '').trim() || 'Tap to chat';
+
       return {
         name: label.replace(/'/g, "\'"),
-        avatar: m.photoUrl || 'assets/images/truematch-mark.png',
-        time: _psFormatTime(m.updatedAtMs || m.createdAtMs),
-        text: 'Tap to chat',
-        unread: false
+        peerEmail,
+        avatar,
+        time: _psFormatTime(lastAt),
+        text: preview,
+        unread: lastAt > 0 && lastAt > lastRead,
+        updatedAtMs: lastAt
       };
     });
 
@@ -2260,66 +2747,40 @@ function initCanvasParticles() {
 // NEW FEATURES: MATCH & GIFT LOGIC
 // ==========================================
 
-// --- 1. GIFT SYSTEM LOGIC ---
-let selectedGiftPrice = 500;
-let selectedGiftName = "Diamond";
-
+// --- 1. GIFT SYSTEM LOGIC (TEMP DISABLED) ---
 window.closeGiftModal = () => {
   if (PS_DOM.giftModal) PS_DOM.giftModal.classList.remove("active");
 };
 
-window.selectGift = (el, name, price) => {
-  // Remove active class from others
-  document
-    .querySelectorAll(".ps-gift-item")
-    .forEach((i) => i.classList.remove("active"));
-  // Add active to clicked
-  el.classList.add("active");
-
-  selectedGiftPrice = price;
-  selectedGiftName = name;
-
-  // Update button text
-  if (PS_DOM.giftPriceBtn) PS_DOM.giftPriceBtn.textContent = price;
+window.selectGift = () => {
+  showToast('Gift feature is temporarily unavailable.');
 };
 
-window.sendSelectedGift = () => {
+window.sendSelectedGift = async () => {
   window.closeGiftModal();
-
-  const targetUser = PS_DOM.chatName ? PS_DOM.chatName.textContent : "User";
-
-  showToast(
-    `Sent ${selectedGiftName} to ${targetUser}! (-${selectedGiftPrice}c)`,
-  );
-
-  const msgDiv = document.createElement("div");
-  msgDiv.className = "ps-msg-bubble sent";
-  msgDiv.style.background = "linear-gradient(135deg, #FFD700, #FFA500)";
-  msgDiv.style.color = "#000";
-  msgDiv.style.fontWeight = "bold";
-  msgDiv.innerHTML = `<i class="fa-solid fa-gift"></i> Sent a ${selectedGiftName}`;
-
-  if (PS_DOM.chatBody) {
-    PS_DOM.chatBody.appendChild(msgDiv);
-    PS_DOM.chatBody.scrollTop = PS_DOM.chatBody.scrollHeight;
-  }
-
-  if (!conversationHistory[targetUser]) conversationHistory[targetUser] = [];
-  conversationHistory[targetUser].push({
-    type: "sent",
-    text: `<i class="fa-solid fa-gift"></i> Sent a ${selectedGiftName}`,
-  });
-  saveHistory();
+  showToast('Gift feature is temporarily unavailable.');
+  return { ok: false, disabled: true };
 };
 
 // --- 2. MATCH OVERLAY LOGIC ---
 window.triggerMatchOverlay = (person) => {
   if (!PS_DOM.matchOverlay) return;
 
-  if (PS_DOM.matchName) PS_DOM.matchName.textContent = person.name;
+  PS_CHAT_STATE.matchOverlayTarget = person || null;
+
+  const label = _psSafeName((person && person.name) || 'Member');
+  const peerEmail = String((person && (person.email || person.id)) || '').trim().toLowerCase();
+  const avatar = (person && (person.photoUrl || person.avatar)) || 'assets/images/truematch-mark.png';
+  psRememberPeer(peerEmail, label, avatar);
+
+  if (PS_DOM.matchName) PS_DOM.matchName.textContent = label;
 
   if (PS_DOM.matchTargetImg) {
-    PS_DOM.matchTargetImg.style.background = person.color || "#00aff0";
+    if (person && (person.photoUrl || person.avatar)) {
+      PS_DOM.matchTargetImg.src = person.photoUrl || person.avatar;
+    } else {
+      PS_DOM.matchTargetImg.style.background = (person && person.color) || "#00aff0";
+    }
   }
   if (PS_DOM.matchUserImg) {
     PS_DOM.matchUserImg.style.background = "#00aff0";
@@ -2333,14 +2794,15 @@ window.closeMatchOverlay = () => {
 };
 
 window.openChatFromMatch = () => {
-  const name = PS_DOM.matchName.textContent;
+  const label = (PS_DOM.matchName && PS_DOM.matchName.textContent) || 'Member';
+  const target = PS_CHAT_STATE.matchOverlayTarget || { name: label, peerEmail: PS_CHAT_STATE.peersByLabel[label] || '', avatar: PS_CHAT_STATE.avatarsByLabel[label] || 'assets/images/truematch-mark.png' };
   window.closeMatchOverlay();
 
   const matchesBtn = document.querySelector('button[data-panel="matches"]');
   if (matchesBtn) matchesBtn.click();
 
   setTimeout(() => {
-    if (window.openChat) window.openChat(name);
+    if (window.openChat) window.openChat(target);
   }, 300);
 };
 document.addEventListener("DOMContentLoaded", () => {

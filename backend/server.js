@@ -10043,7 +10043,7 @@ app.post('/api/me/premium/apply', async (req, res) => {
     }
 
     
-    // Eligibility: Premium Society requires an ACTIVE Plus (Tier 1) or higher plan.
+    // Eligibility: Premium Society requires an ACTIVE Elite (Tier 2) or Concierge (Tier 3) plan.
     const myPlanKey = normalizePlanKey(
       userDoc.plan || userDoc.planKey || userDoc.tier || userDoc.tierKey || userDoc.subscriptionPlan || 'free'
     );
@@ -10051,11 +10051,11 @@ app.post('/api/me/premium/apply', async (req, res) => {
     const myPlanEnd = (userDoc.planEnd ?? userDoc.subscriptionEnd ?? userDoc.subEnd ?? null);
     const myPlanActive = _computePlanActiveForDoc(myPlanKey, myPlanEnd, userDoc.planActive);
 
-    if (!(myPlanActive && myTier >= 1)) {
+    if (!(myPlanActive && myTier >= 2)) {
       return res.status(403).json({
         ok: false,
         code: 'not_eligible',
-        message: 'Premium Society applications require an active Plus (Tier 1) or higher plan.'
+        message: 'Premium Society applications require an active Elite (Tier 2) or Concierge (Tier 3) plan.'
       });
     }
 
