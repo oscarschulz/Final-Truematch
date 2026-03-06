@@ -1601,262 +1601,217 @@ export function initSettingsLogic() {
   const distVal = document.getElementById("psDistVal");
   const ageInput = document.getElementById("psRangeAge");
   const ageVal = document.getElementById("psAgeVal");
+  const toggles = Array.from(document.querySelectorAll(".ps-setting-toggle, .ps-switch-cyan input, .ps-switch-mini input"));
 
   if (!distInput || !ageInput) return;
 
   const me = (() => {
-    try { return JSON.parse(localStorage.getItem('tm_user')); } catch (e) { return null; }
+    try { return PS_STATE.me || JSON.parse(localStorage.getItem('tm_user')) || null; } catch (_) { return PS_STATE.me || null; }
   })();
   const email = me?.email || null;
-  const settingsCacheKey = email ? `ps_settings_cache:${String(email).trim().toLowerCase()}` : 'ps_settings_cache:guest';
 
-  const settingsScope = document.querySelector('.ps-panel[data-panel="settings"]') || document;
-  const toggleRows = Array.from(settingsScope.querySelectorAll('.ps-toggle-row, .ps-legal-row'));
+  const localPrefsKey = email ? `ps_settings_${String(email).trim().toLowerCase()}` : 'ps_settings_local';
 
-  function findToggleByLabel(label) {
-    const wanted = String(label || '').trim().toLowerCase();
-    for (const row of toggleRows) {
-      const textEl = row.querySelector('span');
-      const input = row.querySelector('input[type="checkbox"]');
-      const rowLabel = String(textEl?.textContent || '').trim().toLowerCase();
-      if (input && rowLabel === wanted) return input;
-    }
-    return null;
-  }
-
-  const toggleMap = {
-    matches: findToggleByLabel('Matches'),
-    messages: findToggleByLabel('Messages'),
-    soundEffects: findToggleByLabel('Sound Effects'),
-    hapticFeedback: findToggleByLabel('Haptic Feedback'),
-  };
-
-  Object.entries(toggleMap).forEach(([key, input]) => {
-    if (input) {
-      input.dataset.settingKey = key;
-      if (!input.dataset.name) {
-        const labelMap = {
-          matches: 'Matches notifications',
-          messages: 'Messages notifications',
-          soundEffects: 'Sound Effects',
-          hapticFeedback: 'Haptic Feedback',
-        };
-        input.dataset.name = labelMap[key] || key;
-      }
-    }
-  });
-
-  const defaults = {
-    distanceKm: Number(distInput.value) || 15,
-    maxAge: Number(ageInput.value) || 26,
+  const defaultSettings = {
+    distanceKm: Number(distInput.value || 50),
+    maxAge: Number(ageInput.value || 35),
     notifications: {
-      matches: toggleMap.matches ? !!toggleMap.matches.checked : true,
-      messages: toggleMap.messages ? !!toggleMap.messages.checked : true,
+      matches: true,
+      messages: true,
     },
-    appPreferences: {
-      soundEffects: toggleMap.soundEffects ? !!toggleMap.soundEffects.checked : true,
-      hapticFeedback: toggleMap.hapticFeedback ? !!toggleMap.hapticFeedback.checked : false,
-    },
+    app: {
+      soundEffects: true,
+      hapticFeedback: true,
+    }
   };
 
-  function cloneSettings(v) {
-    return JSON.parse(JSON.stringify(v));
-  }
-
-  function mergeSettings(base, incoming) {
-    const next = cloneSettings(base || defaults);
-    const src = (incoming && typeof incoming === 'object') ? incoming : {};
-
-    if (src.distanceKm != null && Number.isFinite(Number(src.distanceKm))) next.distanceKm = Number(src.distanceKm);
-    if (src.maxAge != null && Number.isFinite(Number(src.maxAge))) next.maxAge = Number(src.maxAge);
-
-    if (src.notifications && typeof src.notifications === 'object') {
-      next.notifications = {
-        ...next.notifications,
-        ...src.notifications,
-      };
-    }
-
-    const appPrefs = (src.appPreferences && typeof src.appPreferences === 'object')
-      ? src.appPreferences
-      : ((src.preferences && typeof src.preferences === 'object') ? src.preferences : null);
-    if (appPrefs) {
-      next.appPreferences = {
-        ...next.appPreferences,
-        ...appPrefs,
-      };
-    }
-
-    return next;
-  }
-
-  function applySettingsToUi(settings) {
-    const safe = mergeSettings(defaults, settings);
-
-    distInput.value = String(Number(safe.distanceKm) || defaults.distanceKm);
-    ageInput.value = String(Number(safe.maxAge) || defaults.maxAge);
-    if (distVal) distVal.textContent = String(Number(safe.distanceKm) || defaults.distanceKm);
-    if (ageVal) ageVal.textContent = String(Number(safe.maxAge) || defaults.maxAge);
-
-    if (toggleMap.matches) toggleMap.matches.checked = !!safe.notifications.matches;
-    if (toggleMap.messages) toggleMap.messages.checked = !!safe.notifications.messages;
-    if (toggleMap.soundEffects) toggleMap.soundEffects.checked = !!safe.appPreferences.soundEffects;
-    if (toggleMap.hapticFeedback) toggleMap.hapticFeedback.checked = !!safe.appPreferences.hapticFeedback;
-  }
-
-  function captureSettingsFromUi() {
-    return {
-      distanceKm: Number(distInput.value),
-      maxAge: Number(ageInput.value),
-      notifications: {
-        matches: toggleMap.matches ? !!toggleMap.matches.checked : defaults.notifications.matches,
-        messages: toggleMap.messages ? !!toggleMap.messages.checked : defaults.notifications.messages,
-      },
-      appPreferences: {
-        soundEffects: toggleMap.soundEffects ? !!toggleMap.soundEffects.checked : defaults.appPreferences.soundEffects,
-        hapticFeedback: toggleMap.hapticFeedback ? !!toggleMap.hapticFeedback.checked : defaults.appPreferences.hapticFeedback,
-      },
-    };
+  function clone(obj) {
+    try { return JSON.parse(JSON.stringify(obj)); } catch (_) { return obj; }
   }
 
   function readLocalSettings() {
-    let merged = cloneSettings(defaults);
-
     try {
-      if (email && typeof loadPrefsForUser === 'function') {
-        merged = mergeSettings(merged, loadPrefsForUser(email) || {});
-      }
-    } catch (e) {
-      console.warn('Failed to load local prefs cache:', e);
+      const raw = localStorage.getItem(localPrefsKey);
+      if (!raw) return clone(defaultSettings);
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? { ...clone(defaultSettings), ...parsed } : clone(defaultSettings);
+    } catch (_) {
+      return clone(defaultSettings);
     }
-
-    try {
-      const raw = localStorage.getItem(settingsCacheKey);
-      if (raw) merged = mergeSettings(merged, JSON.parse(raw));
-    } catch (e) {
-      console.warn('Failed to load premium settings cache:', e);
-    }
-
-    return merged;
   }
 
-  function saveLocalSettings(next) {
-    const safe = mergeSettings(defaults, next);
-
+  function writeLocalSettings(next) {
+    try { localStorage.setItem(localPrefsKey, JSON.stringify(next || {})); } catch (_) {}
     try {
-      if (email && typeof savePrefsForUser === 'function') {
+      if (typeof savePrefsForUser === 'function' && email) {
         savePrefsForUser(email, {
-          distanceKm: safe.distanceKm,
-          maxAge: safe.maxAge,
+          distanceKm: next?.distanceKm,
+          maxAge: next?.maxAge,
+          notifications: next?.notifications || {},
+          app: next?.app || {}
         });
       }
-    } catch (e) {
-      console.warn('Failed to save legacy prefs cache:', e);
-    }
-
-    try {
-      localStorage.setItem(settingsCacheKey, JSON.stringify(safe));
-    } catch (e) {
-      console.warn('Failed to save premium settings cache:', e);
-    }
+    } catch (_) {}
   }
 
-  applySettingsToUi(readLocalSettings());
+  function getToggleName(toggle) {
+    const explicit = String(toggle?.dataset?.name || '').trim().toLowerCase();
+    if (explicit) return explicit;
+
+    const row = toggle?.closest?.('.ps-setting-item, .ps-setting-row, .ps-setting-card, label, .ps-row');
+    const rowText = String(row?.textContent || '').trim().toLowerCase();
+
+    if (rowText.includes('matches')) return 'matches notifications';
+    if (rowText.includes('messages')) return 'messages notifications';
+    if (rowText.includes('sound')) return 'sound effects';
+    if (rowText.includes('haptic')) return 'haptic feedback';
+    return '';
+  }
+
+  const toggleMap = new Map();
+  toggles.forEach((toggle) => {
+    const name = getToggleName(toggle);
+    if (!name) return;
+    if (!toggleMap.has(name)) toggleMap.set(name, toggle);
+  });
+
+  function applySettingsToUi(settings) {
+    const safe = {
+      ...clone(defaultSettings),
+      ...(settings && typeof settings === 'object' ? settings : {})
+    };
+    const dist = Number(safe.distanceKm);
+    const maxAge = Number(safe.maxAge);
+
+    if (Number.isFinite(dist)) {
+      distInput.value = String(dist);
+      if (distVal) distVal.textContent = String(dist);
+    }
+    if (Number.isFinite(maxAge)) {
+      ageInput.value = String(maxAge);
+      if (ageVal) ageVal.textContent = String(maxAge);
+    }
+
+    const matchesToggle = toggleMap.get('matches notifications');
+    const messagesToggle = toggleMap.get('messages notifications');
+    const soundToggle = toggleMap.get('sound effects');
+    const hapticToggle = toggleMap.get('haptic feedback');
+
+    if (matchesToggle) matchesToggle.checked = safe.notifications?.matches !== false;
+    if (messagesToggle) messagesToggle.checked = safe.notifications?.messages !== false;
+    if (soundToggle) soundToggle.checked = safe.app?.soundEffects !== false;
+    if (hapticToggle) hapticToggle.checked = safe.app?.hapticFeedback !== false;
+  }
+
+  function collectSettingsFromUi() {
+    const matchesToggle = toggleMap.get('matches notifications');
+    const messagesToggle = toggleMap.get('messages notifications');
+    const soundToggle = toggleMap.get('sound effects');
+    const hapticToggle = toggleMap.get('haptic feedback');
+
+    return {
+      distanceKm: Number(distInput.value || 50),
+      maxAge: Number(ageInput.value || 35),
+      notifications: {
+        matches: matchesToggle ? !!matchesToggle.checked : true,
+        messages: messagesToggle ? !!messagesToggle.checked : true,
+      },
+      app: {
+        soundEffects: soundToggle ? !!soundToggle.checked : true,
+        hapticFeedback: hapticToggle ? !!hapticToggle.checked : true,
+      }
+    };
+  }
+
+  let settingsSaveTimer = null;
+  let settingsLoaded = false;
+
+  async function persistSettings(options = {}) {
+    const { immediate = false, trigger = '' } = options || {};
+    const next = collectSettingsFromUi();
+
+    writeLocalSettings(next);
+
+    const runSave = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/me/settings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(next)
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.ok === false) {
+          const msg = data?.message || 'Failed to save settings.';
+          throw new Error(msg);
+        }
+
+        if (trigger) showToast(`${trigger} saved`);
+      } catch (e) {
+        console.error("Cloud Sync Failed:", e);
+        if (trigger) showToast(`${trigger} saved locally`);
+      }
+    };
+
+    if (immediate) {
+      if (settingsSaveTimer) clearTimeout(settingsSaveTimer);
+      await runSave();
+      return;
+    }
+
+    if (settingsSaveTimer) clearTimeout(settingsSaveTimer);
+    settingsSaveTimer = setTimeout(runSave, 500);
+  }
 
   async function loadSettingsFromServer() {
-    if (!email) return;
+    const fallback = readLocalSettings();
+    applySettingsToUi(fallback);
 
     try {
       const res = await fetch(`${API_BASE}/api/me/settings`, {
         method: 'GET',
-        credentials: 'include',
+        credentials: 'include'
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data || data.ok !== true) return;
+      if (!res.ok || data?.ok === false) throw new Error(data?.message || 'Failed to load settings');
 
-      const merged = mergeSettings(readLocalSettings(), data.settings || {});
+      const merged = {
+        ...clone(defaultSettings),
+        ...(data.settings && typeof data.settings === 'object' ? data.settings : {})
+      };
+
+      writeLocalSettings(merged);
       applySettingsToUi(merged);
-      saveLocalSettings(merged);
     } catch (e) {
-      console.warn('Failed to load settings from server:', e);
+      console.warn("Settings load fallback:", e);
+    } finally {
+      settingsLoaded = true;
     }
   }
 
-  function debounce(func, wait = 500) {
-    let timeout;
-    return (...args) => {
-      clearTimeout(timeout);
-      timeout = setTimeout(() => func.apply(this, args), wait);
-    };
-  }
-
-  async function persistSettings(options = {}) {
-    const { silent = false, trigger = '' } = options;
-    if (!email) {
-      if (!silent) showToast('Session expired. Please sign in again.');
-      return { ok: false };
-    }
-
-    const nextPrefs = captureSettingsFromUi();
-    saveLocalSettings(nextPrefs);
-
-    try {
-      const res = await fetch(`${API_BASE}/api/me/settings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(nextPrefs),
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data || data.ok !== true) {
-        throw new Error((data && (data.message || data.error)) || 'Server Error');
-      }
-
-      const merged = mergeSettings(nextPrefs, data.settings || nextPrefs);
-      saveLocalSettings(merged);
-
-      if (!silent) {
-        if (trigger) {
-          showToast(trigger);
-        } else {
-          showToast('Preferences synced to cloud ☁️✨');
-        }
-      }
-
-      return { ok: true, settings: merged };
-    } catch (e) {
-      console.error('Cloud Sync Failed:', e);
-      if (!silent) showToast('Saved locally (Sync error)');
-      return { ok: false, error: e };
-    }
-  }
-
-  const debouncedPersist = debounce(() => {
-    persistSettings({ silent: true });
-  }, 800);
-
-  distInput.addEventListener('input', (e) => {
+  distInput.addEventListener("input", (e) => {
     if (distVal) distVal.textContent = e.target.value;
-    debouncedPersist();
+    if (settingsLoaded) persistSettings({ trigger: 'Distance preference' });
   });
-  distInput.addEventListener('change', () => {
-    persistSettings({ trigger: 'Discovery distance updated ✨' });
+  distInput.addEventListener("change", () => {
+    if (settingsLoaded) persistSettings({ immediate: true, trigger: 'Distance preference' });
   });
 
-  ageInput.addEventListener('input', (e) => {
+  ageInput.addEventListener("input", (e) => {
     if (ageVal) ageVal.textContent = e.target.value;
-    debouncedPersist();
+    if (settingsLoaded) persistSettings({ trigger: 'Age preference' });
   });
-  ageInput.addEventListener('change', () => {
-    persistSettings({ trigger: 'Max age preference updated ✨' });
+  ageInput.addEventListener("change", () => {
+    if (settingsLoaded) persistSettings({ immediate: true, trigger: 'Age preference' });
   });
 
-  Object.values(toggleMap).filter(Boolean).forEach((toggle) => {
-    toggle.addEventListener('change', (e) => {
-      const settingName = e.target.dataset.name || 'Setting';
-      const status = e.target.checked ? 'enabled' : 'disabled';
-      persistSettings({ trigger: `${settingName} ${status}` });
+  toggles.forEach((toggle) => {
+    toggle.addEventListener("change", () => {
+      if (!settingsLoaded) return;
+      const settingName = getToggleName(toggle) || 'Setting';
+      const status = toggle.checked ? 'enabled' : 'disabled';
+      persistSettings({ immediate: true, trigger: `${settingName} ${status}` });
     });
   });
 
@@ -1880,7 +1835,7 @@ export function initSettingsLogic() {
       title: '<i class="fa-solid fa-gem" style="color:#FFD700"></i> Premium Society',
       html: `<div style="text-align: left; font-size: 0.85rem; color: #ccc;">
                 <p><b>Membership:</b> Auto-renew monthly ang iyong subscription.</p>
-                <p><b>Diamonds:</b> Digital gifts are final and non-refundable.</p>
+                <p><b>Member Perks:</b> Additional paid extras are currently unavailable on this page.</p>
             </div>`,
       background: "#15151e", color: "#fff", confirmButtonColor: "#FFD700",
     });
@@ -1899,19 +1854,57 @@ export function initSettingsLogic() {
       title: "Contact Support",
       html: `<input id="ticket-subject" class="swal2-input" placeholder="Subject" style="color:#fff; background:#222; border:1px solid #444;">
              <textarea id="ticket-message" class="swal2-textarea" placeholder="Describe your issue..." style="color:#fff; background:#222; border:1px solid #444; height: 100px;"></textarea>`,
-      background: "#15151e", color: "#fff", confirmButtonText: "Send Ticket", confirmButtonColor: "#00aff0", showCancelButton: true,
+      background: "#15151e",
+      color: "#fff",
+      confirmButtonText: "Send Ticket",
+      confirmButtonColor: "#00aff0",
+      showCancelButton: true,
+      preConfirm: async () => {
+        const subject = String(document.getElementById('ticket-subject')?.value || '').trim();
+        const message = String(document.getElementById('ticket-message')?.value || '').trim();
+
+        if (!message) {
+          Swal.showValidationMessage('Please describe your issue first.');
+          return false;
+        }
+
+        try {
+          const res = await fetch(`${API_BASE}/api/support/email`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: PS_STATE.me?.name || PS_STATE.me?.fullName || '',
+              subject: subject || 'Support request',
+              message
+            })
+          });
+
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || data?.ok === false) {
+            throw new Error(data?.message || 'Failed to submit support request');
+          }
+          return data;
+        } catch (e) {
+          Swal.showValidationMessage(String(e?.message || 'Failed to submit support request.'));
+          return false;
+        }
+      }
     }).then((result) => {
-      if (result.isConfirmed) { showToast("Support Ticket Sent! ✨"); }
+      if (result.isConfirmed) {
+        const ticketId = result.value?.ticketId ? ` (${result.value.ticketId})` : '';
+        showToast(`Support Ticket Sent${ticketId} ✨`);
+      }
     });
   };
 
   window.clearAppCache = async () => {
-    showToast('Clearing Media Cache...');
+    showToast("Clearing Media Cache...");
     try {
       localStorage.removeItem('ps_chat_history');
       localStorage.removeItem('ps_reset_time');
       localStorage.removeItem('ps_swipes_left');
-      localStorage.removeItem(settingsCacheKey);
+      localStorage.removeItem(localPrefsKey);
       if ('caches' in window && typeof window.caches.keys === 'function') {
         const keys = await window.caches.keys();
         await Promise.all(
@@ -1923,10 +1916,9 @@ export function initSettingsLogic() {
     } catch (e) {
       console.warn('Clear cache failed:', e);
     }
-    setTimeout(() => { showToast('Cache Cleared Successfully ✨'); }, 700);
+    setTimeout(() => { showToast("Cache Cleared Successfully ✨"); }, 700);
   };
 }
-
 // ---------------------------------------------------------------------
 // EDIT PROFILE LOGIC
 // ---------------------------------------------------------------------
@@ -1937,11 +1929,8 @@ export function initSettingsLogic() {
 function initProfileEditLogic() {
   const modal = document.getElementById("psEditProfileModal");
   const btnEdit = document.getElementById("psBtnEditProfile");
-
-  // Check kung existing ang elements para iwas error sa console
   if (!modal || !btnEdit) return;
 
-  // 1. MAPPING NG MGA INPUTS (Lahat ng fields sa modal)
   const fields = {
     name: document.getElementById("psInputName"),
     email: document.getElementById("psInputEmail"),
@@ -1955,7 +1944,6 @@ function initProfileEditLogic() {
     reason: document.getElementById("psInputReason"),
   };
 
-  // 2. MAPPING NG DISPLAY ELEMENTS (Yung mga nag-uupdate sa UI dashboard)
   const displayNames = [
     document.getElementById("psSNameDisplay"),
     document.getElementById("psMiniName"),
@@ -1964,118 +1952,196 @@ function initProfileEditLogic() {
   ];
   const displayEmails = [document.getElementById("psSEmailDisplay")];
 
-  // 3. AUTO-LOAD DATA (Kunin ang dating save sa localStorage)
-  const savedData = JSON.parse(localStorage.getItem("ps_user_profile"));
-  if (savedData) {
+  function getProfileStorageKey() {
+    const email = String(PS_STATE.me?.email || '').trim().toLowerCase();
+    return email ? `ps_user_profile_${email}` : 'ps_user_profile';
+  }
+
+  function fillForm(profileData = {}) {
+    const safe = profileData && typeof profileData === 'object' ? profileData : {};
     Object.keys(fields).forEach((key) => {
-      if (fields[key]) fields[key].value = savedData[key] || "";
-    });
-    // I-update agad ang UI names at emails base sa saved data
-    displayNames.forEach((el) => {
-      if (el) el.innerText = savedData.name || "Member";
-    });
-    displayEmails.forEach((el) => {
-      if (el) el.innerText = savedData.email || "user@example.com";
+      if (fields[key]) fields[key].value = safe[key] != null ? String(safe[key]) : "";
     });
   }
 
-  // 4. OPEN MODAL ACTION
-  btnEdit.onclick = (e) => {
+  function updateInlineIdentity(profileData = {}) {
+    const safeName = String(profileData.name || 'Member').trim() || 'Member';
+    const safeEmail = String(profileData.email || '').trim();
+
+    displayNames.forEach((el) => {
+      if (!el) return;
+      if (el.id === 'psWelcomeName') {
+        el.innerText = safeName.split(' ')[0] || safeName;
+      } else {
+        el.innerText = safeName;
+      }
+    });
+    displayEmails.forEach((el) => {
+      if (el) el.innerText = safeEmail;
+    });
+  }
+
+  function readLocalProfile() {
+    try {
+      const raw = localStorage.getItem(getProfileStorageKey());
+      return raw ? JSON.parse(raw) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function writeLocalProfile(data) {
+    try { localStorage.setItem(getProfileStorageKey(), JSON.stringify(data || {})); } catch (_) {}
+  }
+
+  function buildUiProfileFromUser(user) {
+    const app = (user && typeof user.premiumApplication === 'object' && user.premiumApplication) ? user.premiumApplication : {};
+    return {
+      name: user?.name || user?.fullName || user?.displayName || user?.username || '',
+      email: user?.email || '',
+      occupation: app.occupation || '',
+      age: app.age ?? user?.age ?? '',
+      wealth: app.wealthStatus || '',
+      income: app.incomeRange || '',
+      networth: app.netWorthRange || '',
+      source: app.incomeSource || '',
+      social: app.socialLink || '',
+      reason: app.reason || '',
+    };
+  }
+
+  async function loadProfileFromServer() {
+    try {
+      const res = await fetch(`${API_BASE}/api/me`, {
+        method: 'GET',
+        credentials: 'include'
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok || !data?.user) throw new Error(data?.message || 'Failed to load profile');
+      const next = buildUiProfileFromUser(data.user);
+      writeLocalProfile(next);
+      fillForm(next);
+      updateInlineIdentity(next);
+      return next;
+    } catch (e) {
+      console.warn('Profile load fallback:', e);
+      const local = readLocalProfile();
+      if (local) {
+        fillForm(local);
+        updateInlineIdentity(local);
+        return local;
+      }
+      return null;
+    }
+  }
+
+  const localProfile = readLocalProfile();
+  if (localProfile) {
+    fillForm(localProfile);
+    updateInlineIdentity(localProfile);
+  }
+
+  btnEdit.onclick = async (e) => {
     e.preventDefault();
+    await loadProfileFromServer();
     modal.classList.add("active");
   };
 
-  // 5. GLOBAL CLOSE MODAL FUNCTION
   window.closeEditProfile = () => {
     modal.classList.remove("active");
   };
 
-// ============================================================
-  // START: REPLACEMENT CODE (Backend Connected)
-  // ============================================================
-
-  // 1. Helper Function: Pang-contact sa Server (Backend)
-  async function psTryUpdatePremiumProfile(payload) {
-    // Susubukan nito ang mga endpoints na ito para sigurado
-    const paths = [
-        '/api/me/premium/profile',
-        '/api/me/premium/profile/update',
-        '/api/me/premium/update-profile'
-    ];
-
-    for (const path of paths) {
-        try {
-            const res = await fetch(path, {
-                method: 'POST',
-                credentials: 'include', // Importante para sa cookies/session
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            if (res.status === 404) continue; // Pag wala sa path na 'to, try sa sunod
-
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.message || 'Failed to save');
-            
-            return { ok: true, data };
-        } catch (e) {
-            console.error("Server save error:", e);
-        }
-    }
-    return { ok: false };
-  }
-
-  // 2. Main Save Function (Async na siya ngayon)
-  window.saveEditProfile = async () => {
-    // Ipunin lahat ng values mula sa fields
-    const profileData = {};
-    Object.keys(fields).forEach((key) => {
-      profileData[key] = fields[key] ? fields[key].value.trim() : "";
+  async function psSaveAccountProfile(payload) {
+    const res = await fetch(`${API_BASE}/api/me/profile`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     });
 
-    // Validation: Pangalan lang ang required
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.ok === false) {
+      throw new Error(data?.message || 'Failed to save account profile');
+    }
+    return data;
+  }
+
+  async function psSavePremiumProfile(payload) {
+    const res = await fetch(`${API_BASE}/api/me/premium/profile`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.ok === false) {
+      throw new Error(data?.message || 'Failed to save premium profile');
+    }
+    return data;
+  }
+
+  window.saveEditProfile = async () => {
+    const profileData = {};
+    Object.keys(fields).forEach((key) => {
+      profileData[key] = fields[key] ? String(fields[key].value || '').trim() : "";
+    });
+
     if (!profileData.name) {
-      if (window.showToast) showToast("Please enter your name first.");
+      showToast("Please enter your name first.");
       return;
     }
 
-    // UPDATE UI DISPLAYS (Real-time update sa dashboard)
-    displayNames.forEach((el) => { if (el) el.innerText = profileData.name; });
-    displayEmails.forEach((el) => { if (el) el.innerText = profileData.email; });
-
-    // A. SAVE LOCALLY (Backup / Optimistic UI)
-    localStorage.setItem("ps_user_profile", JSON.stringify(profileData));
-
-    // B. SAVE TO BACKEND (Laravel Server)
-    if (window.showToast) showToast("Saving to server...");
-
-    // I-map ang data para tumugma sa Database columns ng Backend
-    const backendPayload = {
-        fullName: profileData.name,
-        email: profileData.email,
-        occupation: profileData.occupation,
-        age: profileData.age,
-        wealthStatus: profileData.wealth,       // Mapped from 'wealth'
-        incomeRange: profileData.income,        // Mapped from 'income'
-        netWorthRange: profileData.networth,    // Mapped from 'networth'
-        incomeSource: profileData.source,       // Mapped from 'source'
-        socialLink: profileData.social,         // Mapped from 'social'
-        reason: profileData.reason
-    };
-
-    const serverRes = await psTryUpdatePremiumProfile(backendPayload);
-
-    if (serverRes.ok) {
-        if (window.showToast) showToast("Profile Saved to Server! ✨");
-    } else {
-        if (window.showToast) showToast("Saved locally (Server offline).");
+    if (profileData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profileData.email)) {
+      showToast("Please enter a valid email.");
+      return;
     }
 
-    window.closeEditProfile();
-    console.log("Saved data (Backend & Local):", backendPayload);
+    writeLocalProfile(profileData);
+    updateInlineIdentity(profileData);
+    showToast("Saving profile...");
+
+    const accountPayload = {
+      name: profileData.name,
+      email: profileData.email,
+    };
+
+    const ageNum = Number(profileData.age);
+    if (profileData.age !== '' && Number.isFinite(ageNum)) {
+      accountPayload.age = ageNum;
+    }
+
+    const premiumPayload = {
+      fullName: profileData.name,
+      occupation: profileData.occupation,
+      wealthStatus: profileData.wealth,
+      incomeRange: profileData.income,
+      netWorthRange: profileData.networth,
+      incomeSource: profileData.source,
+      socialLink: profileData.social,
+      reason: profileData.reason
+    };
+    if (profileData.age !== '' && Number.isFinite(ageNum)) premiumPayload.age = ageNum;
+
+    try {
+      await psSaveAccountProfile(accountPayload);
+      try {
+        await psSavePremiumProfile(premiumPayload);
+      } catch (premiumErr) {
+        console.warn('Premium profile save skipped/failed:', premiumErr);
+      }
+
+      await hydrateAccountIdentity();
+      await loadProfileFromServer();
+
+      showToast("Profile Saved to Server! ✨");
+      window.closeEditProfile();
+    } catch (e) {
+      console.error("Profile save error:", e);
+      showToast(String(e?.message || "Saved locally (Server offline)."));
+    }
   };
 } // END of initProfileEditLogic
-
 // CHANGE PASSWORD (Global Function)
 window.openChangePassword = () => {
   Swal.fire({
@@ -2084,7 +2150,6 @@ window.openChangePassword = () => {
                 <input type="password" id="swal-curr-pass" class="swal2-input" placeholder="Current Password" style="color:#000;">
                 <input type="password" id="swal-new-pass" class="swal2-input" placeholder="New Password" style="color:#000;">
                 <input type="password" id="swal-conf-pass" class="swal2-input" placeholder="Confirm New Password" style="color:#000;">
-                <p style="margin:8px 0 0; font-size:0.8rem; color:#9fb3c8; text-align:left;">Use at least 8 characters with uppercase, lowercase, and a number.</p>
             `,
     confirmButtonText: "Update Password",
     confirmButtonColor: "#00aff0",
@@ -2092,12 +2157,10 @@ window.openChangePassword = () => {
     background: "#15151e",
     color: "#fff",
     customClass: { container: "ps-swal-on-top" },
-    focusConfirm: false,
-    showLoaderOnConfirm: true,
     preConfirm: async () => {
-      const curr = String(document.getElementById("swal-curr-pass")?.value || '').trim();
-      const newP = String(document.getElementById("swal-new-pass")?.value || '').trim();
-      const confP = String(document.getElementById("swal-conf-pass")?.value || '').trim();
+      const curr = String(document.getElementById("swal-curr-pass")?.value || '');
+      const newP = String(document.getElementById("swal-new-pass")?.value || '');
+      const confP = String(document.getElementById("swal-conf-pass")?.value || '');
 
       if (!curr || !newP || !confP) {
         Swal.showValidationMessage("Fill up mo lahat ng fields.");
@@ -2108,45 +2171,36 @@ window.openChangePassword = () => {
         return false;
       }
       if (newP.length < 8) {
-        Swal.showValidationMessage("Password must be at least 8 characters.");
-        return false;
-      }
-      if (!/[a-z]/.test(newP) || !/[A-Z]/.test(newP) || !/\d/.test(newP)) {
-        Swal.showValidationMessage("Use uppercase, lowercase, and at least one number.");
+        Swal.showValidationMessage("New password must be at least 8 characters.");
         return false;
       }
 
       try {
         const res = await fetch(`${API_BASE}/api/me/password`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ currentPassword: curr, newPassword: newP })
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            currentPassword: curr,
+            newPassword: newP
+          })
         });
 
         const data = await res.json().catch(() => ({}));
-        if (res.ok && data && data.ok) {
-          return { ok: true };
+        if (!res.ok || data?.ok === false) {
+          const msgMap = {
+            wrong_password: 'Current password is incorrect.',
+            weak_password: 'New password is too weak.',
+            too_many_requests: 'Too many attempts. Try again later.',
+            auth_backend_misconfigured: 'Password change is temporarily unavailable.',
+            user_not_found: 'User not found.'
+          };
+          throw new Error(msgMap[data?.message] || data?.message || 'Failed to update password.');
         }
 
-        const code = String((data && (data.message || data.error || data.code)) || '');
-        if (code === 'wrong_password') {
-          Swal.showValidationMessage('Current password is incorrect.');
-        } else if (code === 'weak_password') {
-          Swal.showValidationMessage('Use at least 8 characters with uppercase, lowercase, and a number.');
-        } else if (code === 'too_many_requests') {
-          Swal.showValidationMessage('Too many attempts. Please try again later.');
-        } else if (code === 'not_logged_in') {
-          Swal.showValidationMessage('Session expired. Please sign in again.');
-        } else if (code === 'auth_backend_misconfigured') {
-          Swal.showValidationMessage('Password updates are temporarily unavailable. Please try again later.');
-        } else {
-          Swal.showValidationMessage('Unable to update password. Please try again.');
-        }
-        return false;
+        return true;
       } catch (e) {
-        console.error('Change password failed:', e);
-        Swal.showValidationMessage('Unable to update password. Please try again.');
+        Swal.showValidationMessage(String(e?.message || 'Failed to update password.'));
         return false;
       }
     },
@@ -2155,7 +2209,6 @@ window.openChangePassword = () => {
       Swal.fire({
         icon: "success",
         title: "Password Updated",
-        text: "Your password has been changed successfully.",
         background: "#15151e",
         color: "#fff",
         confirmButtonColor: "#00aff0",
