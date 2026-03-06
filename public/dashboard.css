@@ -195,7 +195,7 @@ body::after {
 .notif-icon-box { width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; font-size: 1.2rem; cursor: pointer; position: relative; transition: 0.2s; z-index: 4100; }
 .notif-icon-box:hover { background: rgba(255,255,255,0.2); }
 .notif-dot { position: absolute; top: 8px; right: 10px; width: 8px; height: 8px; background: #ff3366; border-radius: 50%; border: 1px solid #000; }
-.notif-overlay { position: fixed; inset: 0; background: rgba(4, 10, 18, 0.38); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); opacity: 0; pointer-events: none; transition: opacity 0.18s ease; z-index: 4090; }
+.notif-overlay { position: fixed; inset: 0; background: rgba(4, 10, 18, 0.38); opacity: 0; pointer-events: none; transition: opacity 0.18s ease; z-index: 4090; }
 body.notif-open .notif-overlay { opacity: 1; pointer-events: auto; }
 .notif-dropdown { position: fixed; top: 64px; right: 16px; left: auto; width: min(360px, calc(100vw - 24px)); max-width: calc(100vw - 24px); background: #1a1a20; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); display: none; flex-direction: column; overflow: hidden; z-index: 4200; }
 .notif-dropdown.is-visible { display: flex; animation: slideDown 0.2s; }
