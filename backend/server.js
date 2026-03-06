@@ -4278,6 +4278,7 @@ app.get('/api/moments/list', async (req, res) => {
         out.push({
           id: d.id,
           ownerId: v.ownerId || momentOwnerIdFromEmail(v.ownerEmail || ''),
+          ownerEmail,
           ownerName: v.ownerName || '',
           ownerAvatarUrl: v.ownerAvatarUrl || '',
           mediaUrl,
@@ -4306,6 +4307,7 @@ app.get('/api/moments/list', async (req, res) => {
       .map(m => ({
         id: m.id,
         ownerId: m.ownerId,
+        ownerEmail: String(m.ownerEmail || '').toLowerCase(),
         ownerName: m.ownerName,
         ownerAvatarUrl: m.ownerAvatarUrl || '',
         mediaUrl: m.mediaUrl,
@@ -4329,30 +4331,39 @@ app.post('/api/moments/create', async (req, res) => {
 
     const body = req.body || {};
     const dataUrl = body.mediaDataUrl;
-    const caption = (body.caption || '').toString().slice(0, 180);
+    const caption = (body.caption || '').toString().slice(0, 180).trim();
 
-    const parsed = parseBase64DataUrl(dataUrl);
-    if (!parsed || !parsed.mime || !parsed.b64) {
-      return res.status(400).json({ ok: false, message: 'invalid media payload' });
-    }
+    let parsed = null;
+    let mime = '';
+    let ext = '';
+    let buf = null;
 
-    const mime = parsed.mime;
-    if (!/^image\//.test(mime) && !/^video\//.test(mime)) {
-      return res.status(400).json({ ok: false, message: 'unsupported media type' });
-    }
+    if (dataUrl) {
+      parsed = parseBase64DataUrl(dataUrl);
+      if (!parsed || !parsed.mime || !parsed.b64) {
+        return res.status(400).json({ ok: false, message: 'invalid media payload' });
+      }
 
-    const ext = mimeToExt(mime);
-    if (!ext) {
-      return res.status(400).json({ ok: false, message: 'unsupported file extension' });
-    }
+      mime = parsed.mime;
+      if (!/^image\//.test(mime) && !/^video\//.test(mime)) {
+        return res.status(400).json({ ok: false, message: 'unsupported media type' });
+      }
 
-    const buf = Buffer.from(parsed.b64, 'base64');
-    const MAX_BYTES = 10 * 1024 * 1024; // 10MB hard limit
-    if (!buf || !buf.length) {
-      return res.status(400).json({ ok: false, message: 'empty media' });
-    }
-    if (buf.length > MAX_BYTES) {
-      return res.status(413).json({ ok: false, message: 'media too large (max 10MB)' });
+      ext = mimeToExt(mime);
+      if (!ext) {
+        return res.status(400).json({ ok: false, message: 'unsupported file extension' });
+      }
+
+      buf = Buffer.from(parsed.b64, 'base64');
+      const MAX_BYTES = 10 * 1024 * 1024; // 10MB hard limit
+      if (!buf || !buf.length) {
+        return res.status(400).json({ ok: false, message: 'empty media' });
+      }
+      if (buf.length > MAX_BYTES) {
+        return res.status(413).json({ ok: false, message: 'media too large (max 10MB)' });
+      }
+    } else if (!caption) {
+      return res.status(400).json({ ok: false, message: 'caption or media required' });
     }
 
     const now = Date.now();
@@ -4376,8 +4387,8 @@ app.post('/api/moments/create', async (req, res) => {
       expiresAtMs: now + 1000 * 60 * 60 * 24
     };
 
-    // Prefer Firebase Storage when available.
-    if (hasFirebase && hasStorage && storageBucket) {
+    // Prefer Firebase Storage when available for media moments.
+    if (buf && hasFirebase && hasStorage && storageBucket) {
       const safeEmail = email.replace(/[^a-z0-9@._-]/gi, '_');
       const storagePath = `moments/${safeEmail}/${id}.${ext}`;
       const file = storageBucket.file(storagePath);
@@ -4409,25 +4420,48 @@ app.post('/api/moments/create', async (req, res) => {
         console.warn('Failed to store moment metadata in Firestore:', e?.message || e);
       }
 
-      return res.json({ ok: true, moment: { id, ownerId, ownerName, ownerAvatarUrl, mediaType: mime, createdAtMs: moment.createdAtMs, expiresAtMs: moment.expiresAtMs } });
+      return res.json({ ok: true, moment: { id, ownerId, ownerEmail: email, ownerName, ownerAvatarUrl, mediaType: mime, caption, createdAtMs: moment.createdAtMs, expiresAtMs: moment.expiresAtMs } });
     }
 
-    // Fallback: save file to local public/uploads/moments
-    const uploadDir = path.join(__dirname, '..', 'public', 'uploads', 'moments');
-    try { fs.mkdirSync(uploadDir, { recursive: true }); } catch {}
+    if (hasFirebase && firestore) {
+      try {
+        await firestore.collection('moments').doc(id).set({
+          ownerId,
+          ownerEmail: email,
+          ownerName,
+          ownerAvatarUrl,
+          storagePath: '',
+          mediaUrl: '',
+          mediaType: mime,
+          caption,
+          createdAtMs: moment.createdAtMs,
+          expiresAtMs: moment.expiresAtMs
+        });
+      } catch (e) {
+        console.warn('Failed to store text-only moment metadata in Firestore:', e?.message || e);
+      }
 
-    const filename = `${id}.${ext}`;
-    const filePath = path.join(uploadDir, filename);
-    fs.writeFileSync(filePath, buf);
+      return res.json({ ok: true, moment: { id, ownerId, ownerEmail: email, ownerName, ownerAvatarUrl, mediaUrl: '', mediaType: mime, caption, createdAtMs: moment.createdAtMs, expiresAtMs: moment.expiresAtMs } });
+    }
 
-    moment.mediaUrl = `/uploads/moments/${filename}`;
+    if (buf) {
+      // Fallback: save file to local public/uploads/moments
+      const uploadDir = path.join(__dirname, '..', 'public', 'uploads', 'moments');
+      try { fs.mkdirSync(uploadDir, { recursive: true }); } catch {}
+
+      const filename = `${id}.${ext}`;
+      const filePath = path.join(uploadDir, filename);
+      fs.writeFileSync(filePath, buf);
+
+      moment.mediaUrl = `/uploads/moments/${filename}`;
+    }
 
     DB.moments = Array.isArray(DB.moments) ? DB.moments : [];
     DB.moments.push(moment);
     cleanupExpiredMoments();
     if (!hasFirebase) saveMomentsStore();
 
-    return res.json({ ok: true, moment: { id, ownerId, ownerName, ownerAvatarUrl, mediaUrl: moment.mediaUrl, mediaType: mime, createdAtMs: moment.createdAtMs, expiresAtMs: moment.expiresAtMs } });
+    return res.json({ ok: true, moment: { id, ownerId, ownerEmail: email, ownerName, ownerAvatarUrl, mediaUrl: moment.mediaUrl, mediaType: mime, caption, createdAtMs: moment.createdAtMs, expiresAtMs: moment.expiresAtMs } });
   } catch (e) {
     console.error('moments/create error:', e);
     return res.status(500).json({ ok: false, message: 'server error' });

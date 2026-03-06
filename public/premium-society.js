@@ -924,6 +924,93 @@ const PS_CHAT_STATE = {
   matchOverlayTarget: null
 };
 
+
+const PS_MOMENTS_STATE = {
+  items: [],
+  byId: {},
+  activeMomentId: '',
+  lastFetchedAt: 0
+};
+
+function psMomentAccent(seed) {
+  const src = String(seed || 'moment');
+  let hash = 0;
+  for (let i = 0; i < src.length; i += 1) {
+    hash = ((hash << 5) - hash) + src.charCodeAt(i);
+    hash |= 0;
+  }
+  const palette = ['#00aff0', '#ff4d6d', '#8b5cf6', '#10b981', '#f59e0b', '#3b82f6'];
+  return palette[Math.abs(hash) % palette.length];
+}
+
+function psNormalizeMoment(raw) {
+  const id = String(raw?.id || '').trim();
+  const ownerEmail = String(raw?.ownerEmail || '').trim().toLowerCase();
+  const ownerName = String(raw?.ownerName || raw?.name || 'Member').trim() || 'Member';
+  const ownerAvatarUrl = String(raw?.ownerAvatarUrl || raw?.avatar || 'assets/images/truematch-mark.png').trim() || 'assets/images/truematch-mark.png';
+  const mediaUrl = String(raw?.mediaUrl || '').trim();
+  const mediaType = String(raw?.mediaType || '').trim().toLowerCase();
+  const caption = String(raw?.caption || '').trim();
+  const createdAtMs = Number(raw?.createdAtMs || 0) || Date.now();
+  const expiresAtMs = Number(raw?.expiresAtMs || 0) || (createdAtMs + (24 * 60 * 60 * 1000));
+  const ownerKey = ownerEmail || String(raw?.ownerId || '').trim() || ownerName;
+  const accent = psMomentAccent(ownerKey || id || ownerName);
+  return { id, ownerEmail, ownerName, ownerAvatarUrl, mediaUrl, mediaType, caption, createdAtMs, expiresAtMs, ownerKey, accent };
+}
+
+function psSetMomentsState(list) {
+  const normalized = (Array.isArray(list) ? list : [])
+    .map(psNormalizeMoment)
+    .filter((m) => m.id);
+
+  normalized.sort((a, b) => Number(b.createdAtMs || 0) - Number(a.createdAtMs || 0));
+
+  PS_MOMENTS_STATE.items = normalized;
+  PS_MOMENTS_STATE.byId = {};
+  normalized.forEach((m) => {
+    PS_MOMENTS_STATE.byId[m.id] = m;
+  });
+
+  return normalized;
+}
+
+function psGetMomentsRailItems() {
+  const seen = new Set();
+  const rail = [];
+  (Array.isArray(PS_MOMENTS_STATE.items) ? PS_MOMENTS_STATE.items : []).forEach((moment) => {
+    const key = String(moment.ownerKey || moment.id || '').trim();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    rail.push(moment);
+  });
+  return rail;
+}
+
+async function psLoadMoments(force = false) {
+  const now = Date.now();
+  if (!force && (now - Number(PS_MOMENTS_STATE.lastFetchedAt || 0)) < 5000) return PS_MOMENTS_STATE.items;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/moments/list`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data || data.ok !== true) {
+      throw new Error((data && (data.message || data.error)) || 'Failed to load moments.');
+    }
+
+    const items = psSetMomentsState(Array.isArray(data.moments) ? data.moments : []);
+    PS_MOMENTS_STATE.lastFetchedAt = Date.now();
+    renderStories(items);
+    return items;
+  } catch (err) {
+    console.error('psLoadMoments error:', err);
+    if (!PS_MOMENTS_STATE.lastFetchedAt) renderStories([]);
+    return [];
+  }
+}
+
 function psEscapeHtml(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -1159,8 +1246,11 @@ export async function initUI() {
   renderActiveNearby([]);
   renderDailyPick(null);
 
-  // Load real home widgets from backend
-  await psLoadHomeWidgets(true);
+  // Load real home widgets and moments from backend
+  await Promise.allSettled([
+    psLoadHomeWidgets(true),
+    psLoadMoments(true)
+  ]);
 
   // 4. Tab Restoration
   const lastTab = localStorage.getItem("ps_last_tab") || "home";
@@ -1177,8 +1267,10 @@ export async function initUI() {
 // 1. Render Stories
 function renderStories(stories = []) {
     if (!PS_DOM.storiesContainer) return;
-    
-    // Add Button (Static)
+
+    const items = psSetMomentsState(stories);
+    const railItems = psGetMomentsRailItems();
+
     const addBtn = `
     <div class="ps-story-item" onclick="openAddStory()">
         <div class="ps-story-ring" style="border-color: #444; border-style: dashed; padding: 3px;">
@@ -1189,16 +1281,35 @@ function renderStories(stories = []) {
         <span class="ps-story-name">Add Story</span>
     </div>`;
 
-    // Dynamic Stories Loop
-    const storyHtml = stories.map(s => `
-    <div class="ps-story-item" onclick="openStory('${s.name}', '${s.color || '#00aff0'}')">
-        <div class="ps-story-ring" style="border-color: ${s.color || '#00aff0'}">
-            <img class="ps-story-img" src="${s.avatar || 'assets/images/truematch-mark.png'}" style="background:${s.color || '#333'}">
+    if (!railItems.length) {
+      PS_DOM.storiesContainer.innerHTML = addBtn;
+      return;
+    }
+
+    const storyHtml = railItems.map((s) => {
+        const safeId = psEscapeHtml(s.id);
+        const safeName = psEscapeHtml(s.ownerName || 'Member');
+        const safeAvatar = psEscapeHtml(s.ownerAvatarUrl || 'assets/images/truematch-mark.png');
+        const accent = psEscapeHtml(s.accent || '#00aff0');
+        return `
+    <div class="ps-story-item" data-moment-id="${safeId}">
+        <div class="ps-story-ring" style="border-color: ${accent}">
+            <img class="ps-story-img" src="${safeAvatar}" alt="${safeName}" onerror="this.src='assets/images/truematch-mark.png'" style="background:${accent}">
         </div>
-        <span class="ps-story-name">${s.name}</span>
-    </div>`).join("");
+        <span class="ps-story-name">${safeName}</span>
+    </div>`;
+    }).join("");
 
     PS_DOM.storiesContainer.innerHTML = addBtn + storyHtml;
+
+    PS_DOM.storiesContainer.querySelectorAll('.ps-story-item[data-moment-id]').forEach((item) => {
+      item.addEventListener('click', () => {
+        const momentId = item.getAttribute('data-moment-id') || '';
+        if (momentId && typeof window.openStory === 'function') {
+          window.openStory(momentId);
+        }
+      });
+    });
 }
 
 // 2. Render Messages
@@ -1331,6 +1442,49 @@ function renderDailyPick(profile) {
         <p style="margin:6px 0 0; color:#c9d1d9; font-size:.88rem;">${city}${age}</p>
       </div>
     </div>`;
+}
+
+
+function psApplyMomentToViewer(moment) {
+  if (!PS_DOM.storyFullImg) return;
+
+  const mediaUrl = String(moment?.mediaUrl || '').trim();
+  const mediaType = String(moment?.mediaType || '').trim().toLowerCase();
+  const caption = String(moment?.caption || '').trim();
+  const accent = String(moment?.accent || '#00aff0');
+  const avatarUrl = String(moment?.ownerAvatarUrl || 'assets/images/truematch-mark.png').trim() || 'assets/images/truematch-mark.png';
+
+  PS_DOM.storyFullImg.innerHTML = '';
+  PS_DOM.storyFullImg.style.position = 'relative';
+  PS_DOM.storyFullImg.style.backgroundColor = accent;
+  PS_DOM.storyFullImg.style.backgroundPosition = 'center';
+  PS_DOM.storyFullImg.style.backgroundRepeat = 'no-repeat';
+  PS_DOM.storyFullImg.style.backgroundSize = 'cover';
+
+  if (/^image\//.test(mediaType) && mediaUrl) {
+    const safeBgUrl = mediaUrl.replace(/"/g, '%22');
+    PS_DOM.storyFullImg.style.backgroundImage = `linear-gradient(to top, rgba(0,0,0,.45), rgba(0,0,0,.08)), url("${safeBgUrl}")`;
+  } else {
+    const safeBgUrl = avatarUrl.replace(/"/g, '%22');
+    PS_DOM.storyFullImg.style.backgroundImage = `linear-gradient(180deg, rgba(0,0,0,.08), rgba(0,0,0,.55)), url("${safeBgUrl}")`;
+    PS_DOM.storyFullImg.style.backgroundSize = mediaUrl && /^video\//.test(mediaType) ? 'cover' : 'contain';
+  }
+
+  if (/^video\//.test(mediaType)) {
+    const videoBadge = document.createElement('div');
+    videoBadge.className = 'ps-story-video-badge';
+    videoBadge.innerHTML = '<i class="fa-solid fa-play"></i> Video moment';
+    videoBadge.style.cssText = 'position:absolute; top:16px; left:16px; padding:8px 12px; border-radius:999px; background:rgba(0,0,0,.55); color:#fff; font-size:.75rem; font-weight:700; backdrop-filter:blur(8px);';
+    PS_DOM.storyFullImg.appendChild(videoBadge);
+  }
+
+  if (caption) {
+    const captionEl = document.createElement('div');
+    captionEl.className = 'ps-story-caption-overlay';
+    captionEl.style.cssText = 'position:absolute; left:14px; right:14px; bottom:18px; padding:14px 16px; border-radius:16px; background:linear-gradient(180deg, rgba(0,0,0,.1), rgba(0,0,0,.68)); color:#fff; font-size:.9rem; line-height:1.45; backdrop-filter:blur(8px); white-space:pre-wrap;';
+    captionEl.textContent = caption;
+    PS_DOM.storyFullImg.appendChild(captionEl);
+  }
 }
 
 let _psHomeWidgetsLastFetched = 0;
@@ -2439,6 +2593,7 @@ function initChat() {
 
 function initStoryViewer() {
   const closeStoryAction = () => {
+    PS_MOMENTS_STATE.activeMomentId = '';
     if (PS_DOM.storyViewer) {
       PS_DOM.storyViewer.classList.remove("active");
       if (PS_DOM.storyProgress)
@@ -2446,21 +2601,44 @@ function initStoryViewer() {
     }
   };
 
-  const openStoryAction = (name, color) => {
+  const openStoryAction = (target, legacyColor) => {
     if (!PS_DOM.storyViewer) return;
-    PS_DOM.storyName.textContent = name;
-    PS_DOM.storyAvatar.src = "assets/images/truematch-mark.png";
+
+    let moment = null;
+    if (typeof target === 'string' && PS_MOMENTS_STATE.byId[target]) {
+      moment = PS_MOMENTS_STATE.byId[target];
+    } else if (target && typeof target === 'object' && target.momentId && PS_MOMENTS_STATE.byId[target.momentId]) {
+      moment = PS_MOMENTS_STATE.byId[target.momentId];
+    } else if (target && typeof target === 'object' && target.id) {
+      moment = psNormalizeMoment(target);
+    } else {
+      const name = String(target || 'User').trim() || 'User';
+      moment = psNormalizeMoment({
+        id: `legacy_${name}`,
+        ownerName: name,
+        ownerAvatarUrl: 'assets/images/truematch-mark.png',
+        caption: '',
+        mediaUrl: '',
+        mediaType: '',
+        createdAtMs: Date.now(),
+        expiresAtMs: Date.now() + (24 * 60 * 60 * 1000)
+      });
+      moment.accent = legacyColor || '#00aff0';
+    }
+
+    PS_MOMENTS_STATE.activeMomentId = String(moment.id || '').trim();
+    if (PS_MOMENTS_STATE.activeMomentId) {
+      PS_MOMENTS_STATE.byId[PS_MOMENTS_STATE.activeMomentId] = moment;
+    }
+
+    PS_DOM.storyName.textContent = moment.ownerName || 'User';
+    PS_DOM.storyAvatar.src = moment.ownerAvatarUrl || 'assets/images/truematch-mark.png';
 
     if (PS_DOM.storyCommentInput) PS_DOM.storyCommentInput.value = "";
     if (PS_DOM.storyEmojiPicker)
       PS_DOM.storyEmojiPicker.classList.remove("active");
 
-    PS_DOM.storyFullImg.style.backgroundColor = color;
-    PS_DOM.storyFullImg.style.backgroundImage =
-      "url('assets/images/truematch-mark.png')";
-    PS_DOM.storyFullImg.style.backgroundSize = "contain";
-    PS_DOM.storyFullImg.style.backgroundRepeat = "no-repeat";
-
+    psApplyMomentToViewer(moment);
     PS_DOM.storyViewer.classList.add("active");
 
     if (PS_DOM.storyProgress) {
@@ -2478,60 +2656,61 @@ function initStoryViewer() {
       ? PS_DOM.storyCommentInput.value.trim()
       : "";
     if (!text) return;
-    const targetUser = PS_DOM.storyName.textContent;
+
+    const activeMoment = PS_MOMENTS_STATE.byId[PS_MOMENTS_STATE.activeMomentId] || null;
+    const target = activeMoment
+      ? {
+          name: activeMoment.ownerName || PS_DOM.storyName.textContent,
+          peerEmail: activeMoment.ownerEmail || '',
+          avatar: activeMoment.ownerAvatarUrl || 'assets/images/truematch-mark.png'
+        }
+      : { name: PS_DOM.storyName.textContent };
+
     window.closeStory();
     const matchesBtn = document.querySelector('button[data-panel="matches"]');
     if (matchesBtn) matchesBtn.click();
 
     setTimeout(() => {
-      window.openChat(targetUser);
-      PS_DOM.chatInput.value = text;
-      window.sendChatMessage();
+      window.openChat(target);
+      if (PS_DOM.chatInput) PS_DOM.chatInput.value = text;
+      if (typeof window.sendChatMessage === 'function') {
+        window.sendChatMessage();
+      }
       showToast("Reply sent!");
     }, 400);
 
-    PS_DOM.storyCommentInput.value = "";
+    if (PS_DOM.storyCommentInput) PS_DOM.storyCommentInput.value = "";
     if (PS_DOM.storyEmojiPicker)
       PS_DOM.storyEmojiPicker.classList.remove("active");
   };
 
-  window.postNewStory = function () {
+  window.postNewStory = async function () {
     const text = PS_DOM.storyInput ? PS_DOM.storyInput.value.trim() : "";
     if (!text) {
       showToast("Please write something!");
       return;
     }
 
-    // HTML ng bagong story
-    const newStoryHtml = `
-    <div class="ps-story-item" onclick="openStory('You', '#00aff0')">
-        <div class="ps-story-ring" style="border-color: #00aff0;">
-            <img class="ps-story-img" src="assets/images/truematch-mark.png" style="background:#00aff0">
-        </div>
-        <span class="ps-story-name" style="font-size:0.7rem; font-weight:bold;">You</span>
-    </div>`;
-
-    if (PS_DOM.storiesContainer) {
-      // Kunin ang unang element (ang "+" button)
-      const addBtn = PS_DOM.storiesContainer.firstElementChild;
-
-      if (addBtn) {
-        // I-insert PAGKATAPOS ng "+" button para laging nasa kanan niya ang bagong stories
-        addBtn.insertAdjacentHTML("afterend", newStoryHtml);
-      } else {
-        // Fallback kung sakaling wala pang elements
-        PS_DOM.storiesContainer.insertAdjacentHTML("afterbegin", newStoryHtml);
+    try {
+      const res = await fetch(`${API_BASE}/api/moments/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ caption: text })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data || data.ok !== true) {
+        throw new Error((data && (data.message || data.error)) || 'Failed to share moment.');
       }
+
+      if (PS_DOM.storyInput) PS_DOM.storyInput.value = "";
+      window.closeAddStory();
+      await psLoadMoments(true);
+      showToast("Moment Shared!");
+    } catch (err) {
+      console.error('postNewStory error:', err);
+      showToast(String(err && err.message ? err.message : 'Failed to share moment.'), 'error');
     }
-
-    // Mobile fallback update
-    const mobileContainer = document.getElementById("psMobileStoriesContainer");
-    if (mobileContainer)
-      mobileContainer.insertAdjacentHTML("afterbegin", newStoryHtml);
-
-    showToast("Moment Shared!");
-    if (PS_DOM.storyInput) PS_DOM.storyInput.value = "";
-    window.closeAddStory();
   };
 
   window.openAddStory = () => {
@@ -2802,6 +2981,7 @@ function switchTab(panelName) {
 
   if (panelName === "home") {
     psLoadHomeWidgets();
+    psLoadMoments();
   }
 }
 
