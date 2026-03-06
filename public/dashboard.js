@@ -1149,69 +1149,6 @@ DOM.notifList.appendChild(row);
 // EVENT LISTENERS
 // ---------------------------------------------------------------------
 
-
-function ensureNotifOverlay() {
-  let overlay = document.getElementById('notifOverlay');
-  if (overlay) return overlay;
-
-  overlay = document.createElement('div');
-  overlay.id = 'notifOverlay';
-  overlay.className = 'notif-overlay';
-  overlay.setAttribute('aria-hidden', 'true');
-  overlay.addEventListener('click', () => closeNotifDropdown());
-  document.body.appendChild(overlay);
-  return overlay;
-}
-
-function ensureNotifDropdownPortal() {
-  if (!DOM.notifDropdown) return;
-  if (DOM.notifDropdown.parentElement !== document.body) {
-    document.body.appendChild(DOM.notifDropdown);
-  }
-}
-
-function positionNotifDropdown() {
-  if (!DOM.btnNotifToggle || !DOM.notifDropdown) return;
-
-  const rect = DOM.btnNotifToggle.getBoundingClientRect();
-  const mobile = window.matchMedia('(max-width: 520px)').matches;
-  const top = Math.max(16, Math.round(rect.bottom + 12));
-
-  DOM.notifDropdown.style.top = `${top}px`;
-
-  if (mobile) {
-    DOM.notifDropdown.style.left = '50%';
-    DOM.notifDropdown.style.right = 'auto';
-    DOM.notifDropdown.style.transform = 'translateX(-50%)';
-    return;
-  }
-
-  const gutter = 16;
-  const width = Math.min(360, Math.max(280, window.innerWidth - (gutter * 2)));
-  let left = rect.right - width;
-  left = Math.max(gutter, Math.min(left, window.innerWidth - width - gutter));
-
-  DOM.notifDropdown.style.left = `${Math.round(left)}px`;
-  DOM.notifDropdown.style.right = 'auto';
-  DOM.notifDropdown.style.transform = 'none';
-}
-
-function openNotifDropdown() {
-  if (!DOM.notifDropdown) return;
-  ensureNotifDropdownPortal();
-  ensureNotifOverlay();
-  document.body.classList.add('notif-open');
-  DOM.notifDropdown.classList.add('is-visible');
-  positionNotifDropdown();
-}
-
-function closeNotifDropdown() {
-  if (!DOM.notifDropdown) return;
-  DOM.notifDropdown.classList.remove('is-visible');
-  document.body.classList.remove('notif-open');
-  try { NotificationsController.invalidate(); } catch (_) {}
-}
-
 function setupEventListeners() {
   // 1. Tabs
   DOM.tabs.forEach(tab => {
@@ -1244,9 +1181,6 @@ function setupEventListeners() {
 
   // 2. Notifications (Dashboard bell)
   if (DOM.btnNotifToggle && DOM.notifDropdown) {
-      ensureNotifDropdownPortal();
-      ensureNotifOverlay();
-
       // Prevent inside clicks from closing the dropdown
       DOM.notifDropdown.addEventListener('click', (e) => e.stopPropagation());
 
@@ -1255,14 +1189,13 @@ function setupEventListeners() {
          e.stopPropagation();
 
          const willOpen = !DOM.notifDropdown.classList.contains('is-visible');
+         DOM.notifDropdown.classList.toggle('is-visible');
 
          if (willOpen) {
-           openNotifDropdown();
            try { NotificationsController.invalidate(); } catch (_) {}
            await NotificationsController.load({ force: true });
-           positionNotifDropdown();
          } else {
-           closeNotifDropdown();
+           try { NotificationsController.invalidate(); } catch (_) {}
          }
       });
 
@@ -1274,15 +1207,9 @@ function setupEventListeners() {
         });
       }
 
-      window.addEventListener('resize', () => {
-        if (DOM.notifDropdown.classList.contains('is-visible')) positionNotifDropdown();
-      });
-      window.addEventListener('scroll', () => {
-        if (DOM.notifDropdown.classList.contains('is-visible')) positionNotifDropdown();
-      }, { passive: true });
-
       window.addEventListener('click', () => {
-          closeNotifDropdown();
+          DOM.notifDropdown.classList.remove('is-visible');
+          try { NotificationsController.invalidate(); } catch (_) {}
       });
   }
 
@@ -2212,10 +2139,9 @@ function updateMatchPreview(peerEmail, lastText, { bumpToTop = true } = {}) {
   const card = cards.find(c => String(c.dataset.email || '').trim().toLowerCase() === email);
   if (!card) return;
 
-  // Update stored preview (used by click handler + search)
+  // Keep last message stored for click/search behavior, but render presence-based status on the card.
   card.dataset.msg = text;
-  const lastEl = card.querySelector('.match-last');
-  if (lastEl) lastEl.textContent = text;
+  renderMatchCardPresence(card);
 
   // Optional: move active conversation to top (like real inbox behavior)
   if (bumpToTop && card.parentElement) {
@@ -2325,6 +2251,8 @@ async function pollInboxOnce() {
 
       state.inboxThreadState[peer] = { lastMessageAtMs, lastReadAtMs };
     }
+
+    refreshAllMatchCardPresence();
   } catch (e) {
     // silent
   }
@@ -2357,6 +2285,26 @@ function formatPresenceLine(lastSeenAtMs) {
   return `Last active ${formatLastSeenAge(ms)}`;
 }
 
+function getMatchPresenceStatusText(lastSeenAtMs) {
+  const ms = Number(lastSeenAtMs || 0);
+  if (!ms) return 'Tap to chat';
+  const isOnline = (Date.now() - ms) <= PRESENCE_ONLINE_WINDOW_MS;
+  if (isOnline) return 'Active now';
+  return `Last seen ${formatLastSeenAge(ms)}`;
+}
+
+function renderMatchCardPresence(card) {
+  if (!card) return;
+  const lastEl = card.querySelector('.match-last');
+  if (!lastEl) return;
+  lastEl.textContent = getMatchPresenceStatusText(Number(card.dataset.lastSeenAtMs || 0));
+}
+
+function refreshAllMatchCardPresence() {
+  if (!DOM.matchesContainer) return;
+  Array.from(DOM.matchesContainer.querySelectorAll('.match-card')).forEach(renderMatchCardPresence);
+}
+
 async function fetchPeerPresence(peerEmail) {
   const email = String(peerEmail || '').trim().toLowerCase();
   if (!email) return null;
@@ -2382,6 +2330,15 @@ async function refreshChatPresenceOnce() {
     const p = await fetchPeerPresence(state.currentChatPeerEmail);
     if (!p) return;
     state.currentChatPeerLastSeenAtMs = Number(p.lastSeenAtMs || 0);
+    try {
+      const card = DOM.matchesContainer
+        ? Array.from(DOM.matchesContainer.querySelectorAll('.match-card')).find(c => String(c.dataset.email || '').trim().toLowerCase() === String(state.currentChatPeerEmail || '').trim().toLowerCase())
+        : null;
+      if (card) {
+        card.dataset.lastSeenAtMs = String(state.currentChatPeerLastSeenAtMs || 0);
+        renderMatchCardPresence(card);
+      }
+    } catch (_) {}
     const planKey = normalizePlanKey(state.plan || (state.me && state.me.plan));
     if (planKey === 'free' && DOM.chatReceiptLine) {
       const line = formatPresenceLine(state.currentChatPeerLastSeenAtMs);
@@ -2604,6 +2561,7 @@ function renderMatchesFromApi(matches, kpi) {
       const safeSub = (m.city ? m.city : '—');
       const photoUrl = m.photoUrl || '';
       const msg = (m.lastMessage || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const presenceText = getMatchPresenceStatusText(Number(m.lastSeenAtMs || 0));
       const lastAt = Number(m.lastMessageAtMs || 0);
       const readAt = Number(m.lastReadAtMs || 0);
       const hasUnread = !!m.hasUnread || (lastAt > readAt && lastAt > 0);
@@ -2617,11 +2575,12 @@ function renderMatchesFromApi(matches, kpi) {
           <div class="match-info">
             <div class="match-name">${safeName}</div>
             <div class="match-sub">${safeSub}</div>
-            <div class="match-last" style="${lastStyle}">${msg || 'Tap to chat'}</div>
+            <div class="match-last" style="${lastStyle}">${presenceText}</div>
           </div>
         </div>
       `;
     }).join('');
+    refreshAllMatchCardPresence();
   }
 
 // --- Matches UI helpers (keep last message preview in sync with chat) ---
@@ -2638,10 +2597,9 @@ function updateMatchPreview(peerEmail, lastText, { bumpToTop = true } = {}) {
   const card = cards.find(c => String(c.dataset.email || '').trim().toLowerCase() === email);
   if (!card) return;
 
-  // Update stored preview (used by click handler + search)
+  // Keep last message stored for click/search behavior, but render presence-based status on the card.
   card.dataset.msg = text;
-  const lastEl = card.querySelector('.match-last');
-  if (lastEl) lastEl.textContent = text;
+  renderMatchCardPresence(card);
 
   // Optional: move active conversation to top (like real inbox behavior)
   if (bumpToTop && card.parentElement) {
