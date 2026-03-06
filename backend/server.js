@@ -514,7 +514,6 @@ const DB = {
   approvedState: {},
   messages: {},
   messageMetaByEmail: {},
-  ppvUnlocks: {},
   creatorPostVotesByUser: {},
   messageUsage: {},
   emailVerify: {},
@@ -5986,7 +5985,6 @@ const MSG_THREAD_INDEX_SUBCOL = process.env.MSG_THREAD_INDEX_SUBCOL || 'msgThrea
 const MSGS_SUBCOL = process.env.MSGS_SUBCOL || 'messages';
 const MSG_META_SUBCOL = process.env.MSG_META_SUBCOL || 'messageMeta';
 const MSG_USAGE_COLLECTION = process.env.MSG_USAGE_COLLECTION || 'tmMessageUsage';
-const MSG_PPV_UNLOCKS_SUBCOL = process.env.MSG_PPV_UNLOCKS_SUBCOL || 'ppvUnlocks';
 
 function _msg_normEmail(v) {
   return String(v || '').trim().toLowerCase();
@@ -6241,8 +6239,6 @@ app.get('/api/messages/thread/:peer', async (req, res) => {
     const peerEmail = _msg_normEmail(req.params.peer || '');
     if (!peerEmail) return res.status(400).json({ ok: false, message: 'peer required' });
 
-    const threadId = _msg_threadId(email, peerEmail);
-
     const user = (DB.users && DB.users[email]) || DB.user || {};
     const plan = user.plan || null;
     const planKey = normalizePlanKey(plan);
@@ -6254,6 +6250,7 @@ app.get('/api/messages/thread/:peer', async (req, res) => {
       const meDoc = await _msg_getUserDoc(email);
       const peerDoc = await _msg_getUserDoc(peerEmail);
 
+      const threadId = _msg_threadId(email, peerEmail);
       const threadRef = firestore.collection(MSG_THREADS_COLLECTION).doc(threadId);
 
       // Load messages
@@ -6269,7 +6266,6 @@ app.get('/api/messages/thread/:peer', async (req, res) => {
           sentAt: String(v.sentAt || '') || (Number(v.createdAtMs || 0) ? new Date(Number(v.createdAtMs || 0)).toISOString() : ''),
           createdAtMs: Number(v.createdAtMs || _msg_tsToMs(v.createdAt) || Date.now()),
           createdAt: v.createdAt || null,
-          ppv: (v.ppv && typeof v.ppv === 'object') ? v.ppv : null,
           readAt: v.readAt || null
         };
       });
@@ -6327,44 +6323,6 @@ app.get('/api/messages/thread/:peer', async (req, res) => {
         });
       }
 
-
-      // PPV unlock flags (server-backed)
-      try {
-        const ppvIds = out
-          .filter((m) => m && m.ppv && Number((m.ppv || {}).priceCents || 0) > 0 && m.id)
-          .map((m) => String(m.id));
-
-        const meLower = _msg_normEmail(email);
-        let unlockedSet = new Set();
-
-        if (ppvIds.length && meDoc && meDoc.id) {
-          try {
-            const ref = usersCollection.doc(String(meDoc.id)).collection(MSG_PPV_UNLOCKS_SUBCOL);
-            const docRefs = ppvIds.map((id) => ref.doc(`${threadId}__${id}`));
-
-            let snaps = [];
-            if (firestore && typeof firestore.getAll === 'function') {
-              snaps = await firestore.getAll(...docRefs);
-            } else {
-              snaps = await Promise.all(docRefs.map((dr) => dr.get()));
-            }
-
-            snaps.forEach((s, i) => {
-              if (s && s.exists) unlockedSet.add(ppvIds[i]);
-            });
-          } catch (_) {}
-        }
-
-        if (ppvIds.length) {
-          out = out.map((m) => {
-            if (!m || !m.ppv || !m.id) return m;
-            const fromMe = _msg_normEmail(m.from) === meLower;
-            const unlocked = fromMe || unlockedSet.has(String(m.id));
-            return { ...m, ppv: { ...(m.ppv || {}), unlocked } };
-          });
-        }
-      } catch (_) {}
-
 return res.json({
         ok: true,
         plan: planKey,
@@ -6391,23 +6349,11 @@ return res.json({
       DB.messages[email][peerEmail] = list;
     }
 
-    // PPV unlock flags (demo fallback)
-    const unlockMap = (DB.ppvUnlocks && DB.ppvUnlocks[email]) ? DB.ppvUnlocks[email] : {};
-    const meLower = _msg_normEmail(email);
-    const outList = (Array.isArray(list) ? list : []).map((m) => {
-      if (!m || typeof m !== 'object' || !m.ppv || !m.id) return m;
-      const cents = Number((m.ppv || {}).priceCents || 0) || 0;
-      if (cents <= 0) return m;
-      const fromMe = _msg_normEmail(m.from) === meLower;
-      const unlocked = fromMe || !!unlockMap[`${threadId}__${String(m.id)}`];
-      return { ...m, ppv: { ...(m.ppv || {}), unlocked } };
-    });
-
     return res.json({
       ok: true,
       plan: planKey,
       usage: { dayKey: usage.dayKey, sentToday: usage.sentToday || 0, limit: usage.limit },
-      messages: outList
+      messages: list
     });
   } catch (e) {
     console.error('GET /api/messages/thread error:', e);
@@ -6494,42 +6440,8 @@ app.post('/api/messages/send', async (req, res) => {
 const mediaIdsRaw = body.mediaIds || body.media_ids || body.mediaIDs || [];
 const mediaInlineRaw = body.media || body.mediaItems || body.attachments || [];
 
-// Optional PPV payload (demo unlock flow)
-// Accepts:
-//  - { ppv: { priceCents, currency } }  OR
-//  - { ppv: { price, currency } } where price is in major units (e.g. 5.00 USD)
-const ppvRaw = body.ppv || null;
-let ppv = null;
-try {
-  if (ppvRaw && typeof ppvRaw === 'object') {
-    const cur = String(ppvRaw.currency || 'USD').trim().toUpperCase().slice(0, 10) || 'USD';
-    let cents = null;
-
-    if (ppvRaw.priceCents !== undefined || ppvRaw.price_cents !== undefined) {
-      const n = Number(ppvRaw.priceCents ?? ppvRaw.price_cents);
-      if (Number.isFinite(n)) cents = Math.floor(n);
-    } else {
-      const n = Number(ppvRaw.price ?? ppvRaw.amount ?? 0);
-      if (Number.isFinite(n) && n > 0) cents = Math.floor(n * 100);
-    }
-
-    if (Number.isFinite(cents) && cents > 0) {
-      ppv = { priceCents: Math.max(1, cents), currency: cur };
-    }
-  }
-} catch (_) {
-  ppv = null;
-}
-
 const mediaIds = Array.isArray(mediaIdsRaw) ? mediaIdsRaw.map((x) => String(x || '').trim()).filter(Boolean) : [];
-const mediaInline = Array.isArray(mediaInlineRaw)
-  ? (ppv
-      ? mediaInlineRaw.map((it) => {
-          if (it && typeof it === 'object') return { ...it, locked: true };
-          return { src: String(it || ''), locked: true };
-        })
-      : mediaInlineRaw)
-  : [];
+const mediaInline = Array.isArray(mediaInlineRaw) ? mediaInlineRaw : [];
 
 if (!peerEmail || (!text && !mediaIds.length && !mediaInline.length)) {
   return res.status(400).json({ ok: false, message: 'to and content are required' });
@@ -6644,11 +6556,6 @@ function _safePickInlineMedia(arr) {
 
 const media = _safePickInlineMedia(mediaInline);
 
-// PPV messages must include at least 1 media item
-if (ppv && !media.length) {
-  return res.status(400).json({ ok: false, message: 'ppv_requires_media' });
-}
-
 const sentAt = new Date(nowMs).toISOString();
 const previewText = text || (media.length ? '[Media]' : '');
 
@@ -6657,7 +6564,6 @@ const msgObj = {
   to: peerEmail,
   text,
   media,
-  ppv,
   sentAt,
   createdAtMs: nowMs,
   createdAt: admin && admin.firestore ? admin.firestore.FieldValue.serverTimestamp() : nowMs
@@ -6775,52 +6681,6 @@ const msgObj = {
     });
   } catch (e) {
     console.error('POST /api/messages/send error:', e);
-    return res.status(500).json({ ok: false, message: 'server error' });
-  }
-});
-
-
-// PPV unlock (demo)
-// - Marks a specific message as unlocked for the current user.
-// - Real payment/charge can be integrated later; this endpoint only records unlock state.
-app.post('/api/messages/ppv/unlock', async (req, res) => {
-  try {
-    const email = DB.user && DB.user.email;
-    if (!email) return res.status(401).json({ ok: false, message: 'not logged in' });
-
-    const body = req.body || {};
-    const peerEmail = _msg_normEmail(body.peerEmail || body.peer || body.to || '');
-    const messageId = String(body.messageId || body.mid || '').trim();
-    if (!peerEmail || !messageId) {
-      return res.status(400).json({ ok: false, message: 'peerEmail and messageId are required' });
-    }
-
-    const nowMs = Date.now();
-    const threadId = _msg_threadId(email, peerEmail);
-    const key = `${threadId}__${messageId}`;
-
-    // Firestore-backed
-    if (hasFirebase && firestore && usersCollection) {
-      const meDoc = await _msg_getUserDoc(email);
-      if (meDoc && meDoc.id) {
-        const ref = usersCollection.doc(String(meDoc.id)).collection(MSG_PPV_UNLOCKS_SUBCOL).doc(key);
-        await ref.set({
-          threadId,
-          messageId,
-          peerEmail,
-          unlockedAtMs: nowMs
-        }, { merge: true });
-      }
-    }
-
-    // Demo fallback (in-memory)
-    DB.ppvUnlocks = DB.ppvUnlocks || {};
-    DB.ppvUnlocks[email] = DB.ppvUnlocks[email] || {};
-    DB.ppvUnlocks[email][key] = 1;
-
-    return res.json({ ok: true, threadId, messageId });
-  } catch (e) {
-    console.error('POST /api/messages/ppv/unlock error:', e);
     return res.status(500).json({ ok: false, message: 'server error' });
   }
 });
@@ -10578,6 +10438,49 @@ app.get('/api/users/presence', authMiddleware, async (req, res) => {
     return res.status(500).json({ ok: false, error: 'server_error' });
   }
 });
+
+
+// ---------------- Public user profile (safe subset for UI) -------------------
+// Used by Creators → Messages → View profile
+app.get('/api/users/public', authMiddleware, async (req, res) => {
+  try {
+    const email = _normalizeEmail(String((req.query && req.query.email) || ''));
+    if (!email) return res.status(400).json({ ok: false, error: 'missing_email' });
+
+    let other = null;
+    if (hasFirebase && usersCollection) {
+      other = await findUserByEmail(email);
+    } else {
+      other = (DB.users && DB.users[email]) ? DB.users[email] : null;
+    }
+
+    if (!other) return res.status(404).json({ ok: false, error: 'not_found' });
+
+    const safe = {
+      email,
+      name: _safeStr(other.name || other.displayName || other.fullName || other.username || ''),
+      handle: _safeStr(other.handle || other.userHandle || other.creatorHandle || ''),
+      city: _safeStr(other.city || other.location || other.state || ''),
+      avatarUrl: _safeStr(other.avatarUrl || other.avatar || other.photoURL || other.photoUrl || ''),
+      headerUrl: _safeStr(other.headerUrl || other.header || ''),
+      bio: _safeStr(other.bio || (other.creatorApplication && other.creatorApplication.bio) || ''),
+      verified: !!(other.verified || other.emailVerified || other.creatorVerified),
+      plan: (typeof other.plan === 'string' || other.plan === null) ? other.plan : (other.plan?.name || null),
+      planActive: !!other.planActive,
+      creatorStatus: _safeStr(other.creatorStatus || '')
+    };
+
+    // Optional: include a lightweight createdAt if present (non-sensitive)
+    const createdAt = other.createdAt || other.created_at || other.createdAtMs || other.createdAtISO || null;
+    if (createdAt) safe.createdAt = createdAt;
+
+    return res.json({ ok: true, user: safe });
+  } catch (e) {
+    console.error('GET /api/users/public error:', e);
+    return res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
 
 // Public config to expose client IDs (safe values only)
 
