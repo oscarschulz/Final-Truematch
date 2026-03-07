@@ -89,7 +89,6 @@ export const PS_DOM = {
   timerDisplay: document.querySelector(".ps-stats-body p.ps-tiny"),
 
   // Panels
-  panelCreatorsBody: document.getElementById("ps-panel-creators"),
   panelPremiumBody: document.getElementById("ps-panel-premium"),
 
   // Match & Gift
@@ -97,9 +96,6 @@ export const PS_DOM = {
   matchUserImg: document.getElementById("psMatchUserImg"),
   matchTargetImg: document.getElementById("psMatchTargetImg"),
   matchName: document.getElementById("psMatchName"),
-  giftModal: document.getElementById("psGiftModal"),
-  btnPPV: document.querySelector(".ps-btn-ppv"),
-  giftPriceBtn: document.getElementById("psGiftPriceBtn"),
 };
 
 // --- API BASE ---
@@ -124,7 +120,6 @@ const PS_STATE = {
   }
 };
 
-
 function psNormalizePlanKey(rawPlan) {
   const v = String(rawPlan || '').trim().toLowerCase();
   if (!v) return 'free';
@@ -147,7 +142,6 @@ function psNormalizePlanKey(rawPlan) {
 
   return 'free';
 }
-
 
 function psPlanLabelFromKey(planKey) {
     const key = psNormalizePlanKey(planKey);
@@ -266,20 +260,7 @@ function initOverlayObservers() {
     chatObs.observe(chatWindow, { attributes: true });
   }
 
-  const creatorModal = document.getElementById("psCreatorProfileModal");
-  if (creatorModal) {
-    const creatorObs = new MutationObserver((mutations) => {
-      mutations.forEach((m) => {
-        if (m.attributeName === "class") {
-          if (creatorModal.classList.contains("active")) body.classList.add("ps-creator-open");
-          else body.classList.remove("ps-creator-open");
-        }
-      });
-    });
-    creatorObs.observe(creatorModal, { attributes: true });
-  }
 }
-
 
 function initProfileMenu() {
   const profileBtn = document.querySelector(".ps-mini-profile");
@@ -356,7 +337,6 @@ function initProfileMenu() {
     if (!menuPopup.contains(e.target) && !profileBtn.contains(e.target)) closeMenu();
   });
 }
-
 
 function initRightSidebarInteractions() {
   const upgradeBtn = document.getElementById("psBtnSidebarSubscribe");
@@ -443,7 +423,6 @@ export const SwipeController = (() => {
 
     initTouchEvents();
   }
-
 
   /**
    * GESTURE LOGIC
@@ -897,6 +876,7 @@ function saveHistory() {
   localStorage.setItem("ps_chat_history", JSON.stringify(conversationHistory));
 }
 
+
 const PS_CHAT_STATE = {
   activePeerEmail: '',
   activePeerLabel: '',
@@ -904,13 +884,23 @@ const PS_CHAT_STATE = {
   peersByLabel: {},
   avatarsByLabel: {},
   lastThread: [],
-  lastThreadsByPeer: {}
+  matchOverlayTarget: null
 };
+
+function psEscapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 function psRememberPeer(peerEmail, label, avatar) {
   const peer = String(peerEmail || '').trim().toLowerCase();
   const safeLabel = String(label || '').trim() || 'Member';
   const safeAvatar = String(avatar || 'assets/images/truematch-mark.png').trim() || 'assets/images/truematch-mark.png';
+
   if (peer) PS_CHAT_STATE.peersByLabel[safeLabel] = peer;
   PS_CHAT_STATE.avatarsByLabel[safeLabel] = safeAvatar;
   return { peerEmail: peer, label: safeLabel, avatar: safeAvatar };
@@ -921,7 +911,7 @@ function psResolvePeer(target) {
     const label = String(target.name || target.label || target.username || 'Member').trim() || 'Member';
     const peerEmail = String(target.peerEmail || target.email || target.id || '').trim().toLowerCase();
     const avatar = String(target.avatar || target.photoUrl || PS_CHAT_STATE.avatarsByLabel[label] || 'assets/images/truematch-mark.png').trim() || 'assets/images/truematch-mark.png';
-    return psRememberPeer(peerEmail, label, avatar);
+    if (peerEmail || label) return psRememberPeer(peerEmail, label, avatar);
   }
 
   const label = String(target || '').trim() || 'Member';
@@ -930,7 +920,7 @@ function psResolvePeer(target) {
   return { peerEmail, label, avatar };
 }
 
-function psFormatChatThreadTime(value) {
+function psFormatMessageTime(value) {
   const ts = Number(value || 0);
   if (!ts) return '';
   try {
@@ -943,13 +933,23 @@ function psFormatChatThreadTime(value) {
 function psMapServerThreadToLocalHistory(list) {
   const me = String((PS_STATE.me && PS_STATE.me.email) || '').trim().toLowerCase();
   return (Array.isArray(list) ? list : []).map((m) => {
-    const fromMe = String((m && m.from) || '').trim().toLowerCase() === me;
+    const fromMe = String(m && m.from || '').trim().toLowerCase() === me;
     let text = String((m && m.text) || '').trim();
+
     if (!text) {
-      if (Array.isArray(m && m.media) && m.media.length) text = '[Media]';
-      else if (m && m.ppv) text = '[Locked Media]';
+      if (Array.isArray(m && m.media) && m.media.length) {
+        text = '[Media]';
+      } else if (m && m.ppv) {
+        text = '[Media]';
+      } else {
+        text = '';
+      }
     }
-    return { type: fromMe ? 'sent' : 'received', text };
+
+    return {
+      type: fromMe ? 'sent' : 'received',
+      text
+    };
   });
 }
 
@@ -960,19 +960,28 @@ function psRenderChatThread(msgs = []) {
   PS_DOM.chatBody.innerHTML = '';
 
   (Array.isArray(msgs) ? msgs : []).forEach((msg) => {
-    const fromMe = String((msg && msg.from) || '').trim().toLowerCase() === me;
+    const fromMe = String(msg && msg.from || '').trim().toLowerCase() === me;
     const bubble = document.createElement('div');
     bubble.className = `ps-msg-bubble ${fromMe ? 'sent' : 'received'}`;
 
     const media = Array.isArray(msg && msg.media) ? msg.media : [];
+
     const text = String((msg && msg.text) || '').trim();
     const safeText = text ? psEscapeHtml(text).replace(/\n/g, '<br>') : '';
-    const mediaLine = media.length ? `<div class="ps-msg-media-note">[Media]</div>` : '';
-    const textLine = safeText ? `<div class="ps-msg-text">${safeText}</div>` : '';
-    const timeLine = `<div class="ps-msg-time-mini" style="margin-top:6px; font-size:0.7rem; opacity:0.7;">${psEscapeHtml(psFormatChatThreadTime(msg && msg.createdAtMs))}</div>`;
-    const readLine = fromMe && msg && msg.readAt ? `<div class="ps-msg-read" style="margin-top:6px; font-size:0.7rem; opacity:0.7;">Seen</div>` : '';
 
-    bubble.innerHTML = `${mediaLine}${textLine}${timeLine}${readLine}` || '<div class="ps-msg-text"></div>' ;
+    const mediaLine = media.length
+      ? `<div class="ps-msg-media-note">[Media]</div>`
+      : '';
+
+    const textLine = safeText ? `<div class="ps-msg-text">${safeText}</div>` : '';
+    const readLine = fromMe && msg && msg.readAt
+      ? `<div class="ps-msg-read" style="margin-top:6px; font-size:0.7rem; opacity:0.7;">Seen</div>`
+      : '';
+    const timeLine = `<div class="ps-msg-time-mini" style="margin-top:6px; font-size:0.7rem; opacity:0.7;">${psEscapeHtml(psFormatMessageTime(msg && msg.createdAtMs))}</div>`;
+
+    const bodyHtml = `${mediaLine}${textLine}${timeLine}${readLine}`;
+
+    bubble.innerHTML = bodyHtml || '<div class="ps-msg-text"></div>';
     PS_DOM.chatBody.appendChild(bubble);
   });
 
@@ -996,8 +1005,8 @@ async function psLoadChatThread(target, opts = {}) {
   if (!peerEmail) {
     const localMsgs = conversationHistory[label] || [];
     psRenderChatThread(localMsgs.map((m) => ({
-      from: m.type === 'sent' ? ((PS_STATE.me && PS_STATE.me.email) || 'me') : label,
-      to: m.type === 'sent' ? label : ((PS_STATE.me && PS_STATE.me.email) || 'me'),
+      from: m.type === 'sent' ? (PS_STATE.me && PS_STATE.me.email) || 'me' : label,
+      to: m.type === 'sent' ? label : (PS_STATE.me && PS_STATE.me.email) || 'me',
       text: m.text,
       createdAtMs: Date.now()
     })));
@@ -1016,12 +1025,12 @@ async function psLoadChatThread(target, opts = {}) {
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data || data.ok !== true) {
-      throw new Error((data && (data.message || data.error)) || 'Failed to load conversation.');
+      const msg = (data && (data.message || data.error)) ? (data.message || data.error) : 'Failed to load conversation.';
+      throw new Error(String(msg || 'Failed to load conversation.'));
     }
 
     const messages = Array.isArray(data.messages) ? data.messages : [];
     PS_CHAT_STATE.lastThread = messages;
-    PS_CHAT_STATE.lastThreadsByPeer[peerEmail] = messages;
     conversationHistory[label] = psMapServerThreadToLocalHistory(messages);
     saveHistory();
     psRenderChatThread(messages);
@@ -1031,19 +1040,19 @@ async function psLoadChatThread(target, opts = {}) {
     const fallback = conversationHistory[label] || [];
     if (fallback.length) {
       psRenderChatThread(fallback.map((m) => ({
-        from: m.type === 'sent' ? ((PS_STATE.me && PS_STATE.me.email) || 'me') : label,
-        to: m.type === 'sent' ? label : ((PS_STATE.me && PS_STATE.me.email) || 'me'),
+        from: m.type === 'sent' ? (PS_STATE.me && PS_STATE.me.email) || 'me' : label,
+        to: m.type === 'sent' ? label : (PS_STATE.me && PS_STATE.me.email) || 'me',
         text: m.text,
         createdAtMs: Date.now()
       })));
-      showToast('Using saved chat cache.');
+      showToast('Using saved chat cache.', 'warning');
       return { ok: false, localOnly: true, messages: fallback };
     }
 
     if (PS_DOM.chatBody) {
       PS_DOM.chatBody.innerHTML = `<div style="text-align:center; color:#555; margin-top:20px;">Failed to load conversation.</div>`;
     }
-    showToast(String(err && err.message ? err.message : 'Failed to load conversation.'));
+    showToast(String(err && err.message ? err.message : 'Failed to load conversation.'), 'error');
     return { ok: false, error: err };
   }
 }
@@ -1052,7 +1061,7 @@ async function psSendMessageToActivePeer(payload = {}) {
   const peerEmail = String(PS_CHAT_STATE.activePeerEmail || '').trim().toLowerCase();
   const label = String(PS_CHAT_STATE.activePeerLabel || (PS_DOM.chatName ? PS_DOM.chatName.textContent : '') || 'Member').trim() || 'Member';
   if (!peerEmail) {
-    showToast('Unable to resolve this conversation.');
+    showToast('Unable to resolve this conversation.', 'error');
     return { ok: false, error: 'peer_missing' };
   }
 
@@ -1070,7 +1079,8 @@ async function psSendMessageToActivePeer(payload = {}) {
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data || data.ok !== true) {
-      throw new Error((data && (data.message || data.error)) || 'Failed to send message.');
+      const msg = (data && (data.message || data.error)) ? (data.message || data.error) : 'Failed to send message.';
+      throw new Error(String(msg || 'Failed to send message.'));
     }
 
     await psLoadChatThread({ peerEmail, name: label, avatar: PS_CHAT_STATE.activeAvatar });
@@ -1079,7 +1089,7 @@ async function psSendMessageToActivePeer(payload = {}) {
     return { ok: true, data };
   } catch (err) {
     console.error('psSendMessageToActivePeer error:', err);
-    showToast(String(err && err.message ? err.message : 'Failed to send message.'));
+    showToast(String(err && err.message ? err.message : 'Failed to send message.'), 'error');
     return { ok: false, error: err };
   }
 }
@@ -1097,8 +1107,6 @@ export async function initUI() {
   initNotifications();
   initChat();
   initStoryViewer();
-  initCreatorProfileModal();
-  initCreatorsLogic();
   initPremiumLogic();
   initProfileEditLogic();
   initSettingsLogic();
@@ -1114,12 +1122,7 @@ export async function initUI() {
   const lastTab = localStorage.getItem("ps_last_tab") || "home";
   switchTab(lastTab);
 
-  // PPV/Gift trigger binding
-  if (PS_DOM.btnPPV) {
-    PS_DOM.btnPPV.onclick = () => {
-      if (PS_DOM.giftModal) PS_DOM.giftModal.classList.add("active");
-    };
-  }
+  // Gift / PPV disabled until dedicated purchase or debit logic exists
 }
 
 // ==========================================
@@ -1157,43 +1160,43 @@ function renderStories(stories = []) {
 function renderMessages(messages = []) {
     if (!PS_DOM.matchesContainer) return;
 
-    const items = Array.isArray(messages) ? messages : [];
-    if (!items.length) {
+    if (messages.length === 0) {
         PS_DOM.matchesContainer.innerHTML = `<div style="padding:20px; text-align:center; color:#666;">No messages yet. Start swiping!</div>`;
         return;
     }
 
-    PS_DOM.matchesContainer.innerHTML = items.map((m) => {
-        const label = psEscapeHtml(String(m.name || 'Member'));
-        const avatar = psEscapeHtml(String(m.avatar || 'assets/images/truematch-mark.png'));
-        const peerEmail = psEscapeHtml(String(m.peerEmail || '').trim().toLowerCase());
-        const preview = psEscapeHtml(String(m.text || 'Tap to chat'));
-        const when = psEscapeHtml(String(m.time || ''));
+    PS_DOM.matchesContainer.innerHTML = messages.map((m) => {
+        const label = String(m.name || 'Member');
+        const avatar = String(m.avatar || 'assets/images/truematch-mark.png');
+        const peerEmail = String(m.peerEmail || '').trim().toLowerCase();
+        const escapedLabel = psEscapeHtml(label);
+        const escapedAvatar = psEscapeHtml(avatar);
+        const escapedPeer = psEscapeHtml(peerEmail);
+        const escapedText = psEscapeHtml(String(m.text || ''));
+        const escapedTime = psEscapeHtml(String(m.time || ''));
         return `
-    <div class="ps-message-item ${m.unread ? 'unread' : ''}" data-peer-email="${peerEmail}" data-peer-label="${label}" data-peer-avatar="${avatar}">
+    <div class="ps-message-item ${m.unread ? "unread" : ""}" data-name="${escapedLabel}" data-peer="${escapedPeer}" data-avatar="${escapedAvatar}">
         <div class="ps-msg-avatar-wrapper">
-            <img class="ps-msg-avatar" src="${avatar}" alt="${label}">
+            <img class="ps-msg-avatar" src="${escapedAvatar}">
             <div class="ps-online-badge"></div>
         </div>
         <div class="ps-msg-content">
             <div class="ps-msg-header">
-                <span class="ps-msg-name">${label}</span>
-                <span class="ps-msg-time">${when}</span>
+                <span class="ps-msg-name">${escapedLabel}</span>
+                <span class="ps-msg-time">${escapedTime}</span>
             </div>
-            <span class="ps-msg-preview">${preview}</span>
+            <span class="ps-msg-preview">${escapedText}</span>
         </div>
     </div>`;
-    }).join('');
+    }).join("");
 
     PS_DOM.matchesContainer.querySelectorAll('.ps-message-item').forEach((item) => {
-      item.addEventListener('click', () => {
-        const target = {
-          name: item.getAttribute('data-peer-label') || 'Member',
-          peerEmail: item.getAttribute('data-peer-email') || '',
-          avatar: item.getAttribute('data-peer-avatar') || 'assets/images/truematch-mark.png'
-        };
-        if (typeof window.openChat === 'function') window.openChat(target);
-      });
+        item.addEventListener('click', () => {
+            const label = item.getAttribute('data-name') || 'Member';
+            const peerEmail = item.getAttribute('data-peer') || '';
+            const avatar = item.getAttribute('data-avatar') || 'assets/images/truematch-mark.png';
+            if (window.openChat) window.openChat({ name: label, peerEmail, avatar });
+        });
     });
 }
 
@@ -1395,7 +1398,7 @@ export function initSettingsLogic() {
       title: '<i class="fa-solid fa-gem" style="color:#FFD700"></i> Premium Society',
       html: `<div style="text-align: left; font-size: 0.85rem; color: #ccc;">
                 <p><b>Membership:</b> Auto-renew monthly ang iyong subscription.</p>
-                <p><b>Diamonds:</b> Digital gifts are final and non-refundable.</p>
+                <p><b>Member Perks:</b> Additional paid extras are currently unavailable on this page.</p>
             </div>`,
       background: "#15151e", color: "#fff", confirmButtonColor: "#FFD700",
     });
@@ -1719,133 +1722,88 @@ function initPremiumLogic() {
   };
 }
 
-function initCreatorsLogic() {
-  window.subscribeCreator = (name) => {
-    window.closeCreatorProfile();
-    Swal.fire({
-      title: `Subscribe to ${name}?`,
-      text: "Unlock exclusive content and direct messaging for $9.99/mo.",
-      icon: "question",
-      showCancelButton: true,
-      confirmButtonColor: "#00aff0",
-      cancelButtonColor: "#d33",
-      confirmButtonText: "Yes, Subscribe",
-      background: "#15151e",
-      color: "#fff",
-    }).then((result) => {
-      if (result.isConfirmed) {
-        Swal.fire({
-          title: "Subscribed!",
-          text: `You are now a premium member of ${name}'s circle.`,
-          icon: "success",
-          background: "#15151e",
-          color: "#fff",
-          confirmButtonColor: "#00aff0",
-        });
-      }
-    });
-  };
-
-  window.filterCreators = (element, category) => {
-    const chips = document.querySelectorAll(".ps-filter-chip");
-    chips.forEach((chip) => chip.classList.remove("active"));
-    element.classList.add("active");
-
-    // TODO: Call Backend with Filter
-    // fetchCreators(category);
-    showToast(`Filtering by: ${category}`);
-  };
-
-  // NOTE: Inalis na ang hardcoded creators list dito.
-  // Ang 'ps-creators-grid' ay dapat lamanin gamit ang fetch data.
-  if (PS_DOM.panelCreatorsBody) {
-    PS_DOM.panelCreatorsBody.innerHTML = `
-        <div class="ps-creators-filter">
-            <div class="ps-filter-chip active" onclick="filterCreators(this, 'All')">All</div>
-            <div class="ps-filter-chip" onclick="filterCreators(this, 'Trending')">Trending</div>
-            <div class="ps-filter-chip" onclick="filterCreators(this, 'New')">New</div>
-            <div class="ps-filter-chip" onclick="filterCreators(this, 'Near You')">Near You</div>
-            <div class="ps-filter-chip" onclick="filterCreators(this, 'Cosplay')">Cosplay</div>
-        </div>
-        <div class="ps-creators-grid">
-            <p style="grid-column: span 2; text-align: center; color: #666; margin-top: 50px;">Fetching Creators...</p>
-        </div>`;
-  }
-}
-
-function initCreatorProfileModal() {
-  const modal = document.getElementById("psCreatorProfileModal");
-
-  window.closeCreatorProfile = () => {
-    if (modal) modal.classList.remove("active");
-  };
-
-  window.openCreatorProfile = (name, cat, followers, color) => {
-    if (!modal) return;
-    document.getElementById("psProfModalName").textContent = name;
-    document.getElementById("psProfModalCat").textContent = cat;
-    document.getElementById("psProfModalFollowers").textContent = followers;
-    document.getElementById("psProfModalLikes").textContent = "0K";
-
-    const cover = document.getElementById("psProfModalCover");
-    if (cover) {
-      cover.style.backgroundColor = color;
-      cover.style.backgroundImage = "url('assets/images/truematch-mark.png')";
-    }
-
-    const subBtn = modal.querySelector(".ps-btn-subscribe-lg");
-    if (subBtn) {
-      subBtn.onclick = () => window.subscribeCreator(name);
-    }
-
-    modal.classList.add("active");
-  };
-
-  if (modal) {
-    modal.addEventListener("click", (e) => {
-      if (e.target === modal) window.closeCreatorProfile();
-    });
-  }
-
-  window.messageFromProfile = () => {
-    const name = document.getElementById("psProfModalName").textContent;
-    window.closeCreatorProfile();
-    const matchesBtn = document.querySelector('button[data-panel="matches"]');
-    if (matchesBtn) matchesBtn.click();
-    setTimeout(() => {
-      window.openChat(name);
-    }, 300);
-  };
-}
-
 function initNotifications() {
-  const btnNotif = document.getElementById("psBtnNotif");
-  const popover = document.getElementById("psNotifPopover");
+  const els = psGetNotifEls();
+  if (!els) return;
 
-  if (btnNotif && popover) {
-    // Alisin muna ang lumang listener para iwas "double-trigger"
-    const newBtn = btnNotif.cloneNode(true);
-    btnNotif.parentNode.replaceChild(newBtn, btnNotif);
+  const { btn, popover, markAllBtn, list } = els;
 
-    newBtn.addEventListener("click", (e) => {
+  psSetNotifBadge(Number((els.badge || {}).textContent || 0));
+  psReloadNotifications(30, { silent: true });
+
+  if (!btn.dataset.notifBound) {
+    btn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      // I-toggle ang active classes
-      newBtn.classList.toggle("active");
-      popover.classList.toggle("active");
+      const willOpen = !popover.classList.contains('active');
 
-      console.log(
-        "Notification toggled:",
-        popover.classList.contains("active"),
-      );
-    });
+      btn.classList.toggle('active');
+      popover.classList.toggle('active');
 
-    // Isara ang popover kapag nag-click kahit saan sa labas
-    document.addEventListener("click", (e) => {
-      if (!popover.contains(e.target) && !newBtn.contains(e.target)) {
-        popover.classList.remove("active");
-        newBtn.classList.remove("active");
+      if (willOpen) {
+        await psReloadNotifications(30);
       }
     });
+    btn.dataset.notifBound = '1';
+  }
+
+  if (markAllBtn && !markAllBtn.dataset.notifBound) {
+    markAllBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      try {
+        markAllBtn.disabled = true;
+        await psMarkAllNotificationsRead();
+        await psReloadNotifications(30, { silent: true });
+        showToast('All notifications marked as read.');
+      } catch (err) {
+        showToast('Failed to mark all notifications as read.');
+      } finally {
+        markAllBtn.disabled = false;
+      }
+    });
+    markAllBtn.dataset.notifBound = '1';
+  }
+
+  if (list && !list.dataset.notifBound) {
+    list.addEventListener('click', async (e) => {
+      const item = e.target.closest('.ps-notif-item[data-notif-id]');
+      if (!item) return;
+      e.stopPropagation();
+
+      const notifId = String(item.getAttribute('data-notif-id') || '').trim();
+      const href = String(item.getAttribute('data-notif-href') || '').trim();
+      const wasUnread = item.classList.contains('is-unread');
+
+      try {
+        if (wasUnread && notifId) {
+          await psMarkNotificationRead(notifId);
+          item.classList.remove('is-unread');
+          item.style.background = '';
+          await psReloadNotifications(30, { silent: true });
+        }
+      } catch (err) {
+        showToast('Failed to mark notification as read.');
+        return;
+      }
+
+      if (href) {
+        window.location.href = href;
+      }
+    });
+    list.dataset.notifBound = '1';
+  }
+
+  if (!document.body.dataset.psNotifOutsideBound) {
+    document.addEventListener('click', (e) => {
+      const freshEls = psGetNotifEls();
+      if (!freshEls) return;
+      if (!freshEls.popover.contains(e.target) && !freshEls.btn.contains(e.target)) {
+        freshEls.popover.classList.remove('active');
+        freshEls.btn.classList.remove('active');
+      }
+    });
+    document.body.dataset.psNotifOutsideBound = '1';
   }
 }
 
@@ -1860,77 +1818,102 @@ function initChat() {
     if (PS_DOM.chatName) PS_DOM.chatName.textContent = label;
     if (PS_DOM.chatAvatar) PS_DOM.chatAvatar.src = avatar;
 
-    PS_DOM.chatWindow.style.transform = 'translateX(0)';
-    PS_DOM.chatWindow.style.transition = 'transform 0.3s ease';
-    PS_DOM.chatWindow.classList.add('active');
-    document.body.classList.add('ps-chat-open');
+    // Siguraduhing naka-reset ang position kapag binuksan
+    PS_DOM.chatWindow.style.transform = "translateX(0)";
+    PS_DOM.chatWindow.style.transition = "transform 0.3s ease";
+
+    PS_DOM.chatWindow.classList.add("active");
+    document.body.classList.add("ps-chat-open");
 
     await psLoadChatThread(resolved, { label, avatar });
   };
 
+  const renderMessages = (msgs) => {
+    psRenderChatThread(msgs);
+  };
+
   const closeChatAction = () => {
     if (PS_DOM.chatWindow) {
-      PS_DOM.chatWindow.classList.remove('active');
+      PS_DOM.chatWindow.classList.remove("active");
+      // I-clear ang inline transform para sa susunod na open
       setTimeout(() => {
-        PS_DOM.chatWindow.style.transform = '';
+        PS_DOM.chatWindow.style.transform = "";
       }, 300);
-      document.body.classList.remove('ps-chat-open');
+      document.body.classList.remove("ps-chat-open");
     }
   };
 
   window.openChat = openChatAction;
   window.closeChat = closeChatAction;
 
+  // --- SWIPE RIGHT TO CLOSE LOGIC ---
   if (PS_DOM.chatWindow) {
     let chatStartX = 0;
     let isDraggingChat = false;
 
-    PS_DOM.chatWindow.addEventListener('touchstart', (e) => {
-      chatStartX = e.touches[0].clientX;
-      isDraggingChat = true;
-      PS_DOM.chatWindow.style.transition = 'none';
-    }, { passive: true });
+    PS_DOM.chatWindow.addEventListener(
+      "touchstart",
+      (e) => {
+        chatStartX = e.touches[0].clientX;
+        isDraggingChat = true;
+        PS_DOM.chatWindow.style.transition = "none"; // Alisin ang transition para real-time drag
+      },
+      { passive: true },
+    );
 
-    PS_DOM.chatWindow.addEventListener('touchmove', (e) => {
-      if (!isDraggingChat) return;
-      const currentX = e.touches[0].clientX;
-      const diff = currentX - chatStartX;
-      if (diff > 0) PS_DOM.chatWindow.style.transform = `translateX(${diff}px)`;
-    }, { passive: true });
+    PS_DOM.chatWindow.addEventListener(
+      "touchmove",
+      (e) => {
+        if (!isDraggingChat) return;
+        let currentX = e.touches[0].clientX;
+        let diff = currentX - chatStartX;
 
-    PS_DOM.chatWindow.addEventListener('touchend', (e) => {
+        // Pakanan lang ang swipe na papayagan (diff > 0)
+        if (diff > 0) {
+          PS_DOM.chatWindow.style.transform = `translateX(${diff}px)`;
+        }
+      },
+      { passive: true },
+    );
+
+    PS_DOM.chatWindow.addEventListener("touchend", (e) => {
       if (!isDraggingChat) return;
       isDraggingChat = false;
-      const currentX = e.changedTouches[0].clientX;
-      const diff = currentX - chatStartX;
-      PS_DOM.chatWindow.style.transition = 'transform 0.3s ease-out';
+      let currentX = e.changedTouches[0].clientX;
+      let diff = currentX - chatStartX;
+
+      PS_DOM.chatWindow.style.transition = "transform 0.3s ease-out";
+
+      // Threshold: 100px para ituloy ang pagsara
       if (diff > 100) {
-        PS_DOM.chatWindow.style.transform = 'translateX(100%)';
+        PS_DOM.chatWindow.style.transform = "translateX(100%)";
         setTimeout(closeChatAction, 200);
       } else {
-        PS_DOM.chatWindow.style.transform = 'translateX(0)';
+        // Snap back kapag hindi umabot sa 100px
+        PS_DOM.chatWindow.style.transform = "translateX(0)";
       }
     });
   }
 
-  const emojiPicker = document.getElementById('psEmojiPicker');
-  const btnEmoji = document.getElementById('psBtnToggleEmoji');
-  const chatInput = document.getElementById('psChatInput');
+  // --- EMOJI PICKER LOGIC ---
+  const emojiPicker = document.getElementById("psEmojiPicker");
+  const btnEmoji = document.getElementById("psBtnToggleEmoji");
+  const chatInput = document.getElementById("psChatInput");
 
   if (btnEmoji && emojiPicker) {
     btnEmoji.onclick = (e) => {
       e.stopPropagation();
-      emojiPicker.classList.toggle('active');
+      emojiPicker.classList.toggle("active");
     };
-    document.addEventListener('click', (e) => {
+    document.addEventListener("click", (e) => {
       if (!emojiPicker.contains(e.target) && e.target !== btnEmoji) {
-        emojiPicker.classList.remove('active');
+        emojiPicker.classList.remove("active");
       }
     });
   }
 
   if (emojiPicker && chatInput) {
-    emojiPicker.addEventListener('emoji-click', (event) => {
+    emojiPicker.addEventListener("emoji-click", (event) => {
       const emoji = event.detail.unicode;
       chatInput.value += emoji;
       chatInput.focus();
@@ -1938,20 +1921,79 @@ function initChat() {
   }
 
   window.sendChatMessage = async function () {
-    const text = PS_DOM.chatInput ? PS_DOM.chatInput.value.trim() : '';
+    const text = PS_DOM.chatInput ? PS_DOM.chatInput.value.trim() : "";
     if (!text) return;
 
     const currentName = String((PS_DOM.chatName && PS_DOM.chatName.textContent) || PS_CHAT_STATE.activePeerLabel || 'Member').trim() || 'Member';
-    if (!conversationHistory[currentName]) conversationHistory[currentName] = [];
-    conversationHistory[currentName].push({ type: 'sent', text });
+
+    // optimistic local cache while server request is in flight
+    if (!conversationHistory[currentName]) {
+      conversationHistory[currentName] = [];
+    }
+    conversationHistory[currentName].push({ type: "sent", text: text });
     saveHistory();
 
-    if (PS_DOM.chatInput) PS_DOM.chatInput.value = '';
-    if (emojiPicker) emojiPicker.classList.remove('active');
+    if (PS_DOM.chatInput) PS_DOM.chatInput.value = "";
+    if (emojiPicker) emojiPicker.classList.remove("active");
 
     const out = await psSendMessageToActivePeer({ text });
-    if (!out.ok) return;
+    if (!out.ok) {
+      // keep local optimistic cache; thread loader fallback will still use it
+      return;
+    }
   };
+
+  function moveMatchToMessages(name, lastText) {
+    const newMatchesRail = document.getElementById("psNewMatchesRail");
+    let isNewMatch = false;
+
+    if (newMatchesRail) {
+      const newMatchItems =
+        newMatchesRail.querySelectorAll(".ps-new-match-item");
+      newMatchItems.forEach((item) => {
+        const nameSpan = item.querySelector(".ps-match-name-sm");
+        if (nameSpan && nameSpan.textContent === name) {
+          item.remove();
+          isNewMatch = true;
+        }
+      });
+    }
+
+    if (isNewMatch) {
+      const countBadge = document.getElementById("psNewMatchCount");
+      if (countBadge) {
+        let currentCount = parseInt(countBadge.textContent) || 0;
+        countBadge.textContent = Math.max(0, currentCount - 1);
+      }
+    }
+
+    const matchesList = document.getElementById("psMatchesContainer");
+    if (matchesList) {
+      const existingItems = matchesList.querySelectorAll(".ps-message-item");
+      existingItems.forEach((item) => {
+        const nameEl = item.querySelector(".ps-msg-name");
+        if (nameEl && nameEl.textContent === name) item.remove();
+      });
+
+      const newItem = `
+            <div class="ps-message-item" onclick="openChat('${name}')">
+                <div class="ps-msg-avatar-wrapper">
+                    <img class="ps-msg-avatar" src="assets/images/truematch-mark.png" style="background:${getRandomColor()}">
+                    <div class="ps-online-badge"></div>
+                </div>
+                <div class="ps-msg-content">
+                    <div class="ps-msg-header">
+                        <span class="ps-msg-name">${name}</span>
+                        <span class="ps-msg-time">Just now</span>
+                    </div>
+                    <div style="display:flex; align-items:center;">
+                        <span class="ps-msg-preview" style="color:#fff; font-weight:600;">You: ${lastText}</span>
+                    </div>
+                </div>
+            </div>`;
+      matchesList.insertAdjacentHTML("afterbegin", newItem);
+    }
+  }
 
   if (PS_DOM.btnCloseChat) PS_DOM.btnCloseChat.onclick = closeChatAction;
 }
@@ -2191,58 +2233,45 @@ async function psLoadMatches(force = false) {
   _psMatchesLastFetched = Date.now();
 
   try {
+    // lightweight loading state
     PS_DOM.matchesContainer.innerHTML = `<div style="padding:20px; text-align:center; color:#666;">Loading matches...</div>`;
 
-    const [matchesRes, threadsRes] = await Promise.allSettled([
-      fetch(`${API_BASE}/api/premium-society/matches`, { method: 'GET', credentials: 'include' }),
-      fetch(`${API_BASE}/api/messages`, { method: 'GET', credentials: 'include' })
-    ]);
+    const res = await fetch(`${API_BASE}/api/premium-society/matches`, {
+      method: 'GET',
+      credentials: 'include'
+    });
 
-    if (matchesRes.status !== 'fulfilled') throw new Error('Failed to load matches.');
-
-    const matchesData = await matchesRes.value.json().catch(() => ({}));
-    if (!matchesRes.value.ok || !matchesData || matchesData.ok !== true) {
-      throw new Error((matchesData && matchesData.message) || 'Failed to load matches.');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data || data.ok !== true) {
+      const msg = (data && data.message) ? data.message : 'Failed to load matches.';
+      PS_DOM.matchesContainer.innerHTML = `<div style="padding:20px; text-align:center; color:#666;">${msg}</div>`;
+      if (PS_DOM.newMatchesRail) PS_DOM.newMatchesRail.innerHTML = '';
+      if (PS_DOM.newMatchCount) PS_DOM.newMatchCount.textContent = '0';
+      return;
     }
 
-    const threadsByPeer = {};
-    if (threadsRes.status === 'fulfilled') {
-      const threadsData = await threadsRes.value.json().catch(() => ({}));
-      if (threadsRes.value.ok && threadsData && threadsData.ok === true) {
-        const threads = Array.isArray(threadsData.threads) ? threadsData.threads : [];
-        threads.forEach((t) => {
-          const peerEmail = String(t.peerEmail || '').trim().toLowerCase();
-          if (!peerEmail) return;
-          threadsByPeer[peerEmail] = t;
-        });
-      }
-    }
+    const matches = Array.isArray(data.matches) ? data.matches : [];
 
-    const matches = Array.isArray(matchesData.matches) ? matchesData.matches : [];
-
+    // NEW MATCHES RAIL
     if (PS_DOM.newMatchesRail) {
       PS_DOM.newMatchesRail.innerHTML = '';
       matches.slice(0, 12).forEach((m) => {
-        const label = _psSafeName(m.name || (m.username ? '@' + String(m.username).replace(/^@/, '') : 'Member'));
-        const peerEmail = String(m.email || m.id || '').trim().toLowerCase();
-        const avatar = m.photoUrl || 'assets/images/truematch-mark.png';
-        psRememberPeer(peerEmail, label, avatar);
-
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'ps-newmatch';
-        btn.dataset.peerEmail = peerEmail;
-        btn.dataset.peerLabel = label;
-        btn.dataset.peerAvatar = avatar;
-
         const img = document.createElement('img');
         img.className = 'ps-newmatch-avatar';
-        img.alt = label;
-        img.src = avatar;
+        img.alt = _psSafeName(m.name || m.username);
+        img.src = m.photoUrl || 'assets/images/truematch-mark.png';
         btn.appendChild(img);
 
         btn.addEventListener('click', () => {
+          const label = _psSafeName(m.name || (m.username ? '@' + String(m.username).replace(/^@/, '') : 'Member'));
+          const peerEmail = String(m.email || m.id || '').trim().toLowerCase();
+          const avatar = m.photoUrl || 'assets/images/truematch-mark.png';
+          psRememberPeer(peerEmail, label, avatar);
           if (window.openChat) window.openChat({ name: label, peerEmail, avatar });
+          // keep tab on matches - chat UI will overlay
         });
 
         PS_DOM.newMatchesRail.appendChild(btn);
@@ -2251,28 +2280,45 @@ async function psLoadMatches(force = false) {
 
     if (PS_DOM.newMatchCount) PS_DOM.newMatchCount.textContent = String(matches.length);
 
+    let messageMeta = {};
+    try {
+      const metaRes = await fetch(`${API_BASE}/api/me/messages/meta`, {
+        method: 'GET',
+        credentials: 'include'
+      });
+      const metaData = await metaRes.json().catch(() => ({}));
+      if (metaRes.ok && metaData && metaData.ok && metaData.items && typeof metaData.items === 'object') {
+        messageMeta = metaData.items;
+      }
+    } catch (_) {}
+
+    // MESSAGES LIST (use existing renderMessages UI)
     const messages = matches.map((m) => {
       const label = _psSafeName(m.name || (m.username ? '@' + String(m.username).replace(/^@/, '') : 'Member'));
       const peerEmail = String(m.email || m.id || '').trim().toLowerCase();
       const avatar = m.photoUrl || 'assets/images/truematch-mark.png';
-      const thread = threadsByPeer[peerEmail] || null;
-      const lastMessage = thread && thread.lastMessage ? thread.lastMessage : 'Tap to chat';
-      const unread = !!(thread && Number(thread.lastMessageAtMs || 0) > Number(thread.lastReadAtMs || 0));
       psRememberPeer(peerEmail, label, avatar);
+
+      const meta = (peerEmail && messageMeta && typeof messageMeta === 'object') ? (messageMeta[peerEmail] || {}) : {};
+      const lastAt = Number(meta.lastMessageAtMs || m.updatedAtMs || m.createdAtMs || 0) || 0;
+      const lastRead = Number(meta.lastReadAtMs || 0) || 0;
+      const preview = String(meta.lastMessageText || '').trim() || 'Tap to chat';
+
       return {
-        name: label,
+        name: label.replace(/'/g, "\'"),
         peerEmail,
         avatar,
-        time: _psFormatTime((thread && thread.lastMessageAtMs) || m.updatedAtMs || m.createdAtMs),
-        text: lastMessage,
-        unread
+        time: _psFormatTime(lastAt),
+        text: preview,
+        unread: lastAt > 0 && lastAt > lastRead,
+        updatedAtMs: lastAt
       };
     });
 
     renderMessages(messages);
   } catch (err) {
     console.error('psLoadMatches error:', err);
-    PS_DOM.matchesContainer.innerHTML = `<div style="padding:20px; text-align:center; color:#666;">${psEscapeHtml(String(err && err.message ? err.message : 'Failed to load matches.'))}</div>`;
+    PS_DOM.matchesContainer.innerHTML = `<div style="padding:20px; text-align:center; color:#666;">Failed to load matches.</div>`;
     if (PS_DOM.newMatchesRail) PS_DOM.newMatchesRail.innerHTML = '';
     if (PS_DOM.newMatchCount) PS_DOM.newMatchCount.textContent = '0';
   }
@@ -2287,7 +2333,6 @@ function switchTab(panelName) {
     "ps-tab-home",
     "ps-tab-swipe",
     "ps-tab-matches",
-    "ps-tab-creators",
     "ps-tab-premium",
     "ps-tab-settings",
   );
@@ -2391,66 +2436,27 @@ function initCanvasParticles() {
 // NEW FEATURES: MATCH & GIFT LOGIC
 // ==========================================
 
-// --- 1. GIFT SYSTEM LOGIC ---
-let selectedGiftPrice = 500;
-let selectedGiftName = "Diamond";
-
-window.closeGiftModal = () => {
-  if (PS_DOM.giftModal) PS_DOM.giftModal.classList.remove("active");
-};
-
-window.selectGift = (el, name, price) => {
-  // Remove active class from others
-  document
-    .querySelectorAll(".ps-gift-item")
-    .forEach((i) => i.classList.remove("active"));
-  // Add active to clicked
-  el.classList.add("active");
-
-  selectedGiftPrice = price;
-  selectedGiftName = name;
-
-  // Update button text
-  if (PS_DOM.giftPriceBtn) PS_DOM.giftPriceBtn.textContent = price;
-};
-
-window.sendSelectedGift = () => {
-  window.closeGiftModal();
-
-  const targetUser = PS_DOM.chatName ? PS_DOM.chatName.textContent : "User";
-
-  showToast(
-    `Sent ${selectedGiftName} to ${targetUser}! (-${selectedGiftPrice}c)`,
-  );
-
-  const msgDiv = document.createElement("div");
-  msgDiv.className = "ps-msg-bubble sent";
-  msgDiv.style.background = "linear-gradient(135deg, #FFD700, #FFA500)";
-  msgDiv.style.color = "#000";
-  msgDiv.style.fontWeight = "bold";
-  msgDiv.innerHTML = `<i class="fa-solid fa-gift"></i> Sent a ${selectedGiftName}`;
-
-  if (PS_DOM.chatBody) {
-    PS_DOM.chatBody.appendChild(msgDiv);
-    PS_DOM.chatBody.scrollTop = PS_DOM.chatBody.scrollHeight;
-  }
-
-  if (!conversationHistory[targetUser]) conversationHistory[targetUser] = [];
-  conversationHistory[targetUser].push({
-    type: "sent",
-    text: `<i class="fa-solid fa-gift"></i> Sent a ${selectedGiftName}`,
-  });
-  saveHistory();
-};
+// --- 1. GIFT SYSTEM LOGIC (TEMP DISABLED) ---
 
 // --- 2. MATCH OVERLAY LOGIC ---
 window.triggerMatchOverlay = (person) => {
   if (!PS_DOM.matchOverlay) return;
 
-  if (PS_DOM.matchName) PS_DOM.matchName.textContent = person.name;
+  PS_CHAT_STATE.matchOverlayTarget = person || null;
+
+  const label = _psSafeName((person && person.name) || 'Member');
+  const peerEmail = String((person && (person.email || person.id)) || '').trim().toLowerCase();
+  const avatar = (person && (person.photoUrl || person.avatar)) || 'assets/images/truematch-mark.png';
+  psRememberPeer(peerEmail, label, avatar);
+
+  if (PS_DOM.matchName) PS_DOM.matchName.textContent = label;
 
   if (PS_DOM.matchTargetImg) {
-    PS_DOM.matchTargetImg.style.background = person.color || "#00aff0";
+    if (person && (person.photoUrl || person.avatar)) {
+      PS_DOM.matchTargetImg.src = person.photoUrl || person.avatar;
+    } else {
+      PS_DOM.matchTargetImg.style.background = (person && person.color) || "#00aff0";
+    }
   }
   if (PS_DOM.matchUserImg) {
     PS_DOM.matchUserImg.style.background = "#00aff0";
@@ -2464,14 +2470,15 @@ window.closeMatchOverlay = () => {
 };
 
 window.openChatFromMatch = () => {
-  const name = PS_DOM.matchName.textContent;
+  const label = (PS_DOM.matchName && PS_DOM.matchName.textContent) || 'Member';
+  const target = PS_CHAT_STATE.matchOverlayTarget || { name: label, peerEmail: PS_CHAT_STATE.peersByLabel[label] || '', avatar: PS_CHAT_STATE.avatarsByLabel[label] || 'assets/images/truematch-mark.png' };
   window.closeMatchOverlay();
 
   const matchesBtn = document.querySelector('button[data-panel="matches"]');
   if (matchesBtn) matchesBtn.click();
 
   setTimeout(() => {
-    if (window.openChat) window.openChat({ name, peerEmail: PS_CHAT_STATE.peersByLabel[name] || '', avatar: PS_CHAT_STATE.avatarsByLabel[name] || 'assets/images/truematch-mark.png' });
+    if (window.openChat) window.openChat(target);
   }, 300);
 };
 document.addEventListener("DOMContentLoaded", () => {
