@@ -898,13 +898,190 @@ function saveHistory() {
 }
 
 
+const PS_MOMENTS_STATE = {
+  items: [],
+  byId: {},
+  activeMomentId: '',
+  lastFetchedAt: 0
+};
+
+function psEscapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function psEnsureStoriesContainer() {
+  if (PS_DOM.storiesContainer && document.body.contains(PS_DOM.storiesContainer)) {
+    return PS_DOM.storiesContainer;
+  }
+
+  const existing = document.getElementById('psStoriesContainer');
+  if (existing) {
+    PS_DOM.storiesContainer = existing;
+    return existing;
+  }
+
+  const homePanel = document.querySelector('.ps-panel[data-panel="home"]');
+  if (!homePanel) return null;
+
+  const section = document.createElement('section');
+  section.className = 'ps-story-rail-section';
+  section.style.marginBottom = '24px';
+  section.innerHTML = `
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px;">
+      <h3 class="ps-section-title" style="margin:0;">Moments</h3>
+      <button type="button" id="psInlineAddStoryBtn" class="ps-btn-icon-sm" style="flex-shrink:0;">
+        <i class="fa-solid fa-plus"></i>
+      </button>
+    </div>
+    <div id="psStoriesContainer" class="ps-stories-strip" style="display:flex; gap:14px; overflow-x:auto; padding-bottom:6px;"></div>
+  `;
+
+  const admirerSection = homePanel.querySelector('.ps-admirer-section');
+  const dailyPick = PS_DOM.dailyPickContainer;
+  if (admirerSection) {
+    admirerSection.parentNode.insertBefore(section, admirerSection);
+  } else {
+    if (dailyPick && dailyPick.parentNode === homePanel) {
+      dailyPick.insertAdjacentElement('afterend', section);
+    } else {
+      homePanel.appendChild(section);
+    }
+  }
+
+  PS_DOM.storiesContainer = section.querySelector('#psStoriesContainer');
+  const inlineBtn = section.querySelector('#psInlineAddStoryBtn');
+  if (inlineBtn) {
+    inlineBtn.addEventListener('click', () => {
+      if (typeof window.openAddStory === 'function') window.openAddStory();
+    });
+  }
+
+  return PS_DOM.storiesContainer;
+}
+
+function psNormalizeMoment(raw) {
+  const item = raw || {};
+  const createdAtMs = Number(item.createdAtMs || Date.now());
+  return {
+    id: String(item.id || `moment_${createdAtMs}_${Math.random().toString(16).slice(2, 8)}`),
+    ownerId: String(item.ownerId || item.userId || '').trim(),
+    ownerEmail: String(item.ownerEmail || item.email || '').trim().toLowerCase(),
+    ownerName: _psSafeName(item.ownerName || item.name || item.fullName || item.username || 'Member'),
+    ownerAvatarUrl: String(item.ownerAvatarUrl || item.avatar || item.avatarUrl || item.photoUrl || 'assets/images/truematch-mark.png').trim() || 'assets/images/truematch-mark.png',
+    mediaUrl: String(item.mediaUrl || '').trim(),
+    mediaType: String(item.mediaType || '').trim().toLowerCase(),
+    caption: String(item.caption || '').trim(),
+    createdAtMs,
+    expiresAtMs: Number(item.expiresAtMs || (createdAtMs + (24 * 60 * 60 * 1000))),
+    accent: item.color || item.accent || getRandomColor()
+  };
+}
+
+function psSetMomentsState(list) {
+  const normalized = (Array.isArray(list) ? list : [])
+    .map(psNormalizeMoment)
+    .sort((a, b) => Number(b.createdAtMs) - Number(a.createdAtMs));
+
+  PS_MOMENTS_STATE.items = normalized;
+  PS_MOMENTS_STATE.byId = {};
+  normalized.forEach((m) => {
+    PS_MOMENTS_STATE.byId[m.id] = m;
+  });
+  return normalized;
+}
+
+function psGetMomentsRailItems() {
+  const latestByOwner = new Map();
+  (Array.isArray(PS_MOMENTS_STATE.items) ? PS_MOMENTS_STATE.items : []).forEach((moment) => {
+    const key = moment.ownerEmail || moment.ownerId || moment.ownerName;
+    if (!latestByOwner.has(key)) latestByOwner.set(key, moment);
+  });
+  return Array.from(latestByOwner.values()).slice(0, 18);
+}
+
+async function psLoadMoments(force = false) {
+  const now = Date.now();
+  if (!force && (now - Number(PS_MOMENTS_STATE.lastFetchedAt || 0)) < 5000) {
+    renderStories(PS_MOMENTS_STATE.items);
+    return PS_MOMENTS_STATE.items;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/moments/list?scope=matches`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data || data.ok !== true) {
+      throw new Error((data && (data.message || data.error)) || 'Failed to load moments.');
+    }
+
+    const items = psSetMomentsState(Array.isArray(data.moments) ? data.moments : []);
+    PS_MOMENTS_STATE.lastFetchedAt = Date.now();
+    renderStories(items);
+    return items;
+  } catch (err) {
+    console.error('psLoadMoments error:', err);
+    if (!PS_MOMENTS_STATE.lastFetchedAt) renderStories([]);
+    return PS_MOMENTS_STATE.items;
+  }
+}
+
+function psApplyMomentToViewer(moment) {
+  if (!PS_DOM.storyFullImg) return;
+
+  const mediaUrl = String(moment?.mediaUrl || '').trim();
+  const mediaType = String(moment?.mediaType || '').trim().toLowerCase();
+  const caption = String(moment?.caption || '').trim();
+  const accent = String(moment?.accent || '#00aff0');
+  const avatarUrl = String(moment?.ownerAvatarUrl || 'assets/images/truematch-mark.png').trim() || 'assets/images/truematch-mark.png';
+
+  PS_DOM.storyFullImg.innerHTML = '';
+  PS_DOM.storyFullImg.style.position = 'relative';
+  PS_DOM.storyFullImg.style.backgroundColor = accent;
+  PS_DOM.storyFullImg.style.backgroundPosition = 'center';
+  PS_DOM.storyFullImg.style.backgroundRepeat = 'no-repeat';
+  PS_DOM.storyFullImg.style.backgroundSize = 'cover';
+
+  if (/^image\//.test(mediaType) && mediaUrl) {
+    const safeBgUrl = mediaUrl.replace(/"/g, '%22');
+    PS_DOM.storyFullImg.style.backgroundImage = `linear-gradient(to top, rgba(0,0,0,.45), rgba(0,0,0,.08)), url("${safeBgUrl}")`;
+  } else {
+    const safeBgUrl = avatarUrl.replace(/"/g, '%22');
+    PS_DOM.storyFullImg.style.backgroundImage = `linear-gradient(180deg, rgba(0,0,0,.08), rgba(0,0,0,.55)), url("${safeBgUrl}")`;
+    PS_DOM.storyFullImg.style.backgroundSize = mediaUrl && /^video\//.test(mediaType) ? 'cover' : 'contain';
+  }
+
+  if (/^video\//.test(mediaType)) {
+    const videoBadge = document.createElement('div');
+    videoBadge.className = 'ps-story-video-badge';
+    videoBadge.innerHTML = '<i class="fa-solid fa-play"></i> Video moment';
+    videoBadge.style.cssText = 'position:absolute; top:16px; left:16px; padding:8px 12px; border-radius:999px; background:rgba(0,0,0,.55); color:#fff; font-size:.75rem; font-weight:700; backdrop-filter:blur(8px);';
+    PS_DOM.storyFullImg.appendChild(videoBadge);
+  }
+
+  if (caption) {
+    const captionEl = document.createElement('div');
+    captionEl.className = 'ps-story-caption-overlay';
+    captionEl.style.cssText = 'position:absolute; left:14px; right:14px; bottom:18px; padding:14px 16px; border-radius:16px; background:linear-gradient(180deg, rgba(0,0,0,.1), rgba(0,0,0,.68)); color:#fff; font-size:.9rem; line-height:1.45; backdrop-filter:blur(8px); white-space:pre-wrap;';
+    captionEl.textContent = caption;
+    PS_DOM.storyFullImg.appendChild(captionEl);
+  }
+}
+
+
 // ==========================================
 export async function initUI() {
   console.log("🚀 iTrueMatch Engine: Syncing...");
 
   // 1. Priority: Identity Sync sa Node.js
-  const user = await hydrateAccountIdentity();
-  
+  await hydrateAccountIdentity();
+
   // 2. Initialize Components
   initCanvasParticles();
   initNavigation();
@@ -918,15 +1095,14 @@ export async function initUI() {
   initSettingsLogic();
   initGlobalSwipeBack();
 
-  // 3. Render Sections (server-backed where available)
+  // 3. Render initial placeholders
+  psEnsureStoriesContainer();
   renderStories([]);
   renderMessages([]);
   renderAdmirers([]);
-  renderActiveNearby([]);
-  renderDailyPick(null);
 
   await Promise.allSettled([
-    psLoadHomeWidgets(true)
+    psLoadMoments(true)
   ]);
 
   // 4. Tab Restoration
@@ -947,9 +1123,12 @@ export async function initUI() {
 
 // 1. Render Stories
 function renderStories(stories = []) {
-    if (!PS_DOM.storiesContainer) return;
-    
-    // Add Button (Static)
+    const mount = psEnsureStoriesContainer();
+    if (!mount) return;
+
+    const items = psSetMomentsState(stories);
+    const railItems = psGetMomentsRailItems();
+
     const addBtn = `
     <div class="ps-story-item" onclick="openAddStory()">
         <div class="ps-story-ring" style="border-color: #444; border-style: dashed; padding: 3px;">
@@ -960,16 +1139,34 @@ function renderStories(stories = []) {
         <span class="ps-story-name">Add Story</span>
     </div>`;
 
-    // Dynamic Stories Loop
-    const storyHtml = stories.map(s => `
-    <div class="ps-story-item" onclick="openStory('${s.name}', '${s.color || '#00aff0'}')">
-        <div class="ps-story-ring" style="border-color: ${s.color || '#00aff0'}">
-            <img class="ps-story-img" src="${s.avatar || 'assets/images/truematch-mark.png'}" style="background:${s.color || '#333'}">
-        </div>
-        <span class="ps-story-name">${s.name}</span>
-    </div>`).join("");
+    if (!railItems.length) {
+      mount.innerHTML = addBtn;
+      return;
+    }
 
-    PS_DOM.storiesContainer.innerHTML = addBtn + storyHtml;
+    const storyHtml = railItems.map((s) => {
+        const safeId = psEscapeHtml(s.id);
+        const safeName = psEscapeHtml(s.ownerName || 'Member');
+        const safeAvatar = psEscapeHtml(s.ownerAvatarUrl || 'assets/images/truematch-mark.png');
+        const accent = psEscapeHtml(s.accent || '#00aff0');
+        return `
+    <div class="ps-story-item" data-moment-id="${safeId}">
+        <div class="ps-story-ring" style="border-color: ${accent}">
+            <img class="ps-story-img" src="${safeAvatar}" alt="${safeName}" onerror="this.src='assets/images/truematch-mark.png'" style="background:${accent}">
+        </div>
+        <span class="ps-story-name">${safeName}</span>
+    </div>`;
+    }).join("");
+
+    mount.innerHTML = addBtn + storyHtml;
+    mount.querySelectorAll('.ps-story-item[data-moment-id]').forEach((item) => {
+      item.addEventListener('click', () => {
+        const momentId = item.getAttribute('data-moment-id') || '';
+        if (momentId && typeof window.openStory === 'function') {
+          window.openStory(momentId);
+        }
+      });
+    });
 }
 
 // 2. Render Messages
@@ -998,157 +1195,25 @@ function renderMessages(messages = []) {
 }
 
 // 3. Render Admirers
-function _psEsc(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 function renderAdmirers(admirers = []) {
     if (!PS_DOM.admirerContainer) return;
-
-    if (!Array.isArray(admirers) || admirers.length === 0) {
+    
+    if (admirers.length === 0) {
         PS_DOM.admirerContainer.innerHTML = `<div style="grid-column:span 3; text-align:center; color:#666; font-size:0.8rem;">No admirers yet. Boost your profile!</div>`;
-        if (PS_DOM.admirerCount) PS_DOM.admirerCount.innerText = "0 New";
+        if (PS_DOM.admirerCount) PS_DOM.admirerCount.innerText = "0";
         return;
     }
 
+    // Update the count badge
     if (PS_DOM.admirerCount) PS_DOM.admirerCount.innerText = `${admirers.length} New`;
 
-    PS_DOM.admirerContainer.innerHTML = admirers.map((a) => {
-        const name = _psEsc(_psSafeName(a.name || a.fullName || a.username || 'Member'));
-        const city = _psEsc(String(a.city || a.loc || a.location || 'Nearby').trim() || 'Nearby');
-        const age = (a.age !== undefined && a.age !== null && String(a.age).trim() !== '') ? `, ${_psEsc(String(a.age))}` : '';
-        const avatar = _psEsc(String(a.photoUrl || a.avatarUrl || a.avatar || 'assets/images/truematch-mark.png'));
-        return `
-    <div class="ps-admirer-card" title="${name}">
-        <img class="ps-admirer-img" src="${avatar}" alt="${name}" onerror="this.src='assets/images/truematch-mark.png'" style="background:${a.color || getRandomColor()}">
-        <h4 style="margin:8px 0 0; font-size:0.85rem;">${name}</h4>
-        <p class="ps-tiny ps-muted" style="margin:0;">${city}${age}</p>
-    </div>`;
-    }).join("");
-}
-
-function renderActiveNearby(items = []) {
-  if (!PS_DOM.activeNearbyContainer) return;
-
-  if (!Array.isArray(items) || items.length === 0) {
-    PS_DOM.activeNearbyContainer.innerHTML = `<div style="grid-column:span 3; text-align:center; color:#666; font-size:0.82rem; padding:14px 8px;">No active members nearby right now.</div>`;
-    return;
-  }
-
-  PS_DOM.activeNearbyContainer.innerHTML = items.map((item) => {
-    const name = _psEsc(_psSafeName(item.name || item.fullName || item.username || 'Member'));
-    const avatar = _psEsc(String(item.photoUrl || item.avatarUrl || item.avatar || 'assets/images/truematch-mark.png'));
-    const city = _psEsc(String(item.city || item.location || 'Nearby').trim() || 'Nearby');
-    const onlineLabel = item.isOnline ? 'Online now' : 'Recently active';
-
-    return `
-      <div class="ps-active-item" title="${name} • ${city}">
-        <img class="ps-active-img" src="${avatar}" alt="${name}" onerror="this.src='assets/images/truematch-mark.png'">
-        <div style="position:absolute; inset:auto 0 0 0; padding:8px; background:linear-gradient(to top, rgba(0,0,0,.78), rgba(0,0,0,0));">
-          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-            <strong style="font-size:.8rem; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${name}</strong>
-            <span style="display:inline-flex; align-items:center; gap:5px; font-size:.66rem; color:${item.isOnline ? '#00ff88' : '#9be7ff'}; flex-shrink:0;">
-              <i class="fa-solid fa-circle" style="font-size:.45rem;"></i>${onlineLabel}
-            </span>
-          </div>
-          <div style="font-size:.68rem; color:#d4d7dd; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${city}</div>
-        </div>
-      </div>`;
-  }).join('');
-}
-
-function renderDailyPick(profile) {
-  if (!PS_DOM.dailyPickContainer) return;
-
-  if (!profile) {
-    PS_DOM.dailyPickContainer.innerHTML = `
-      <div style="padding:18px; border:1px solid rgba(255,255,255,.08); border-radius:18px; background:rgba(255,255,255,.03); text-align:center; color:#9aa0a6;">
-        Daily Pick will appear here once we find a strong match for you.
-      </div>`;
-    return;
-  }
-
-  const name = _psEsc(_psSafeName(profile.name || profile.fullName || profile.username || 'Member'));
-  const city = _psEsc(String(profile.city || profile.location || 'Nearby').trim() || 'Nearby');
-  const avatar = _psEsc(String(profile.photoUrl || profile.avatarUrl || profile.avatar || 'assets/images/truematch-mark.png'));
-  const age = (profile.age !== undefined && profile.age !== null && String(profile.age).trim() !== '') ? ` • ${_psEsc(String(profile.age))}` : '';
-  const badge = profile.isOnline ? 'Online now' : "Today's Highlight";
-
-  PS_DOM.dailyPickContainer.innerHTML = `
-    <div style="display:flex; align-items:center; gap:16px; padding:18px; border:1px solid rgba(255,255,255,.08); border-radius:18px; background:linear-gradient(135deg, rgba(0,175,240,.15), rgba(255,255,255,.02));">
-      <img src="${avatar}" alt="${name}" onerror="this.src='assets/images/truematch-mark.png'" style="width:72px; height:72px; border-radius:20px; object-fit:cover; border:1px solid rgba(255,255,255,.12); background:#111; flex-shrink:0;">
-      <div style="min-width:0; flex:1;">
-        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
-          <span style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:rgba(0,175,240,.15); color:#9be7ff; font-size:.7rem; font-weight:700; letter-spacing:.02em;">✨ ${badge}</span>
-        </div>
-        <h3 style="margin:0; font-size:1.05rem; color:#fff;">${name}</h3>
-        <p style="margin:6px 0 0; color:#c9d1d9; font-size:.88rem;">${city}${age}</p>
-      </div>
-    </div>`;
-}
-
-let _psHomeWidgetsLastFetched = 0;
-
-async function psLoadHomeWidgets(force = false) {
-  const now = Date.now();
-  if (!force && (now - _psHomeWidgetsLastFetched) < 5000) return;
-  _psHomeWidgetsLastFetched = now;
-
-  const admirerPromise = fetch(`${API_BASE}/api/me/admirers?limit=12`, {
-    method: 'GET',
-    credentials: 'include'
-  }).then(async (res) => {
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data || data.ok !== true) {
-      throw new Error((data && (data.error || data.message)) || 'Failed to load admirers.');
-    }
-    return {
-      items: Array.isArray(data.items) ? data.items : [],
-      count: Math.max(0, Number(data.count || 0))
-    };
-  });
-
-  const activePromise = fetch(`${API_BASE}/api/me/active-nearby?limit=9`, {
-    method: 'GET',
-    credentials: 'include'
-  }).then(async (res) => {
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data || data.ok !== true) {
-      throw new Error((data && (data.error || data.message)) || 'Failed to load active nearby.');
-    }
-    return Array.isArray(data.items) ? data.items : [];
-  });
-
-  const [admirersResult, activeResult] = await Promise.allSettled([admirerPromise, activePromise]);
-
-  let admirers = [];
-  let admirerCount = 0;
-  if (admirersResult.status === 'fulfilled') {
-    admirers = admirersResult.value.items;
-    admirerCount = admirersResult.value.count;
-  } else {
-    renderAdmirers([]);
-  }
-
-  let activeNearby = [];
-  if (activeResult.status === 'fulfilled') {
-    activeNearby = activeResult.value;
-  } else {
-    renderActiveNearby([]);
-  }
-
-  renderAdmirers(admirers);
-  if (PS_DOM.admirerCount) {
-    const countToShow = admirerCount || admirers.length;
-    PS_DOM.admirerCount.innerText = `${countToShow} New`;
-  }
-  renderActiveNearby(activeNearby);
-  renderDailyPick(admirers[0] || activeNearby[0] || null);
+    // Render cards with Lock Icon and Click-to-Upgrade interaction
+    PS_DOM.admirerContainer.innerHTML = admirers.map(a => `
+    <div class="ps-admirer-card" onclick="switchTab('premium')" style="cursor:pointer;">
+        <div class="ps-admirer-icon"><i class="fa-solid fa-lock"></i></div> <img class="ps-admirer-img" src="assets/images/truematch-mark.png" style="background:${a.color || getRandomColor()}">
+        <h4 style="margin:5px 0 0; font-size:0.85rem;">${a.name || 'Secret'}</h4>
+        <p class="ps-tiny ps-muted" style="margin:0;">${a.loc || 'Nearby'}</p>
+    </div>`).join("");
 }
 // ==========================================
 // 1. THE GLOBAL GESTURE ENGINE (Swipe Back)
@@ -1986,6 +2051,7 @@ function initChat() {
 
 function initStoryViewer() {
   const closeStoryAction = () => {
+    PS_MOMENTS_STATE.activeMomentId = '';
     if (PS_DOM.storyViewer) {
       PS_DOM.storyViewer.classList.remove("active");
       if (PS_DOM.storyProgress)
@@ -1993,27 +2059,49 @@ function initStoryViewer() {
     }
   };
 
-  const openStoryAction = (name, color) => {
+  const openStoryAction = (target, legacyColor) => {
     if (!PS_DOM.storyViewer) return;
-    PS_DOM.storyName.textContent = name;
-    PS_DOM.storyAvatar.src = "assets/images/truematch-mark.png";
 
-    if (PS_DOM.storyCommentInput) PS_DOM.storyCommentInput.value = "";
-    if (PS_DOM.storyEmojiPicker)
-      PS_DOM.storyEmojiPicker.classList.remove("active");
+    let moment = null;
+    if (typeof target === 'string' && PS_MOMENTS_STATE.byId[target]) {
+      moment = PS_MOMENTS_STATE.byId[target];
+    } else if (target && typeof target === 'object' && target.momentId && PS_MOMENTS_STATE.byId[target.momentId]) {
+      moment = PS_MOMENTS_STATE.byId[target.momentId];
+    } else if (target && typeof target === 'object' && target.id) {
+      moment = psNormalizeMoment(target);
+    } else {
+      const name = String(target || 'User').trim() || 'User';
+      moment = psNormalizeMoment({
+        id: `legacy_${name}`,
+        ownerName: name,
+        ownerAvatarUrl: 'assets/images/truematch-mark.png',
+        caption: '',
+        mediaUrl: '',
+        mediaType: '',
+        createdAtMs: Date.now(),
+        expiresAtMs: Date.now() + (24 * 60 * 60 * 1000)
+      });
+      moment.accent = legacyColor || '#00aff0';
+    }
 
-    PS_DOM.storyFullImg.style.backgroundColor = color;
-    PS_DOM.storyFullImg.style.backgroundImage =
-      "url('assets/images/truematch-mark.png')";
-    PS_DOM.storyFullImg.style.backgroundSize = "contain";
-    PS_DOM.storyFullImg.style.backgroundRepeat = "no-repeat";
+    PS_MOMENTS_STATE.activeMomentId = String(moment.id || '').trim();
+    if (PS_MOMENTS_STATE.activeMomentId) {
+      PS_MOMENTS_STATE.byId[PS_MOMENTS_STATE.activeMomentId] = moment;
+    }
 
-    PS_DOM.storyViewer.classList.add("active");
+    PS_DOM.storyName.textContent = moment.ownerName || 'User';
+    PS_DOM.storyAvatar.src = moment.ownerAvatarUrl || 'assets/images/truematch-mark.png';
+
+    if (PS_DOM.storyCommentInput) PS_DOM.storyCommentInput.value = '';
+    if (PS_DOM.storyEmojiPicker) PS_DOM.storyEmojiPicker.classList.remove('active');
+
+    psApplyMomentToViewer(moment);
+    PS_DOM.storyViewer.classList.add('active');
 
     if (PS_DOM.storyProgress) {
-      PS_DOM.storyProgress.classList.remove("animating");
+      PS_DOM.storyProgress.classList.remove('animating');
       void PS_DOM.storyProgress.offsetWidth;
-      PS_DOM.storyProgress.classList.add("animating");
+      PS_DOM.storyProgress.classList.add('animating');
     }
   };
 
@@ -2021,75 +2109,72 @@ function initStoryViewer() {
   window.closeStory = closeStoryAction;
 
   window.sendStoryComment = function () {
-    const text = PS_DOM.storyCommentInput
-      ? PS_DOM.storyCommentInput.value.trim()
-      : "";
+    const text = PS_DOM.storyCommentInput ? PS_DOM.storyCommentInput.value.trim() : '';
     if (!text) return;
-    const targetUser = PS_DOM.storyName.textContent;
+
+    const activeMoment = PS_MOMENTS_STATE.byId[PS_MOMENTS_STATE.activeMomentId] || null;
+    const target = activeMoment
+      ? {
+          name: activeMoment.ownerName || PS_DOM.storyName.textContent,
+          peerEmail: activeMoment.ownerEmail || '',
+          avatar: activeMoment.ownerAvatarUrl || 'assets/images/truematch-mark.png'
+        }
+      : { name: PS_DOM.storyName.textContent };
+
     window.closeStory();
     const matchesBtn = document.querySelector('button[data-panel="matches"]');
     if (matchesBtn) matchesBtn.click();
 
     setTimeout(() => {
-      window.openChat(targetUser);
-      PS_DOM.chatInput.value = text;
-      window.sendChatMessage();
-      showToast("Reply sent!");
+      if (typeof window.openChat === 'function') window.openChat(target);
+      if (PS_DOM.chatInput) PS_DOM.chatInput.value = text;
+      if (typeof window.sendChatMessage === 'function') {
+        window.sendChatMessage();
+      }
+      showToast('Reply sent!');
     }, 400);
 
-    PS_DOM.storyCommentInput.value = "";
-    if (PS_DOM.storyEmojiPicker)
-      PS_DOM.storyEmojiPicker.classList.remove("active");
+    if (PS_DOM.storyCommentInput) PS_DOM.storyCommentInput.value = '';
+    if (PS_DOM.storyEmojiPicker) PS_DOM.storyEmojiPicker.classList.remove('active');
   };
 
-  window.postNewStory = function () {
-    const text = PS_DOM.storyInput ? PS_DOM.storyInput.value.trim() : "";
+  window.postNewStory = async function () {
+    const text = PS_DOM.storyInput ? PS_DOM.storyInput.value.trim() : '';
     if (!text) {
-      showToast("Please write something!");
+      showToast('Please write something!');
       return;
     }
 
-    // HTML ng bagong story
-    const newStoryHtml = `
-    <div class="ps-story-item" onclick="openStory('You', '#00aff0')">
-        <div class="ps-story-ring" style="border-color: #00aff0;">
-            <img class="ps-story-img" src="assets/images/truematch-mark.png" style="background:#00aff0">
-        </div>
-        <span class="ps-story-name" style="font-size:0.7rem; font-weight:bold;">You</span>
-    </div>`;
-
-    if (PS_DOM.storiesContainer) {
-      // Kunin ang unang element (ang "+" button)
-      const addBtn = PS_DOM.storiesContainer.firstElementChild;
-
-      if (addBtn) {
-        // I-insert PAGKATAPOS ng "+" button para laging nasa kanan niya ang bagong stories
-        addBtn.insertAdjacentHTML("afterend", newStoryHtml);
-      } else {
-        // Fallback kung sakaling wala pang elements
-        PS_DOM.storiesContainer.insertAdjacentHTML("afterbegin", newStoryHtml);
+    try {
+      const res = await fetch(`${API_BASE}/api/moments/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ caption: text })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data || data.ok !== true) {
+        throw new Error((data && (data.message || data.error)) || 'Failed to share moment.');
       }
+
+      if (PS_DOM.storyInput) PS_DOM.storyInput.value = '';
+      window.closeAddStory();
+      await psLoadMoments(true);
+      showToast('Moment Shared!');
+    } catch (err) {
+      console.error('postNewStory error:', err);
+      showToast(String(err && err.message ? err.message : 'Failed to share moment.'));
     }
-
-    // Mobile fallback update
-    const mobileContainer = document.getElementById("psMobileStoriesContainer");
-    if (mobileContainer)
-      mobileContainer.insertAdjacentHTML("afterbegin", newStoryHtml);
-
-    showToast("Moment Shared!");
-    if (PS_DOM.storyInput) PS_DOM.storyInput.value = "";
-    window.closeAddStory();
   };
 
   window.openAddStory = () => {
-    if (PS_DOM.addStoryModal) PS_DOM.addStoryModal.classList.add("active");
+    if (PS_DOM.addStoryModal) PS_DOM.addStoryModal.classList.add('active');
   };
   window.closeAddStory = () => {
-    if (PS_DOM.addStoryModal) PS_DOM.addStoryModal.classList.remove("active");
+    if (PS_DOM.addStoryModal) PS_DOM.addStoryModal.classList.remove('active');
   };
   window.toggleStoryEmoji = () => {
-    if (PS_DOM.storyEmojiPicker)
-      PS_DOM.storyEmojiPicker.classList.toggle("active");
+    if (PS_DOM.storyEmojiPicker) PS_DOM.storyEmojiPicker.classList.toggle('active');
   };
   window.addStoryEmoji = (emoji) => {
     if (PS_DOM.storyCommentInput) {
@@ -2287,8 +2372,6 @@ async function psLoadMatches(force = false) {
 function switchTab(panelName) {
   localStorage.setItem("ps_last_tab", panelName);
 
-  // REMOVE OLD TAB CLASSES & ADD CURRENT TAB CLASS TO BODY
-  // Ito ang magsasabi sa CSS kung anong tab ang active
   document.body.classList.remove(
     "ps-tab-home",
     "ps-tab-swipe",
@@ -2317,10 +2400,9 @@ function switchTab(panelName) {
     PS_DOM.sidebar.classList.remove("ps-is-open");
 
   if (panelName === "home") {
-    psLoadHomeWidgets();
+    psLoadMoments();
   }
 
-  // Load Premium Society matches (isolated from dashboard matches)
   if (panelName === "matches") {
     psLoadMatches();
   }
