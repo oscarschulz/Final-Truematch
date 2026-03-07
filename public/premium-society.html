@@ -194,11 +194,11 @@
                       </div>
                       <div class="ps-toggle-row">
                           <span>Matches</span>
-                          <label class="ps-switch-cyan"><input type="checkbox" checked><span class="slider"></span></label>
+                          <label class="ps-switch-cyan"><input id="psToggleNotifMatches" type="checkbox" checked><span class="slider"></span></label>
                       </div>
                       <div class="ps-toggle-row">
                           <span>Messages</span>
-                          <label class="ps-switch-cyan"><input type="checkbox" checked><span class="slider"></span></label>
+                          <label class="ps-switch-cyan"><input id="psToggleNotifMessages" type="checkbox" checked><span class="slider"></span></label>
                       </div>
                   </div>
               </div>
@@ -211,11 +211,11 @@
                   <div class="ps-dropdown-content">
                       <div class="ps-legal-row">
                           <span>Sound Effects</span> 
-                          <label class="ps-switch-mini"><input type="checkbox" checked><span class="slider"></span></label>
+                          <label class="ps-switch-mini"><input id="psToggleSoundEffects" type="checkbox" checked><span class="slider"></span></label>
                       </div>
                       <div class="ps-legal-row">
                           <span>Haptic Feedback</span> 
-                          <label class="ps-switch-mini"><input type="checkbox"><span class="slider"></span></label>
+                          <label class="ps-switch-mini"><input id="psToggleHapticFeedback" type="checkbox"><span class="slider"></span></label>
                       </div>
                       <div class="ps-legal-row" onclick="clearAppCache()" style="color: #8899a6;">
                           <span>Clear Media Cache</span> <i class="fa-solid fa-trash-can"></i>
@@ -323,7 +323,7 @@
       <div class="ps-edit-modal-body">
         <div class="ps-edit-grid two-col">
           <div class="ps-edit-field"><label>FULL NAME</label><input id="psInputName" type="text" class="tm-input" placeholder="Your full name"></div>
-          <div class="ps-edit-field"><label>EMAIL</label><input id="psInputEmail" type="email" class="tm-input" placeholder="Email address"></div>
+          <div class="ps-edit-field"><label>EMAIL</label><input id="psInputEmail" type="email" class="tm-input" placeholder="Email address" readonly><small style="display:block; margin-top:6px; color:#8ea0b5; font-size:.78rem;">Email is managed from your main account settings.</small></div>
         </div>
         <div class="ps-edit-grid two-col">
           <div class="ps-edit-field"><label>OCCUPATION / ROLE</label><input id="psInputOccupation" type="text" class="tm-input" placeholder="e.g., Entrepreneur"></div>

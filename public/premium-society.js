@@ -1707,7 +1707,7 @@ export function initGlobalSwipeBack() {
 // 2. SETTINGS LOGIC (BACKEND INTEGRATED)
 // ==========================================
 export function initSettingsLogic() {
-  console.log("Settings Logic (Integrated) Initialized");
+  console.log("Settings Logic (Server-backed) Initialized");
 
   const distInput = document.getElementById("psRangeDist");
   const distVal = document.getElementById("psDistVal");
@@ -1716,11 +1716,9 @@ export function initSettingsLogic() {
 
   if (!distInput || !ageInput) return;
 
-  const me = (() => {
-    try { return JSON.parse(localStorage.getItem('tm_user')); } catch (e) { return null; }
-  })();
-  const email = me?.email || null;
-  const settingsCacheKey = email ? `ps_settings_cache:${String(email).trim().toLowerCase()}` : 'ps_settings_cache:guest';
+  const me = PS_STATE.me || null;
+  const email = me?.email ? String(me.email).trim().toLowerCase() : null;
+  const settingsCacheKey = email ? `ps_settings_cache:${email}` : 'ps_settings_cache:guest';
 
   const settingsScope = document.querySelector('.ps-panel[data-panel="settings"]') || document;
   const toggleRows = Array.from(settingsScope.querySelectorAll('.ps-toggle-row, .ps-legal-row'));
@@ -1771,6 +1769,10 @@ export function initSettingsLogic() {
     },
   };
 
+  let settingsState = JSON.parse(JSON.stringify(defaults));
+  let saveSeq = 0;
+  let lastLoadedSettings = null;
+
   function cloneSettings(v) {
     return JSON.parse(JSON.stringify(v));
   }
@@ -1804,6 +1806,7 @@ export function initSettingsLogic() {
 
   function applySettingsToUi(settings) {
     const safe = mergeSettings(defaults, settings);
+    settingsState = cloneSettings(safe);
 
     distInput.value = String(Number(safe.distanceKm) || defaults.distanceKm);
     ageInput.value = String(Number(safe.maxAge) || defaults.maxAge);
@@ -1831,66 +1834,19 @@ export function initSettingsLogic() {
     };
   }
 
-  function readLocalSettings() {
-    let merged = cloneSettings(defaults);
-
+  function syncCachedMeSettings(nextSettings) {
     try {
-      if (email && typeof loadPrefsForUser === 'function') {
-        merged = mergeSettings(merged, loadPrefsForUser(email) || {});
+      if (PS_STATE.me) {
+        PS_STATE.me.settings = cloneSettings(nextSettings);
       }
+      const raw = localStorage.getItem('tm_user');
+      if (!raw) return;
+      const cached = JSON.parse(raw);
+      if (!cached || typeof cached !== 'object') return;
+      cached.settings = cloneSettings(nextSettings);
+      localStorage.setItem('tm_user', JSON.stringify(cached));
     } catch (e) {
-      console.warn('Failed to load local prefs cache:', e);
-    }
-
-    try {
-      const raw = localStorage.getItem(settingsCacheKey);
-      if (raw) merged = mergeSettings(merged, JSON.parse(raw));
-    } catch (e) {
-      console.warn('Failed to load premium settings cache:', e);
-    }
-
-    return merged;
-  }
-
-  function saveLocalSettings(next) {
-    const safe = mergeSettings(defaults, next);
-
-    try {
-      if (email && typeof savePrefsForUser === 'function') {
-        savePrefsForUser(email, {
-          distanceKm: safe.distanceKm,
-          maxAge: safe.maxAge,
-        });
-      }
-    } catch (e) {
-      console.warn('Failed to save legacy prefs cache:', e);
-    }
-
-    try {
-      localStorage.setItem(settingsCacheKey, JSON.stringify(safe));
-    } catch (e) {
-      console.warn('Failed to save premium settings cache:', e);
-    }
-  }
-
-  applySettingsToUi(readLocalSettings());
-
-  async function loadSettingsFromServer() {
-    if (!email) return;
-
-    try {
-      const res = await fetch(`${API_BASE}/api/me/settings`, {
-        method: 'GET',
-        credentials: 'include',
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data || data.ok !== true) return;
-
-      const merged = mergeSettings(readLocalSettings(), data.settings || {});
-      applySettingsToUi(merged);
-      saveLocalSettings(merged);
-    } catch (e) {
-      console.warn('Failed to load settings from server:', e);
+      console.warn('Failed to sync tm_user settings cache:', e);
     }
   }
 
@@ -1902,6 +1858,34 @@ export function initSettingsLogic() {
     };
   }
 
+  applySettingsToUi(mergeSettings(defaults, me?.settings || {}));
+
+  async function loadSettingsFromServer() {
+    if (!email) return { ok: false };
+
+    try {
+      const res = await fetch(`${API_BASE}/api/me/settings`, {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data || data.ok !== true) {
+        throw new Error((data && (data.message || data.error)) || 'Failed to load settings');
+      }
+
+      const merged = mergeSettings(defaults, data.settings || {});
+      lastLoadedSettings = cloneSettings(merged);
+      applySettingsToUi(merged);
+      syncCachedMeSettings(merged);
+      try { localStorage.setItem(settingsCacheKey, JSON.stringify(merged)); } catch (_) {}
+      return { ok: true, settings: merged };
+    } catch (e) {
+      console.warn('Failed to load settings from server:', e);
+      return { ok: false, error: e };
+    }
+  }
+
   async function persistSettings(options = {}) {
     const { silent = false, trigger = '' } = options;
     if (!email) {
@@ -1909,14 +1893,15 @@ export function initSettingsLogic() {
       return { ok: false };
     }
 
-    const nextPrefs = captureSettingsFromUi();
-    saveLocalSettings(nextPrefs);
+    const nextPrefs = mergeSettings(defaults, captureSettingsFromUi());
+    const reqId = ++saveSeq;
 
     try {
       const res = await fetch(`${API_BASE}/api/me/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
+        cache: 'no-store',
         body: JSON.stringify(nextPrefs),
       });
 
@@ -1926,20 +1911,22 @@ export function initSettingsLogic() {
       }
 
       const merged = mergeSettings(nextPrefs, data.settings || nextPrefs);
-      saveLocalSettings(merged);
+      if (reqId === saveSeq) {
+        lastLoadedSettings = cloneSettings(merged);
+        applySettingsToUi(merged);
+        syncCachedMeSettings(merged);
+        try { localStorage.setItem(settingsCacheKey, JSON.stringify(merged)); } catch (_) {}
+      }
 
       if (!silent) {
-        if (trigger) {
-          showToast(trigger);
-        } else {
-          showToast('Preferences synced to cloud ☁️✨');
-        }
+        showToast(trigger || 'Preferences synced to cloud ☁️✨');
       }
 
       return { ok: true, settings: merged };
     } catch (e) {
       console.error('Cloud Sync Failed:', e);
-      if (!silent) showToast('Saved locally (Sync error)');
+      if (lastLoadedSettings) applySettingsToUi(lastLoadedSettings);
+      if (!silent) showToast('Failed to sync settings. Please try again.');
       return { ok: false, error: e };
     }
   }
@@ -2007,22 +1994,79 @@ export function initSettingsLogic() {
   };
 
   window.openContactSupport = () => {
+    const defaultName = String(
+      PS_STATE.me?.name ||
+      document.getElementById('psSNameDisplay')?.textContent ||
+      'Member'
+    ).trim();
+
     Swal.fire({
       title: "Contact Support",
-      html: `<input id="ticket-subject" class="swal2-input" placeholder="Subject" style="color:#fff; background:#222; border:1px solid #444;">
-             <textarea id="ticket-message" class="swal2-textarea" placeholder="Describe your issue..." style="color:#fff; background:#222; border:1px solid #444; height: 100px;"></textarea>`,
-      background: "#15151e", color: "#fff", confirmButtonText: "Send Ticket", confirmButtonColor: "#00aff0", showCancelButton: true,
+      html: `
+        <input id="ticket-subject" class="swal2-input" maxlength="120" placeholder="Subject" style="color:#fff; background:#222; border:1px solid #444;">
+        <textarea id="ticket-message" class="swal2-textarea" maxlength="4000" placeholder="Describe your issue..." style="color:#fff; background:#222; border:1px solid #444; height: 120px;"></textarea>
+      `,
+      background: "#15151e",
+      color: "#fff",
+      confirmButtonText: "Send Ticket",
+      confirmButtonColor: "#00aff0",
+      showCancelButton: true,
+      showLoaderOnConfirm: true,
+      focusConfirm: false,
+      preConfirm: async () => {
+        const subject = String(document.getElementById('ticket-subject')?.value || '').trim();
+        const message = String(document.getElementById('ticket-message')?.value || '').trim();
+
+        if (!subject) {
+          Swal.showValidationMessage('Please add a subject.');
+          return false;
+        }
+        if (!message) {
+          Swal.showValidationMessage('Please describe your issue.');
+          return false;
+        }
+
+        try {
+          const res = await fetch(`${API_BASE}/api/support/email`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            cache: 'no-store',
+            body: JSON.stringify({
+              name: defaultName,
+              subject,
+              message,
+              sourcePage: 'premium-society-settings'
+            })
+          });
+
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data || data.ok !== true) {
+            const msg = (data && (data.message || data.error)) || 'Failed to submit support request.';
+            throw new Error(String(msg));
+          }
+
+          return data;
+        } catch (err) {
+          Swal.showValidationMessage(String(err?.message || 'Failed to submit support request.'));
+          return false;
+        }
+      }
     }).then((result) => {
-      if (result.isConfirmed) { showToast("Support Ticket Sent! ✨"); }
+      if (result.isConfirmed && result.value?.ok) {
+        const ticketId = result.value.ticketId ? ` (#${result.value.ticketId})` : '';
+        showToast(`Support ticket sent${ticketId} ✨`);
+      }
     });
   };
 
   window.clearAppCache = async () => {
-    showToast('Clearing Media Cache...');
+    showToast('Clearing local cache...');
     try {
       localStorage.removeItem('ps_chat_history');
       localStorage.removeItem('ps_reset_time');
       localStorage.removeItem('ps_swipes_left');
+      localStorage.removeItem('ps_user_profile');
       localStorage.removeItem(settingsCacheKey);
       if ('caches' in window && typeof window.caches.keys === 'function') {
         const keys = await window.caches.keys();
@@ -2032,10 +2076,11 @@ export function initSettingsLogic() {
             .map((key) => window.caches.delete(key))
         );
       }
+      await loadSettingsFromServer();
     } catch (e) {
       console.warn('Clear cache failed:', e);
     }
-    setTimeout(() => { showToast('Cache Cleared Successfully ✨'); }, 700);
+    setTimeout(() => { showToast('Local cache cleared ✨'); }, 700);
   };
 }
 
@@ -2050,10 +2095,8 @@ function initProfileEditLogic() {
   const modal = document.getElementById("psEditProfileModal");
   const btnEdit = document.getElementById("psBtnEditProfile");
 
-  // Check kung existing ang elements para iwas error sa console
   if (!modal || !btnEdit) return;
 
-  // 1. MAPPING NG MGA INPUTS (Lahat ng fields sa modal)
   const fields = {
     name: document.getElementById("psInputName"),
     email: document.getElementById("psInputEmail"),
@@ -2067,7 +2110,6 @@ function initProfileEditLogic() {
     reason: document.getElementById("psInputReason"),
   };
 
-  // 2. MAPPING NG DISPLAY ELEMENTS (Yung mga nag-uupdate sa UI dashboard)
   const displayNames = [
     document.getElementById("psSNameDisplay"),
     document.getElementById("psMiniName"),
@@ -2076,115 +2118,166 @@ function initProfileEditLogic() {
   ];
   const displayEmails = [document.getElementById("psSEmailDisplay")];
 
-  // 3. AUTO-LOAD DATA (Kunin ang dating save sa localStorage)
-  const savedData = JSON.parse(localStorage.getItem("ps_user_profile"));
-  if (savedData) {
-    Object.keys(fields).forEach((key) => {
-      if (fields[key]) fields[key].value = savedData[key] || "";
-    });
-    // I-update agad ang UI names at emails base sa saved data
-    displayNames.forEach((el) => {
-      if (el) el.innerText = savedData.name || "Member";
+  if (fields.email) {
+    fields.email.readOnly = true;
+    fields.email.setAttribute('readonly', 'readonly');
+    fields.email.setAttribute('title', 'Email changes are managed from your main account settings.');
+  }
+
+  function updateVisibleIdentity(nameValue, emailValue) {
+    const safeName = String(nameValue || 'Member').trim() || 'Member';
+    const safeEmail = String(emailValue || 'user@example.com').trim() || 'user@example.com';
+
+    displayNames.forEach((el, idx) => {
+      if (!el) return;
+      el.innerText = idx === 2 ? safeName.split(' ')[0] : safeName;
     });
     displayEmails.forEach((el) => {
-      if (el) el.innerText = savedData.email || "user@example.com";
+      if (el) el.innerText = safeEmail;
     });
   }
 
-  // 4. OPEN MODAL ACTION
-  btnEdit.onclick = (e) => {
+  function populateProfileFormFromUser(userData) {
+    const me = userData || PS_STATE.me || {};
+    const app = (me && typeof me.premiumApplication === 'object' && me.premiumApplication) ? me.premiumApplication : {};
+
+    const nextValues = {
+      name: app.fullName || me.name || '',
+      email: me.email || '',
+      occupation: app.occupation || '',
+      age: app.age != null ? String(app.age) : (me.age != null ? String(me.age) : ''),
+      wealth: app.wealthStatus || '',
+      income: app.incomeRange || '',
+      networth: app.netWorthRange || '',
+      source: app.incomeSource || '',
+      social: app.socialLink || '',
+      reason: app.reason || '',
+    };
+
+    Object.entries(fields).forEach(([key, input]) => {
+      if (!input) return;
+      input.value = nextValues[key] || '';
+    });
+
+    updateVisibleIdentity(nextValues.name || me.name || 'Member', nextValues.email || me.email || 'user@example.com');
+  }
+
+  async function refreshIdentityForProfileForm() {
+    try {
+      const user = await hydrateAccountIdentity();
+      if (user) populateProfileFormFromUser(user);
+      return user;
+    } catch (e) {
+      console.warn('Failed to refresh identity before opening profile editor:', e);
+      populateProfileFormFromUser(PS_STATE.me || null);
+      return PS_STATE.me || null;
+    }
+  }
+
+  populateProfileFormFromUser(PS_STATE.me || null);
+
+  btnEdit.onclick = async (e) => {
     e.preventDefault();
+    await refreshIdentityForProfileForm();
     modal.classList.add("active");
   };
 
-  // 5. GLOBAL CLOSE MODAL FUNCTION
   window.closeEditProfile = () => {
     modal.classList.remove("active");
   };
 
-// ============================================================
-  // START: REPLACEMENT CODE (Backend Connected)
-  // ============================================================
+  let isSavingProfile = false;
 
-  // 1. Helper Function: Pang-contact sa Server (Backend)
-  async function psTryUpdatePremiumProfile(payload) {
-    // Susubukan nito ang mga endpoints na ito para sigurado
-    const paths = [
-        '/api/me/premium/profile',
-        '/api/me/premium/profile/update',
-        '/api/me/premium/update-profile'
-    ];
-
-    for (const path of paths) {
-        try {
-            const res = await fetch(path, {
-                method: 'POST',
-                credentials: 'include', // Importante para sa cookies/session
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            if (res.status === 404) continue; // Pag wala sa path na 'to, try sa sunod
-
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.message || 'Failed to save');
-            
-            return { ok: true, data };
-        } catch (e) {
-            console.error("Server save error:", e);
-        }
-    }
-    return { ok: false };
-  }
-
-  // 2. Main Save Function (Async na siya ngayon)
   window.saveEditProfile = async () => {
-    // Ipunin lahat ng values mula sa fields
+    if (isSavingProfile) return;
+
     const profileData = {};
     Object.keys(fields).forEach((key) => {
       profileData[key] = fields[key] ? fields[key].value.trim() : "";
     });
 
-    // Validation: Pangalan lang ang required
     if (!profileData.name) {
       if (window.showToast) showToast("Please enter your name first.");
       return;
     }
 
-    // UPDATE UI DISPLAYS (Real-time update sa dashboard)
-    displayNames.forEach((el) => { if (el) el.innerText = profileData.name; });
-    displayEmails.forEach((el) => { if (el) el.innerText = profileData.email; });
-
-    // A. SAVE LOCALLY (Backup / Optimistic UI)
-    localStorage.setItem("ps_user_profile", JSON.stringify(profileData));
-
-    // B. SAVE TO BACKEND (Laravel Server)
-    if (window.showToast) showToast("Saving to server...");
-
-    // I-map ang data para tumugma sa Database columns ng Backend
-    const backendPayload = {
-        fullName: profileData.name,
-        email: profileData.email,
-        occupation: profileData.occupation,
-        age: profileData.age,
-        wealthStatus: profileData.wealth,       // Mapped from 'wealth'
-        incomeRange: profileData.income,        // Mapped from 'income'
-        netWorthRange: profileData.networth,    // Mapped from 'networth'
-        incomeSource: profileData.source,       // Mapped from 'source'
-        socialLink: profileData.social,         // Mapped from 'social'
-        reason: profileData.reason
-    };
-
-    const serverRes = await psTryUpdatePremiumProfile(backendPayload);
-
-    if (serverRes.ok) {
-        if (window.showToast) showToast("Profile Saved to Server! ✨");
-    } else {
-        if (window.showToast) showToast("Saved locally (Server offline).");
+    const ageNum = profileData.age ? Number(profileData.age) : null;
+    if (profileData.age && (!Number.isFinite(ageNum) || ageNum < 18 || ageNum > 99)) {
+      if (window.showToast) showToast("Age must be between 18 and 99.");
+      return;
     }
 
-    window.closeEditProfile();
-    console.log("Saved data (Backend & Local):", backendPayload);
+    const backendPayload = {
+      fullName: profileData.name,
+      age: ageNum,
+      occupation: profileData.occupation,
+      wealthStatus: profileData.wealth,
+      incomeRange: profileData.income,
+      netWorthRange: profileData.networth,
+      incomeSource: profileData.source,
+      socialLink: profileData.social,
+      reason: profileData.reason
+    };
+
+    isSavingProfile = true;
+    const saveBtn = document.querySelector('#psEditProfileModal .ps-btn-save-clean');
+    const prevBtnHtml = saveBtn ? saveBtn.innerHTML : '';
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = 'Saving...';
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/me/premium/profile`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify(backendPayload)
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data || data.ok !== true) {
+        const msg = (data && (data.message || data.error)) || 'Failed to save profile.';
+        throw new Error(String(msg));
+      }
+
+      if (PS_STATE.me) {
+        PS_STATE.me = {
+          ...PS_STATE.me,
+          name: profileData.name,
+          age: ageNum,
+          premiumApplication: data.premiumApplication || { ...(PS_STATE.me.premiumApplication || {}), ...backendPayload }
+        };
+      }
+
+      try {
+        const raw = localStorage.getItem('tm_user');
+        if (raw) {
+          const cached = JSON.parse(raw);
+          cached.name = profileData.name;
+          cached.age = ageNum;
+          cached.premiumApplication = data.premiumApplication || { ...(cached.premiumApplication || {}), ...backendPayload };
+          localStorage.setItem('tm_user', JSON.stringify(cached));
+        }
+      } catch (e) {
+        console.warn('Failed to update tm_user cache after profile save:', e);
+      }
+
+      updateVisibleIdentity(profileData.name, profileData.email || PS_STATE.me?.email || '');
+      await refreshIdentityForProfileForm();
+      if (window.showToast) showToast("Profile saved to server! ✨");
+      window.closeEditProfile();
+    } catch (e) {
+      console.error("Server save error:", e);
+      if (window.showToast) showToast(String(e?.message || "Failed to save profile."));
+    } finally {
+      isSavingProfile = false;
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = prevBtnHtml || 'Save Changes';
+      }
+    }
   };
 } // END of initProfileEditLogic
 

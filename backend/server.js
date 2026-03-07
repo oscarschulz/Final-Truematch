@@ -5376,6 +5376,10 @@ app.post('/api/me/settings', authMiddleware, async (req, res) => {
     if (body.language !== undefined) incoming.language = safeStr(body.language || '');
     if (body.privacy && typeof body.privacy === 'object') incoming.privacy = body.privacy;
     if (body.notifications && typeof body.notifications === 'object') incoming.notifications = body.notifications;
+    if (body.appPreferences && typeof body.appPreferences === 'object') incoming.appPreferences = body.appPreferences;
+    if (body.preferences && typeof body.preferences === 'object') {
+      incoming.appPreferences = { ...(incoming.appPreferences || {}), ...body.preferences };
+    }
 
     // Normalize numeric settings
     if (incoming.distanceKm !== undefined) {
@@ -5413,6 +5417,9 @@ app.post('/api/me/settings', authMiddleware, async (req, res) => {
     }
     if (incoming.notifications && typeof incoming.notifications === 'object') {
       next.notifications = { ...(prev.notifications || {}), ...(incoming.notifications || {}) };
+    }
+    if (incoming.appPreferences && typeof incoming.appPreferences === 'object') {
+      next.appPreferences = { ...(prev.appPreferences || prev.preferences || {}), ...(incoming.appPreferences || {}) };
     }
     if (incoming.dashboard && typeof incoming.dashboard === 'object') {
       next.dashboard = { ...(prev.dashboard || {}), ...(incoming.dashboard || {}) };
@@ -8510,14 +8517,15 @@ app.get('/api/me/payments', async (req, res) => {
   }
 });
 
-app.post('/api/support/email', async (req, res) => {
+app.post('/api/support/email', authMiddleware, async (req, res) => {
   try {
-    if (!DB.user) return res.status(401).json({ ok: false, message: 'Not signed in' });
+    const fromEmail = safeStr((req.user && req.user.email) || (DB.user && DB.user.email) || '');
+    if (!fromEmail) return res.status(401).json({ ok: false, message: 'Not signed in' });
 
-    const fromEmail = safeStr(DB.user.email || '');
     const name = safeStr((req.body && req.body.name) || '');
     const subject = safeStr((req.body && req.body.subject) || 'Support request');
     const message = safeStr((req.body && req.body.message) || '');
+    const sourcePage = safeStr((req.body && req.body.sourcePage) || '');
 
     if (!message) return res.status(400).json({ ok: false, message: 'Message is required' });
 
@@ -8528,6 +8536,7 @@ app.post('/api/support/email', async (req, res) => {
       name,
       subject,
       message,
+      sourcePage,
       status: 'open',
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -8535,7 +8544,6 @@ app.post('/api/support/email', async (req, res) => {
       ip: safeStr(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '')
     };
 
-    // Store to DB (Firestore primary if available)
     if (hasFirebase && firestore) {
       await firestore.collection(SUPPORT_TICKETS_COLLECTION).doc(ticketId).set(ticket, { merge: true });
     } else {
@@ -8543,7 +8551,6 @@ app.post('/api/support/email', async (req, res) => {
       DB.supportTickets[ticketId] = ticket;
     }
 
-    // Email notify (best-effort)
     const toEmail = process.env.SUPPORT_EMAIL || process.env.ADMIN_EMAIL || process.env.MAIL_TO || fromEmail;
     try {
       await sendMail({
@@ -8555,6 +8562,7 @@ app.post('/api/support/email', async (req, res) => {
             <p><b>Ticket:</b> ${ticketId}</p>
             <p><b>From:</b> ${name ? `${name} &lt;${fromEmail}&gt;` : fromEmail}</p>
             <p><b>Subject:</b> ${subject}</p>
+            ${sourcePage ? `<p><b>Source:</b> ${sourcePage}</p>` : ''}
             <pre style="white-space:pre-wrap;background:#f6f6f6;padding:12px;border-radius:8px">${message}</pre>
           </div>
         `
@@ -11061,7 +11069,6 @@ app.post('/api/me/premium/profile', async (req, res) => {
 
     const mePublic = publicUser({ id: meDoc.id, ...meDoc });
 
-    // Only approved Premium Society members can edit their Premium profile from this page.
     if (!psIsPremiumSocietyMember(mePublic)) {
       return res.status(403).json({ ok: false, message: 'Premium Society members only' });
     }
@@ -11071,6 +11078,7 @@ app.post('/api/me/premium/profile', async (req, res) => {
 
     const prev = (meDoc.premiumApplication || {}) || {};
     const nowIso = new Date().toISOString();
+    const nowDate = new Date();
 
     const toStr = (v) => (v == null ? '' : String(v)).trim();
     const toNumOrNull = (v) => {
@@ -11078,14 +11086,14 @@ app.post('/api/me/premium/profile', async (req, res) => {
       return Number.isFinite(n) ? n : null;
     };
 
-    // Preserve decision fields from admin
     const preservedStatus = prev.status;
     const preservedSubmittedAt = prev.submittedAt;
     const preservedDecidedAt = prev.decidedAt;
 
+    const profileName = toStr(input.fullName || input.name || prev.fullName || meDoc.name);
     const next = {
       ...prev,
-      fullName: toStr(input.fullName || prev.fullName),
+      fullName: profileName,
       occupation: toStr(input.occupation || prev.occupation),
       wealthStatus: toStr(input.wealthStatus || prev.wealthStatus),
       incomeRange: toStr(input.incomeRange || prev.incomeRange),
@@ -11096,18 +11104,20 @@ app.post('/api/me/premium/profile', async (req, res) => {
       updatedAt: nowIso,
     };
 
-    // Optional numeric field
-    const age = input.age != null ? toNumOrNull(input.age) : (prev.age != null ? prev.age : null);
+    const age = input.age != null ? toNumOrNull(input.age) : (prev.age != null ? prev.age : (meDoc.age != null ? meDoc.age : null));
     if (age != null) next.age = age;
 
     if (preservedStatus != null) next.status = preservedStatus;
     if (preservedSubmittedAt != null) next.submittedAt = preservedSubmittedAt;
     if (preservedDecidedAt != null) next.decidedAt = preservedDecidedAt;
 
-    if (hasFirebase) {
-      await updateUserByEmail(email, { premiumApplication: next });
+    const userPatch = { premiumApplication: next, updatedAt: nowDate };
+    if (profileName) userPatch.name = profileName;
+    if (age != null) userPatch.age = age;
 
-      // Keep in-memory cache fresh
+    if (hasFirebase) {
+      await updateUserByEmail(email, userPatch);
+
       const fresh = await findUserByEmail(email);
       if (fresh) {
         const p = normalizePlanKey(fresh.plan ?? fresh.planKey ?? fresh.tier ?? fresh.level ?? 'free');
@@ -11115,14 +11125,26 @@ app.post('/api/me/premium/profile', async (req, res) => {
         const planActive = _computePlanActiveForDoc(p, planEnd, fresh.planActive);
         DB.users[email] = { ...fresh, plan: p, planActive };
       } else {
-        DB.users[email] = { ...(DB.users[email] || {}), premiumApplication: next };
+        DB.users[email] = { ...(DB.users[email] || {}), ...userPatch };
       }
     } else {
-      DB.users[email] = { ...(DB.users[email] || {}), premiumApplication: next };
+      DB.users[email] = { ...(DB.users[email] || {}), ...userPatch };
       saveUsersStore();
     }
 
-    return res.json({ ok: true, premiumApplication: next });
+    if (DB.user && String(DB.user.email || '').trim().toLowerCase() === email) {
+      DB.user = { ...DB.user, ...userPatch };
+    }
+
+    return res.json({
+      ok: true,
+      premiumApplication: next,
+      profile: {
+        name: profileName || meDoc.name || '',
+        email,
+        age: age != null ? age : (meDoc.age != null ? meDoc.age : null)
+      }
+    });
   } catch (err) {
     console.error('[me premium profile] error:', err);
     return res.status(500).json({ ok: false, message: 'Server error updating premium profile' });
