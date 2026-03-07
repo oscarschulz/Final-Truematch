@@ -1368,3 +1368,18 @@ body::after {
     color: var(--text-main);
   }
 }
+
+/* =========================================
+   MOBILE NOTIFICATIONS DROPDOWN CENTERING
+   ========================================= */
+@media (max-width: 768px) {
+  .notif-dropdown {
+    position: fixed;
+    top: 108px;
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%);
+    width: min(360px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
+  }
+}

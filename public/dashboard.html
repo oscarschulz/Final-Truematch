@@ -35,6 +35,24 @@
   #panel-home #homeMobileWidgets.home-mobile-widgets { display: none !important; }
 }
 </style>
+
+<!-- FORCE: center notifications dropdown on mobile; loaded AFTER responsive.css so it wins -->
+<style>
+@media (max-width: 768px) {
+  #notifDropdown.notif-dropdown,
+  #btnNotifToggle .notif-dropdown,
+  .notif-icon-box .notif-dropdown {
+    position: fixed !important;
+    top: 108px !important;
+    left: 50vw !important;
+    right: auto !important;
+    transform: translateX(-50%) !important;
+    width: min(360px, calc(100vw - 24px)) !important;
+    max-width: calc(100vw - 24px) !important;
+    margin: 0 !important;
+  }
+}
+</style>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 
