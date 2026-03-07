@@ -146,9 +146,6 @@
             <div class="ps-chat-body" id="psChatBody"></div>
             <emoji-picker id="psEmojiPicker" class="dark"></emoji-picker>
             <div class="ps-chat-footer">
-                <button class="ps-btn-chat-tool ps-btn-ppv" onclick="if(document.getElementById('psGiftModal')) document.getElementById('psGiftModal').classList.add('active')">
-                    <i class="fa-solid fa-gift"></i>
-                </button>
                 <div class="ps-chat-input-wrapper">
                     <input type="text" id="psChatInput" placeholder="Type a message...">
                     <button id="psBtnToggleEmoji" class="ps-btn-chat-emoji">
@@ -366,19 +363,6 @@
         <button class="ps-btn-cancel-clean" onclick="closeEditProfile()">Cancel</button>
         <button class="ps-btn-save-clean" onclick="saveEditProfile()">Save Changes</button>
       </div>
-    </div>
-  </div>
-
-  <div id="psGiftModal" class="ps-profile-modal">
-    <div class="ps-profile-card-lg" style="max-width: 400px; padding: 25px;">
-        <div class="ps-add-story-header"><h3>Send a Premium Gift</h3><button class="ps-btn-icon-sm" onclick="closeGiftModal()"><i class="fa-solid fa-xmark"></i></button></div>
-        <div class="ps-gift-balance"><span>Balance:</span><span class="ps-coin-text"><i class="fa-solid fa-coins"></i> 2,450</span></div>
-        <div class="ps-gift-grid">
-            <div class="ps-gift-item active" onclick="selectGift(this, 'Diamond', 500)"><span class="ps-gift-emoji">💎</span><span>Diamond</span><small>500c</small></div>
-            <div class="ps-gift-item" onclick="selectGift(this, 'Crown', 1000)"><span class="ps-gift-emoji">👑</span><span>Crown</span><small>1000c</small></div>
-            <div class="ps-gift-item" onclick="selectGift(this, 'Bubbly', 250)"><span class="ps-gift-emoji">🍾</span><span>Bubbly</span><small>250c</small></div>
-        </div>
-        <button class="ps-btn-gold" style="width: 100%; margin-top: 10px;" onclick="sendSelectedGift()">CONFIRM GIFT (<span id="psGiftPriceBtn">500</span>c)</button>
     </div>
   </div>
 
