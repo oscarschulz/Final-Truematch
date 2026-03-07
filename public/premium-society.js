@@ -89,6 +89,7 @@ export const PS_DOM = {
   timerDisplay: document.querySelector(".ps-stats-body p.ps-tiny"),
 
   // Panels
+  panelCreatorsBody: document.getElementById("ps-panel-creators"),
   panelPremiumBody: document.getElementById("ps-panel-premium"),
 
   // Match & Gift
@@ -96,6 +97,9 @@ export const PS_DOM = {
   matchUserImg: document.getElementById("psMatchUserImg"),
   matchTargetImg: document.getElementById("psMatchTargetImg"),
   matchName: document.getElementById("psMatchName"),
+  giftModal: document.getElementById("psGiftModal"),
+  btnPPV: document.querySelector(".ps-btn-ppv"),
+  giftPriceBtn: document.getElementById("psGiftPriceBtn"),
 };
 
 // --- API BASE ---
@@ -120,6 +124,7 @@ const PS_STATE = {
   }
 };
 
+
 function psNormalizePlanKey(rawPlan) {
   const v = String(rawPlan || '').trim().toLowerCase();
   if (!v) return 'free';
@@ -142,6 +147,7 @@ function psNormalizePlanKey(rawPlan) {
 
   return 'free';
 }
+
 
 function psPlanLabelFromKey(planKey) {
     const key = psNormalizePlanKey(planKey);
@@ -260,7 +266,20 @@ function initOverlayObservers() {
     chatObs.observe(chatWindow, { attributes: true });
   }
 
+  const creatorModal = document.getElementById("psCreatorProfileModal");
+  if (creatorModal) {
+    const creatorObs = new MutationObserver((mutations) => {
+      mutations.forEach((m) => {
+        if (m.attributeName === "class") {
+          if (creatorModal.classList.contains("active")) body.classList.add("ps-creator-open");
+          else body.classList.remove("ps-creator-open");
+        }
+      });
+    });
+    creatorObs.observe(creatorModal, { attributes: true });
+  }
 }
+
 
 function initProfileMenu() {
   const profileBtn = document.querySelector(".ps-mini-profile");
@@ -337,6 +356,7 @@ function initProfileMenu() {
     if (!menuPopup.contains(e.target) && !profileBtn.contains(e.target)) closeMenu();
   });
 }
+
 
 function initRightSidebarInteractions() {
   const upgradeBtn = document.getElementById("psBtnSidebarSubscribe");
@@ -423,6 +443,7 @@ export const SwipeController = (() => {
 
     initTouchEvents();
   }
+
 
   /**
    * GESTURE LOGIC
@@ -876,6 +897,22 @@ function saveHistory() {
   localStorage.setItem("ps_chat_history", JSON.stringify(conversationHistory));
 }
 
+function psDisableGiftFeatures() {
+  if (PS_DOM.btnPPV) {
+    PS_DOM.btnPPV.style.display = 'none';
+    PS_DOM.btnPPV.disabled = true;
+    PS_DOM.btnPPV.setAttribute('aria-hidden', 'true');
+    PS_DOM.btnPPV.setAttribute('aria-disabled', 'true');
+    PS_DOM.btnPPV.onclick = null;
+  }
+
+  if (PS_DOM.giftModal) {
+    PS_DOM.giftModal.classList.remove('active');
+    PS_DOM.giftModal.style.display = 'none';
+    PS_DOM.giftModal.setAttribute('aria-hidden', 'true');
+  }
+}
+
 
 const PS_CHAT_STATE = {
   activePeerEmail: '',
@@ -886,6 +923,93 @@ const PS_CHAT_STATE = {
   lastThread: [],
   matchOverlayTarget: null
 };
+
+
+const PS_MOMENTS_STATE = {
+  items: [],
+  byId: {},
+  activeMomentId: '',
+  lastFetchedAt: 0
+};
+
+function psMomentAccent(seed) {
+  const src = String(seed || 'moment');
+  let hash = 0;
+  for (let i = 0; i < src.length; i += 1) {
+    hash = ((hash << 5) - hash) + src.charCodeAt(i);
+    hash |= 0;
+  }
+  const palette = ['#00aff0', '#ff4d6d', '#8b5cf6', '#10b981', '#f59e0b', '#3b82f6'];
+  return palette[Math.abs(hash) % palette.length];
+}
+
+function psNormalizeMoment(raw) {
+  const id = String(raw?.id || '').trim();
+  const ownerEmail = String(raw?.ownerEmail || '').trim().toLowerCase();
+  const ownerName = String(raw?.ownerName || raw?.name || 'Member').trim() || 'Member';
+  const ownerAvatarUrl = String(raw?.ownerAvatarUrl || raw?.avatar || 'assets/images/truematch-mark.png').trim() || 'assets/images/truematch-mark.png';
+  const mediaUrl = String(raw?.mediaUrl || '').trim();
+  const mediaType = String(raw?.mediaType || '').trim().toLowerCase();
+  const caption = String(raw?.caption || '').trim();
+  const createdAtMs = Number(raw?.createdAtMs || 0) || Date.now();
+  const expiresAtMs = Number(raw?.expiresAtMs || 0) || (createdAtMs + (24 * 60 * 60 * 1000));
+  const ownerKey = ownerEmail || String(raw?.ownerId || '').trim() || ownerName;
+  const accent = psMomentAccent(ownerKey || id || ownerName);
+  return { id, ownerEmail, ownerName, ownerAvatarUrl, mediaUrl, mediaType, caption, createdAtMs, expiresAtMs, ownerKey, accent };
+}
+
+function psSetMomentsState(list) {
+  const normalized = (Array.isArray(list) ? list : [])
+    .map(psNormalizeMoment)
+    .filter((m) => m.id);
+
+  normalized.sort((a, b) => Number(b.createdAtMs || 0) - Number(a.createdAtMs || 0));
+
+  PS_MOMENTS_STATE.items = normalized;
+  PS_MOMENTS_STATE.byId = {};
+  normalized.forEach((m) => {
+    PS_MOMENTS_STATE.byId[m.id] = m;
+  });
+
+  return normalized;
+}
+
+function psGetMomentsRailItems() {
+  const seen = new Set();
+  const rail = [];
+  (Array.isArray(PS_MOMENTS_STATE.items) ? PS_MOMENTS_STATE.items : []).forEach((moment) => {
+    const key = String(moment.ownerKey || moment.id || '').trim();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    rail.push(moment);
+  });
+  return rail;
+}
+
+async function psLoadMoments(force = false) {
+  const now = Date.now();
+  if (!force && (now - Number(PS_MOMENTS_STATE.lastFetchedAt || 0)) < 5000) return PS_MOMENTS_STATE.items;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/moments/list`, {
+      method: 'GET',
+      credentials: 'include'
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data || data.ok !== true) {
+      throw new Error((data && (data.message || data.error)) || 'Failed to load moments.');
+    }
+
+    const items = psSetMomentsState(Array.isArray(data.moments) ? data.moments : []);
+    PS_MOMENTS_STATE.lastFetchedAt = Date.now();
+    renderStories(items);
+    return items;
+  } catch (err) {
+    console.error('psLoadMoments error:', err);
+    if (!PS_MOMENTS_STATE.lastFetchedAt) renderStories([]);
+    return [];
+  }
+}
 
 function psEscapeHtml(value) {
   return String(value ?? '')
@@ -1094,6 +1218,7 @@ async function psSendMessageToActivePeer(payload = {}) {
   }
 }
 
+
 // ==========================================
 export async function initUI() {
   console.log("🚀 iTrueMatch Engine: Syncing...");
@@ -1107,22 +1232,32 @@ export async function initUI() {
   initNotifications();
   initChat();
   initStoryViewer();
+  initCreatorProfileModal();
+  initCreatorsLogic();
   initPremiumLogic();
   initProfileEditLogic();
   initSettingsLogic();
   initGlobalSwipeBack();
 
   // 3. Render Sections (Backend-ready)
-  // Papalitan mo ito ng "await fetchFromBackend()" pagkatapos
-  renderStories([]);   
+  renderStories([]);
   renderMessages([]);
   renderAdmirers([]);
+  renderActiveNearby([]);
+  renderDailyPick(null);
+
+  // Load real home widgets and moments from backend
+  await Promise.allSettled([
+    psLoadHomeWidgets(true),
+    psLoadMoments(true)
+  ]);
 
   // 4. Tab Restoration
   const lastTab = localStorage.getItem("ps_last_tab") || "home";
   switchTab(lastTab);
 
   // Gift / PPV disabled until dedicated purchase or debit logic exists
+  psDisableGiftFeatures();
 }
 
 // ==========================================
@@ -1132,8 +1267,10 @@ export async function initUI() {
 // 1. Render Stories
 function renderStories(stories = []) {
     if (!PS_DOM.storiesContainer) return;
-    
-    // Add Button (Static)
+
+    const items = psSetMomentsState(stories);
+    const railItems = psGetMomentsRailItems();
+
     const addBtn = `
     <div class="ps-story-item" onclick="openAddStory()">
         <div class="ps-story-ring" style="border-color: #444; border-style: dashed; padding: 3px;">
@@ -1144,16 +1281,35 @@ function renderStories(stories = []) {
         <span class="ps-story-name">Add Story</span>
     </div>`;
 
-    // Dynamic Stories Loop
-    const storyHtml = stories.map(s => `
-    <div class="ps-story-item" onclick="openStory('${s.name}', '${s.color || '#00aff0'}')">
-        <div class="ps-story-ring" style="border-color: ${s.color || '#00aff0'}">
-            <img class="ps-story-img" src="${s.avatar || 'assets/images/truematch-mark.png'}" style="background:${s.color || '#333'}">
+    if (!railItems.length) {
+      PS_DOM.storiesContainer.innerHTML = addBtn;
+      return;
+    }
+
+    const storyHtml = railItems.map((s) => {
+        const safeId = psEscapeHtml(s.id);
+        const safeName = psEscapeHtml(s.ownerName || 'Member');
+        const safeAvatar = psEscapeHtml(s.ownerAvatarUrl || 'assets/images/truematch-mark.png');
+        const accent = psEscapeHtml(s.accent || '#00aff0');
+        return `
+    <div class="ps-story-item" data-moment-id="${safeId}">
+        <div class="ps-story-ring" style="border-color: ${accent}">
+            <img class="ps-story-img" src="${safeAvatar}" alt="${safeName}" onerror="this.src='assets/images/truematch-mark.png'" style="background:${accent}">
         </div>
-        <span class="ps-story-name">${s.name}</span>
-    </div>`).join("");
+        <span class="ps-story-name">${safeName}</span>
+    </div>`;
+    }).join("");
 
     PS_DOM.storiesContainer.innerHTML = addBtn + storyHtml;
+
+    PS_DOM.storiesContainer.querySelectorAll('.ps-story-item[data-moment-id]').forEach((item) => {
+      item.addEventListener('click', () => {
+        const momentId = item.getAttribute('data-moment-id') || '';
+        if (momentId && typeof window.openStory === 'function') {
+          window.openStory(momentId);
+        }
+      });
+    });
 }
 
 // 2. Render Messages
@@ -1203,23 +1359,191 @@ function renderMessages(messages = []) {
 // 3. Render Admirers
 function renderAdmirers(admirers = []) {
     if (!PS_DOM.admirerContainer) return;
-    
-    if (admirers.length === 0) {
+
+    if (!Array.isArray(admirers) || admirers.length === 0) {
         PS_DOM.admirerContainer.innerHTML = `<div style="grid-column:span 3; text-align:center; color:#666; font-size:0.8rem;">No admirers yet. Boost your profile!</div>`;
-        if (PS_DOM.admirerCount) PS_DOM.admirerCount.innerText = "0";
+        if (PS_DOM.admirerCount) PS_DOM.admirerCount.innerText = "0 New";
         return;
     }
 
-    // Update the count badge
-    if (PS_DOM.admirerCount) PS_DOM.admirerCount.innerText = `${admirers.length} New`;
+    if (PS_DOM.admirerCount) {
+        PS_DOM.admirerCount.innerText = `${admirers.length} New`;
+    }
 
-    // Render cards with Lock Icon and Click-to-Upgrade interaction
-    PS_DOM.admirerContainer.innerHTML = admirers.map(a => `
-    <div class="ps-admirer-card" onclick="switchTab('premium')" style="cursor:pointer;">
-        <div class="ps-admirer-icon"><i class="fa-solid fa-lock"></i></div> <img class="ps-admirer-img" src="assets/images/truematch-mark.png" style="background:${a.color || getRandomColor()}">
-        <h4 style="margin:5px 0 0; font-size:0.85rem;">${a.name || 'Secret'}</h4>
-        <p class="ps-tiny ps-muted" style="margin:0;">${a.loc || 'Nearby'}</p>
-    </div>`).join("");
+    PS_DOM.admirerContainer.innerHTML = admirers.map((a) => {
+        const name = psEscapeHtml(_psSafeName(a.name || a.fullName || a.username || 'Member'));
+        const city = psEscapeHtml(String(a.city || a.loc || a.location || 'Nearby').trim() || 'Nearby');
+        const age = (a.age !== undefined && a.age !== null && String(a.age).trim() !== '') ? `, ${psEscapeHtml(String(a.age))}` : '';
+        const avatar = psEscapeHtml(String(a.photoUrl || a.avatarUrl || a.avatar || 'assets/images/truematch-mark.png'));
+        return `
+    <div class="ps-admirer-card" title="${name}">
+        <img class="ps-admirer-img" src="${avatar}" alt="${name}" onerror="this.src='assets/images/truematch-mark.png'" style="background:${a.color || getRandomColor()}">
+        <h4 style="margin:8px 0 0; font-size:0.85rem;">${name}</h4>
+        <p class="ps-tiny ps-muted" style="margin:0;">${city}${age}</p>
+    </div>`;
+    }).join("");
+}
+
+function renderActiveNearby(items = []) {
+  if (!PS_DOM.activeNearbyContainer) return;
+
+  if (!Array.isArray(items) || items.length === 0) {
+    PS_DOM.activeNearbyContainer.innerHTML = `<div style="grid-column:span 3; text-align:center; color:#666; font-size:0.82rem; padding:14px 8px;">No active members nearby right now.</div>`;
+    return;
+  }
+
+  PS_DOM.activeNearbyContainer.innerHTML = items.map((item) => {
+    const name = psEscapeHtml(_psSafeName(item.name || item.fullName || item.username || 'Member'));
+    const avatar = psEscapeHtml(String(item.photoUrl || item.avatarUrl || item.avatar || 'assets/images/truematch-mark.png'));
+    const city = psEscapeHtml(String(item.city || item.location || 'Nearby').trim() || 'Nearby');
+    const onlineLabel = item.isOnline ? 'Online now' : 'Recently active';
+
+    return `
+      <div class="ps-active-item" title="${name} • ${city}">
+        <img class="ps-active-img" src="${avatar}" alt="${name}" onerror="this.src='assets/images/truematch-mark.png'">
+        <div style="position:absolute; inset:auto 0 0 0; padding:8px; background:linear-gradient(to top, rgba(0,0,0,.78), rgba(0,0,0,0));">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+            <strong style="font-size:.8rem; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${name}</strong>
+            <span style="display:inline-flex; align-items:center; gap:5px; font-size:.66rem; color:${item.isOnline ? '#00ff88' : '#9be7ff'}; flex-shrink:0;">
+              <i class="fa-solid fa-circle" style="font-size:.45rem;"></i>${onlineLabel}
+            </span>
+          </div>
+          <div style="font-size:.68rem; color:#d4d7dd; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${city}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderDailyPick(profile) {
+  if (!PS_DOM.dailyPickContainer) return;
+
+  if (!profile) {
+    PS_DOM.dailyPickContainer.innerHTML = `
+      <div style="padding:18px; border:1px solid rgba(255,255,255,.08); border-radius:18px; background:rgba(255,255,255,.03); text-align:center; color:#9aa0a6;">
+        Daily Pick will appear here once we find a strong match for you.
+      </div>`;
+    return;
+  }
+
+  const name = psEscapeHtml(_psSafeName(profile.name || profile.fullName || profile.username || 'Member'));
+  const city = psEscapeHtml(String(profile.city || profile.location || 'Nearby').trim() || 'Nearby');
+  const avatar = psEscapeHtml(String(profile.photoUrl || profile.avatarUrl || profile.avatar || 'assets/images/truematch-mark.png'));
+  const age = (profile.age !== undefined && profile.age !== null && String(profile.age).trim() !== '') ? ` • ${psEscapeHtml(String(profile.age))}` : '';
+  const badge = profile.isOnline ? 'Online now' : "Today's Highlight";
+
+  PS_DOM.dailyPickContainer.innerHTML = `
+    <div style="display:flex; align-items:center; gap:16px; padding:18px; border:1px solid rgba(255,255,255,.08); border-radius:18px; background:linear-gradient(135deg, rgba(0,175,240,.15), rgba(255,255,255,.02));">
+      <img src="${avatar}" alt="${name}" onerror="this.src='assets/images/truematch-mark.png'" style="width:72px; height:72px; border-radius:20px; object-fit:cover; border:1px solid rgba(255,255,255,.12); background:#111; flex-shrink:0;">
+      <div style="min-width:0; flex:1;">
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+          <span style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:rgba(0,175,240,.15); color:#9be7ff; font-size:.7rem; font-weight:700; letter-spacing:.02em;">✨ ${badge}</span>
+        </div>
+        <h3 style="margin:0; font-size:1.05rem; color:#fff;">${name}</h3>
+        <p style="margin:6px 0 0; color:#c9d1d9; font-size:.88rem;">${city}${age}</p>
+      </div>
+    </div>`;
+}
+
+
+function psApplyMomentToViewer(moment) {
+  if (!PS_DOM.storyFullImg) return;
+
+  const mediaUrl = String(moment?.mediaUrl || '').trim();
+  const mediaType = String(moment?.mediaType || '').trim().toLowerCase();
+  const caption = String(moment?.caption || '').trim();
+  const accent = String(moment?.accent || '#00aff0');
+  const avatarUrl = String(moment?.ownerAvatarUrl || 'assets/images/truematch-mark.png').trim() || 'assets/images/truematch-mark.png';
+
+  PS_DOM.storyFullImg.innerHTML = '';
+  PS_DOM.storyFullImg.style.position = 'relative';
+  PS_DOM.storyFullImg.style.backgroundColor = accent;
+  PS_DOM.storyFullImg.style.backgroundPosition = 'center';
+  PS_DOM.storyFullImg.style.backgroundRepeat = 'no-repeat';
+  PS_DOM.storyFullImg.style.backgroundSize = 'cover';
+
+  if (/^image\//.test(mediaType) && mediaUrl) {
+    const safeBgUrl = mediaUrl.replace(/"/g, '%22');
+    PS_DOM.storyFullImg.style.backgroundImage = `linear-gradient(to top, rgba(0,0,0,.45), rgba(0,0,0,.08)), url("${safeBgUrl}")`;
+  } else {
+    const safeBgUrl = avatarUrl.replace(/"/g, '%22');
+    PS_DOM.storyFullImg.style.backgroundImage = `linear-gradient(180deg, rgba(0,0,0,.08), rgba(0,0,0,.55)), url("${safeBgUrl}")`;
+    PS_DOM.storyFullImg.style.backgroundSize = mediaUrl && /^video\//.test(mediaType) ? 'cover' : 'contain';
+  }
+
+  if (/^video\//.test(mediaType)) {
+    const videoBadge = document.createElement('div');
+    videoBadge.className = 'ps-story-video-badge';
+    videoBadge.innerHTML = '<i class="fa-solid fa-play"></i> Video moment';
+    videoBadge.style.cssText = 'position:absolute; top:16px; left:16px; padding:8px 12px; border-radius:999px; background:rgba(0,0,0,.55); color:#fff; font-size:.75rem; font-weight:700; backdrop-filter:blur(8px);';
+    PS_DOM.storyFullImg.appendChild(videoBadge);
+  }
+
+  if (caption) {
+    const captionEl = document.createElement('div');
+    captionEl.className = 'ps-story-caption-overlay';
+    captionEl.style.cssText = 'position:absolute; left:14px; right:14px; bottom:18px; padding:14px 16px; border-radius:16px; background:linear-gradient(180deg, rgba(0,0,0,.1), rgba(0,0,0,.68)); color:#fff; font-size:.9rem; line-height:1.45; backdrop-filter:blur(8px); white-space:pre-wrap;';
+    captionEl.textContent = caption;
+    PS_DOM.storyFullImg.appendChild(captionEl);
+  }
+}
+
+let _psHomeWidgetsLastFetched = 0;
+
+async function psLoadHomeWidgets(force = false) {
+  const now = Date.now();
+  if (!force && (now - _psHomeWidgetsLastFetched) < 5000) return;
+  _psHomeWidgetsLastFetched = now;
+
+  const admirerPromise = fetch(`${API_BASE}/api/me/admirers?limit=12`, {
+    method: 'GET',
+    credentials: 'include'
+  }).then(async (res) => {
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data || data.ok !== true) {
+      throw new Error((data && (data.error || data.message)) || 'Failed to load admirers.');
+    }
+    return {
+      items: Array.isArray(data.items) ? data.items : [],
+      count: Math.max(0, Number(data.count || 0))
+    };
+  });
+
+  const activePromise = fetch(`${API_BASE}/api/me/active-nearby?limit=9`, {
+    method: 'GET',
+    credentials: 'include'
+  }).then(async (res) => {
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data || data.ok !== true) {
+      throw new Error((data && (data.error || data.message)) || 'Failed to load active nearby.');
+    }
+    return Array.isArray(data.items) ? data.items : [];
+  });
+
+  const [admirersResult, activeResult] = await Promise.allSettled([admirerPromise, activePromise]);
+
+  let admirers = [];
+  let admirerCount = 0;
+  if (admirersResult.status === 'fulfilled') {
+    admirers = admirersResult.value.items;
+    admirerCount = admirersResult.value.count;
+  } else {
+    renderAdmirers([]);
+  }
+
+  let activeNearby = [];
+  if (activeResult.status === 'fulfilled') {
+    activeNearby = activeResult.value;
+  } else {
+    renderActiveNearby([]);
+  }
+
+  renderAdmirers(admirers);
+  if (PS_DOM.admirerCount) {
+    const countToShow = admirerCount || admirers.length;
+    PS_DOM.admirerCount.innerText = `${countToShow} New`;
+  }
+  renderActiveNearby(activeNearby);
+  renderDailyPick(admirers[0] || activeNearby[0] || null);
 }
 // ==========================================
 // 1. THE GLOBAL GESTURE ENGINE (Swipe Back)
@@ -1273,40 +1597,191 @@ export function initGlobalSwipeBack() {
 export function initSettingsLogic() {
   console.log("Settings Logic (Integrated) Initialized");
 
-  // --- A. DOM ELEMENTS ---
   const distInput = document.getElementById("psRangeDist");
   const distVal = document.getElementById("psDistVal");
   const ageInput = document.getElementById("psRangeAge");
   const ageVal = document.getElementById("psAgeVal");
-  const toggles = document.querySelectorAll(".ps-setting-toggle, .ps-switch-cyan input, .ps-switch-mini input");
 
   if (!distInput || !ageInput) return;
 
-  // --- B. BACKEND IDENTITY & LOADING ---
   const me = (() => {
     try { return JSON.parse(localStorage.getItem('tm_user')); } catch (e) { return null; }
   })();
   const email = me?.email || null;
+  const settingsCacheKey = email ? `ps_settings_cache:${String(email).trim().toLowerCase()}` : 'ps_settings_cache:guest';
 
-  // LOAD SAVED PREFS: I-load ang settings galing sa session storage/cloud
-  if (email && typeof loadPrefsForUser === 'function') {
-    const prefs = loadPrefsForUser(email) || {};
-    if (prefs.distanceKm != null) {
-      distInput.value = prefs.distanceKm;
-      if (distVal) distVal.textContent = prefs.distanceKm;
+  const settingsScope = document.querySelector('.ps-panel[data-panel="settings"]') || document;
+  const toggleRows = Array.from(settingsScope.querySelectorAll('.ps-toggle-row, .ps-legal-row'));
+
+  function findToggleByLabel(label) {
+    const wanted = String(label || '').trim().toLowerCase();
+    for (const row of toggleRows) {
+      const textEl = row.querySelector('span');
+      const input = row.querySelector('input[type="checkbox"]');
+      const rowLabel = String(textEl?.textContent || '').trim().toLowerCase();
+      if (input && rowLabel === wanted) return input;
     }
-    if (prefs.maxAge != null) {
-      ageInput.value = prefs.maxAge;
-      if (ageVal) ageVal.textContent = prefs.maxAge;
+    return null;
+  }
+
+  const toggleMap = {
+    matches: findToggleByLabel('Matches'),
+    messages: findToggleByLabel('Messages'),
+    soundEffects: findToggleByLabel('Sound Effects'),
+    hapticFeedback: findToggleByLabel('Haptic Feedback'),
+  };
+
+  Object.entries(toggleMap).forEach(([key, input]) => {
+    if (input) {
+      input.dataset.settingKey = key;
+      if (!input.dataset.name) {
+        const labelMap = {
+          matches: 'Matches notifications',
+          messages: 'Messages notifications',
+          soundEffects: 'Sound Effects',
+          hapticFeedback: 'Haptic Feedback',
+        };
+        input.dataset.name = labelMap[key] || key;
+      }
+    }
+  });
+
+  const defaults = {
+    distanceKm: Number(distInput.value) || 15,
+    maxAge: Number(ageInput.value) || 26,
+    notifications: {
+      matches: toggleMap.matches ? !!toggleMap.matches.checked : true,
+      messages: toggleMap.messages ? !!toggleMap.messages.checked : true,
+    },
+    appPreferences: {
+      soundEffects: toggleMap.soundEffects ? !!toggleMap.soundEffects.checked : true,
+      hapticFeedback: toggleMap.hapticFeedback ? !!toggleMap.hapticFeedback.checked : false,
+    },
+  };
+
+  function cloneSettings(v) {
+    return JSON.parse(JSON.stringify(v));
+  }
+
+  function mergeSettings(base, incoming) {
+    const next = cloneSettings(base || defaults);
+    const src = (incoming && typeof incoming === 'object') ? incoming : {};
+
+    if (src.distanceKm != null && Number.isFinite(Number(src.distanceKm))) next.distanceKm = Number(src.distanceKm);
+    if (src.maxAge != null && Number.isFinite(Number(src.maxAge))) next.maxAge = Number(src.maxAge);
+
+    if (src.notifications && typeof src.notifications === 'object') {
+      next.notifications = {
+        ...next.notifications,
+        ...src.notifications,
+      };
+    }
+
+    const appPrefs = (src.appPreferences && typeof src.appPreferences === 'object')
+      ? src.appPreferences
+      : ((src.preferences && typeof src.preferences === 'object') ? src.preferences : null);
+    if (appPrefs) {
+      next.appPreferences = {
+        ...next.appPreferences,
+        ...appPrefs,
+      };
+    }
+
+    return next;
+  }
+
+  function applySettingsToUi(settings) {
+    const safe = mergeSettings(defaults, settings);
+
+    distInput.value = String(Number(safe.distanceKm) || defaults.distanceKm);
+    ageInput.value = String(Number(safe.maxAge) || defaults.maxAge);
+    if (distVal) distVal.textContent = String(Number(safe.distanceKm) || defaults.distanceKm);
+    if (ageVal) ageVal.textContent = String(Number(safe.maxAge) || defaults.maxAge);
+
+    if (toggleMap.matches) toggleMap.matches.checked = !!safe.notifications.matches;
+    if (toggleMap.messages) toggleMap.messages.checked = !!safe.notifications.messages;
+    if (toggleMap.soundEffects) toggleMap.soundEffects.checked = !!safe.appPreferences.soundEffects;
+    if (toggleMap.hapticFeedback) toggleMap.hapticFeedback.checked = !!safe.appPreferences.hapticFeedback;
+  }
+
+  function captureSettingsFromUi() {
+    return {
+      distanceKm: Number(distInput.value),
+      maxAge: Number(ageInput.value),
+      notifications: {
+        matches: toggleMap.matches ? !!toggleMap.matches.checked : defaults.notifications.matches,
+        messages: toggleMap.messages ? !!toggleMap.messages.checked : defaults.notifications.messages,
+      },
+      appPreferences: {
+        soundEffects: toggleMap.soundEffects ? !!toggleMap.soundEffects.checked : defaults.appPreferences.soundEffects,
+        hapticFeedback: toggleMap.hapticFeedback ? !!toggleMap.hapticFeedback.checked : defaults.appPreferences.hapticFeedback,
+      },
+    };
+  }
+
+  function readLocalSettings() {
+    let merged = cloneSettings(defaults);
+
+    try {
+      if (email && typeof loadPrefsForUser === 'function') {
+        merged = mergeSettings(merged, loadPrefsForUser(email) || {});
+      }
+    } catch (e) {
+      console.warn('Failed to load local prefs cache:', e);
+    }
+
+    try {
+      const raw = localStorage.getItem(settingsCacheKey);
+      if (raw) merged = mergeSettings(merged, JSON.parse(raw));
+    } catch (e) {
+      console.warn('Failed to load premium settings cache:', e);
+    }
+
+    return merged;
+  }
+
+  function saveLocalSettings(next) {
+    const safe = mergeSettings(defaults, next);
+
+    try {
+      if (email && typeof savePrefsForUser === 'function') {
+        savePrefsForUser(email, {
+          distanceKm: safe.distanceKm,
+          maxAge: safe.maxAge,
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to save legacy prefs cache:', e);
+    }
+
+    try {
+      localStorage.setItem(settingsCacheKey, JSON.stringify(safe));
+    } catch (e) {
+      console.warn('Failed to save premium settings cache:', e);
     }
   }
 
-  // --- C. PERSISTENCE SAVE ACTION ---
-// ==========================================
-  // START: SETTINGS CLOUD SYNC (Phase 2)
-  // ==========================================
+  applySettingsToUi(readLocalSettings());
 
-  // 1. Debounce Helper (Para hindi flood ang request sa server)
+  async function loadSettingsFromServer() {
+    if (!email) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/api/me/settings`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data || data.ok !== true) return;
+
+      const merged = mergeSettings(readLocalSettings(), data.settings || {});
+      applySettingsToUi(merged);
+      saveLocalSettings(merged);
+    } catch (e) {
+      console.warn('Failed to load settings from server:', e);
+    }
+  }
+
   function debounce(func, wait = 500) {
     let timeout;
     return (...args) => {
@@ -1315,71 +1790,78 @@ export function initSettingsLogic() {
     };
   }
 
-  // 2. Updated Persist Action (Async with Cloud Sync)
-  const persistSettings = async () => {
-    if (!email) return;
-
-    const nextPrefs = {
-      distanceKm: Number(distInput.value),
-      maxAge: Number(ageInput.value),
-    };
-
-    // A. Local Save (Backup)
-    if (typeof savePrefsForUser === 'function') {
-      savePrefsForUser(email, nextPrefs);
+  async function persistSettings(options = {}) {
+    const { silent = false, trigger = '' } = options;
+    if (!email) {
+      if (!silent) showToast('Session expired. Please sign in again.');
+      return { ok: false };
     }
 
-    // B. Cloud Sync (Laravel Backend)
+    const nextPrefs = captureSettingsFromUi();
+    saveLocalSettings(nextPrefs);
+
     try {
       const res = await fetch(`${API_BASE}/api/me/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(nextPrefs)
+        body: JSON.stringify(nextPrefs),
       });
 
-      if (res.ok) {
-        showToast("Preferences synced to cloud ☁️✨");
-      } else {
-        throw new Error("Server Error");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data || data.ok !== true) {
+        throw new Error((data && (data.message || data.error)) || 'Server Error');
       }
+
+      const merged = mergeSettings(nextPrefs, data.settings || nextPrefs);
+      saveLocalSettings(merged);
+
+      if (!silent) {
+        if (trigger) {
+          showToast(trigger);
+        } else {
+          showToast('Preferences synced to cloud ☁️✨');
+        }
+      }
+
+      return { ok: true, settings: merged };
     } catch (e) {
-      console.error("Cloud Sync Failed:", e);
-      showToast("Saved locally (Sync error)");
+      console.error('Cloud Sync Failed:', e);
+      if (!silent) showToast('Saved locally (Sync error)');
+      return { ok: false, error: e };
     }
-  };
+  }
 
-  // Gamitin ang debounce para sa 'input' event pero save agad sa 'change'
-  const debouncedPersist = debounce(persistSettings, 800);
+  const debouncedPersist = debounce(() => {
+    persistSettings({ silent: true });
+  }, 800);
 
-  // --- D. EVENT LISTENERS (Sliders & Toggles) ---
-  distInput.addEventListener("input", (e) => { 
-    if (distVal) distVal.textContent = e.target.value; 
-    debouncedPersist(); // Sync habang hinihila
+  distInput.addEventListener('input', (e) => {
+    if (distVal) distVal.textContent = e.target.value;
+    debouncedPersist();
   });
-  distInput.addEventListener("change", persistSettings); // Siguradong save pagbitaw
-
-  ageInput.addEventListener("input", (e) => { 
-    if (ageVal) ageVal.textContent = e.target.value; 
-    debouncedPersist(); // Sync habang hinihila
+  distInput.addEventListener('change', () => {
+    persistSettings({ trigger: 'Discovery distance updated ✨' });
   });
-  ageInput.addEventListener("change", persistSettings); // Siguradong save pagbitaw
 
-  toggles.forEach((toggle) => {
-    toggle.addEventListener("change", (e) => {
-      const settingName = e.target.dataset.name || "Setting";
-      const status = e.target.checked ? "Enabled" : "Disabled";
-      
-      // Dito mo rin pwedeng i-sync ang toggles sa backend kung may endpoint ka na
-      showToast(`${settingName} ${status}`);
+  ageInput.addEventListener('input', (e) => {
+    if (ageVal) ageVal.textContent = e.target.value;
+    debouncedPersist();
+  });
+  ageInput.addEventListener('change', () => {
+    persistSettings({ trigger: 'Max age preference updated ✨' });
+  });
+
+  Object.values(toggleMap).filter(Boolean).forEach((toggle) => {
+    toggle.addEventListener('change', (e) => {
+      const settingName = e.target.dataset.name || 'Setting';
+      const status = e.target.checked ? 'enabled' : 'disabled';
+      persistSettings({ trigger: `${settingName} ${status}` });
     });
   });
 
-  // ==========================================
-  // END: SETTINGS CLOUD SYNC
-  // ==========================================
+  loadSettingsFromServer();
 
-  // --- E. SUPPORT & HELP POPUPS ---
   window.openSafetyTips = () => {
     Swal.fire({
       title: '<i class="fa-solid fa-shield-halved" style="color:#00aff0"></i> Safety Guidelines',
@@ -1398,7 +1880,7 @@ export function initSettingsLogic() {
       title: '<i class="fa-solid fa-gem" style="color:#FFD700"></i> Premium Society',
       html: `<div style="text-align: left; font-size: 0.85rem; color: #ccc;">
                 <p><b>Membership:</b> Auto-renew monthly ang iyong subscription.</p>
-                <p><b>Member Perks:</b> Additional paid extras are currently unavailable on this page.</p>
+                <p><b>Diamonds:</b> Digital gifts are final and non-refundable.</p>
             </div>`,
       background: "#15151e", color: "#fff", confirmButtonColor: "#FFD700",
     });
@@ -1423,10 +1905,25 @@ export function initSettingsLogic() {
     });
   };
 
-  // --- F. CACHE ACTION ---
-  window.clearAppCache = () => {
-    showToast("Clearing Media Cache...");
-    setTimeout(() => { showToast("Cache Cleared Successfully ✨"); }, 1200);
+  window.clearAppCache = async () => {
+    showToast('Clearing Media Cache...');
+    try {
+      localStorage.removeItem('ps_chat_history');
+      localStorage.removeItem('ps_reset_time');
+      localStorage.removeItem('ps_swipes_left');
+      localStorage.removeItem(settingsCacheKey);
+      if ('caches' in window && typeof window.caches.keys === 'function') {
+        const keys = await window.caches.keys();
+        await Promise.all(
+          keys
+            .filter((key) => /premium|story|moment|msg-media|ps-/i.test(String(key || '')))
+            .map((key) => window.caches.delete(key))
+        );
+      }
+    } catch (e) {
+      console.warn('Clear cache failed:', e);
+    }
+    setTimeout(() => { showToast('Cache Cleared Successfully ✨'); }, 700);
   };
 }
 
@@ -1580,6 +2077,7 @@ function initProfileEditLogic() {
 } // END of initProfileEditLogic
 
 // CHANGE PASSWORD (Global Function)
+
 window.openChangePassword = () => {
   Swal.fire({
     title: "Change Password",
@@ -1587,6 +2085,7 @@ window.openChangePassword = () => {
                 <input type="password" id="swal-curr-pass" class="swal2-input" placeholder="Current Password" style="color:#000;">
                 <input type="password" id="swal-new-pass" class="swal2-input" placeholder="New Password" style="color:#000;">
                 <input type="password" id="swal-conf-pass" class="swal2-input" placeholder="Confirm New Password" style="color:#000;">
+                <p style="margin:8px 0 0; font-size:0.8rem; color:#9fb3c8; text-align:left;">Use at least 8 characters with uppercase, lowercase, and a number.</p>
             `,
     confirmButtonText: "Update Password",
     confirmButtonColor: "#00aff0",
@@ -1594,10 +2093,12 @@ window.openChangePassword = () => {
     background: "#15151e",
     color: "#fff",
     customClass: { container: "ps-swal-on-top" },
-    preConfirm: () => {
-      const curr = document.getElementById("swal-curr-pass").value;
-      const newP = document.getElementById("swal-new-pass").value;
-      const confP = document.getElementById("swal-conf-pass").value;
+    focusConfirm: false,
+    showLoaderOnConfirm: true,
+    preConfirm: async () => {
+      const curr = String(document.getElementById("swal-curr-pass")?.value || '').trim();
+      const newP = String(document.getElementById("swal-new-pass")?.value || '').trim();
+      const confP = String(document.getElementById("swal-conf-pass")?.value || '').trim();
 
       if (!curr || !newP || !confP) {
         Swal.showValidationMessage("Fill up mo lahat ng fields.");
@@ -1607,13 +2108,54 @@ window.openChangePassword = () => {
         Swal.showValidationMessage("Hindi match ang password, paps.");
         return false;
       }
-      return true;
+      if (newP.length < 8) {
+        Swal.showValidationMessage("Password must be at least 8 characters.");
+        return false;
+      }
+      if (!/[a-z]/.test(newP) || !/[A-Z]/.test(newP) || !/\d/.test(newP)) {
+        Swal.showValidationMessage("Use uppercase, lowercase, and at least one number.");
+        return false;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/api/me/password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ currentPassword: curr, newPassword: newP })
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data && data.ok) {
+          return { ok: true };
+        }
+
+        const code = String((data && (data.message || data.error || data.code)) || '');
+        if (code === 'wrong_password') {
+          Swal.showValidationMessage('Current password is incorrect.');
+        } else if (code === 'weak_password') {
+          Swal.showValidationMessage('Your new password is too weak.');
+        } else if (code === 'too_many_requests') {
+          Swal.showValidationMessage('Too many attempts. Try again later.');
+        } else if (code === 'auth_backend_misconfigured') {
+          Swal.showValidationMessage('Password updates are temporarily unavailable.');
+        } else if (code === 'user_not_found' || code === 'not_logged_in') {
+          Swal.showValidationMessage('Please sign in again and retry.');
+        } else {
+          Swal.showValidationMessage(code || 'Failed to update password.');
+        }
+        return false;
+      } catch (err) {
+        Swal.showValidationMessage(String(err?.message || 'Failed to update password.'));
+        return false;
+      }
     },
   }).then((result) => {
     if (result.isConfirmed) {
       Swal.fire({
         icon: "success",
         title: "Password Updated",
+        text: "Your password has been changed successfully.",
         background: "#15151e",
         color: "#fff",
         confirmButtonColor: "#00aff0",
@@ -1621,6 +2163,7 @@ window.openChangePassword = () => {
     }
   });
 };
+
 
 function initPremiumLogic() {
   // --- PREMIUM TAB POPULATION (UI Structure Only, no mock data needed) ---
@@ -1722,31 +2265,307 @@ function initPremiumLogic() {
   };
 }
 
-function initNotifications() {
+function initCreatorsLogic() {
+  window.subscribeCreator = (name) => {
+    window.closeCreatorProfile();
+    Swal.fire({
+      title: `Subscribe to ${name}?`,
+      text: "Unlock exclusive content and direct messaging for $9.99/mo.",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonColor: "#00aff0",
+      cancelButtonColor: "#d33",
+      confirmButtonText: "Yes, Subscribe",
+      background: "#15151e",
+      color: "#fff",
+    }).then((result) => {
+      if (result.isConfirmed) {
+        Swal.fire({
+          title: "Subscribed!",
+          text: `You are now a premium member of ${name}'s circle.`,
+          icon: "success",
+          background: "#15151e",
+          color: "#fff",
+          confirmButtonColor: "#00aff0",
+        });
+      }
+    });
+  };
+
+  window.filterCreators = (element, category) => {
+    const chips = document.querySelectorAll(".ps-filter-chip");
+    chips.forEach((chip) => chip.classList.remove("active"));
+    element.classList.add("active");
+
+    // TODO: Call Backend with Filter
+    // fetchCreators(category);
+    showToast(`Filtering by: ${category}`);
+  };
+
+  // NOTE: Inalis na ang hardcoded creators list dito.
+  // Ang 'ps-creators-grid' ay dapat lamanin gamit ang fetch data.
+  if (PS_DOM.panelCreatorsBody) {
+    PS_DOM.panelCreatorsBody.innerHTML = `
+        <div class="ps-creators-filter">
+            <div class="ps-filter-chip active" onclick="filterCreators(this, 'All')">All</div>
+            <div class="ps-filter-chip" onclick="filterCreators(this, 'Trending')">Trending</div>
+            <div class="ps-filter-chip" onclick="filterCreators(this, 'New')">New</div>
+            <div class="ps-filter-chip" onclick="filterCreators(this, 'Near You')">Near You</div>
+            <div class="ps-filter-chip" onclick="filterCreators(this, 'Cosplay')">Cosplay</div>
+        </div>
+        <div class="ps-creators-grid">
+            <p style="grid-column: span 2; text-align: center; color: #666; margin-top: 50px;">Fetching Creators...</p>
+        </div>`;
+  }
+}
+
+function initCreatorProfileModal() {
+  const modal = document.getElementById("psCreatorProfileModal");
+
+  window.closeCreatorProfile = () => {
+    if (modal) modal.classList.remove("active");
+  };
+
+  window.openCreatorProfile = (name, cat, followers, color) => {
+    if (!modal) return;
+    document.getElementById("psProfModalName").textContent = name;
+    document.getElementById("psProfModalCat").textContent = cat;
+    document.getElementById("psProfModalFollowers").textContent = followers;
+    document.getElementById("psProfModalLikes").textContent = "0K";
+
+    const cover = document.getElementById("psProfModalCover");
+    if (cover) {
+      cover.style.backgroundColor = color;
+      cover.style.backgroundImage = "url('assets/images/truematch-mark.png')";
+    }
+
+    const subBtn = modal.querySelector(".ps-btn-subscribe-lg");
+    if (subBtn) {
+      subBtn.onclick = () => window.subscribeCreator(name);
+    }
+
+    modal.classList.add("active");
+  };
+
+  if (modal) {
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) window.closeCreatorProfile();
+    });
+  }
+
+  window.messageFromProfile = () => {
+    const name = document.getElementById("psProfModalName").textContent;
+    window.closeCreatorProfile();
+    const matchesBtn = document.querySelector('button[data-panel="matches"]');
+    if (matchesBtn) matchesBtn.click();
+    setTimeout(() => {
+      window.openChat(name);
+    }, 300);
+  };
+}
+
+function psEscapeHtml(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function psFormatNotifTime(ts) {
+  const ms = Number(ts || 0);
+  if (!Number.isFinite(ms) || ms <= 0) return '—';
+
+  const diff = Date.now() - ms;
+  const sec = Math.max(1, Math.floor(diff / 1000));
+  if (sec < 60) return 'Just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d ago`;
+
+  try {
+    return new Date(ms).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric'
+    });
+  } catch (_) {
+    return '—';
+  }
+}
+
+function psGetNotifEls() {
+  const btn = document.getElementById('psBtnNotif');
+  const popover = document.getElementById('psNotifPopover');
+  if (!btn || !popover) return null;
+
+  return {
+    btn,
+    popover,
+    badge: document.getElementById('psNotifCount'),
+    list: popover.querySelector('.ps-notif-list'),
+    markAllBtn: popover.querySelector('.ps-popover-header .ps-btn-text')
+  };
+}
+
+function psSetNotifBadge(unreadCount) {
+  const els = psGetNotifEls();
+  if (!els || !els.badge) return;
+
+  const count = Math.max(0, Number(unreadCount || 0));
+  els.badge.textContent = String(count);
+  els.badge.style.display = count > 0 ? 'inline-flex' : 'none';
+  els.btn.setAttribute('aria-label', count > 0 ? `Notifications (${count} unread)` : 'Notifications');
+}
+
+function psRenderNotifications(items, unreadCount) {
+  const els = psGetNotifEls();
+  if (!els || !els.list) return;
+
+  const safeItems = Array.isArray(items) ? items : [];
+  psSetNotifBadge(unreadCount);
+
+  if (!safeItems.length) {
+    els.list.innerHTML = `
+      <div class="ps-notif-item" style="cursor:default; opacity:.85;">
+        <div class="ps-notif-icon"><i class="fa-solid fa-bell-slash"></i></div>
+        <div class="ps-notif-text">
+          <p><strong>No notifications yet</strong><br>You’re all caught up.</p>
+          <span>—</span>
+        </div>
+      </div>`;
+    return;
+  }
+
+  els.list.innerHTML = safeItems.map((item) => {
+    const id = psEscapeHtml(item && item.id ? item.id : '');
+    const title = psEscapeHtml(item && item.title ? item.title : 'Notification');
+    const message = psEscapeHtml(item && item.message ? item.message : '');
+    const href = psEscapeHtml(item && item.href ? item.href : '');
+    const when = psEscapeHtml(psFormatNotifTime(item && item.createdAtMs ? item.createdAtMs : 0));
+    const isUnread = !(item && item.readAtMs);
+    const icon = isUnread ? 'fa-bell' : 'fa-check';
+
+    return `
+      <div
+        class="ps-notif-item${isUnread ? ' is-unread' : ''}"
+        data-notif-id="${id}"
+        data-notif-href="${href}"
+        style="cursor:pointer; ${isUnread ? 'background:rgba(0,175,240,.08);' : ''}"
+      >
+        <div class="ps-notif-icon"><i class="fa-solid ${icon}"></i></div>
+        <div class="ps-notif-text">
+          <p><strong>${title}</strong><br>${message || 'Open notification'}</p>
+          <span>${when}</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function psFetchNotifications(limit = 30) {
+  const res = await fetch(`${API_BASE}/api/me/notifications?limit=${encodeURIComponent(limit)}`, {
+    method: 'GET',
+    credentials: 'include'
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data || data.ok !== true) {
+    throw new Error((data && (data.error || data.message)) || 'Failed to load notifications.');
+  }
+
+  return {
+    items: Array.isArray(data.items) ? data.items : [],
+    unreadCount: Math.max(0, Number(data.unreadCount || 0))
+  };
+}
+
+async function psReloadNotifications(limit = 30, { silent = false } = {}) {
   const els = psGetNotifEls();
   if (!els) return;
 
-  const { btn, popover, markAllBtn, list } = els;
+  try {
+    const isPopoverOpen = els.popover.classList.contains('active');
+    if (isPopoverOpen && els.list && !silent) {
+      els.list.innerHTML = `<div style="padding:16px; text-align:center; color:#8a8a8a;">Loading notifications.</div>`;
+    }
 
-  psSetNotifBadge(Number((els.badge || {}).textContent || 0));
-  psReloadNotifications(30, { silent: true });
-
-  if (!btn.dataset.notifBound) {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const willOpen = !popover.classList.contains('active');
-
-      btn.classList.toggle('active');
-      popover.classList.toggle('active');
-
-      if (willOpen) {
-        await psReloadNotifications(30);
+    const { items, unreadCount } = await psFetchNotifications(limit);
+    psRenderNotifications(items, unreadCount);
+  } catch (err) {
+    if (!silent) {
+      if (els.list) {
+        els.list.innerHTML = `<div style="padding:16px; text-align:center; color:#8a8a8a;">Failed to load notifications.</div>`;
       }
-    });
-    btn.dataset.notifBound = '1';
+      showToast('Failed to load notifications.');
+    }
+  }
+}
+
+async function psMarkNotificationRead(id) {
+  const notifId = String(id || '').trim();
+  if (!notifId) return false;
+
+  const res = await fetch(`${API_BASE}/api/me/notifications/mark-read`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: notifId })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data || data.ok !== true) {
+    throw new Error((data && (data.error || data.message)) || 'Failed to mark notification as read.');
   }
 
-  if (markAllBtn && !markAllBtn.dataset.notifBound) {
+  return true;
+}
+
+async function psMarkAllNotificationsRead() {
+  const res = await fetch(`${API_BASE}/api/me/notifications/mark-all-read`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ all: true })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data || data.ok !== true) {
+    throw new Error((data && (data.error || data.message)) || 'Failed to mark all notifications as read.');
+  }
+
+  return true;
+}
+
+function initNotifications() {
+  const btnNotif = document.getElementById('psBtnNotif');
+  const popover = document.getElementById('psNotifPopover');
+  if (!btnNotif || !popover) return;
+
+  const newBtn = btnNotif.cloneNode(true);
+  btnNotif.parentNode.replaceChild(newBtn, btnNotif);
+
+  const markAllBtn = popover.querySelector('.ps-popover-header .ps-btn-text');
+  const list = popover.querySelector('.ps-notif-list');
+
+  psSetNotifBadge(Number((newBtn.querySelector('#psNotifCount') || {}).textContent || 0));
+  psReloadNotifications(30, { silent: true });
+
+  newBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const willOpen = !popover.classList.contains('active');
+
+    newBtn.classList.toggle('active');
+    popover.classList.toggle('active');
+
+    if (willOpen) {
+      await psReloadNotifications(30);
+    }
+  });
+
+  if (markAllBtn) {
     markAllBtn.addEventListener('click', async (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -1762,10 +2581,9 @@ function initNotifications() {
         markAllBtn.disabled = false;
       }
     });
-    markAllBtn.dataset.notifBound = '1';
   }
 
-  if (list && !list.dataset.notifBound) {
+  if (list) {
     list.addEventListener('click', async (e) => {
       const item = e.target.closest('.ps-notif-item[data-notif-id]');
       if (!item) return;
@@ -1791,20 +2609,14 @@ function initNotifications() {
         window.location.href = href;
       }
     });
-    list.dataset.notifBound = '1';
   }
 
-  if (!document.body.dataset.psNotifOutsideBound) {
-    document.addEventListener('click', (e) => {
-      const freshEls = psGetNotifEls();
-      if (!freshEls) return;
-      if (!freshEls.popover.contains(e.target) && !freshEls.btn.contains(e.target)) {
-        freshEls.popover.classList.remove('active');
-        freshEls.btn.classList.remove('active');
-      }
-    });
-    document.body.dataset.psNotifOutsideBound = '1';
-  }
+  document.addEventListener('click', (e) => {
+    if (!popover.contains(e.target) && !newBtn.contains(e.target)) {
+      popover.classList.remove('active');
+      newBtn.classList.remove('active');
+    }
+  });
 }
 
 function initChat() {
@@ -2000,6 +2812,7 @@ function initChat() {
 
 function initStoryViewer() {
   const closeStoryAction = () => {
+    PS_MOMENTS_STATE.activeMomentId = '';
     if (PS_DOM.storyViewer) {
       PS_DOM.storyViewer.classList.remove("active");
       if (PS_DOM.storyProgress)
@@ -2007,21 +2820,44 @@ function initStoryViewer() {
     }
   };
 
-  const openStoryAction = (name, color) => {
+  const openStoryAction = (target, legacyColor) => {
     if (!PS_DOM.storyViewer) return;
-    PS_DOM.storyName.textContent = name;
-    PS_DOM.storyAvatar.src = "assets/images/truematch-mark.png";
+
+    let moment = null;
+    if (typeof target === 'string' && PS_MOMENTS_STATE.byId[target]) {
+      moment = PS_MOMENTS_STATE.byId[target];
+    } else if (target && typeof target === 'object' && target.momentId && PS_MOMENTS_STATE.byId[target.momentId]) {
+      moment = PS_MOMENTS_STATE.byId[target.momentId];
+    } else if (target && typeof target === 'object' && target.id) {
+      moment = psNormalizeMoment(target);
+    } else {
+      const name = String(target || 'User').trim() || 'User';
+      moment = psNormalizeMoment({
+        id: `legacy_${name}`,
+        ownerName: name,
+        ownerAvatarUrl: 'assets/images/truematch-mark.png',
+        caption: '',
+        mediaUrl: '',
+        mediaType: '',
+        createdAtMs: Date.now(),
+        expiresAtMs: Date.now() + (24 * 60 * 60 * 1000)
+      });
+      moment.accent = legacyColor || '#00aff0';
+    }
+
+    PS_MOMENTS_STATE.activeMomentId = String(moment.id || '').trim();
+    if (PS_MOMENTS_STATE.activeMomentId) {
+      PS_MOMENTS_STATE.byId[PS_MOMENTS_STATE.activeMomentId] = moment;
+    }
+
+    PS_DOM.storyName.textContent = moment.ownerName || 'User';
+    PS_DOM.storyAvatar.src = moment.ownerAvatarUrl || 'assets/images/truematch-mark.png';
 
     if (PS_DOM.storyCommentInput) PS_DOM.storyCommentInput.value = "";
     if (PS_DOM.storyEmojiPicker)
       PS_DOM.storyEmojiPicker.classList.remove("active");
 
-    PS_DOM.storyFullImg.style.backgroundColor = color;
-    PS_DOM.storyFullImg.style.backgroundImage =
-      "url('assets/images/truematch-mark.png')";
-    PS_DOM.storyFullImg.style.backgroundSize = "contain";
-    PS_DOM.storyFullImg.style.backgroundRepeat = "no-repeat";
-
+    psApplyMomentToViewer(moment);
     PS_DOM.storyViewer.classList.add("active");
 
     if (PS_DOM.storyProgress) {
@@ -2039,60 +2875,61 @@ function initStoryViewer() {
       ? PS_DOM.storyCommentInput.value.trim()
       : "";
     if (!text) return;
-    const targetUser = PS_DOM.storyName.textContent;
+
+    const activeMoment = PS_MOMENTS_STATE.byId[PS_MOMENTS_STATE.activeMomentId] || null;
+    const target = activeMoment
+      ? {
+          name: activeMoment.ownerName || PS_DOM.storyName.textContent,
+          peerEmail: activeMoment.ownerEmail || '',
+          avatar: activeMoment.ownerAvatarUrl || 'assets/images/truematch-mark.png'
+        }
+      : { name: PS_DOM.storyName.textContent };
+
     window.closeStory();
     const matchesBtn = document.querySelector('button[data-panel="matches"]');
     if (matchesBtn) matchesBtn.click();
 
     setTimeout(() => {
-      window.openChat(targetUser);
-      PS_DOM.chatInput.value = text;
-      window.sendChatMessage();
+      window.openChat(target);
+      if (PS_DOM.chatInput) PS_DOM.chatInput.value = text;
+      if (typeof window.sendChatMessage === 'function') {
+        window.sendChatMessage();
+      }
       showToast("Reply sent!");
     }, 400);
 
-    PS_DOM.storyCommentInput.value = "";
+    if (PS_DOM.storyCommentInput) PS_DOM.storyCommentInput.value = "";
     if (PS_DOM.storyEmojiPicker)
       PS_DOM.storyEmojiPicker.classList.remove("active");
   };
 
-  window.postNewStory = function () {
+  window.postNewStory = async function () {
     const text = PS_DOM.storyInput ? PS_DOM.storyInput.value.trim() : "";
     if (!text) {
       showToast("Please write something!");
       return;
     }
 
-    // HTML ng bagong story
-    const newStoryHtml = `
-    <div class="ps-story-item" onclick="openStory('You', '#00aff0')">
-        <div class="ps-story-ring" style="border-color: #00aff0;">
-            <img class="ps-story-img" src="assets/images/truematch-mark.png" style="background:#00aff0">
-        </div>
-        <span class="ps-story-name" style="font-size:0.7rem; font-weight:bold;">You</span>
-    </div>`;
-
-    if (PS_DOM.storiesContainer) {
-      // Kunin ang unang element (ang "+" button)
-      const addBtn = PS_DOM.storiesContainer.firstElementChild;
-
-      if (addBtn) {
-        // I-insert PAGKATAPOS ng "+" button para laging nasa kanan niya ang bagong stories
-        addBtn.insertAdjacentHTML("afterend", newStoryHtml);
-      } else {
-        // Fallback kung sakaling wala pang elements
-        PS_DOM.storiesContainer.insertAdjacentHTML("afterbegin", newStoryHtml);
+    try {
+      const res = await fetch(`${API_BASE}/api/moments/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ caption: text })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data || data.ok !== true) {
+        throw new Error((data && (data.message || data.error)) || 'Failed to share moment.');
       }
+
+      if (PS_DOM.storyInput) PS_DOM.storyInput.value = "";
+      window.closeAddStory();
+      await psLoadMoments(true);
+      showToast("Moment Shared!");
+    } catch (err) {
+      console.error('postNewStory error:', err);
+      showToast(String(err && err.message ? err.message : 'Failed to share moment.'), 'error');
     }
-
-    // Mobile fallback update
-    const mobileContainer = document.getElementById("psMobileStoriesContainer");
-    if (mobileContainer)
-      mobileContainer.insertAdjacentHTML("afterbegin", newStoryHtml);
-
-    showToast("Moment Shared!");
-    if (PS_DOM.storyInput) PS_DOM.storyInput.value = "";
-    window.closeAddStory();
   };
 
   window.openAddStory = () => {
@@ -2333,6 +3170,7 @@ function switchTab(panelName) {
     "ps-tab-home",
     "ps-tab-swipe",
     "ps-tab-matches",
+    "ps-tab-creators",
     "ps-tab-premium",
     "ps-tab-settings",
   );
@@ -2358,6 +3196,11 @@ function switchTab(panelName) {
   // Load Premium Society matches (isolated from dashboard matches)
   if (panelName === "matches") {
     psLoadMatches();
+  }
+
+  if (panelName === "home") {
+    psLoadHomeWidgets();
+    psLoadMoments();
   }
 }
 
@@ -2437,6 +3280,19 @@ function initCanvasParticles() {
 // ==========================================
 
 // --- 1. GIFT SYSTEM LOGIC (TEMP DISABLED) ---
+window.closeGiftModal = () => {
+  if (PS_DOM.giftModal) PS_DOM.giftModal.classList.remove("active");
+};
+
+window.selectGift = () => {
+  showToast('Gift feature is temporarily unavailable.');
+};
+
+window.sendSelectedGift = async () => {
+  window.closeGiftModal();
+  showToast('Gift feature is temporarily unavailable.');
+  return { ok: false, disabled: true };
+};
 
 // --- 2. MATCH OVERLAY LOGIC ---
 window.triggerMatchOverlay = (person) => {
