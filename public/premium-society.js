@@ -89,7 +89,6 @@ export const PS_DOM = {
   timerDisplay: document.querySelector(".ps-stats-body p.ps-tiny"),
 
   // Panels
-  panelCreatorsBody: document.getElementById("ps-panel-creators"),
   panelPremiumBody: document.getElementById("ps-panel-premium"),
 
   // Match & Gift
@@ -266,18 +265,6 @@ function initOverlayObservers() {
     chatObs.observe(chatWindow, { attributes: true });
   }
 
-  const creatorModal = document.getElementById("psCreatorProfileModal");
-  if (creatorModal) {
-    const creatorObs = new MutationObserver((mutations) => {
-      mutations.forEach((m) => {
-        if (m.attributeName === "class") {
-          if (creatorModal.classList.contains("active")) body.classList.add("ps-creator-open");
-          else body.classList.remove("ps-creator-open");
-        }
-      });
-    });
-    creatorObs.observe(creatorModal, { attributes: true });
-  }
 }
 
 
@@ -1232,8 +1219,6 @@ export async function initUI() {
   initNotifications();
   initChat();
   initStoryViewer();
-  initCreatorProfileModal();
-  initCreatorsLogic();
   initPremiumLogic();
   initProfileEditLogic();
   initSettingsLogic();
@@ -2317,280 +2302,6 @@ function initPremiumLogic() {
   };
 }
 
-function initCreatorsLogic() {
-  window.subscribeCreator = (name) => {
-    window.closeCreatorProfile();
-    Swal.fire({
-      title: `Subscribe to ${name}?`,
-      text: "Unlock exclusive content and direct messaging for $9.99/mo.",
-      icon: "question",
-      showCancelButton: true,
-      confirmButtonColor: "#00aff0",
-      cancelButtonColor: "#d33",
-      confirmButtonText: "Yes, Subscribe",
-      background: "#15151e",
-      color: "#fff",
-    }).then((result) => {
-      if (result.isConfirmed) {
-        Swal.fire({
-          title: "Subscribed!",
-          text: `You are now a premium member of ${name}'s circle.`,
-          icon: "success",
-          background: "#15151e",
-          color: "#fff",
-          confirmButtonColor: "#00aff0",
-        });
-      }
-    });
-  };
-
-  window.filterCreators = (element, category) => {
-    const chips = document.querySelectorAll(".ps-filter-chip");
-    chips.forEach((chip) => chip.classList.remove("active"));
-    element.classList.add("active");
-
-    // TODO: Call Backend with Filter
-    // fetchCreators(category);
-    showToast(`Filtering by: ${category}`);
-  };
-
-  // NOTE: Inalis na ang hardcoded creators list dito.
-  // Ang 'ps-creators-grid' ay dapat lamanin gamit ang fetch data.
-  if (PS_DOM.panelCreatorsBody) {
-    PS_DOM.panelCreatorsBody.innerHTML = `
-        <div class="ps-creators-filter">
-            <div class="ps-filter-chip active" onclick="filterCreators(this, 'All')">All</div>
-            <div class="ps-filter-chip" onclick="filterCreators(this, 'Trending')">Trending</div>
-            <div class="ps-filter-chip" onclick="filterCreators(this, 'New')">New</div>
-            <div class="ps-filter-chip" onclick="filterCreators(this, 'Near You')">Near You</div>
-            <div class="ps-filter-chip" onclick="filterCreators(this, 'Cosplay')">Cosplay</div>
-        </div>
-        <div class="ps-creators-grid">
-            <p style="grid-column: span 2; text-align: center; color: #666; margin-top: 50px;">Fetching Creators...</p>
-        </div>`;
-  }
-}
-
-function initCreatorProfileModal() {
-  const modal = document.getElementById("psCreatorProfileModal");
-
-  window.closeCreatorProfile = () => {
-    if (modal) modal.classList.remove("active");
-  };
-
-  window.openCreatorProfile = (name, cat, followers, color) => {
-    if (!modal) return;
-    document.getElementById("psProfModalName").textContent = name;
-    document.getElementById("psProfModalCat").textContent = cat;
-    document.getElementById("psProfModalFollowers").textContent = followers;
-    document.getElementById("psProfModalLikes").textContent = "0K";
-
-    const cover = document.getElementById("psProfModalCover");
-    if (cover) {
-      cover.style.backgroundColor = color;
-      cover.style.backgroundImage = "url('assets/images/truematch-mark.png')";
-    }
-
-    const subBtn = modal.querySelector(".ps-btn-subscribe-lg");
-    if (subBtn) {
-      subBtn.onclick = () => window.subscribeCreator(name);
-    }
-
-    modal.classList.add("active");
-  };
-
-  if (modal) {
-    modal.addEventListener("click", (e) => {
-      if (e.target === modal) window.closeCreatorProfile();
-    });
-  }
-
-  window.messageFromProfile = () => {
-    const name = document.getElementById("psProfModalName").textContent;
-    window.closeCreatorProfile();
-    const matchesBtn = document.querySelector('button[data-panel="matches"]');
-    if (matchesBtn) matchesBtn.click();
-    setTimeout(() => {
-      window.openChat(name);
-    }, 300);
-  };
-}
-
-function psEscapeHtml(value) {
-  return String(value == null ? "" : value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function psFormatNotifTime(ts) {
-  const ms = Number(ts || 0);
-  if (!Number.isFinite(ms) || ms <= 0) return '—';
-
-  const diff = Date.now() - ms;
-  const sec = Math.max(1, Math.floor(diff / 1000));
-  if (sec < 60) return 'Just now';
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.floor(hr / 24);
-  if (day < 7) return `${day}d ago`;
-
-  try {
-    return new Date(ms).toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric'
-    });
-  } catch (_) {
-    return '—';
-  }
-}
-
-function psGetNotifEls() {
-  const btn = document.getElementById('psBtnNotif');
-  const popover = document.getElementById('psNotifPopover');
-  if (!btn || !popover) return null;
-
-  return {
-    btn,
-    popover,
-    badge: document.getElementById('psNotifCount'),
-    list: popover.querySelector('.ps-notif-list'),
-    markAllBtn: popover.querySelector('.ps-popover-header .ps-btn-text')
-  };
-}
-
-function psSetNotifBadge(unreadCount) {
-  const els = psGetNotifEls();
-  if (!els || !els.badge) return;
-
-  const count = Math.max(0, Number(unreadCount || 0));
-  els.badge.textContent = String(count);
-  els.badge.style.display = count > 0 ? 'inline-flex' : 'none';
-  els.btn.setAttribute('aria-label', count > 0 ? `Notifications (${count} unread)` : 'Notifications');
-}
-
-function psRenderNotifications(items, unreadCount) {
-  const els = psGetNotifEls();
-  if (!els || !els.list) return;
-
-  const safeItems = Array.isArray(items) ? items : [];
-  psSetNotifBadge(unreadCount);
-
-  if (!safeItems.length) {
-    els.list.innerHTML = `
-      <div class="ps-notif-item" style="cursor:default; opacity:.85;">
-        <div class="ps-notif-icon"><i class="fa-solid fa-bell-slash"></i></div>
-        <div class="ps-notif-text">
-          <p><strong>No notifications yet</strong><br>You’re all caught up.</p>
-          <span>—</span>
-        </div>
-      </div>`;
-    return;
-  }
-
-  els.list.innerHTML = safeItems.map((item) => {
-    const id = psEscapeHtml(item && item.id ? item.id : '');
-    const title = psEscapeHtml(item && item.title ? item.title : 'Notification');
-    const message = psEscapeHtml(item && item.message ? item.message : '');
-    const href = psEscapeHtml(item && item.href ? item.href : '');
-    const when = psEscapeHtml(psFormatNotifTime(item && item.createdAtMs ? item.createdAtMs : 0));
-    const isUnread = !(item && item.readAtMs);
-    const icon = isUnread ? 'fa-bell' : 'fa-check';
-
-    return `
-      <div
-        class="ps-notif-item${isUnread ? ' is-unread' : ''}"
-        data-notif-id="${id}"
-        data-notif-href="${href}"
-        style="cursor:pointer; ${isUnread ? 'background:rgba(0,175,240,.08);' : ''}"
-      >
-        <div class="ps-notif-icon"><i class="fa-solid ${icon}"></i></div>
-        <div class="ps-notif-text">
-          <p><strong>${title}</strong><br>${message || 'Open notification'}</p>
-          <span>${when}</span>
-        </div>
-      </div>`;
-  }).join('');
-}
-
-async function psFetchNotifications(limit = 30) {
-  const res = await fetch(`${API_BASE}/api/me/notifications?limit=${encodeURIComponent(limit)}`, {
-    method: 'GET',
-    credentials: 'include'
-  });
-
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data || data.ok !== true) {
-    throw new Error((data && (data.error || data.message)) || 'Failed to load notifications.');
-  }
-
-  return {
-    items: Array.isArray(data.items) ? data.items : [],
-    unreadCount: Math.max(0, Number(data.unreadCount || 0))
-  };
-}
-
-async function psReloadNotifications(limit = 30, { silent = false } = {}) {
-  const els = psGetNotifEls();
-  if (!els) return;
-
-  try {
-    const isPopoverOpen = els.popover.classList.contains('active');
-    if (isPopoverOpen && els.list && !silent) {
-      els.list.innerHTML = `<div style="padding:16px; text-align:center; color:#8a8a8a;">Loading notifications.</div>`;
-    }
-
-    const { items, unreadCount } = await psFetchNotifications(limit);
-    psRenderNotifications(items, unreadCount);
-  } catch (err) {
-    if (!silent) {
-      if (els.list) {
-        els.list.innerHTML = `<div style="padding:16px; text-align:center; color:#8a8a8a;">Failed to load notifications.</div>`;
-      }
-      showToast('Failed to load notifications.');
-    }
-  }
-}
-
-async function psMarkNotificationRead(id) {
-  const notifId = String(id || '').trim();
-  if (!notifId) return false;
-
-  const res = await fetch(`${API_BASE}/api/me/notifications/mark-read`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: notifId })
-  });
-
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data || data.ok !== true) {
-    throw new Error((data && (data.error || data.message)) || 'Failed to mark notification as read.');
-  }
-
-  return true;
-}
-
-async function psMarkAllNotificationsRead() {
-  const res = await fetch(`${API_BASE}/api/me/notifications/mark-all-read`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ all: true })
-  });
-
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data || data.ok !== true) {
-    throw new Error((data && (data.error || data.message)) || 'Failed to mark all notifications as read.');
-  }
-
-  return true;
-}
-
 function initNotifications() {
   const btnNotif = document.getElementById('psBtnNotif');
   const popover = document.getElementById('psNotifPopover');
@@ -3222,7 +2933,6 @@ function switchTab(panelName) {
     "ps-tab-home",
     "ps-tab-swipe",
     "ps-tab-matches",
-    "ps-tab-creators",
     "ps-tab-premium",
     "ps-tab-settings",
   );
