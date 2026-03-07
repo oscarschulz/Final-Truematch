@@ -3981,6 +3981,110 @@ app.get('/api/me/active-nearby', authMiddleware, async (req, res) => {
   }
 });
 
+// Premium Society Home snapshot
+// Server-authoritative home payload so the page can render admirers, active nearby,
+// and daily pick from one canonical response.
+app.get('/api/premium-society/home', authMiddleware, async (req, res) => {
+  try {
+    const myEmail = String((req.user && req.user.email) || '').trim().toLowerCase();
+    if (!myEmail) return res.status(401).json({ ok: false, error: 'Not authenticated' });
+
+    const admirerLimitRaw = Number(req.query && req.query.admirerLimit ? req.query.admirerLimit : 12);
+    const activeLimitRaw = Number(req.query && req.query.activeLimit ? req.query.activeLimit : 9);
+    const admirerLimit = Math.max(1, Math.min(30, Number.isFinite(admirerLimitRaw) ? admirerLimitRaw : 12));
+    const activeLimit = Math.max(1, Math.min(30, Number.isFinite(activeLimitRaw) ? activeLimitRaw : 9));
+
+    const myUser = (DB.users && DB.users[myEmail]) || DB.user || {};
+    const planKey = normalizePlanKey((req.user && req.user.plan) || myUser.plan || 'free');
+    const planActive = (typeof myUser.planActive === 'boolean') ? myUser.planActive
+                      : (typeof req.user.planActive === 'boolean') ? req.user.planActive
+                      : true;
+    const isPremium = (planKey !== 'free') && (planActive !== false);
+    const myCity = String(myUser.city || myUser.location || '').trim();
+
+    const admirerEmails = new Set();
+    try {
+      const incoming = Object.entries(DB.swipes || {});
+      for (const [otherEmailRaw, actions] of incoming) {
+        const otherEmail = String(otherEmailRaw || '').trim().toLowerCase();
+        if (!otherEmail || otherEmail === myEmail) continue;
+        const val = actions && actions[myEmail];
+        const action = (typeof val === 'string') ? val : (val && typeof val.action === 'string' ? val.action : '');
+        if (String(action || '').toLowerCase() === 'like') {
+          admirerEmails.add(otherEmail);
+        }
+      }
+    } catch (_) {}
+
+    const allUsers = [];
+    if (hasFirebase && usersCollection) {
+      try {
+        const snap = await usersCollection.limit(200).get();
+        for (const d of (snap && snap.docs) ? snap.docs : []) {
+          allUsers.push({ id: d.id, ...(d.data() || {}) });
+        }
+      } catch (_) {}
+    } else {
+      allUsers.push(...Object.values(DB.users || {}));
+    }
+
+    const byEmail = new Map();
+    for (const raw of allUsers) {
+      const email = String((raw && raw.email) || '').trim().toLowerCase();
+      if (!email || email === myEmail || byEmail.has(email)) continue;
+      byEmail.set(email, raw || {});
+    }
+
+    const admirerItems = Array.from(admirerEmails)
+      .map((email) => byEmail.get(email))
+      .filter(Boolean)
+      .map((doc) => _miniProfileFromDoc(doc, doc && doc.email ? doc.email : ''))
+      .map((mini) => ({ ...mini, email: String(mini.email || '').trim().toLowerCase() }))
+      .filter((mini) => mini.email && mini.email !== myEmail)
+      .slice(0, admirerLimit);
+
+    const activeCandidates = [];
+    for (const doc of byEmail.values()) {
+      const e = String((doc && doc.email) || '').trim().toLowerCase();
+      if (!e || e === myEmail) continue;
+
+      if (myCity && myCity !== '—') {
+        const c = String((doc && (doc.city || doc.location)) || '').trim();
+        if (c && c !== myCity) continue;
+      }
+
+      if (isPremium && !_isPremiumCandidateDoc(doc)) continue;
+
+      const p = _computePresence((doc && (doc.lastSeenAt ?? doc.last_seen_at)) || null);
+      if (!p.isActive) continue;
+
+      const mini = _miniProfileFromDoc(doc, e);
+      activeCandidates.push({ ...mini, email: e, lastSeenAtMs: p.lastSeenAtMs, isOnline: p.isOnline });
+    }
+
+    activeCandidates.sort((a, b) => Number(b.lastSeenAtMs || 0) - Number(a.lastSeenAtMs || 0));
+    const activeNearby = activeCandidates.slice(0, activeLimit);
+
+    let dailyPick = null;
+    if (admirerItems.length) {
+      dailyPick = admirerItems[0];
+    } else if (activeNearby.length) {
+      dailyPick = activeNearby[0];
+    }
+
+    return res.json({
+      ok: true,
+      admirerCount: admirerEmails.size,
+      admirers: admirerItems,
+      activeNearby,
+      dailyPick
+    });
+  } catch (e) {
+    console.error('GET /api/premium-society/home error:', e);
+    return res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
 
 // ---------------- Notifications (Dashboard bell) -------------------
 // Simple per-user notifications stored under users/{id}/notifications.
