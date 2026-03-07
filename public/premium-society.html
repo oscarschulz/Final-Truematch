@@ -94,16 +94,11 @@
                 </div>
             </div>
         </div>
-        <div id="psDailyPickContainer" class="ps-hero-container ps-hidden-pick" hidden></div>
-        <div class="ps-admirer-section ps-home-admirer-section">
+        <div id="psDailyPickContainer" class="ps-hero-container" style="margin-bottom: 25px;"></div>
+        <div id="psStoriesContainer" class="ps-stories-rail" style="margin-bottom: 25px;"></div>
+        <div class="ps-admirer-section">
             <h3 class="ps-section-title">Who Liked You <span class="ps-badge" id="psAdmirerCount">0 New</span></h3>
             <div class="ps-admirer-grid" id="psAdmirerContainer"></div>
-        </div>
-        <div class="ps-home-stories-dock">
-            <div class="ps-home-stories-header">
-                <h3 class="ps-section-title">Moments</h3>
-            </div>
-            <div id="psStoriesContainer" class="ps-stories-rail ps-home-stories-rail"></div>
         </div>
       </section>
 
@@ -236,7 +231,7 @@
                   </summary>
                   <div class="ps-dropdown-content">
                       <div class="ps-legal-row" onclick="openSafetyTips()">
-                          <span>Dating & Creator Safety</span> <i class="fa-solid fa-shield-halved"></i>
+                          <span>Dating Safety</span> <i class="fa-solid fa-shield-halved"></i>
                       </div>
                       <div class="ps-legal-row" onclick="openPremiumInfo()">
                           <span>Subscriptions & Diamonds</span> <i class="fa-solid fa-gem"></i>
@@ -387,13 +382,7 @@
     </div>
   </div>
 
-  <button id="psMobileNavToggle" class="ps-mobile-toggle" type="button" aria-label="Open Premium Society navigation" aria-expanded="false"><i class="fa-solid fa-bars"></i></button>
-  <div id="psMobileQuickNav" class="ps-mobile-quick-nav" aria-hidden="true">
-    <button class="ps-mobile-quick-nav-item is-active" type="button" data-panel="home"><i class="fa-solid fa-house"></i><span>Home</span></button>
-    <button class="ps-mobile-quick-nav-item" type="button" data-panel="swipe"><i class="fa-solid fa-layer-group"></i><span>Swipe</span></button>
-    <button class="ps-mobile-quick-nav-item" type="button" data-panel="matches"><i class="fa-solid fa-comments"></i><span>Matches</span></button>
-    <button class="ps-mobile-quick-nav-item" type="button" data-panel="settings"><i class="fa-solid fa-gear"></i><span>Settings</span></button>
-  </div>
+  <button id="psMobileNavToggle" class="ps-mobile-toggle"><i class="fa-solid fa-bars"></i></button>
   <div id="ps-toast" class="ps-toast"></div>
   <script type="module" src="premium-society.js"></script>
 </body>
