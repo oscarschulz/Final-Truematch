@@ -123,7 +123,7 @@
         <div class="ps-matches-container">
             <div class="ps-search-bar-wrapper">
                 <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="text" class="ps-input-search" placeholder="Search matches...">
+                <input type="text" id="psMatchesSearch" class="ps-input-search" placeholder="Search matches...">
             </div>
             <div style="margin-bottom: 25px;">
                 <h3 class="ps-section-title" style="color:#ffd700;">New Matches <span class="ps-badge ps-bg-gold" id="psNewMatchCount">0</span></h3>
@@ -152,7 +152,7 @@
                         <i class="fa-regular fa-face-smile"></i>
                     </button>
                 </div>
-                <button class="ps-btn-chat-send" onclick="sendChatMessage()"><i class="fa-solid fa-paper-plane"></i></button>
+                <button id="psBtnSendChat" class="ps-btn-chat-send" onclick="sendChatMessage()"><i class="fa-solid fa-paper-plane"></i></button>
             </div>
         </div>
       </section>
@@ -259,7 +259,7 @@
                 </svg>
                 <div class="ps-progress-text"><h2 id="psStatsCountDisplay">0</h2><span>LEFT</span></div>
             </div>
-            <p class="ps-tiny ps-muted" style="margin-top:10px; text-align:center;">Syncing swipe stats...</p>
+            <p class="ps-tiny ps-muted" style="margin-top:10px; text-align:center;">Resets in 6h 25m 19s</p>
         </div>
       </div>
       <div class="ps-glass-card">

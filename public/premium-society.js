@@ -398,7 +398,6 @@ export const SwipeController = (() => {
   let startY = 0;
   let isDragging = false;
   let currentX = 0;
-  let countdownTimerId = null;
 
   /**
    * INITIALIZATION
@@ -407,33 +406,36 @@ export const SwipeController = (() => {
     index = 0;
     isSwiping = false;
 
-    // Server-authoritative state only
+    // Default: Premium Society is unlimited unless server returns a numeric cap
     serverLimit = null;
     dailySwipes = Infinity;
     resetTime = 0;
 
-    // Clean any legacy local fallback keys so the UI cannot drift from server truth
-    try {
-      localStorage.removeItem("ps_swipes_left");
-      localStorage.removeItem("ps_reset_time");
-    } catch (_) {}
+    // Optional local cache (ONLY as temporary display if server is slow/offline)
+    const savedSwipesRaw = localStorage.getItem("ps_swipes_left");
+    const savedTimeRaw = localStorage.getItem("ps_reset_time");
+    const savedSwipes = savedSwipesRaw != null ? Number(savedSwipesRaw) : NaN;
+    const savedTime = savedTimeRaw != null ? Number(savedTimeRaw) : NaN;
+    const now = Date.now();
+
+    if (Number.isFinite(savedSwipes) && Number.isFinite(savedTime) && now < savedTime) {
+      // We don't know the serverLimit yet, so treat this as a temporary number
+      dailySwipes = savedSwipes;
+      resetTime = savedTime;
+    }
 
     startCountdown();
 
     if (PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove("active");
-    if (PS_DOM.swipeControls) {
-      PS_DOM.swipeControls.style.display = "flex";
-      PS_DOM.swipeControls.style.opacity = "1";
-      PS_DOM.swipeControls.style.pointerEvents = "auto";
-    }
+    if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = "flex";
 
-    // Initial server-truth placeholder
+    // Render initial stats (will be corrected after fetchCandidates)
     updateStats(dailySwipes, serverLimit);
 
     // Fetch live deck + limit from backend
     fetchCandidates();
 
-    // Button listeners
+    // Button Listeners
     if (PS_DOM.btnRefreshDeck) PS_DOM.btnRefreshDeck.onclick = refreshDeck;
     if (PS_DOM.btnSwipeLike) PS_DOM.btnSwipeLike.onclick = () => handleSwipe("like");
     if (PS_DOM.btnSwipePass) PS_DOM.btnSwipePass.onclick = () => handleSwipe("pass");
@@ -529,43 +531,31 @@ export const SwipeController = (() => {
    */
   async function fetchCandidates() {
     try {
-      const res = await fetch(`${API_BASE}/api/premium-society/candidates`, {
-        method: 'GET',
-        credentials: 'include',
-        cache: 'no-store'
-      });
-      const data = await res.json().catch(() => ({}));
+      const res = await fetch(`${API_BASE}/api/premium-society/candidates`, { credentials: 'include' });
+      const data = await res.json();
 
-      if (!res.ok || !data || data.ok !== true || !Array.isArray(data.candidates)) {
-        throw new Error((data && (data.message || data.error)) || "Failed to load Premium Society deck.");
+      if (data && data.ok && data.candidates) {
+        candidates = data.candidates;
+
+        // Server truth:
+        // - data.limit === null/undefined  => unlimited
+        // - data.remaining can be null when unlimited
+        serverLimit = (data.limit === undefined || data.limit === null) ? null : Number(data.limit);
+
+        if (serverLimit === null) {
+          dailySwipes = Infinity;
+        } else {
+          const rem = (data.remaining === undefined || data.remaining === null) ? serverLimit : Number(data.remaining);
+          dailySwipes = Number.isFinite(rem) ? rem : serverLimit;
+        }
+
+        updateStats(dailySwipes, serverLimit);
+      } else { 
+        throw new Error("No live data"); 
       }
-
-      candidates = data.candidates;
-
-      // Server truth:
-      // - data.limit === null/undefined => unlimited
-      // - data.remaining can be null when unlimited
-      serverLimit = (data.limit === undefined || data.limit === null) ? null : Number(data.limit);
-
-      if (serverLimit === null) {
-        dailySwipes = Infinity;
-      } else {
-        const rem = (data.remaining === undefined || data.remaining === null) ? serverLimit : Number(data.remaining);
-        dailySwipes = Number.isFinite(rem) ? rem : serverLimit;
-      }
-
-      const nextReset = Number(data.resetAt || 0);
-      resetTime = Number.isFinite(nextReset) && nextReset > 0 ? nextReset : 0;
-
-      updateStats(dailySwipes, serverLimit);
     } catch (err) {
-      console.error("Premium Society deck fetch failed:", err);
-      candidates = [];
-      serverLimit = null;
-      dailySwipes = Infinity;
-      resetTime = 0;
-      updateStats(dailySwipes, serverLimit);
-      showToast(String(err && err.message ? err.message : 'Failed to load Premium Society deck.'), 'error');
+      console.warn("Using fallback profiles.");
+      candidates = window.mockCandidatesData || [];
     }
     renderCards();
   }
@@ -646,7 +636,7 @@ export const SwipeController = (() => {
       }
       
       // C. SYNC STATS: Kunin ang "truth" mula sa server (Handle null as unlimited)
-      if (data && ('remaining' in data || 'limit' in data || 'resetAt' in data)) {
+      if (data && ('remaining' in data || 'limit' in data)) {
         serverLimit = (data.limit === undefined || data.limit === null) ? null : Number(data.limit);
 
         if (serverLimit === null) {
@@ -655,9 +645,6 @@ export const SwipeController = (() => {
           const rem = (data.remaining === undefined || data.remaining === null) ? serverLimit : Number(data.remaining);
           dailySwipes = Number.isFinite(rem) ? rem : serverLimit;
         }
-
-        const nextReset = Number(data.resetAt || 0);
-        resetTime = Number.isFinite(nextReset) && nextReset > 0 ? nextReset : 0;
 
         updateStats(dailySwipes, serverLimit);
       }
@@ -813,11 +800,10 @@ function createCard(person, position) {
   }
 
   function saveData() {
-    // Legacy local swipe cache is intentionally disabled.
-    try {
-      localStorage.removeItem("ps_swipes_left");
-      localStorage.removeItem("ps_reset_time");
-    } catch (_) {}
+    // Only persist numeric limits; Premium Society is typically unlimited.
+    if (!Number.isFinite(serverLimit) || !Number.isFinite(dailySwipes) || !Number.isFinite(resetTime)) return;
+    localStorage.setItem("ps_swipes_left", String(dailySwipes));
+    localStorage.setItem("ps_reset_time", String(resetTime));
   }
 
 function updateStats(curr, max) {
@@ -838,33 +824,34 @@ function updateStats(curr, max) {
    * Inayos para maging persistent gamit ang localStorage
    */
   function startCountdown() {
-    if (countdownTimerId) clearInterval(countdownTimerId);
-
-    countdownTimerId = setInterval(() => {
-      if (!PS_DOM.timerDisplay) return;
-
-      // Unlimited deck: keep the UI truthful.
+    setInterval(() => {
+      // If unlimited, keep UI truthful and do not run local reset logic.
       if (serverLimit === null || serverLimit === undefined || !Number.isFinite(serverLimit)) {
-        PS_DOM.timerDisplay.textContent = 'Unlimited swipes';
+        if (PS_DOM.timerDisplay) PS_DOM.timerDisplay.textContent = 'Unlimited swipes';
         return;
       }
 
-      // Limited deck, but reset window not provided yet by server.
-      if (!Number.isFinite(resetTime) || resetTime <= 0) {
-        PS_DOM.timerDisplay.textContent = 'Daily limit active';
-        return;
+      const now = Date.now();
+      const savedResetTimeRaw = localStorage.getItem("ps_reset_time");
+      const savedResetTime = savedResetTimeRaw != null ? Number(savedResetTimeRaw) : NaN;
+
+      // If missing or expired, start a new local cycle (fallback UI only)
+      if (!Number.isFinite(savedResetTime) || now >= savedResetTime) {
+        dailySwipes = serverLimit;
+        resetTime = now + 12 * 60 * 60 * 1000; // 12-hour cycle (UI fallback)
+        saveData();
+        updateStats(dailySwipes, serverLimit);
+      } else {
+        resetTime = savedResetTime;
       }
 
-      const diff = resetTime - Date.now();
-      if (diff <= 0) {
-        PS_DOM.timerDisplay.textContent = 'Refreshing swipe window...';
-        return;
+      const diff = resetTime - now;
+      if (diff > 0 && PS_DOM.timerDisplay) {
+        const hrs = Math.floor((diff / (1000 * 60 * 60)) % 24);
+        const mins = Math.floor((diff / (1000 * 60)) % 60);
+        const secs = Math.floor((diff / 1000) % 60);
+        PS_DOM.timerDisplay.textContent = `Resets in ${hrs}h ${mins}m ${secs}s`;
       }
-
-      const hrs = Math.floor((diff / (1000 * 60 * 60)) % 24);
-      const mins = Math.floor((diff / (1000 * 60)) % 60);
-      const secs = Math.floor((diff / 1000) % 60);
-      PS_DOM.timerDisplay.textContent = `Resets in ${hrs}h ${mins}m ${secs}s`;
     }, 1000);
   }
 
@@ -903,12 +890,16 @@ function updateStats(curr, max) {
 window.showToast = showToast;
 
 // --- GLOBAL STATE ---
-let conversationHistory =
-  JSON.parse(localStorage.getItem("ps_chat_history")) || {};
-
-function saveHistory() {
-  localStorage.setItem("ps_chat_history", JSON.stringify(conversationHistory));
-}
+const PS_MATCHES_STATE = {
+  items: [],
+  filteredItems: [],
+  searchQuery: '',
+  lastFetchedAt: 0,
+  hasMarkedSeenThisOpen: false,
+  searchInput: null,
+  sendBtn: null,
+  isSending: false
+};
 
 function psDisableGiftFeatures() {
   if (PS_DOM.btnPPV) {
@@ -1128,6 +1119,122 @@ function psRenderChatThread(msgs = []) {
   PS_DOM.chatBody.scrollTop = PS_DOM.chatBody.scrollHeight;
 }
 
+function psGetMatchesSearchInput() {
+  if (PS_MATCHES_STATE.searchInput && document.contains(PS_MATCHES_STATE.searchInput)) {
+    return PS_MATCHES_STATE.searchInput;
+  }
+  PS_MATCHES_STATE.searchInput = document.getElementById('psMatchesSearch') || document.querySelector('.ps-input-search');
+  return PS_MATCHES_STATE.searchInput;
+}
+
+function psGetChatSendButton() {
+  if (PS_MATCHES_STATE.sendBtn && document.contains(PS_MATCHES_STATE.sendBtn)) {
+    return PS_MATCHES_STATE.sendBtn;
+  }
+  PS_MATCHES_STATE.sendBtn = document.getElementById('psBtnSendChat') || document.querySelector('.ps-btn-chat-send');
+  return PS_MATCHES_STATE.sendBtn;
+}
+
+function psSetChatSending(isSending) {
+  PS_MATCHES_STATE.isSending = !!isSending;
+  const btn = psGetChatSendButton();
+  if (!btn) return;
+  btn.disabled = !!isSending;
+  btn.style.opacity = isSending ? '0.6' : '1';
+  btn.style.pointerEvents = isSending ? 'none' : 'auto';
+}
+
+function psBuildMatchRecord(raw, messageMeta = {}) {
+  const label = _psSafeName(raw?.name || (raw?.username ? '@' + String(raw.username).replace(/^@/, '') : 'Member'));
+  const peerEmail = String(raw?.email || raw?.id || '').trim().toLowerCase();
+  const avatar = String(raw?.photoUrl || 'assets/images/truematch-mark.png').trim() || 'assets/images/truematch-mark.png';
+  const meta = (peerEmail && messageMeta && typeof messageMeta === 'object') ? (messageMeta[peerEmail] || {}) : {};
+  const lastMessageAtMs = Number(meta.lastMessageAtMs || 0) || 0;
+  const matchUpdatedAtMs = Number(raw?.updatedAtMs || raw?.createdAtMs || 0) || 0;
+  const sortAt = Math.max(lastMessageAtMs, matchUpdatedAtMs);
+  const lastReadAtMs = Number(meta.lastReadAtMs || 0) || 0;
+  const preview = String(meta.lastMessageText || '').trim() || 'Tap to chat';
+  return {
+    id: peerEmail || String(raw?.id || '').trim(),
+    name: label,
+    peerEmail,
+    avatar,
+    time: _psFormatTime(sortAt),
+    text: preview,
+    unread: lastMessageAtMs > 0 && lastMessageAtMs > lastReadAtMs,
+    updatedAtMs: sortAt,
+    createdAtMs: Number(raw?.createdAtMs || 0) || 0,
+    matchUpdatedAtMs,
+    isNew: !!raw?.isNew
+  };
+}
+
+function psRenderMatchesRail(items = []) {
+  if (!PS_DOM.newMatchesRail) return;
+  PS_DOM.newMatchesRail.innerHTML = '';
+
+  const newItems = (Array.isArray(items) ? items : []).filter((m) => !!m.isNew);
+  if (PS_DOM.newMatchCount) PS_DOM.newMatchCount.textContent = String(newItems.length);
+
+  if (!newItems.length) {
+    PS_DOM.newMatchesRail.innerHTML = `<div class="ps-empty-mini" style="opacity:.72; color:#8b96a7; font-size:.85rem; padding:6px 2px;">No new matches right now.</div>`;
+    return;
+  }
+
+  newItems.slice(0, 12).forEach((m) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ps-newmatch';
+    btn.setAttribute('data-peer', String(m.peerEmail || ''));
+
+    const img = document.createElement('img');
+    img.className = 'ps-newmatch-avatar';
+    img.alt = _psSafeName(m.name || 'Member');
+    img.src = m.avatar || 'assets/images/truematch-mark.png';
+    btn.appendChild(img);
+
+    btn.addEventListener('click', async () => {
+      psRememberPeer(m.peerEmail, m.name, m.avatar);
+      if (window.openChat) await window.openChat({ name: m.name, peerEmail: m.peerEmail, avatar: m.avatar });
+    });
+
+    PS_DOM.newMatchesRail.appendChild(btn);
+  });
+}
+
+function psApplyMatchesFilter() {
+  const q = String(PS_MATCHES_STATE.searchQuery || '').trim().toLowerCase();
+  const base = Array.isArray(PS_MATCHES_STATE.items) ? PS_MATCHES_STATE.items.slice() : [];
+
+  const filtered = !q
+    ? base
+    : base.filter((m) => {
+        const hay = `${String(m.name || '')} ${String(m.peerEmail || '')} ${String(m.text || '')}`.toLowerCase();
+        return hay.includes(q);
+      });
+
+  filtered.sort((a, b) => Number(b.updatedAtMs || 0) - Number(a.updatedAtMs || 0));
+  PS_MATCHES_STATE.filteredItems = filtered;
+
+  renderMessages(filtered);
+  psRenderMatchesRail(base);
+}
+
+async function psMarkPremiumMatchesSeen() {
+  try {
+    const res = await fetch(`${API_BASE}/api/premium-society/matches/seen`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ seenAtMs: Date.now() })
+    });
+    const data = await res.json().catch(() => ({}));
+    return !!(res.ok && data && data.ok);
+  } catch (_) {
+    return false;
+  }
+}
+
 async function psLoadChatThread(target, opts = {}) {
   const resolved = psResolvePeer(target);
   const peerEmail = String(resolved.peerEmail || '').trim().toLowerCase();
@@ -1143,14 +1250,11 @@ async function psLoadChatThread(target, opts = {}) {
   if (PS_DOM.chatAvatar) PS_DOM.chatAvatar.src = avatar;
 
   if (!peerEmail) {
-    const localMsgs = conversationHistory[label] || [];
-    psRenderChatThread(localMsgs.map((m) => ({
-      from: m.type === 'sent' ? (PS_STATE.me && PS_STATE.me.email) || 'me' : label,
-      to: m.type === 'sent' ? label : (PS_STATE.me && PS_STATE.me.email) || 'me',
-      text: m.text,
-      createdAtMs: Date.now()
-    })));
-    return { ok: false, localOnly: true, messages: localMsgs };
+    if (PS_DOM.chatBody) {
+      PS_DOM.chatBody.innerHTML = `<div style="text-align:center; color:#555; margin-top:20px;">Unable to resolve this conversation.</div>`;
+    }
+    showToast('Unable to resolve this conversation.', 'error');
+    return { ok: false, error: 'peer_missing' };
   }
 
   if (PS_DOM.chatBody) {
@@ -1160,7 +1264,8 @@ async function psLoadChatThread(target, opts = {}) {
   try {
     const res = await fetch(`${API_BASE}/api/messages/thread/${encodeURIComponent(peerEmail)}`, {
       method: 'GET',
-      credentials: 'include'
+      credentials: 'include',
+      cache: 'no-store'
     });
 
     const data = await res.json().catch(() => ({}));
@@ -1171,24 +1276,11 @@ async function psLoadChatThread(target, opts = {}) {
 
     const messages = Array.isArray(data.messages) ? data.messages : [];
     PS_CHAT_STATE.lastThread = messages;
-    conversationHistory[label] = psMapServerThreadToLocalHistory(messages);
-    saveHistory();
     psRenderChatThread(messages);
+    try { await psLoadMatches(true, { preserveQuery: true, silentMarkSeen: true }); } catch (_) {}
     return { ok: true, data };
   } catch (err) {
     console.error('psLoadChatThread error:', err);
-    const fallback = conversationHistory[label] || [];
-    if (fallback.length) {
-      psRenderChatThread(fallback.map((m) => ({
-        from: m.type === 'sent' ? (PS_STATE.me && PS_STATE.me.email) || 'me' : label,
-        to: m.type === 'sent' ? label : (PS_STATE.me && PS_STATE.me.email) || 'me',
-        text: m.text,
-        createdAtMs: Date.now()
-      })));
-      showToast('Using saved chat cache.', 'warning');
-      return { ok: false, localOnly: true, messages: fallback };
-    }
-
     if (PS_DOM.chatBody) {
       PS_DOM.chatBody.innerHTML = `<div style="text-align:center; color:#555; margin-top:20px;">Failed to load conversation.</div>`;
     }
@@ -1261,6 +1353,10 @@ export async function initUI() {
   renderAdmirers([]);
   renderActiveNearby([]);
   renderDailyPick(null);
+
+  const matchesSearchInput = psGetMatchesSearchInput();
+  if (matchesSearchInput) matchesSearchInput.value = String(PS_MATCHES_STATE.searchQuery || '');
+  psSetChatSending(false);
 
   // Load real home widgets and moments from backend
   await Promise.allSettled([
@@ -2380,6 +2476,15 @@ function initCreatorProfileModal() {
   };
 }
 
+function psEscapeHtml(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function psFormatNotifTime(ts) {
   const ms = Number(ts || 0);
   if (!Number.isFinite(ms) || ms <= 0) return '—';
@@ -2741,26 +2846,39 @@ function initChat() {
 
   window.sendChatMessage = async function () {
     const text = PS_DOM.chatInput ? PS_DOM.chatInput.value.trim() : "";
-    if (!text) return;
-
-    const currentName = String((PS_DOM.chatName && PS_DOM.chatName.textContent) || PS_CHAT_STATE.activePeerLabel || 'Member').trim() || 'Member';
-
-    // optimistic local cache while server request is in flight
-    if (!conversationHistory[currentName]) {
-      conversationHistory[currentName] = [];
-    }
-    conversationHistory[currentName].push({ type: "sent", text: text });
-    saveHistory();
+    if (!text || PS_MATCHES_STATE.isSending) return;
 
     if (PS_DOM.chatInput) PS_DOM.chatInput.value = "";
     if (emojiPicker) emojiPicker.classList.remove("active");
 
+    psSetChatSending(true);
     const out = await psSendMessageToActivePeer({ text });
-    if (!out.ok) {
-      // keep local optimistic cache; thread loader fallback will still use it
-      return;
+    psSetChatSending(false);
+
+    if (!out.ok && PS_DOM.chatInput && !PS_DOM.chatInput.value) {
+      PS_DOM.chatInput.value = text;
+      PS_DOM.chatInput.focus();
     }
   };
+
+  const matchesSearchInput = psGetMatchesSearchInput();
+  if (matchesSearchInput && !matchesSearchInput.dataset.psBound) {
+    matchesSearchInput.dataset.psBound = '1';
+    matchesSearchInput.addEventListener('input', (e) => {
+      PS_MATCHES_STATE.searchQuery = String(e.target && e.target.value || '').trim();
+      psApplyMatchesFilter();
+    });
+  }
+
+  if (PS_DOM.chatInput && !PS_DOM.chatInput.dataset.psEnterBound) {
+    PS_DOM.chatInput.dataset.psEnterBound = '1';
+    PS_DOM.chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (typeof window.sendChatMessage === 'function') window.sendChatMessage();
+      }
+    });
+  }
 
   function moveMatchToMessages(name, lastText) {
     const newMatchesRail = document.getElementById("psNewMatchesRail");
@@ -2980,12 +3098,7 @@ function psEnforceSwipeAccess() {
 
   // 1. KUNG APPROVED: Buksan ang Swipe Deck (Galing sa current logic)
   if (approved) {
-    if (PS_DOM.swipeControls) {
-      PS_DOM.swipeControls.style.display = '';
-      PS_DOM.swipeControls.style.opacity = '1';
-      PS_DOM.swipeControls.style.pointerEvents = 'auto';
-    }
-    if (PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove('active');
+    if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = '';
     if (!PS_STATE.swipeInited) {
       PS_STATE.swipeInited = true;
       SwipeController.init();
@@ -2994,13 +3107,8 @@ function psEnforceSwipeAccess() {
   }
 
   // 2. KUNG HINDI APPROVED: Ipakita ang tamang status (Mula sa Backend logic ng luma)
-  if (PS_DOM.swipeControls) {
-    PS_DOM.swipeControls.style.display = 'none';
-    PS_DOM.swipeControls.style.opacity = '0';
-    PS_DOM.swipeControls.style.pointerEvents = 'none';
-  }
-  if (PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove('active');
-
+  if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = 'none';
+  
   let title = "Premium Society Locked";
   let msg = "Exclusive access for Elite & Concierge members.";
   let icon = "fa-lock";
@@ -3080,25 +3188,53 @@ function _psSafeName(v) {
   return s || 'Member';
 }
 
-async function psLoadMatches(force = false) {
+async function psLoadMatches(force = false, options = {}) {
   if (!PS_DOM.matchesContainer) return;
 
-  if (!force && (Date.now() - _psMatchesLastFetched) < 4000) return;
+  const opts = (options && typeof options === 'object') ? options : {};
+  const preserveQuery = opts.preserveQuery !== false;
+  const silentMarkSeen = !!opts.silentMarkSeen;
+
+  if (!force && (Date.now() - _psMatchesLastFetched) < 4000) {
+    if (!preserveQuery) {
+      PS_MATCHES_STATE.searchQuery = '';
+      const input = psGetMatchesSearchInput();
+      if (input) input.value = '';
+    }
+    psApplyMatchesFilter();
+    return;
+  }
   _psMatchesLastFetched = Date.now();
+  PS_MATCHES_STATE.lastFetchedAt = _psMatchesLastFetched;
+
+  if (!preserveQuery) {
+    PS_MATCHES_STATE.searchQuery = '';
+    const input = psGetMatchesSearchInput();
+    if (input) input.value = '';
+  }
 
   try {
-    // lightweight loading state
     PS_DOM.matchesContainer.innerHTML = `<div style="padding:20px; text-align:center; color:#666;">Loading matches...</div>`;
 
-    const res = await fetch(`${API_BASE}/api/premium-society/matches`, {
-      method: 'GET',
-      credentials: 'include'
-    });
+    const [matchesRes, metaRes] = await Promise.all([
+      fetch(`${API_BASE}/api/premium-society/matches`, {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store'
+      }),
+      fetch(`${API_BASE}/api/me/messages/meta`, {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store'
+      }).catch(() => null)
+    ]);
 
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data || data.ok !== true) {
+    const data = await matchesRes.json().catch(() => ({}));
+    if (!matchesRes.ok || !data || data.ok !== true) {
       const msg = (data && data.message) ? data.message : 'Failed to load matches.';
-      PS_DOM.matchesContainer.innerHTML = `<div style="padding:20px; text-align:center; color:#666;">${msg}</div>`;
+      PS_MATCHES_STATE.items = [];
+      PS_MATCHES_STATE.filteredItems = [];
+      PS_DOM.matchesContainer.innerHTML = `<div style="padding:20px; text-align:center; color:#666;">${psEscapeHtml(String(msg || 'Failed to load matches.'))}</div>`;
       if (PS_DOM.newMatchesRail) PS_DOM.newMatchesRail.innerHTML = '';
       if (PS_DOM.newMatchCount) PS_DOM.newMatchCount.textContent = '0';
       return;
@@ -3106,72 +3242,36 @@ async function psLoadMatches(force = false) {
 
     const matches = Array.isArray(data.matches) ? data.matches : [];
 
-    // NEW MATCHES RAIL
-    if (PS_DOM.newMatchesRail) {
-      PS_DOM.newMatchesRail.innerHTML = '';
-      matches.slice(0, 12).forEach((m) => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'ps-newmatch';
-        const img = document.createElement('img');
-        img.className = 'ps-newmatch-avatar';
-        img.alt = _psSafeName(m.name || m.username);
-        img.src = m.photoUrl || 'assets/images/truematch-mark.png';
-        btn.appendChild(img);
-
-        btn.addEventListener('click', () => {
-          const label = _psSafeName(m.name || (m.username ? '@' + String(m.username).replace(/^@/, '') : 'Member'));
-          const peerEmail = String(m.email || m.id || '').trim().toLowerCase();
-          const avatar = m.photoUrl || 'assets/images/truematch-mark.png';
-          psRememberPeer(peerEmail, label, avatar);
-          if (window.openChat) window.openChat({ name: label, peerEmail, avatar });
-          // keep tab on matches - chat UI will overlay
-        });
-
-        PS_DOM.newMatchesRail.appendChild(btn);
-      });
-    }
-
-    if (PS_DOM.newMatchCount) PS_DOM.newMatchCount.textContent = String(matches.length);
-
     let messageMeta = {};
-    try {
-      const metaRes = await fetch(`${API_BASE}/api/me/messages/meta`, {
-        method: 'GET',
-        credentials: 'include'
-      });
+    if (metaRes) {
       const metaData = await metaRes.json().catch(() => ({}));
       if (metaRes.ok && metaData && metaData.ok && metaData.items && typeof metaData.items === 'object') {
         messageMeta = metaData.items;
       }
-    } catch (_) {}
+    }
 
-    // MESSAGES LIST (use existing renderMessages UI)
-    const messages = matches.map((m) => {
-      const label = _psSafeName(m.name || (m.username ? '@' + String(m.username).replace(/^@/, '') : 'Member'));
-      const peerEmail = String(m.email || m.id || '').trim().toLowerCase();
-      const avatar = m.photoUrl || 'assets/images/truematch-mark.png';
-      psRememberPeer(peerEmail, label, avatar);
-
-      const meta = (peerEmail && messageMeta && typeof messageMeta === 'object') ? (messageMeta[peerEmail] || {}) : {};
-      const lastAt = Number(meta.lastMessageAtMs || m.updatedAtMs || m.createdAtMs || 0) || 0;
-      const lastRead = Number(meta.lastReadAtMs || 0) || 0;
-      const preview = String(meta.lastMessageText || '').trim() || 'Tap to chat';
-
-      return {
-        name: label.replace(/'/g, "\'"),
-        peerEmail,
-        avatar,
-        time: _psFormatTime(lastAt),
-        text: preview,
-        unread: lastAt > 0 && lastAt > lastRead,
-        updatedAtMs: lastAt
-      };
+    const items = matches.map((m) => {
+      const record = psBuildMatchRecord(m, messageMeta);
+      psRememberPeer(record.peerEmail, record.name, record.avatar);
+      return record;
     });
 
-    renderMessages(messages);
+    items.sort((a, b) => Number(b.updatedAtMs || 0) - Number(a.updatedAtMs || 0));
+
+    PS_MATCHES_STATE.items = items;
+    psApplyMatchesFilter();
+
+    if (!silentMarkSeen) {
+      const hadNewMatches = items.some((m) => !!m.isNew);
+      if (hadNewMatches && !PS_MATCHES_STATE.hasMarkedSeenThisOpen) {
+        PS_MATCHES_STATE.hasMarkedSeenThisOpen = true;
+        void psMarkPremiumMatchesSeen();
+      }
+    }
   } catch (err) {
     console.error('psLoadMatches error:', err);
+    PS_MATCHES_STATE.items = [];
+    PS_MATCHES_STATE.filteredItems = [];
     PS_DOM.matchesContainer.innerHTML = `<div style="padding:20px; text-align:center; color:#666;">Failed to load matches.</div>`;
     if (PS_DOM.newMatchesRail) PS_DOM.newMatchesRail.innerHTML = '';
     if (PS_DOM.newMatchCount) PS_DOM.newMatchCount.textContent = '0';
@@ -3210,13 +3310,10 @@ function switchTab(panelName) {
   if (PS_DOM.sidebar && PS_DOM.sidebar.classList.contains("ps-is-open"))
     PS_DOM.sidebar.classList.remove("ps-is-open");
 
-  if (panelName === "swipe") {
-    psEnforceSwipeAccess();
-  }
-
   // Load Premium Society matches (isolated from dashboard matches)
   if (panelName === "matches") {
-    psLoadMatches();
+    PS_MATCHES_STATE.hasMarkedSeenThisOpen = false;
+    psLoadMatches(false, { preserveQuery: true, silentMarkSeen: false });
   }
 
   if (panelName === "home") {
@@ -3364,7 +3461,7 @@ document.addEventListener("DOMContentLoaded", () => {
   try {
     // 1. Patakbuhin ang Modules
     if (typeof initSidebarLogic === 'function') initSidebarLogic();
-    // SwipeController is initialized lazily by psEnforceSwipeAccess() when the Swipe panel is opened.
+    if (SwipeController && typeof SwipeController.init === 'function') SwipeController.init();
     
     // 2. Patakbuhin ang UI Engine (Ito na ang bahala sa MockData, SwipeBack, at Settings)
     if (typeof initUI === 'function') {

@@ -11269,7 +11269,7 @@ app.get('/api/premium-society/candidates', authMiddleware, async (req, res) => {
     });
 
     const limit = Math.max(1, Math.min(50, parseInt(req.query.limit || '20', 10) || 20));
-    return res.json({ ok: true, candidates: candidates.slice(0, limit), remaining: null, limit: null, resetAt: null, serverTime: Date.now(), limitReached: false });
+    return res.json({ ok: true, candidates: candidates.slice(0, limit), remaining: null, limit: null, limitReached: false });
   } catch (err) {
     console.error('[premium-society] candidates error:', err);
     return res.status(500).json({ ok: false, message: 'Server error' });
@@ -11336,7 +11336,7 @@ app.post('/api/premium-society/action', authMiddleware, async (req, res) => {
       }
     }
 
-    return res.json({ ok: true, isMatch, matchId, remaining: null, limit: null, resetAt: null, serverTime: Date.now(), limitReached: false });
+    return res.json({ ok: true, isMatch, matchId, remaining: null, limit: null, limitReached: false });
   } catch (err) {
     console.error('[premium-society] action error:', err);
     return res.status(500).json({ ok: false, message: 'Server error' });
@@ -11363,6 +11363,8 @@ app.get('/api/premium-society/matches', authMiddleware, async (req, res) => {
       return res.status(403).json({ ok: false, code: 'not_premium_society', message: 'Premium Society members only' });
     }
 
+    const premiumSocietyMatchesLastSeenAtMs = Number(meDoc.premiumSocietyMatchesLastSeenAtMs || 0) || 0;
+
     const pairs = await _ps_getMatchPairs(myEmail);
     pairs.sort((a, b) => {
       const at = Number(a.updatedAtMs || a.createdAtMs || 0);
@@ -11385,6 +11387,8 @@ app.get('/api/premium-society/matches', authMiddleware, async (req, res) => {
       // extra safety: keep Premium Society list clean
       if (!psIsPremiumSocietyMember(pu)) continue;
 
+      const createdAtMs = Number(p.createdAtMs || 0) || null;
+      const updatedAtMs = Number(p.updatedAtMs || 0) || null;
       matches.push({
         id: otherEmail,
         email: otherEmail,
@@ -11393,14 +11397,48 @@ app.get('/api/premium-society/matches', authMiddleware, async (req, res) => {
         age: pu.age || null,
         city: pu.city || pu.location || null,
         photoUrl: pu.avatarUrl || pu.photoUrl || pu.avatar || 'assets/images/truematch-mark.png',
-        createdAtMs: p.createdAtMs || null,
-        updatedAtMs: p.updatedAtMs || null
+        createdAtMs,
+        updatedAtMs,
+        isNew: !!(createdAtMs && createdAtMs > premiumSocietyMatchesLastSeenAtMs)
       });
     }
 
-    return res.json({ ok: true, matches });
+    return res.json({ ok: true, matches, premiumSocietyMatchesLastSeenAtMs });
   } catch (err) {
     console.error('Premium Society matches error:', err);
+    return res.status(500).json({ ok: false, message: 'Server error' });
+  }
+});
+
+app.post('/api/premium-society/matches/seen', authMiddleware, async (req, res) => {
+  try {
+    const myEmail = String(req.user && req.user.email ? req.user.email : '').trim().toLowerCase();
+    if (!myEmail) return res.status(401).json({ ok: false, message: 'Not authenticated' });
+
+    let meDoc = null;
+    if (hasFirebase) meDoc = await findUserByEmail(myEmail);
+    else meDoc = (DB.users && DB.users[myEmail]) ? { ...DB.users[myEmail] } : (DB.user ? { ...DB.user } : null);
+
+    if (!meDoc) return res.status(404).json({ ok: false, message: 'User not found' });
+
+    const mePublic = publicUser({ id: meDoc.id, ...meDoc });
+    if (!psIsPremiumSocietyMember(mePublic)) {
+      return res.status(403).json({ ok: false, code: 'not_premium_society', message: 'Premium Society members only' });
+    }
+
+    const ts = Number((req.body && req.body.seenAtMs) || Date.now()) || Date.now();
+    await updateUserByEmail(myEmail, { premiumSocietyMatchesLastSeenAtMs: ts });
+
+    if (DB.user && String(DB.user.email || '').trim().toLowerCase() === myEmail) {
+      DB.user.premiumSocietyMatchesLastSeenAtMs = ts;
+    }
+    if (DB.users && DB.users[myEmail]) {
+      DB.users[myEmail].premiumSocietyMatchesLastSeenAtMs = ts;
+    }
+
+    return res.json({ ok: true, premiumSocietyMatchesLastSeenAtMs: ts });
+  } catch (err) {
+    console.error('Premium Society matches/seen error:', err);
     return res.status(500).json({ ok: false, message: 'Server error' });
   }
 });
