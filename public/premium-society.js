@@ -2569,15 +2569,6 @@ function initCreatorProfileModal() {
   };
 }
 
-function psEscapeHtml(value) {
-  return String(value == null ? "" : value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 function psFormatNotifTime(ts) {
   const ms = Number(ts || 0);
   if (!Number.isFinite(ms) || ms <= 0) return '—';
