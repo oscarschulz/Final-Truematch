@@ -683,6 +683,7 @@ function saveSwipesStore() {
 const { PLAN_RULES, DAY_MS, todayKey } = require('./planRules');
 
 // Normalize plan keys for consistent backend handling (mirrors frontend tiers).
+
 function normalizePlanKey(rawPlan) {
   if (!rawPlan) return 'free';
   const p = String(rawPlan).toLowerCase().replace(/\s+/g, '');
@@ -691,6 +692,13 @@ function normalizePlanKey(rawPlan) {
   if (p.includes('concierge') || p.includes('tier3')) return 'tier3';
   if (p.includes('free')) return 'free';
   return PLAN_RULES[rawPlan] ? rawPlan : 'free';
+}
+
+function psIsPremiumSocietyMember(user) {
+  if (!user || typeof user !== 'object') return false;
+  const planKey = normalizePlanKey(user.plan || user.tier);
+  const status = String(user.premiumStatus || '').trim().toLowerCase();
+  return (planKey === 'tier2' || planKey === 'tier3') && status === 'approved';
 }
 
 // Messaging limits: only free plan has a strict daily cap; paid tiers are unlimited.
