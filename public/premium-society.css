@@ -2532,3 +2532,17 @@ body.light-mode .ps-nav-btn:hover {
     display: flex !important;
   }
 }
+
+
+/* =========================================
+   HOME TAB REQUESTED REPOSITION FIXES ONLY
+   ========================================= */
+.ps-admirer-section {
+  margin-top: 0 !important;
+}
+
+@media (max-width: 768px) {
+  #psStoriesContainer {
+    margin-bottom: 88px !important;
+  }
+}
