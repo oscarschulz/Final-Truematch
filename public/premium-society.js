@@ -37,7 +37,6 @@ export const PS_DOM = {
   chatName: document.getElementById("psChatName"),
   chatBody: document.getElementById("psChatBody"),
   chatInput: document.getElementById("psChatInput"),
-  chatEmojiPicker: document.getElementById("psChatEmojiPicker"),
 
   // Story Viewer
   storyViewer: document.getElementById("psStoryViewer"),
@@ -57,7 +56,6 @@ export const PS_DOM = {
   miniAvatar: document.getElementById("psMiniAvatar"),
   miniName: document.getElementById("psMiniName"),
   miniPlan: document.getElementById("psMiniPlan"),
-  miniLogout: document.getElementById("ps-btn-logout"),
   settingsName: document.getElementById("psSNameDisplay"),
   settingsEmail: document.getElementById("psSEmailDisplay"),
   settingsAvatar: document.getElementById("psSAvatar"),
@@ -69,8 +67,6 @@ export const PS_DOM = {
 
   // Mobile Toggles
   mobileMenuBtn: document.getElementById("psMobileNavToggle"),
-  mobileMomentsBtn: document.getElementById("psMobileMomentsToggle"),
-  momentsPopup: document.getElementById("psMomentsPopup"),
 
   // Swipe
   swipeStack: document.getElementById("psSwipeStack"),
@@ -85,17 +81,15 @@ export const PS_DOM = {
   toast: document.getElementById("ps-toast"),
 
   // Mobile Specific
-  mobileSwipeBadge: document.getElementById("psMobileSwipeCount"),
   timerDisplay: document.querySelector(".ps-stats-body p.ps-tiny"),
+
+  // Panels
 
   // Match & Gift
   matchOverlay: document.getElementById("psMatchOverlay"),
   matchUserImg: document.getElementById("psMatchUserImg"),
   matchTargetImg: document.getElementById("psMatchTargetImg"),
-  matchName: document.getElementById("psMatchName"),
-  giftModal: document.getElementById("psGiftModal"),
   btnPPV: document.querySelector(".ps-btn-ppv"),
-  giftPriceBtn: document.getElementById("psGiftPriceBtn"),
 };
 
 // --- API BASE ---
@@ -261,19 +255,6 @@ function initOverlayObservers() {
     });
     chatObs.observe(chatWindow, { attributes: true });
   }
-
-  const creatorModal = document.getElementById("psCreatorProfileModal");
-  if (creatorModal) {
-    const creatorObs = new MutationObserver((mutations) => {
-      mutations.forEach((m) => {
-        if (m.attributeName === "class") {
-          if (creatorModal.classList.contains("active")) body.classList.add("ps-creator-open");
-          else body.classList.remove("ps-creator-open");
-        }
-      });
-    });
-    creatorObs.observe(creatorModal, { attributes: true });
-  }
 }
 
 
@@ -355,7 +336,7 @@ function initProfileMenu() {
 
 
 function initRightSidebarInteractions() {
-  // No in-page upgrade flow on Premium Society. Access is managed from the dashboard.
+  // No premium-side subscribe redirect on this page.
 }
 
 function initMobileToggles() {
@@ -387,7 +368,53 @@ export const SwipeController = (() => {
   let startX = 0;
   let startY = 0;
   let isDragging = false;
-  let currentX = 0;
+let currentX = 0;
+let statsTicker = null;
+
+function normalizeSwipeStatsPayload(payload) {
+  const src = payload && typeof payload === 'object'
+    ? (payload.swipeStats && typeof payload.swipeStats === 'object' ? payload.swipeStats : payload)
+    : {};
+
+  const unlimited = !!src.unlimited || src.limit === null || src.limit === undefined || !Number.isFinite(Number(src.limit));
+  const limit = unlimited ? null : Math.max(1, Number(src.limit || 0) || 0);
+  const remaining = unlimited ? null : Math.max(0, Number(src.remaining || 0) || 0);
+  const resetAtMs = unlimited ? null : Math.max(0, Number(src.resetAtMs || 0) || 0);
+
+  return { unlimited, limit, remaining, resetAtMs };
+}
+
+function formatSwipeResetText() {
+  if (serverLimit === undefined) {
+    return 'Loading swipe stats...';
+  }
+  if (serverLimit === null || !Number.isFinite(serverLimit)) {
+    return 'Unlimited swipes';
+  }
+  if (!Number.isFinite(resetTime) || resetTime <= Date.now()) {
+    return 'Waiting for server reset window...';
+  }
+
+  const diff = Math.max(0, resetTime - Date.now());
+  const hrs = Math.floor((diff / (1000 * 60 * 60)) % 24);
+  const mins = Math.floor((diff / (1000 * 60)) % 60);
+  const secs = Math.floor((diff / 1000) % 60);
+  return `Resets in ${hrs}h ${mins}m ${secs}s`;
+}
+
+function renderSwipeStatusText() {
+  if (!PS_DOM.timerDisplay) return;
+  PS_DOM.timerDisplay.textContent = formatSwipeResetText();
+}
+
+function applyServerSwipeStats(payload) {
+  const stats = normalizeSwipeStatsPayload(payload);
+  serverLimit = stats.unlimited ? null : stats.limit;
+  dailySwipes = stats.unlimited ? Infinity : stats.remaining;
+  resetTime = stats.unlimited ? 0 : stats.resetAtMs;
+  updateStats(dailySwipes, serverLimit);
+  renderSwipeStatusText();
+}
 
   /**
    * INITIALIZATION
@@ -396,33 +423,25 @@ export const SwipeController = (() => {
     index = 0;
     isSwiping = false;
 
-    // Default: Premium Society is unlimited unless server returns a numeric cap
-    serverLimit = null;
-    dailySwipes = Infinity;
+    // Server is the only source of truth for Premium Society swipe stats.
+    serverLimit = undefined;
+    dailySwipes = 0;
     resetTime = 0;
 
-    // Optional local cache (ONLY as temporary display if server is slow/offline)
-    const savedSwipesRaw = localStorage.getItem("ps_swipes_left");
-    const savedTimeRaw = localStorage.getItem("ps_reset_time");
-    const savedSwipes = savedSwipesRaw != null ? Number(savedSwipesRaw) : NaN;
-    const savedTime = savedTimeRaw != null ? Number(savedTimeRaw) : NaN;
-    const now = Date.now();
-
-    if (Number.isFinite(savedSwipes) && Number.isFinite(savedTime) && now < savedTime) {
-      // We don't know the serverLimit yet, so treat this as a temporary number
-      dailySwipes = savedSwipes;
-      resetTime = savedTime;
-    }
+    try {
+      localStorage.removeItem("ps_swipes_left");
+      localStorage.removeItem("ps_reset_time");
+    } catch (_) {}
 
     startCountdown();
 
     if (PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove("active");
     if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = "flex";
 
-    // Render initial stats (will be corrected after fetchCandidates)
     updateStats(dailySwipes, serverLimit);
+    renderSwipeStatusText();
 
-    // Fetch live deck + limit from backend
+    // Fetch live deck + authoritative stats from backend
     fetchCandidates();
 
     // Button Listeners
@@ -526,26 +545,14 @@ export const SwipeController = (() => {
 
       if (data && data.ok && data.candidates) {
         candidates = data.candidates;
-
-        // Server truth:
-        // - data.limit === null/undefined  => unlimited
-        // - data.remaining can be null when unlimited
-        serverLimit = (data.limit === undefined || data.limit === null) ? null : Number(data.limit);
-
-        if (serverLimit === null) {
-          dailySwipes = Infinity;
-        } else {
-          const rem = (data.remaining === undefined || data.remaining === null) ? serverLimit : Number(data.remaining);
-          dailySwipes = Number.isFinite(rem) ? rem : serverLimit;
-        }
-
-        updateStats(dailySwipes, serverLimit);
+        applyServerSwipeStats(data);
       } else { 
         throw new Error("No live data"); 
       }
     } catch (err) {
       console.warn("Using fallback profiles.");
       candidates = window.mockCandidatesData || [];
+      if (PS_DOM.timerDisplay) PS_DOM.timerDisplay.textContent = 'Unable to load swipe stats.';
     }
     renderCards();
   }
@@ -563,9 +570,9 @@ export const SwipeController = (() => {
   async function handleSwipe(action) {
     if (isSwiping || index >= candidates.length) return;
     
-    // Guard: only enforce limits when serverLimit is a finite number
+    // Guard: server-authoritative swipe availability
     const isLimited = Number.isFinite(serverLimit) && Number.isFinite(dailySwipes);
-    if (isLimited && dailySwipes <= 0 && action !== 'pass') {
+    if (isLimited && dailySwipes <= 0) {
       fireEmptyAlert();
       return;
     }
@@ -625,18 +632,9 @@ export const SwipeController = (() => {
         _psMatchesLastFetched = 0;
       }
       
-      // C. SYNC STATS: Kunin ang "truth" mula sa server (Handle null as unlimited)
-      if (data && ('remaining' in data || 'limit' in data)) {
-        serverLimit = (data.limit === undefined || data.limit === null) ? null : Number(data.limit);
-
-        if (serverLimit === null) {
-          dailySwipes = Infinity;
-        } else {
-          const rem = (data.remaining === undefined || data.remaining === null) ? serverLimit : Number(data.remaining);
-          dailySwipes = Number.isFinite(rem) ? rem : serverLimit;
-        }
-
-        updateStats(dailySwipes, serverLimit);
+      // C. SYNC STATS: backend remains the single source of truth
+      if (data && (('remaining' in data) || ('limit' in data) || ('swipeStats' in data))) {
+        applyServerSwipeStats(data);
       }
 
     } catch (err) {
@@ -790,80 +788,56 @@ function createCard(person, position) {
   }
 
   function saveData() {
-    // Only persist numeric limits; Premium Society is typically unlimited.
-    if (!Number.isFinite(serverLimit) || !Number.isFinite(dailySwipes) || !Number.isFinite(resetTime)) return;
-    localStorage.setItem("ps_swipes_left", String(dailySwipes));
-    localStorage.setItem("ps_reset_time", String(resetTime));
+    // Intentionally no-op: server owns Premium Society swipe stats.
   }
 
 function updateStats(curr, max) {
     const unlimited = (max === null || max === undefined || !Number.isFinite(max));
-    const displayVal = unlimited ? '∞' : String(Number.isFinite(curr) ? curr : 0);
+    const displayVal = unlimited ? '∞' : String(Number.isFinite(curr) ? Math.max(0, curr) : 0);
 
     if (PS_DOM.countDisplay) PS_DOM.countDisplay.textContent = displayVal;
-    if (PS_DOM.mobileSwipeBadge) PS_DOM.mobileSwipeBadge.textContent = displayVal;
 
     if (PS_DOM.ringCircle) {
       const percent = unlimited ? 1 : Math.max(0, Math.min(1, (Number.isFinite(curr) ? curr : 0) / max));
       PS_DOM.ringCircle.style.strokeDashoffset = 314 - (314 * percent);
     }
-}
+  }
 
 /**
    * START COUNTDOWN
-   * Inayos para maging persistent gamit ang localStorage
+   * Backend resetAtMs is the source of truth.
    */
   function startCountdown() {
-    setInterval(() => {
-      // If unlimited, keep UI truthful and do not run local reset logic.
-      if (serverLimit === null || serverLimit === undefined || !Number.isFinite(serverLimit)) {
-        if (PS_DOM.timerDisplay) PS_DOM.timerDisplay.textContent = 'Unlimited swipes';
-        return;
-      }
-
-      const now = Date.now();
-      const savedResetTimeRaw = localStorage.getItem("ps_reset_time");
-      const savedResetTime = savedResetTimeRaw != null ? Number(savedResetTimeRaw) : NaN;
-
-      // If missing or expired, start a new local cycle (fallback UI only)
-      if (!Number.isFinite(savedResetTime) || now >= savedResetTime) {
-        dailySwipes = serverLimit;
-        resetTime = now + 12 * 60 * 60 * 1000; // 12-hour cycle (UI fallback)
-        saveData();
-        updateStats(dailySwipes, serverLimit);
-      } else {
-        resetTime = savedResetTime;
-      }
-
-      const diff = resetTime - now;
-      if (diff > 0 && PS_DOM.timerDisplay) {
-        const hrs = Math.floor((diff / (1000 * 60 * 60)) % 24);
-        const mins = Math.floor((diff / (1000 * 60)) % 60);
-        const secs = Math.floor((diff / 1000) % 60);
-        PS_DOM.timerDisplay.textContent = `Resets in ${hrs}h ${mins}m ${secs}s`;
-      }
+    if (statsTicker) clearInterval(statsTicker);
+    statsTicker = setInterval(() => {
+      renderSwipeStatusText();
     }, 1000);
   }
 
   /**
    * FIRE EMPTY ALERT
-   * Alert para sa mga Free users na naubusan ng swipes
+   * Alert when server-authoritative swipes are exhausted.
    */
   function fireEmptyAlert() {
     if (typeof Swal !== 'undefined') {
       Swal.fire({
         title: "Out of Swipes! 🛑",
-        text: "Naubos mo na ang daily swipe limit mo. Balik ka ulit mamaya.",
+        text: formatSwipeResetText(),
         icon: "warning",
         background: "#15151e",
         color: "#fff",
         confirmButtonColor: "#00aff0",
-        confirmButtonText: "Okay"
+        confirmButtonText: "Back to Dashboard"
+      }).then((result) => {
+        if (result.isConfirmed) {
+          window.location.href = 'dashboard.html';
+        }
       });
     } else {
-      alert("Out of swipes for now. Please try again later.");
+      alert(formatSwipeResetText());
     }
   }
+
 
   // I-expose ang init function para matawag sa core engine
   return { init };
@@ -896,11 +870,6 @@ function psDisableGiftFeatures() {
     PS_DOM.btnPPV.onclick = null;
   }
 
-  if (PS_DOM.giftModal) {
-    PS_DOM.giftModal.classList.remove('active');
-    PS_DOM.giftModal.style.display = 'none';
-    PS_DOM.giftModal.setAttribute('aria-hidden', 'true');
-  }
 }
 
 
@@ -984,7 +953,7 @@ async function psLoadMoments(force = false) {
   }
 
   try {
-    const res = await fetch(`${API_BASE}/api/moments/list?scope=matches`, {
+    const res = await fetch(`${API_BASE}/api/moments/list?scope=premium-society`, {
       method: 'GET',
       credentials: 'include'
     });
@@ -1109,7 +1078,7 @@ function psGetMatchesSearchInput() {
   if (PS_MATCHES_STATE.searchInput && document.contains(PS_MATCHES_STATE.searchInput)) {
     return PS_MATCHES_STATE.searchInput;
   }
-  PS_MATCHES_STATE.searchInput = document.getElementById('psMatchesSearch') || document.querySelector('.ps-input-search');
+  PS_MATCHES_STATE.searchInput = document.querySelector('.ps-input-search');
   return PS_MATCHES_STATE.searchInput;
 }
 
@@ -1117,7 +1086,7 @@ function psGetChatSendButton() {
   if (PS_MATCHES_STATE.sendBtn && document.contains(PS_MATCHES_STATE.sendBtn)) {
     return PS_MATCHES_STATE.sendBtn;
   }
-  PS_MATCHES_STATE.sendBtn = document.getElementById('psBtnSendChat') || document.querySelector('.ps-btn-chat-send');
+  PS_MATCHES_STATE.sendBtn = document.querySelector('.ps-btn-chat-send');
   return PS_MATCHES_STATE.sendBtn;
 }
 
@@ -2097,7 +2066,6 @@ function initProfileEditLogic() {
     document.getElementById("psSNameDisplay"),
     document.getElementById("psMiniName"),
     document.getElementById("psWelcomeName"),
-    document.getElementById("psMenuName"),
   ];
   const displayEmails = [document.getElementById("psSEmailDisplay")];
 
@@ -2351,6 +2319,9 @@ window.openChangePassword = () => {
     }
   });
 };
+
+
+
 
 
 function psEscapeHtml(value) {
@@ -2917,7 +2888,7 @@ function initStoryViewer() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ caption: text })
+        body: JSON.stringify({ caption: text, audienceScope: 'premium-society' })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data || data.ok !== true) {
@@ -2992,27 +2963,23 @@ function psEnforceSwipeAccess() {
   let btnText = "Back to Dashboard";
   let btnAction = "window.location.href='dashboard.html'";
 
-  // Pag-check ng detailed status mula sa PS_STATE
-// --- ETO ANG AYOS NA PENDING LOGIC (PHASE 7) ---
   if (eligible && status === 'pending') {
     title = "Application Pending";
-    msg = "Nire-review na namin ang iyong profile. Balik ka dito mamaya.";
+    msg = "Your application is still under review. Please check back again later.";
     icon = "fa-hourglass-half";
     btnText = "Refresh Status";
-    
-    // Background sync lang para i-update ang PS_STATE nang hindi nag-re-reload ang page
-    btnAction = "hydrateAccountIdentity().then(() => psEnforceSwipeAccess())"; 
+    btnAction = "hydrateAccountIdentity().then(() => psEnforceSwipeAccess())";
   }
   else if (eligible && status === 'rejected') {
     title = "Application Declined";
-    msg = "Pasensya na, hindi muna namin ma-approve ang iyong application sa ngayon.";
+    msg = "Your application was not approved at this time. You can contact support for help.";
     icon = "fa-circle-xmark";
     btnText = "Contact Support";
-    btnAction = "window.openContactSupport()"; // Tatawag sa Swal support modal
-  } 
+    btnAction = "window.openContactSupport()";
+  }
   else if (eligible && status === 'none') {
     title = "Application Required";
-    msg = "Premium Society applications are handled from your dashboard. Apply there to unlock access here.";
+    msg = "You are eligible for Premium Society, but applications are handled from your dashboard.";
     icon = "fa-file-signature";
     btnText = "Go to Dashboard";
     btnAction = "window.location.href='dashboard.html'";
@@ -3198,32 +3165,11 @@ function switchTab(panelName) {
 }
 
 function initMobileMenu() {
-  // FIX: Check if buttons exist before adding listeners
   if (PS_DOM.mobileMenuBtn) {
     PS_DOM.mobileMenuBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-
-      // FIX: Check if momentsPopup exists before removing class
-      if (PS_DOM.momentsPopup) {
-        PS_DOM.momentsPopup.classList.remove("ps-is-open");
-      }
-
       if (PS_DOM.sidebar) {
         PS_DOM.sidebar.classList.toggle("ps-is-open");
-      }
-    });
-  }
-
-  if (PS_DOM.mobileMomentsBtn) {
-    PS_DOM.mobileMomentsBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (PS_DOM.sidebar) {
-        PS_DOM.sidebar.classList.remove("ps-is-open");
-      }
-
-      // FIX: Check if momentsPopup exists before toggling
-      if (PS_DOM.momentsPopup) {
-        PS_DOM.momentsPopup.classList.toggle("ps-is-open");
       }
     });
   }
@@ -3273,9 +3219,7 @@ function initCanvasParticles() {
 // ==========================================
 
 // --- 1. GIFT SYSTEM LOGIC (TEMP DISABLED) ---
-window.closeGiftModal = () => {
-  if (PS_DOM.giftModal) PS_DOM.giftModal.classList.remove("active");
-};
+window.closeGiftModal = () => {};
 
 window.selectGift = () => {
   showToast('Gift feature is temporarily unavailable.');
@@ -3298,8 +3242,6 @@ window.triggerMatchOverlay = (person) => {
   const avatar = (person && (person.photoUrl || person.avatar)) || 'assets/images/truematch-mark.png';
   psRememberPeer(peerEmail, label, avatar);
 
-  if (PS_DOM.matchName) PS_DOM.matchName.textContent = label;
-
   if (PS_DOM.matchTargetImg) {
     if (person && (person.photoUrl || person.avatar)) {
       PS_DOM.matchTargetImg.src = person.photoUrl || person.avatar;
@@ -3319,8 +3261,7 @@ window.closeMatchOverlay = () => {
 };
 
 window.openChatFromMatch = () => {
-  const label = (PS_DOM.matchName && PS_DOM.matchName.textContent) || 'Member';
-  const target = PS_CHAT_STATE.matchOverlayTarget || { name: label, peerEmail: PS_CHAT_STATE.peersByLabel[label] || '', avatar: PS_CHAT_STATE.avatarsByLabel[label] || 'assets/images/truematch-mark.png' };
+  const target = PS_CHAT_STATE.matchOverlayTarget || { name: 'Member', peerEmail: '', avatar: 'assets/images/truematch-mark.png' };
   window.closeMatchOverlay();
 
   const matchesBtn = document.querySelector('button[data-panel="matches"]');
@@ -3383,6 +3324,4 @@ function updateStats(remaining, limit) {
     }
 
     // 3. Mobile Badge Update
-    const countEl = document.getElementById('psMobileSwipeCount');
-    if (countEl) countEl.textContent = limit === null ? '∞' : rem;
 }
