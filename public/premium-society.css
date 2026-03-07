@@ -3740,3 +3740,48 @@ body.ps-theme.tm-dark {
     display: flex !important;
   }
 }
+
+/* =========================================================
+   FINAL OVERRIDE: match dashboard floating hamburger exactly
+   - only change the Premium Society mobile hamburger position/style
+   ========================================================= */
+@media (min-width: 769px) {
+  .ps-mobile-toggle.mobile-nav-toggle {
+    display: none !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .ps-mobile-toggle.mobile-nav-toggle {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    position: fixed !important;
+    left: 20px !important;
+    bottom: 20px !important;
+    top: auto !important;
+    right: auto !important;
+    width: 50px !important;
+    height: 50px !important;
+    border-radius: 50% !important;
+    background: var(--ps-brand-color) !important;
+    color: #ffffff !important;
+    border: none !important;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.5) !important;
+    z-index: 5000 !important;
+    font-size: 1.2rem !important;
+    cursor: pointer !important;
+    transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    transform: none !important;
+    padding: 0 !important;
+  }
+
+  body.ps-tab-home .ps-mobile-toggle.mobile-nav-toggle,
+  body.ps-tab-swipe .ps-mobile-toggle.mobile-nav-toggle,
+  body.ps-tab-matches .ps-mobile-toggle.mobile-nav-toggle,
+  body.ps-tab-settings .ps-mobile-toggle.mobile-nav-toggle {
+    display: flex !important;
+  }
+}
