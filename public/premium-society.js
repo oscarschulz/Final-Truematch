@@ -69,7 +69,6 @@ export const PS_DOM = {
 
   // Mobile Toggles
   mobileMenuBtn: document.getElementById("psMobileNavToggle"),
-  mobileQuickNav: document.getElementById("psMobileQuickNav"),
   mobileMomentsBtn: document.getElementById("psMobileMomentsToggle"),
   momentsPopup: document.getElementById("psMomentsPopup"),
 
@@ -90,7 +89,6 @@ export const PS_DOM = {
   timerDisplay: document.querySelector(".ps-stats-body p.ps-tiny"),
 
   // Panels
-  panelCreatorsBody: document.getElementById("ps-panel-creators"),
   panelPremiumBody: document.getElementById("ps-panel-premium"),
 
   // Match & Gift
@@ -266,19 +264,6 @@ function initOverlayObservers() {
     });
     chatObs.observe(chatWindow, { attributes: true });
   }
-
-  const creatorModal = document.getElementById("psCreatorProfileModal");
-  if (creatorModal) {
-    const creatorObs = new MutationObserver((mutations) => {
-      mutations.forEach((m) => {
-        if (m.attributeName === "class") {
-          if (creatorModal.classList.contains("active")) body.classList.add("ps-creator-open");
-          else body.classList.remove("ps-creator-open");
-        }
-      });
-    });
-    creatorObs.observe(creatorModal, { attributes: true });
-  }
 }
 
 
@@ -360,61 +345,20 @@ function initProfileMenu() {
 
 
 function initRightSidebarInteractions() {
-  // No premium-side subscribe redirect on this page.
-}
-
-function closeMobileQuickNav() {
-  const menu = PS_DOM.mobileQuickNav;
-  if (!menu) return;
-  menu.classList.remove("ps-is-open");
-  menu.setAttribute("aria-hidden", "true");
-  document.body.classList.remove("ps-mobile-nav-open");
-  if (PS_DOM.mobileMenuBtn) PS_DOM.mobileMenuBtn.setAttribute("aria-expanded", "false");
-}
-
-function syncMobileQuickNavActive(panelName) {
-  const menu = PS_DOM.mobileQuickNav;
-  if (!menu) return;
-  menu.querySelectorAll('[data-panel]').forEach((btn) => {
-    btn.classList.toggle('is-active', btn.dataset.panel === panelName);
-  });
+  const upgradeBtn = document.getElementById("psBtnSidebarSubscribe");
+  if (upgradeBtn) {
+    upgradeBtn.addEventListener("click", () => {
+      const premiumTab = document.querySelector('button[data-panel="premium"]');
+      if (premiumTab) { premiumTab.click(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+    });
+  }
 }
 
 function initMobileToggles() {
-  const menu = PS_DOM.mobileQuickNav;
-
   if (PS_DOM.mobileMenuBtn) {
-    PS_DOM.mobileMenuBtn.onclick = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (window.innerWidth > 768 || !menu) {
-        if (PS_DOM.sidebar) PS_DOM.sidebar.classList.toggle("ps-is-open");
-        return;
-      }
-      const willOpen = !menu.classList.contains("ps-is-open");
-      menu.classList.toggle("ps-is-open", willOpen);
-      menu.setAttribute("aria-hidden", willOpen ? "false" : "true");
-      document.body.classList.toggle("ps-mobile-nav-open", willOpen);
-      PS_DOM.mobileMenuBtn.setAttribute("aria-expanded", willOpen ? "true" : "false");
-    };
+    PS_DOM.mobileMenuBtn.onclick = (e) => { e.stopPropagation(); if (PS_DOM.sidebar) PS_DOM.sidebar.classList.toggle("ps-is-open"); };
   }
-
-  if (menu) {
-    menu.querySelectorAll('[data-panel]').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const panel = btn.dataset.panel;
-        if (panel) switchTab(panel);
-      });
-    });
-  }
-
   document.addEventListener("click", (e) => {
-    if (menu && menu.classList.contains("ps-is-open")) {
-      const clickedToggle = PS_DOM.mobileMenuBtn && (e.target === PS_DOM.mobileMenuBtn || PS_DOM.mobileMenuBtn.contains(e.target));
-      if (!clickedToggle && !menu.contains(e.target)) closeMobileQuickNav();
-    }
     if (PS_DOM.sidebar && PS_DOM.sidebar.classList.contains("ps-is-open")) {
       if (!PS_DOM.sidebar.contains(e.target) && e.target !== PS_DOM.mobileMenuBtn) PS_DOM.sidebar.classList.remove("ps-is-open");
     }
@@ -1382,8 +1326,6 @@ export async function initUI() {
   initNotifications();
   initChat();
   initStoryViewer();
-  initCreatorProfileModal();
-  initCreatorsLogic();
   initPremiumLogic();
   initProfileEditLogic();
   initSettingsLogic();
@@ -1570,9 +1512,32 @@ function renderActiveNearby(items = []) {
 
 function renderDailyPick(profile) {
   if (!PS_DOM.dailyPickContainer) return;
-  PS_DOM.dailyPickContainer.innerHTML = '';
-  PS_DOM.dailyPickContainer.hidden = true;
-  PS_DOM.dailyPickContainer.style.display = 'none';
+
+  if (!profile) {
+    PS_DOM.dailyPickContainer.innerHTML = `
+      <div style="padding:18px; border:1px solid rgba(255,255,255,.08); border-radius:18px; background:rgba(255,255,255,.03); text-align:center; color:#9aa0a6;">
+        Daily Pick will appear here once we find a strong match for you.
+      </div>`;
+    return;
+  }
+
+  const name = psEscapeHtml(_psSafeName(profile.name || profile.fullName || profile.username || 'Member'));
+  const city = psEscapeHtml(String(profile.city || profile.location || 'Nearby').trim() || 'Nearby');
+  const avatar = psEscapeHtml(String(profile.photoUrl || profile.avatarUrl || profile.avatar || 'assets/images/truematch-mark.png'));
+  const age = (profile.age !== undefined && profile.age !== null && String(profile.age).trim() !== '') ? ` • ${psEscapeHtml(String(profile.age))}` : '';
+  const badge = profile.isOnline ? 'Online now' : "Today's Highlight";
+
+  PS_DOM.dailyPickContainer.innerHTML = `
+    <div style="display:flex; align-items:center; gap:16px; padding:18px; border:1px solid rgba(255,255,255,.08); border-radius:18px; background:linear-gradient(135deg, rgba(0,175,240,.15), rgba(255,255,255,.02));">
+      <img src="${avatar}" alt="${name}" onerror="this.src='assets/images/truematch-mark.png'" style="width:72px; height:72px; border-radius:20px; object-fit:cover; border:1px solid rgba(255,255,255,.12); background:#111; flex-shrink:0;">
+      <div style="min-width:0; flex:1;">
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+          <span style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:rgba(0,175,240,.15); color:#9be7ff; font-size:.7rem; font-weight:700; letter-spacing:.02em;">✨ ${badge}</span>
+        </div>
+        <h3 style="margin:0; font-size:1.05rem; color:#fff;">${name}</h3>
+        <p style="margin:6px 0 0; color:#c9d1d9; font-size:.88rem;">${city}${age}</p>
+      </div>
+    </div>`;
 }
 
 
@@ -2489,113 +2454,7 @@ function initPremiumLogic() {
   };
 }
 
-function initCreatorsLogic() {
-  window.subscribeCreator = (name) => {
-    window.closeCreatorProfile();
-    Swal.fire({
-      title: `Subscribe to ${name}?`,
-      text: "Unlock exclusive content and direct messaging for $9.99/mo.",
-      icon: "question",
-      showCancelButton: true,
-      confirmButtonColor: "#00aff0",
-      cancelButtonColor: "#d33",
-      confirmButtonText: "Yes, Subscribe",
-      background: "#15151e",
-      color: "#fff",
-    }).then((result) => {
-      if (result.isConfirmed) {
-        Swal.fire({
-          title: "Subscribed!",
-          text: `You are now a premium member of ${name}'s circle.`,
-          icon: "success",
-          background: "#15151e",
-          color: "#fff",
-          confirmButtonColor: "#00aff0",
-        });
-      }
-    });
-  };
 
-  window.filterCreators = (element, category) => {
-    const chips = document.querySelectorAll(".ps-filter-chip");
-    chips.forEach((chip) => chip.classList.remove("active"));
-    element.classList.add("active");
-
-    // TODO: Call Backend with Filter
-    // fetchCreators(category);
-    showToast(`Filtering by: ${category}`);
-  };
-
-  // NOTE: Inalis na ang hardcoded creators list dito.
-  // Ang 'ps-creators-grid' ay dapat lamanin gamit ang fetch data.
-  if (PS_DOM.panelCreatorsBody) {
-    PS_DOM.panelCreatorsBody.innerHTML = `
-        <div class="ps-creators-filter">
-            <div class="ps-filter-chip active" onclick="filterCreators(this, 'All')">All</div>
-            <div class="ps-filter-chip" onclick="filterCreators(this, 'Trending')">Trending</div>
-            <div class="ps-filter-chip" onclick="filterCreators(this, 'New')">New</div>
-            <div class="ps-filter-chip" onclick="filterCreators(this, 'Near You')">Near You</div>
-            <div class="ps-filter-chip" onclick="filterCreators(this, 'Cosplay')">Cosplay</div>
-        </div>
-        <div class="ps-creators-grid">
-            <p style="grid-column: span 2; text-align: center; color: #666; margin-top: 50px;">Fetching Creators...</p>
-        </div>`;
-  }
-}
-
-function initCreatorProfileModal() {
-  const modal = document.getElementById("psCreatorProfileModal");
-
-  window.closeCreatorProfile = () => {
-    if (modal) modal.classList.remove("active");
-  };
-
-  window.openCreatorProfile = (name, cat, followers, color) => {
-    if (!modal) return;
-    document.getElementById("psProfModalName").textContent = name;
-    document.getElementById("psProfModalCat").textContent = cat;
-    document.getElementById("psProfModalFollowers").textContent = followers;
-    document.getElementById("psProfModalLikes").textContent = "0K";
-
-    const cover = document.getElementById("psProfModalCover");
-    if (cover) {
-      cover.style.backgroundColor = color;
-      cover.style.backgroundImage = "url('assets/images/truematch-mark.png')";
-    }
-
-    const subBtn = modal.querySelector(".ps-btn-subscribe-lg");
-    if (subBtn) {
-      subBtn.onclick = () => window.subscribeCreator(name);
-    }
-
-    modal.classList.add("active");
-  };
-
-  if (modal) {
-    modal.addEventListener("click", (e) => {
-      if (e.target === modal) window.closeCreatorProfile();
-    });
-  }
-
-  window.messageFromProfile = () => {
-    const name = document.getElementById("psProfModalName").textContent;
-    window.closeCreatorProfile();
-    const matchesBtn = document.querySelector('button[data-panel="matches"]');
-    if (matchesBtn) matchesBtn.click();
-    setTimeout(() => {
-      window.openChat(name);
-    }, 300);
-  };
-}
-
-function psEscapeHtml(value) {
-  return String(value == null ? "" : value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 
 function psFormatNotifTime(ts) {
   const ms = Number(ts || 0);
@@ -3399,6 +3258,7 @@ function switchTab(panelName) {
     "ps-tab-home",
     "ps-tab-swipe",
     "ps-tab-matches",
+    "ps-tab-premium",
     "ps-tab-settings",
   );
   document.body.classList.add(`ps-tab-${panelName}`);
@@ -3419,8 +3279,6 @@ function switchTab(panelName) {
   });
   if (PS_DOM.sidebar && PS_DOM.sidebar.classList.contains("ps-is-open"))
     PS_DOM.sidebar.classList.remove("ps-is-open");
-  syncMobileQuickNavActive(panelName);
-  closeMobileQuickNav();
 
   // Load Premium Society matches (isolated from dashboard matches)
   if (panelName === "matches") {
