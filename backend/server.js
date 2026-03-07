@@ -1801,6 +1801,170 @@ const _CACHE_TTL_MS = 15 * 1000;
 // ---------------------------------------------------------------------
 const _psSwipeCache = new Map(); // email -> { ts, map }
 const _psMatchEmailsCache = new Map(); // email -> { ts, emails: string[] }
+const PREMIUM_SOCIETY_DAILY_SWIPE_LIMIT = (() => {
+  const raw = Number(process.env.PREMIUM_SOCIETY_DAILY_SWIPE_LIMIT);
+  if (!Number.isFinite(raw) || raw <= 0) return null; // default: unlimited unless explicitly configured
+  return Math.max(1, Math.floor(raw));
+})();
+
+function _ps_getSwipeWindow(now = Date.now()) {
+  const d = new Date(now);
+  const y = d.getUTCFullYear();
+  const m = d.getUTCMonth();
+  const day = d.getUTCDate();
+  const startAtMs = Date.UTC(y, m, day, 0, 0, 0, 0);
+  const resetAtMs = startAtMs + DAY_MS;
+  const key = `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  return { key, startAtMs, resetAtMs };
+}
+
+function _ps_isUnlimitedSwipeMode() {
+  return !Number.isFinite(PREMIUM_SOCIETY_DAILY_SWIPE_LIMIT);
+}
+
+function _ps_getSwipeUsageFromDoc(doc) {
+  const raw = doc && typeof doc === 'object' ? doc : {};
+  return {
+    dayKey: String(raw.premiumSocietySwipeDayKey || raw.premium_society_swipe_day_key || '').trim(),
+    used: Math.max(0, Number(raw.premiumSocietySwipesUsed || raw.premium_society_swipes_used || 0) || 0),
+    resetAtMs: Math.max(0, Number(raw.premiumSocietySwipeResetAtMs || raw.premium_society_swipe_reset_at_ms || 0) || 0)
+  };
+}
+
+async function _ps_writeSwipeUsage(email, payload = {}, meDoc = null) {
+  const emailNorm = String(email || '').trim().toLowerCase();
+  if (!emailNorm) return null;
+
+  const patch = {
+    premiumSocietySwipeDayKey: String(payload.dayKey || '').trim(),
+    premiumSocietySwipesUsed: Math.max(0, Number(payload.used || 0) || 0),
+    premiumSocietySwipeResetAtMs: Math.max(0, Number(payload.resetAtMs || 0) || 0)
+  };
+
+  if (hasFirebase && usersCollection) {
+    const docId = String((meDoc && meDoc.id) || '').trim();
+    if (docId) {
+      await usersCollection.doc(docId).set(patch, { merge: true });
+    } else {
+      await updateUserByEmail(emailNorm, patch);
+    }
+  } else {
+    DB.psSwipeUsage = DB.psSwipeUsage && typeof DB.psSwipeUsage === 'object' ? DB.psSwipeUsage : {};
+    DB.psSwipeUsage[emailNorm] = { ...(DB.psSwipeUsage[emailNorm] || {}), ...patch };
+  }
+
+  if (DB.users && DB.users[emailNorm]) {
+    DB.users[emailNorm] = { ...DB.users[emailNorm], ...patch };
+  }
+  if (DB.user && String(DB.user.email || '').trim().toLowerCase() === emailNorm) {
+    DB.user = { ...DB.user, ...patch };
+  }
+
+  return patch;
+}
+
+async function _ps_getSwipeStats(email, meDoc = null) {
+  const emailNorm = String(email || '').trim().toLowerCase();
+  const window = _ps_getSwipeWindow();
+
+  if (!emailNorm) {
+    return {
+      limit: _ps_isUnlimitedSwipeMode() ? null : PREMIUM_SOCIETY_DAILY_SWIPE_LIMIT,
+      used: 0,
+      remaining: _ps_isUnlimitedSwipeMode() ? null : PREMIUM_SOCIETY_DAILY_SWIPE_LIMIT,
+      resetAtMs: _ps_isUnlimitedSwipeMode() ? null : window.resetAtMs,
+      unlimited: _ps_isUnlimitedSwipeMode(),
+      limitReached: false,
+      dayKey: window.key
+    };
+  }
+
+  if (_ps_isUnlimitedSwipeMode()) {
+    return {
+      limit: null,
+      used: null,
+      remaining: null,
+      resetAtMs: null,
+      unlimited: true,
+      limitReached: false,
+      dayKey: window.key
+    };
+  }
+
+  let usage = { dayKey: '', used: 0, resetAtMs: window.resetAtMs };
+
+  if (meDoc && typeof meDoc === 'object') {
+    usage = _ps_getSwipeUsageFromDoc(meDoc);
+  } else if (hasFirebase && usersCollection) {
+    const found = await findUserByEmail(emailNorm);
+    usage = _ps_getSwipeUsageFromDoc(found || {});
+  } else {
+    DB.psSwipeUsage = DB.psSwipeUsage && typeof DB.psSwipeUsage === 'object' ? DB.psSwipeUsage : {};
+    usage = _ps_getSwipeUsageFromDoc(DB.psSwipeUsage[emailNorm] || {});
+  }
+
+  let dayKey = usage.dayKey;
+  let used = usage.used;
+
+  if (dayKey != window.key) {
+    dayKey = window.key;
+    used = 0;
+    await _ps_writeSwipeUsage(emailNorm, { dayKey, used, resetAtMs: window.resetAtMs }, meDoc);
+  }
+
+  const limit = PREMIUM_SOCIETY_DAILY_SWIPE_LIMIT;
+  const remaining = Math.max(0, limit - used);
+
+  return {
+    limit,
+    used,
+    remaining,
+    resetAtMs: window.resetAtMs,
+    unlimited: false,
+    limitReached: remaining <= 0,
+    dayKey
+  };
+}
+
+async function _ps_consumeSwipe(email, meDoc = null, count = 1) {
+  const stats = await _ps_getSwipeStats(email, meDoc);
+  if (stats.unlimited) return stats;
+
+  const inc = Math.max(1, Number(count || 1) || 1);
+  const nextUsed = Math.min(stats.limit, Math.max(0, Number(stats.used || 0)) + inc);
+  await _ps_writeSwipeUsage(email, {
+    dayKey: stats.dayKey,
+    used: nextUsed,
+    resetAtMs: stats.resetAtMs
+  }, meDoc);
+
+  return {
+    ...stats,
+    used: nextUsed,
+    remaining: Math.max(0, stats.limit - nextUsed),
+    limitReached: nextUsed >= stats.limit
+  };
+}
+
+function _ps_buildSwipeStatsPayload(stats) {
+  const safe = stats && typeof stats === 'object' ? stats : {};
+  const unlimited = !!safe.unlimited || !Number.isFinite(safe.limit);
+  return {
+    swipeStats: {
+      unlimited,
+      limit: unlimited ? null : Math.max(1, Number(safe.limit || 0)),
+      used: unlimited ? null : Math.max(0, Number(safe.used || 0)),
+      remaining: unlimited ? null : Math.max(0, Number(safe.remaining || 0)),
+      resetAtMs: unlimited ? null : Math.max(0, Number(safe.resetAtMs || 0))
+    },
+    unlimited,
+    limit: unlimited ? null : Math.max(1, Number(safe.limit || 0)),
+    used: unlimited ? null : Math.max(0, Number(safe.used || 0)),
+    remaining: unlimited ? null : Math.max(0, Number(safe.remaining || 0)),
+    resetAtMs: unlimited ? null : Math.max(0, Number(safe.resetAtMs || 0)),
+    limitReached: !!safe.limitReached
+  };
+}
 
 function _ps_setSwipeCache(fromEmail, toEmail, type) {
   const from = String(fromEmail || '').toLowerCase();
@@ -4225,23 +4389,78 @@ app.post('/api/me/notifications/mark-read', authMiddleware, async (req, res) => 
 
 // ============================================================
 
+
 // ---------------- Recent Moments (Stories) -------------------
 // A "moment" is a short-lived media post (photo/video) that expires after 24 hours.
-// We scope the feed by default to: {self + matches}. Use ?scope=all only for debugging.
+// We scope the feed by default to: {self + matches}. Premium Society has its own isolated scope.
+
+function normalizeMomentAudienceScope(rawScope) {
+  const v = String(rawScope || '').trim().toLowerCase();
+  if (!v || v === 'matches' || v === 'match') return 'matches';
+  if (['premium-society', 'premium_society', 'premiumsociety', 'ps'].includes(v)) return 'premium-society';
+  if (v === 'all') return 'all';
+  return 'matches';
+}
+
+async function resolveMomentFeedAccess(scope, email) {
+  const normalizedScope = normalizeMomentAudienceScope(scope);
+  if (normalizedScope === 'all') {
+    return { scope: 'all', allowedEmails: null, meDoc: null, mePublic: null };
+  }
+
+  const emailNorm = String(email || '').trim().toLowerCase();
+  if (!emailNorm) {
+    return { scope: normalizedScope, allowedEmails: new Set(), meDoc: null, mePublic: null };
+  }
+
+  if (normalizedScope === 'premium-society') {
+    let meDoc = null;
+    if (hasFirebase) meDoc = await findUserByEmail(emailNorm);
+    else meDoc = (DB.users && DB.users[emailNorm]) ? { ...DB.users[emailNorm] } : (DB.user ? { ...DB.user } : null);
+
+    if (!meDoc) {
+      return { scope: normalizedScope, allowedEmails: new Set(), meDoc: null, mePublic: null, denied: true, deniedCode: 'user_not_found' };
+    }
+
+    const mePublic = publicUser({ id: meDoc.id, ...meDoc });
+    if (!psIsPremiumSocietyMember(mePublic)) {
+      return { scope: normalizedScope, allowedEmails: new Set(), meDoc, mePublic, denied: true, deniedCode: 'not_premium_society' };
+    }
+
+    const psMatchEmails = await _ps_getMatchEmails(emailNorm);
+    return {
+      scope: normalizedScope,
+      allowedEmails: new Set([emailNorm, ...psMatchEmails.map(e => String(e || '').toLowerCase())]),
+      meDoc,
+      mePublic
+    };
+  }
+
+  const matchEmails = await _getMatchEmails(emailNorm);
+  return {
+    scope: normalizedScope,
+    allowedEmails: new Set([emailNorm, ...matchEmails.map(e => String(e || '').toLowerCase())]),
+    meDoc: null,
+    mePublic: null
+  };
+}
 
 app.get('/api/moments/list', async (req, res) => {
   try {
     const now = Date.now();
-
-    const scope = String((req.query || {}).scope || 'matches').toLowerCase();
+    const requestedScope = (req.query || {}).scope || 'matches';
     const email = getSessionEmail(req);
-    let allowedEmails = null;
-    if (scope !== 'all') {
-      if (!email) {
-        return res.json({ ok: true, moments: [] });
-      }
-      const matchEmails = await _getMatchEmails(email);
-      allowedEmails = new Set([email, ...matchEmails.map(e => String(e || '').toLowerCase())]);
+
+    const access = await resolveMomentFeedAccess(requestedScope, email);
+    if (access && access.denied && access.scope === 'premium-society') {
+      return res.status(403).json({ ok: false, message: 'Premium Society members only', moments: [] });
+    }
+
+    const scope = access && access.scope ? access.scope : normalizeMomentAudienceScope(requestedScope);
+    const allowedEmails = access ? access.allowedEmails : null;
+
+    if (scope !== 'all' && (!email || !allowedEmails || !allowedEmails.size)) {
+      return res.json({ ok: true, moments: [] });
     }
 
     if (hasFirebase && firestore) {
@@ -4258,6 +4477,8 @@ app.get('/api/moments/list', async (req, res) => {
         const v = d.data() || {};
 
         const ownerEmail = String(v.ownerEmail || '').toLowerCase();
+        const audienceScope = normalizeMomentAudienceScope(v.audienceScope || v.scope || 'matches');
+        if (scope !== 'all' && audienceScope !== scope) continue;
         if (allowedEmails && !allowedEmails.has(ownerEmail)) continue;
 
         // If stored in Storage, regenerate a fresh signed URL on each request
@@ -4284,6 +4505,7 @@ app.get('/api/moments/list', async (req, res) => {
           mediaUrl,
           mediaType: v.mediaType || '',
           caption: v.caption || '',
+          audienceScope,
           createdAtMs: Number(v.createdAtMs) || now,
           expiresAtMs: Number(v.expiresAtMs) || (now + 1000 * 60 * 60 * 24)
         });
@@ -4298,6 +4520,8 @@ app.get('/api/moments/list', async (req, res) => {
     const moments = all
       .filter(m => m && Number(m.expiresAtMs) > now)
       .filter(m => {
+        const audienceScope = normalizeMomentAudienceScope(m && (m.audienceScope || m.scope || 'matches'));
+        if (scope !== 'all' && audienceScope !== scope) return false;
         if (!allowedEmails) return true;
         const oe = String(m.ownerEmail || '').toLowerCase();
         return oe && allowedEmails.has(oe);
@@ -4313,6 +4537,7 @@ app.get('/api/moments/list', async (req, res) => {
         mediaUrl: m.mediaUrl,
         mediaType: m.mediaType,
         caption: m.caption || '',
+        audienceScope: normalizeMomentAudienceScope(m.audienceScope || m.scope || 'matches'),
         createdAtMs: Number(m.createdAtMs) || now,
         expiresAtMs: Number(m.expiresAtMs) || (now + 1000 * 60 * 60 * 24)
       }));
@@ -4330,6 +4555,19 @@ app.post('/api/moments/create', async (req, res) => {
     if (!email) return res.status(401).json({ ok: false, message: 'not logged in' });
 
     const body = req.body || {};
+    const requestedScope = normalizeMomentAudienceScope(body.audienceScope || body.scope || 'matches');
+    if (requestedScope === 'premium-society') {
+      let meDoc = null;
+      if (hasFirebase) meDoc = await findUserByEmail(email);
+      else meDoc = (DB.users && DB.users[email]) ? { ...DB.users[email] } : (DB.user ? { ...DB.user } : null);
+
+      const mePublic = meDoc ? publicUser({ id: meDoc.id, ...meDoc }) : null;
+      if (!mePublic || !psIsPremiumSocietyMember(mePublic)) {
+        return res.status(403).json({ ok: false, message: 'Premium Society members only' });
+      }
+    }
+
+    const audienceScope = requestedScope === 'all' ? 'matches' : requestedScope;
     const dataUrl = body.mediaDataUrl;
     const caption = (body.caption || '').toString().slice(0, 180).trim();
 
@@ -4379,6 +4617,7 @@ app.post('/api/moments/create', async (req, res) => {
       ownerEmail: email,
       ownerName,
       ownerAvatarUrl,
+      audienceScope,
       mediaUrl: '',
       storagePath: '',
       mediaType: mime,
@@ -4409,6 +4648,7 @@ app.post('/api/moments/create', async (req, res) => {
           ownerEmail: email,
           ownerName,
           ownerAvatarUrl,
+          audienceScope,
           storagePath,
           mediaUrl: '',
           mediaType: mime,
@@ -4420,7 +4660,7 @@ app.post('/api/moments/create', async (req, res) => {
         console.warn('Failed to store moment metadata in Firestore:', e?.message || e);
       }
 
-      return res.json({ ok: true, moment: { id, ownerId, ownerEmail: email, ownerName, ownerAvatarUrl, mediaType: mime, caption, createdAtMs: moment.createdAtMs, expiresAtMs: moment.expiresAtMs } });
+      return res.json({ ok: true, moment: { id, ownerId, ownerEmail: email, ownerName, ownerAvatarUrl, audienceScope, mediaType: mime, caption, createdAtMs: moment.createdAtMs, expiresAtMs: moment.expiresAtMs } });
     }
 
     if (hasFirebase && firestore) {
@@ -4430,6 +4670,7 @@ app.post('/api/moments/create', async (req, res) => {
           ownerEmail: email,
           ownerName,
           ownerAvatarUrl,
+          audienceScope,
           storagePath: '',
           mediaUrl: '',
           mediaType: mime,
@@ -4441,7 +4682,7 @@ app.post('/api/moments/create', async (req, res) => {
         console.warn('Failed to store text-only moment metadata in Firestore:', e?.message || e);
       }
 
-      return res.json({ ok: true, moment: { id, ownerId, ownerEmail: email, ownerName, ownerAvatarUrl, mediaUrl: '', mediaType: mime, caption, createdAtMs: moment.createdAtMs, expiresAtMs: moment.expiresAtMs } });
+      return res.json({ ok: true, moment: { id, ownerId, ownerEmail: email, ownerName, ownerAvatarUrl, audienceScope, mediaUrl: '', mediaType: mime, caption, createdAtMs: moment.createdAtMs, expiresAtMs: moment.expiresAtMs } });
     }
 
     if (buf) {
@@ -4461,7 +4702,7 @@ app.post('/api/moments/create', async (req, res) => {
     cleanupExpiredMoments();
     if (!hasFirebase) saveMomentsStore();
 
-    return res.json({ ok: true, moment: { id, ownerId, ownerEmail: email, ownerName, ownerAvatarUrl, mediaUrl: moment.mediaUrl, mediaType: mime, caption, createdAtMs: moment.createdAtMs, expiresAtMs: moment.expiresAtMs } });
+    return res.json({ ok: true, moment: { id, ownerId, ownerEmail: email, ownerName, ownerAvatarUrl, audienceScope, mediaUrl: moment.mediaUrl, mediaType: mime, caption, createdAtMs: moment.createdAtMs, expiresAtMs: moment.expiresAtMs } });
   } catch (e) {
     console.error('moments/create error:', e);
     return res.status(500).json({ ok: false, message: 'server error' });
@@ -11291,7 +11532,12 @@ app.get('/api/premium-society/candidates', authMiddleware, async (req, res) => {
     });
 
     const limit = Math.max(1, Math.min(50, parseInt(req.query.limit || '20', 10) || 20));
-    return res.json({ ok: true, candidates: candidates.slice(0, limit), remaining: null, limit: null, limitReached: false });
+    const swipeStats = await _ps_getSwipeStats(myEmail, meDoc);
+    return res.json({
+      ok: true,
+      candidates: candidates.slice(0, limit),
+      ..._ps_buildSwipeStatsPayload(swipeStats)
+    });
   } catch (err) {
     console.error('[premium-society] candidates error:', err);
     return res.status(500).json({ ok: false, message: 'Server error' });
@@ -11341,6 +11587,18 @@ app.post('/api/premium-society/action', authMiddleware, async (req, res) => {
       return res.status(400).json({ ok: false, code: 'target_not_premium_society', message: 'You can only swipe on Premium Society members.' });
     }
 
+    const swipeStatsBefore = await _ps_getSwipeStats(myEmail, meDoc);
+    if (!swipeStatsBefore.unlimited && swipeStatsBefore.remaining <= 0) {
+      return res.status(429).json({
+        ok: false,
+        code: 'premium_society_swipe_limit_reached',
+        message: 'Daily swipe limit reached',
+        isMatch: false,
+        matchId: null,
+        ..._ps_buildSwipeStatsPayload({ ...swipeStatsBefore, limitReached: true })
+      });
+    }
+
     const type = (action === 'super' || action === 'superlike') ? 'superlike' : (action === 'like' ? 'like' : 'pass');
     await _ps_saveSwipe(myEmail, targetEmail, type);
 
@@ -11358,7 +11616,14 @@ app.post('/api/premium-society/action', authMiddleware, async (req, res) => {
       }
     }
 
-    return res.json({ ok: true, isMatch, matchId, remaining: null, limit: null, limitReached: false });
+    const swipeStatsAfter = await _ps_consumeSwipe(myEmail, meDoc, 1);
+
+    return res.json({
+      ok: true,
+      isMatch,
+      matchId,
+      ..._ps_buildSwipeStatsPayload(swipeStatsAfter)
+    });
   } catch (err) {
     console.error('[premium-society] action error:', err);
     return res.status(500).json({ ok: false, message: 'Server error' });

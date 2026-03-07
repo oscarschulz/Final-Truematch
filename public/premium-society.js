@@ -262,6 +262,18 @@ function initOverlayObservers() {
     chatObs.observe(chatWindow, { attributes: true });
   }
 
+  const creatorModal = document.getElementById("psCreatorProfileModal");
+  if (creatorModal) {
+    const creatorObs = new MutationObserver((mutations) => {
+      mutations.forEach((m) => {
+        if (m.attributeName === "class") {
+          if (creatorModal.classList.contains("active")) body.classList.add("ps-creator-open");
+          else body.classList.remove("ps-creator-open");
+        }
+      });
+    });
+    creatorObs.observe(creatorModal, { attributes: true });
+  }
 }
 
 
@@ -841,19 +853,15 @@ function updateStats(curr, max) {
     if (typeof Swal !== 'undefined') {
       Swal.fire({
         title: "Out of Swipes! 🛑",
-        text: "Naubos mo na ang available swipes mo sa ngayon. Balik ka ulit mamaya.",
+        text: "Naubos mo na ang daily swipe limit mo. Balik ka ulit mamaya.",
         icon: "warning",
         background: "#15151e",
         color: "#fff",
         confirmButtonColor: "#00aff0",
-        confirmButtonText: "Back to Dashboard"
-      }).then((result) => {
-        if (result.isConfirmed) {
-          window.location.href = 'dashboard.html';
-        }
+        confirmButtonText: "Okay"
       });
     } else {
-      alert("Out of swipes for now. Please return later or go back to your dashboard.");
+      alert("Out of swipes for now. Please try again later.");
     }
   }
 
@@ -1951,16 +1959,22 @@ export function initSettingsLogic() {
 
   window.openPremiumInfo = () => {
     Swal.fire({
-      title: '<i class="fa-solid fa-gem" style="color:#64E9EE"></i> Membership Access',
+      title: '<i class="fa-solid fa-gem" style="color:#FFD700"></i> Premium Society',
       html: `<div style="text-align: left; font-size: 0.85rem; color: #ccc;">
-                <p><b>Applications:</b> Premium Society applications are handled from your dashboard.</p>
-                <p><b>Access:</b> Only approved Premium Society members can fully interact inside this page.</p>
-                <p><b>Support:</b> Contact support if you need help with membership access or your member account.</p>
+                <p><b>Membership:</b> Auto-renew monthly ang iyong subscription.</p>
+                <p><b>Diamonds:</b> Digital gifts are final and non-refundable.</p>
             </div>`,
-      background: "#15151e", color: "#fff", confirmButtonColor: "#64E9EE",
+      background: "#15151e", color: "#fff", confirmButtonColor: "#FFD700",
     });
   };
 
+  window.openBillingInfo = () => {
+    Swal.fire({
+      title: '<i class="fa-solid fa-receipt"></i> Billing & Refunds',
+      html: `<p style="color:#ccc; font-size:0.9rem; text-align:left;">Request refunds within 48 hours via support ticket.</p>`,
+      background: "#15151e", color: "#fff", confirmButtonColor: "#333",
+    });
+  };
 
   window.openContactSupport = () => {
     const defaultName = String(
@@ -2998,7 +3012,7 @@ function psEnforceSwipeAccess() {
   } 
   else if (eligible && status === 'none') {
     title = "Application Required";
-    msg = "Eligible ka na sa Premium Society, pero sa dashboard ang tamang application flow. Mag-apply ka muna doon bago ka makapag-swipe rito.";
+    msg = "Premium Society applications are handled from your dashboard. Apply there to unlock access here.";
     icon = "fa-file-signature";
     btnText = "Go to Dashboard";
     btnAction = "window.location.href='dashboard.html'";
