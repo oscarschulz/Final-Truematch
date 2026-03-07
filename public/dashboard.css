@@ -214,7 +214,15 @@ body::after {
 .notif-empty { padding: 16px; color: var(--text-muted); text-align: center; }
 
 @media (max-width: 520px) {
-  .notif-dropdown { right: 12px; }
+  .notif-dropdown {
+    position: fixed !important;
+    top: calc(env(safe-area-inset-top, 0px) + 86px) !important;
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%) !important;
+    width: min(360px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
+  }
   .notif-list { max-height: 55vh; }
 }
 
