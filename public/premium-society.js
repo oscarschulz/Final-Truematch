@@ -81,7 +81,14 @@ export const PS_DOM = {
   toast: document.getElementById("ps-toast"),
 
   // Mobile Specific
-  timerDisplay: document.querySelector(".ps-stats-body p.ps-tiny"),
+  timerDisplay: document.getElementById("psStatsTimerDisplay") || document.querySelector(".ps-stats-body p.ps-tiny"),
+  mobileRingCircle: document.getElementById("psMobileStatsRingCircle"),
+  mobileCountDisplay: document.getElementById("psMobileStatsCountDisplay"),
+  mobileSwipeRingCircle: document.getElementById("psMobileStatsRingCircleSwipe"),
+  mobileSwipeCountDisplay: document.getElementById("psMobileStatsCountDisplaySwipe"),
+  mobileSwipeStatus: document.getElementById("psMobileSwipeStatsText"),
+  mobileSwipeStatusAlt: document.getElementById("psSwipeMobileStatsSub"),
+  homeMobileActiveNearby: document.querySelector('[data-ps-active-nearby-mobile]'),
 
   // Panels
 
@@ -403,8 +410,10 @@ function formatSwipeResetText() {
 }
 
 function renderSwipeStatusText() {
-  if (!PS_DOM.timerDisplay) return;
-  PS_DOM.timerDisplay.textContent = formatSwipeResetText();
+  const text = formatSwipeResetText();
+  if (PS_DOM.timerDisplay) PS_DOM.timerDisplay.textContent = text;
+  if (PS_DOM.mobileSwipeStatus) PS_DOM.mobileSwipeStatus.textContent = text;
+  if (PS_DOM.mobileSwipeStatusAlt) PS_DOM.mobileSwipeStatusAlt.textContent = text;
 }
 
 function applyServerSwipeStats(payload) {
@@ -553,6 +562,8 @@ function applyServerSwipeStats(payload) {
       console.warn("Using fallback profiles.");
       candidates = window.mockCandidatesData || [];
       if (PS_DOM.timerDisplay) PS_DOM.timerDisplay.textContent = 'Unable to load swipe stats.';
+      if (PS_DOM.mobileSwipeStatus) PS_DOM.mobileSwipeStatus.textContent = 'Unable to load swipe stats.';
+      if (PS_DOM.mobileSwipeStatusAlt) PS_DOM.mobileSwipeStatusAlt.textContent = 'Unable to load swipe stats.';
     }
     renderCards();
   }
@@ -793,13 +804,29 @@ function createCard(person, position) {
 
 function updateStats(curr, max) {
     const unlimited = (max === null || max === undefined || !Number.isFinite(max));
-    const displayVal = unlimited ? '∞' : String(Number.isFinite(curr) ? Math.max(0, curr) : 0);
+    const numericCurr = Number.isFinite(curr) ? Math.max(0, curr) : 0;
+    const displayVal = unlimited ? '∞' : String(numericCurr);
 
     if (PS_DOM.countDisplay) PS_DOM.countDisplay.textContent = displayVal;
+    if (PS_DOM.mobileCountDisplay) PS_DOM.mobileCountDisplay.textContent = displayVal;
+    if (PS_DOM.mobileSwipeCountDisplay) PS_DOM.mobileSwipeCountDisplay.textContent = displayVal;
 
+    const desktopPercent = unlimited ? 1 : Math.max(0, Math.min(1, numericCurr / max));
     if (PS_DOM.ringCircle) {
-      const percent = unlimited ? 1 : Math.max(0, Math.min(1, (Number.isFinite(curr) ? curr : 0) / max));
-      PS_DOM.ringCircle.style.strokeDashoffset = 314 - (314 * percent);
+      PS_DOM.ringCircle.style.transition = "stroke-dashoffset 0.5s ease";
+      PS_DOM.ringCircle.style.strokeDasharray = "314";
+      PS_DOM.ringCircle.style.strokeDashoffset = 314 - (314 * desktopPercent);
+    }
+
+    const mobilePercent = unlimited ? 1 : desktopPercent;
+    const mobileOffset = 251 - (251 * mobilePercent);
+    if (PS_DOM.mobileRingCircle) {
+      PS_DOM.mobileRingCircle.style.strokeDasharray = "251";
+      PS_DOM.mobileRingCircle.style.strokeDashoffset = String(mobileOffset);
+    }
+    if (PS_DOM.mobileSwipeRingCircle) {
+      PS_DOM.mobileSwipeRingCircle.style.strokeDasharray = "251";
+      PS_DOM.mobileSwipeRingCircle.style.strokeDashoffset = String(mobileOffset);
     }
   }
 
@@ -1320,6 +1347,9 @@ export async function initUI() {
   const lastTab = localStorage.getItem("ps_last_tab") || "home";
   switchTab(lastTab);
 
+  // Warm matches once so the Matches panel is populated immediately when opened
+  try { await psLoadMatches(false, { preserveQuery: true, silentMarkSeen: true }); } catch (_) {}
+
   // Gift / PPV disabled until dedicated purchase or debit logic exists
   psDisableGiftFeatures();
 }
@@ -1449,14 +1479,17 @@ function renderAdmirers(admirers = []) {
 }
 
 function renderActiveNearby(items = []) {
-  if (!PS_DOM.activeNearbyContainer) return;
+  const containers = [PS_DOM.activeNearbyContainer, PS_DOM.homeMobileActiveNearby].filter(Boolean);
+  if (!containers.length) return;
 
   if (!Array.isArray(items) || items.length === 0) {
-    PS_DOM.activeNearbyContainer.innerHTML = `<div style="grid-column:span 3; text-align:center; color:#666; font-size:0.82rem; padding:14px 8px;">No active members nearby right now.</div>`;
+    containers.forEach((el) => {
+      el.innerHTML = `<div style="grid-column:span 3; text-align:center; color:#666; font-size:0.82rem; padding:14px 8px;">No active members nearby right now.</div>`;
+    });
     return;
   }
 
-  PS_DOM.activeNearbyContainer.innerHTML = items.map((item) => {
+  const cardsHtml = items.map((item) => {
     const name = psEscapeHtml(_psSafeName(item.name || item.fullName || item.username || 'Member'));
     const avatar = psEscapeHtml(String(item.photoUrl || item.avatarUrl || item.avatar || 'assets/images/truematch-mark.png'));
     const city = psEscapeHtml(String(item.city || item.location || 'Nearby').trim() || 'Nearby');
@@ -1476,7 +1509,10 @@ function renderActiveNearby(items = []) {
         </div>
       </div>`;
   }).join('');
+
+  containers.forEach((el) => { el.innerHTML = cardsHtml; });
 }
+
 
 function renderDailyPick(profile) {
   if (!PS_DOM.dailyPickContainer) return;
@@ -3287,29 +3323,3 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 1500);
   }
 });
-/**
- * UPDATE STATS RING
- * Inayos ang math para sa SVG Ring (314 dashoffset) mula sa lumang logic
- */
-function updateStats(remaining, limit) {
-    const rem = Number.isFinite(remaining) ? Math.max(0, remaining) : 0;
-    const lim = Number.isFinite(limit) ? Math.max(1, limit) : 20;
-
-    // 1. Update Text Displays
-    if (PS_DOM.countDisplay) PS_DOM.countDisplay.textContent = rem;
-    if (PS_DOM.timerDisplay && limit === null) {
-        PS_DOM.timerDisplay.textContent = "Unlimited Swipes ✨";
-    }
-
-    // 2. RING ANIMATION (Ito yung galing sa luma)
-    if (PS_DOM.ringCircle) {
-        const percent = Math.min(1, rem / lim);
-        const offset = 314 - (314 * percent); // 314 is the circumference
-        
-        PS_DOM.ringCircle.style.transition = "stroke-dashoffset 0.5s ease";
-        PS_DOM.ringCircle.style.strokeDasharray = "314";
-        PS_DOM.ringCircle.style.strokeDashoffset = offset;
-    }
-
-    // 3. Mobile Badge Update
-}

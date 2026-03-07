@@ -4,311 +4,334 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>iTrueMatch — Premium Society</title>
-
+  <link rel="icon" href="assets/images/truematch-mark.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
-
   <link rel="stylesheet" href="premium-society.css" />
 </head>
-
-<body class="ps-theme">
-  
+<body class="tm-dark ps-theme">
   <div id="app-loader">
-      <img src="assets/images/truematch-mark.png" class="loader-logo" alt="Loading..." onerror="this.style.display='none'">
-      <div class="loader-text">iTrueMatch</div>
+    <img src="assets/images/truematch-mark.png" class="loader-logo" alt="Loading..." onerror="this.style.display='none'">
+    <div class="loader-text">iTrueMatch</div>
   </div>
 
   <canvas id="ps-bg-canvas"></canvas>
 
-  <div class="ps-layout" id="psMainLayout">
-    
-    <aside class="ps-sidebar ps-animate-enter ps-delay-1" id="psMainSidebar">
+  <div class="layout ps-layout" id="psMainLayout">
+    <aside class="sidebar ps-sidebar animate-enter delay-1 ps-animate-enter ps-delay-1" id="psMainSidebar">
       <div>
-        <a class="ps-brand" href="#">
-          <img src="assets/images/truematch-mark.png" class="ps-brand-img" alt="Logo" onerror="this.src='https://via.placeholder.com/40'">
-          <span class="ps-brand-name">iTrueMatch</span>
+        <a class="brand ps-brand" href="premium-society.html">
+          <img src="assets/images/truematch-mark.png" class="brand__logo ps-brand-img" alt="Logo" onerror="this.src='assets/images/truematch-mark.png'">
+          <span class="brand__name ps-brand-name">iTrueMatch</span>
         </a>
 
         <div class="ps-nav-label">DISCOVER</div>
-        <nav class="ps-nav-links" id="psTabbar">
-          <button class="ps-nav-btn ps-is-active" data-panel="home"><i class="fa-solid fa-house"></i> <span>Home</span></button>
-          <button class="ps-nav-btn" data-panel="swipe"><i class="fa-solid fa-layer-group"></i> <span>Swipe</span></button>
-          <button class="ps-nav-btn" data-panel="matches"><i class="fa-solid fa-comments"></i> <span>Matches</span></button>
-</nav>
+        <nav class="nav-links ps-nav-links" id="psTabbar">
+          <button class="nav-btn ps-nav-btn is-active ps-is-active" data-panel="home"><i class="fa-solid fa-house"></i> <span>Home</span></button>
+          <button class="nav-btn ps-nav-btn" data-panel="swipe"><i class="fa-solid fa-layer-group"></i> <span>Swipe</span></button>
+          <button class="nav-btn ps-nav-btn" data-panel="matches"><i class="fa-solid fa-comments"></i> <span>Matches</span></button>
+        </nav>
 
         <div class="ps-nav-label" style="margin-top: 25px;">ACCOUNT</div>
-        <nav class="ps-nav-links">
-<button class="ps-nav-btn" data-panel="settings"><i class="fa-solid fa-gear"></i> <span>Settings</span></button>
+        <nav class="nav-links ps-nav-links">
+          <button class="nav-btn ps-nav-btn" data-panel="settings"><i class="fa-solid fa-gear"></i> <span>Settings</span></button>
         </nav>
       </div>
 
-      <div class="ps-sidebar-footer">
+      <div class="sidebar-footer ps-sidebar-footer">
         <div id="psUserMenuPopup" class="ps-user-menu-popup"></div>
         <div class="ps-mini-profile">
-            <div style="position:relative;">
-                <img id="psMiniAvatar" src="assets/images/truematch-mark.png" alt="User" onerror="this.src='https://via.placeholder.com/40'">
-                <div class="ps-online-status"></div>
-            </div>
-            <div class="ps-mini-info">
-                <span class="ps-mini-name" id="psMiniName">Loading...</span>
-                <span class="ps-mini-plan" id="psMiniPlan">Free Account</span>
-            </div>
-            <i class="fa-solid fa-ellipsis" style="color:#666; font-size: 1.2rem;"></i>
+          <div style="position:relative;">
+            <img id="psMiniAvatar" src="assets/images/truematch-mark.png" alt="User" onerror="this.src='assets/images/truematch-mark.png'">
+            <div class="ps-online-status"></div>
+          </div>
+          <div class="ps-mini-info">
+            <span class="ps-mini-name" id="psMiniName">Loading...</span>
+            <span class="ps-mini-plan" id="psMiniPlan">Premium Society</span>
+          </div>
+          <i class="fa-solid fa-ellipsis" style="color:#666; font-size: 1.2rem;"></i>
         </div>
       </div>
     </aside>
 
-    <main class="ps-main-feed ps-animate-enter ps-delay-2">
-      <section class="ps-panel ps-is-active" data-panel="home" id="ps-panel-home">
-        <div class="ps-profile-header ps-glass-card">
-            <div class="ps-header-left">
-                <img id="psHeaderAvatar" src="assets/images/truematch-mark.png" class="ps-header-avatar">
-                <div class="ps-header-info">
-                    <h2 class="ps-header-name">Hi, <span id="psWelcomeName">...</span>!</h2>
-                    <span class="ps-header-status"><span class="ps-dot-green"></span> Active Now</span>
-                </div>
+    <main class="main-feed ps-main-feed animate-enter delay-2 ps-animate-enter ps-delay-2">
+      <div class="mobile-topbar ps-mobile-topbar">
+        <img src="assets/images/truematch-mark.png" class="mobile-topbar-logo" alt="Logo" />
+        <span class="mobile-topbar-title">Premium Society</span>
+      </div>
+
+      <section class="panel ps-panel is-active ps-is-active" data-panel="home" id="ps-panel-home">
+        <div class="home-top-bar glass-card ps-glass-card ps-profile-header">
+          <div class="greeting-box ps-header-left">
+            <img id="psHeaderAvatar" src="assets/images/truematch-mark.png" class="ps-header-avatar" alt="Avatar">
+            <div class="ps-header-info">
+              <h2 class="ps-header-name" style="margin:0; font-size:1.35rem;">Hello, <span id="psWelcomeName" style="color:var(--brand-color, #00aff0);">Member</span> 👋</h2>
+              <p class="tiny muted" style="margin:0;"><span class="ps-dot-green"></span> Premium Society is live</p>
             </div>
-            <div class="ps-header-right-group" style="position:relative;">
-                <button id="psBtnNotif" class="ps-btn-notif">
-                    <i class="fa-solid fa-bell"></i>
-                    <span class="ps-notif-badge" id="psNotifCount">0</span>
-                </button>
-                <div id="psNotifPopover" class="ps-notif-popover">
-                    <div class="ps-popover-header">
-                        <h4>Notifications</h4>
-                        <button id="psBtnNotifMarkAll" class="ps-btn-text" type="button">Mark all read</button>
-                    </div>
-                    <div id="psNotifList" class="ps-notif-list">
-                        <div class="ps-notif-item ps-notif-empty" style="cursor:default; opacity:.8;">
-                            <div class="ps-notif-icon"><i class="fa-solid fa-bell-slash"></i></div>
-                            <div class="ps-notif-text">
-                                <p><strong>No notifications yet</strong><br>You’re all caught up.</p>
-                                <span>—</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                </div>
+          </div>
+          <div class="notif-icon-box ps-header-right-group" id="psBtnNotif" style="position:relative;">
+            <i class="fa-solid fa-bell"></i>
+            <span class="notif-dot ps-notif-badge" id="psNotifCount" style="display:none;">0</span>
+            <div class="notif-dropdown ps-notif-popover" id="psNotifPopover">
+              <div class="notif-header ps-popover-header">
+                <span>Notifications</span>
+                <button id="psBtnNotifMarkAll" class="ps-btn-text" type="button">Mark all read</button>
+              </div>
+              <div class="notif-list ps-notif-list" id="psNotifList">
+                <div class="notif-empty ps-notif-item ps-notif-empty">No notifications yet.</div>
+              </div>
             </div>
+          </div>
         </div>
-        <div id="psDailyPickContainer" class="ps-hero-container" style="margin-bottom: 25px;"></div>
-        <div id="psStoriesContainer" class="ps-stories-rail" style="margin-bottom: 25px;"></div>
-        <div class="ps-admirer-section">
-            <h3 class="ps-section-title">Who Liked You <span class="ps-badge" id="psAdmirerCount">0 New</span></h3>
-            <div class="ps-admirer-grid" id="psAdmirerContainer"></div>
+
+        <div id="psDailyPickContainer" class="ps-hero-container"></div>
+        <div id="psStoriesContainer" class="ps-stories-rail stories-rail-container"></div>
+
+        <h3 class="section-title ps-section-title">Who Liked You <span class="badge-pill ps-badge" id="psAdmirerCount">0 New</span></h3>
+        <div class="admirer-list-container ps-admirer-grid" id="psAdmirerContainer"></div>
+
+        <div id="psHomeMobileWidgets" class="home-mobile-widgets ps-home-mobile-widgets">
+          <div class="glass-card ps-glass-card">
+            <div class="ps-card-header-flex"><h3>Daily Swipes</h3></div>
+            <div class="swipe-mobile-stats ps-mobile-stats-card" aria-label="Premium Society swipes left today">
+              <div class="sms-left">
+                <div class="sms-title">Swipes Left</div>
+                <div class="sms-sub" id="psMobileSwipeStatsText">Loading swipe stats...</div>
+              </div>
+              <div class="sms-ring">
+                <svg width="46" height="46" viewBox="0 0 100 100" aria-hidden="true">
+                  <circle class="bg" cx="50" cy="50" r="40"></circle>
+                  <circle class="fg" id="psMobileStatsRingCircle" cx="50" cy="50" r="40" style="stroke-dasharray: 251; stroke-dashoffset: 0;"></circle>
+                </svg>
+                <div class="sms-count" id="psMobileStatsCountDisplay">-</div>
+              </div>
+            </div>
+          </div>
+          <div class="glass-card ps-glass-card">
+            <div class="ps-card-header-flex"><h3>Active Nearby</h3><span class="ps-live-pulse"><i class="fa-solid fa-circle"></i> LIVE</span></div>
+            <div class="ps-active-grid" data-ps-active-nearby-mobile="1"></div>
+          </div>
         </div>
       </section>
 
-      <section class="ps-panel" data-panel="swipe">
-        <div class="ps-swipe-layout">
-          <div class="ps-swipe-stack swipe-stack" id="psSwipeStack"></div>
-          <div class="ps-swipe-controls swipe-controls" id="psSwipeControls">
-            <button id="psBtnSwipePass" class="ps-btn-round ps-btn-pass"><i class="fa-solid fa-xmark"></i></button>
-            <button id="psBtnSwipeSuper" class="ps-btn-round ps-btn-super"><i class="fa-solid fa-star"></i></button>
-            <button id="psBtnSwipeLike" class="ps-btn-round ps-btn-like"><i class="fa-solid fa-heart"></i></button>
+      <section class="panel ps-panel" data-panel="swipe" id="ps-panel-swipe">
+        <div class="feed-header ps-feed-header">Discover</div>
+        <div class="swipe-mobile-stats" id="psSwipeMobileStats" aria-label="Premium Society swipes left today">
+          <div class="sms-left">
+            <div class="sms-title">Swipes Left</div>
+            <div class="sms-sub" id="psSwipeMobileStatsSub">Resets daily</div>
           </div>
-          <div class="ps-refresh-popover swipe-empty" id="psRefreshPopover">
+          <div class="sms-ring">
+            <svg width="46" height="46" viewBox="0 0 100 100" aria-hidden="true">
+              <circle class="bg" cx="50" cy="50" r="40"></circle>
+              <circle class="fg" id="psMobileStatsRingCircleSwipe" cx="50" cy="50" r="40" style="stroke-dasharray: 251; stroke-dashoffset: 0;"></circle>
+            </svg>
+            <div class="sms-count" id="psMobileStatsCountDisplaySwipe">-</div>
+          </div>
+        </div>
+        <div class="swipe-layout ps-swipe-layout">
+          <div class="swipe-empty ps-refresh-popover" id="psRefreshPopover">
             <div class="ps-popover-content">
-              <span class="ps-emoji-lg">✨</span>
-              <h4>Nothing to swipe for now</h4>
-              <button class="ps-btn-refresh" id="psBtnRefreshDeck">Refresh</button>
+              <div style="font-size:3rem;">✨</div>
+              <h3>That's everyone for now</h3>
+              <button class="btn btn--primary ps-btn-refresh" id="psBtnRefreshDeck">Refresh</button>
             </div>
+          </div>
+          <div class="swipe-stack ps-swipe-stack" id="psSwipeStack"></div>
+          <div class="swipe-controls ps-swipe-controls" id="psSwipeControls">
+            <button id="psBtnSwipePass" class="btn-round ps-btn-round ps-btn-pass"><i class="fa-solid fa-xmark"></i></button>
+            <button id="psBtnSwipeSuper" class="btn-round ps-btn-round ps-btn-super"><i class="fa-solid fa-star"></i></button>
+            <button id="psBtnSwipeLike" class="btn-round ps-btn-round ps-btn-like"><i class="fa-solid fa-heart"></i></button>
           </div>
         </div>
       </section>
 
-      <section class="ps-panel" data-panel="matches">
+      <section class="panel ps-panel" data-panel="matches" id="ps-panel-matches">
+        <div class="feed-header ps-feed-header">Matches &amp; Messages</div>
         <div class="ps-matches-container">
-            <div class="ps-search-bar-wrapper">
-                <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="text" class="ps-input-search" placeholder="Search matches...">
-            </div>
-            <div style="margin-bottom: 25px;">
-                <h3 class="ps-section-title" style="color:#ffd700;">New Matches <span class="ps-badge ps-bg-gold" id="psNewMatchCount">0</span></h3>
-                <div class="ps-new-matches-rail" id="psNewMatchesRail"></div>
-            </div>
-            <h3 class="ps-section-title">Messages</h3>
-            <div class="ps-messages-list" id="psMatchesContainer"></div>
+          <div class="ps-search-bar-wrapper">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" class="ps-input-search" placeholder="Search matches...">
+          </div>
+          <h3 class="section-title ps-section-title" style="margin-top:10px;">New Matches <span class="badge-pill ps-badge ps-bg-gold" id="psNewMatchCount">0</span></h3>
+          <div class="stories-rail-container" style="margin-bottom:20px;">
+            <div class="ps-new-matches-rail" id="psNewMatchesRail"></div>
+          </div>
+          <h3 class="section-title ps-section-title">Messages</h3>
+          <div id="psMatchesContainer" class="matches-grid ps-messages-list"></div>
         </div>
+
         <div id="psChatWindow" class="ps-chat-window">
-            <div class="ps-chat-header">
-                <button class="ps-btn-icon-sm" id="psBtnCloseChat"><i class="fa-solid fa-chevron-left"></i></button>
-                <div class="ps-chat-user-info">
-                    <img id="psChatAvatar" src="assets/images/truematch-mark.png" class="ps-chat-avatar-img">
-                    <div>
-                        <h4 id="psChatName">User</h4>
-                        <span class="ps-chat-status">Active now</span>
-                    </div>
-                </div>
+          <div class="ps-chat-header">
+            <button class="ps-btn-icon-sm" id="psBtnCloseChat"><i class="fa-solid fa-chevron-left"></i></button>
+            <div class="ps-chat-user-info">
+              <img id="psChatAvatar" src="assets/images/truematch-mark.png" class="ps-chat-avatar-img" alt="Avatar">
+              <div>
+                <h4 id="psChatName">User</h4>
+                <span class="ps-chat-status">Active now</span>
+              </div>
             </div>
-            <div class="ps-chat-body" id="psChatBody"></div>
-            <emoji-picker id="psEmojiPicker" class="dark"></emoji-picker>
-            <div class="ps-chat-footer">
-                <div class="ps-chat-input-wrapper">
-                    <input type="text" id="psChatInput" placeholder="Type a message...">
-                    <button id="psBtnToggleEmoji" class="ps-btn-chat-emoji">
-                        <i class="fa-regular fa-face-smile"></i>
-                    </button>
-                </div>
-                <button class="ps-btn-chat-send" onclick="sendChatMessage()"><i class="fa-solid fa-paper-plane"></i></button>
+          </div>
+          <div class="ps-chat-body" id="psChatBody"></div>
+          <emoji-picker id="psEmojiPicker" class="dark"></emoji-picker>
+          <div class="ps-chat-footer">
+            <div class="ps-chat-input-wrapper">
+              <input type="text" id="psChatInput" placeholder="Type a message...">
+              <button id="psBtnToggleEmoji" class="ps-btn-chat-emoji"><i class="fa-regular fa-face-smile"></i></button>
             </div>
+            <button class="ps-btn-chat-send" onclick="sendChatMessage()"><i class="fa-solid fa-paper-plane"></i></button>
+          </div>
         </div>
       </section>
-<section class="ps-panel" data-panel="settings" id="ps-panel-settings">
-          <div class="ps-settings-dashboard">
-              <div class="ps-bento-card ps-profile-bento">
-                  <div class="ps-bento-profile-info">
-                      <div class="ps-avatar-ring">
-                        <img id="psSAvatar" src="assets/images/truematch-mark.png">
-                      </div>
-                      <div class="ps-bento-text">
-                          <h3 id="psSNameDisplay">Member</h3>
-                          <p id="psSEmailDisplay">user@example.com</p>
-                          <span class="ps-badge-outline" id="psSPlanBadge">Free Account</span>
-                      </div>
-                  </div>
-                  <button class="ps-btn-edit-layout" id="psBtnEditProfile">Edit Profile <i class="fa-solid fa-pen"></i></button>
+
+      <section class="panel ps-panel" data-panel="settings" id="ps-panel-settings">
+        <div class="feed-header ps-feed-header">Settings</div>
+        <div class="ps-settings-dashboard">
+          <div class="glass-card ps-glass-card ps-profile-bento">
+            <div class="ps-bento-profile-info">
+              <div class="ps-avatar-ring">
+                <img id="psSAvatar" src="assets/images/truematch-mark.png" alt="Avatar">
               </div>
-
-              <div class="ps-settings-grid-row">
-                  <div class="ps-bento-card ps-card-tall">
-                      <div class="ps-card-header-split">
-                          <div class="ps-icon-box blue-glow"><i class="fa-solid fa-location-dot"></i></div>
-                          <span class="ps-header-label">Discovery</span>
-                      </div>
-                      <div class="ps-slider-group">
-                          <div class="ps-slider-label"><span>Distance: <span id="psDistVal">15</span> km</span></div>
-                          <input type="range" id="psRangeDist" class="ps-range-blue" min="1" max="100" value="15">
-                      </div>
-                      <div class="ps-slider-group">
-                          <div class="ps-slider-label"><span>Max Age: <span id="psAgeVal">26</span></span></div>
-                          <input type="range" id="psRangeAge" class="ps-range-blue" min="18" max="60" value="26">
-                      </div>
-                  </div>
-                  <div class="ps-bento-card ps-card-tall">
-                      <div class="ps-card-header-split">
-                          <div class="ps-icon-box pink-glow"><i class="fa-solid fa-bell"></i></div>
-                          <span class="ps-header-label">Notifications</span>
-                      </div>
-                      <div class="ps-toggle-row">
-                          <span>Matches</span>
-                          <label class="ps-switch-cyan"><input type="checkbox" checked><span class="slider"></span></label>
-                      </div>
-                      <div class="ps-toggle-row">
-                          <span>Messages</span>
-                          <label class="ps-switch-cyan"><input type="checkbox" checked><span class="slider"></span></label>
-                      </div>
-                  </div>
+              <div class="ps-bento-text">
+                <h3 id="psSNameDisplay">Member</h3>
+                <p id="psSEmailDisplay">user@example.com</p>
+                <span class="ps-badge-outline" id="psSPlanBadge">Premium Society</span>
               </div>
-
-              <details class="ps-settings-dropdown" open>
-                  <summary>
-                      <div class="ps-dropdown-title"><i class="fa-solid fa-sliders"></i> App Preferences</div>
-                      <i class="fa-solid fa-chevron-down ps-chevron"></i>
-                  </summary>
-                  <div class="ps-dropdown-content">
-                      <div class="ps-legal-row">
-                          <span>Sound Effects</span> 
-                          <label class="ps-switch-mini"><input type="checkbox" checked><span class="slider"></span></label>
-                      </div>
-                      <div class="ps-legal-row">
-                          <span>Haptic Feedback</span> 
-                          <label class="ps-switch-mini"><input type="checkbox"><span class="slider"></span></label>
-                      </div>
-                      <div class="ps-legal-row" onclick="clearAppCache()" style="color: #8899a6;">
-                          <span>Clear Media Cache</span> <i class="fa-solid fa-trash-can"></i>
-                      </div>
-                  </div>
-              </details>
-
-              <details class="ps-settings-dropdown" open>
-                  <summary>
-                      <div class="ps-dropdown-title"><i class="fa-solid fa-circle-question"></i> Help & Support</div>
-                      <i class="fa-solid fa-chevron-down ps-chevron"></i>
-                  </summary>
-                  <div class="ps-dropdown-content">
-                      <div class="ps-legal-row" onclick="openSafetyTips()">
-                          <span>Dating Safety</span> <i class="fa-solid fa-shield-halved"></i>
-                      </div>
-                      <div class="ps-legal-row" onclick="openPremiumInfo()">
-                          <span>Membership Access</span> <i class="fa-solid fa-gem"></i>
-                      </div>
-                      <div class="ps-legal-row" onclick="openContactSupport()">
-                          <span>Contact Support</span> <i class="fa-solid fa-headset"></i>
-                      </div>
-                  </div>
-              </details>
+            </div>
+            <button class="btn btn--ghost ps-btn-edit-layout" id="psBtnEditProfile">Edit Profile <i class="fa-solid fa-pen"></i></button>
           </div>
+
+          <div class="ps-settings-grid-row">
+            <div class="glass-card ps-glass-card ps-card-tall">
+              <div class="ps-card-header-split">
+                <div class="ps-icon-box blue-glow"><i class="fa-solid fa-location-dot"></i></div>
+                <span class="ps-header-label">Discovery</span>
+              </div>
+              <div class="ps-slider-group">
+                <div class="ps-slider-label"><span>Distance: <span id="psDistVal">15</span> km</span></div>
+                <input type="range" id="psRangeDist" class="ps-range-blue" min="1" max="100" value="15">
+              </div>
+              <div class="ps-slider-group">
+                <div class="ps-slider-label"><span>Max Age: <span id="psAgeVal">26</span></span></div>
+                <input type="range" id="psRangeAge" class="ps-range-blue" min="18" max="60" value="26">
+              </div>
+            </div>
+
+            <div class="glass-card ps-glass-card ps-card-tall">
+              <div class="ps-card-header-split">
+                <div class="ps-icon-box pink-glow"><i class="fa-solid fa-bell"></i></div>
+                <span class="ps-header-label">Notifications</span>
+              </div>
+              <div class="ps-toggle-row">
+                <span>Matches</span>
+                <label class="ps-switch-cyan"><input type="checkbox" checked><span class="slider"></span></label>
+              </div>
+              <div class="ps-toggle-row">
+                <span>Messages</span>
+                <label class="ps-switch-cyan"><input type="checkbox" checked><span class="slider"></span></label>
+              </div>
+            </div>
+          </div>
+
+          <details class="ps-settings-dropdown" open>
+            <summary>
+              <div class="ps-dropdown-title"><i class="fa-solid fa-sliders"></i> App Preferences</div>
+              <i class="fa-solid fa-chevron-down ps-chevron"></i>
+            </summary>
+            <div class="ps-dropdown-content">
+              <div class="ps-legal-row">
+                <span>Sound Effects</span>
+                <label class="ps-switch-mini"><input type="checkbox" checked><span class="slider"></span></label>
+              </div>
+              <div class="ps-legal-row">
+                <span>Haptic Feedback</span>
+                <label class="ps-switch-mini"><input type="checkbox"><span class="slider"></span></label>
+              </div>
+              <div class="ps-legal-row" onclick="clearAppCache()" style="color: #8899a6; cursor:pointer;">
+                <span>Clear Media Cache</span> <i class="fa-solid fa-trash-can"></i>
+              </div>
+            </div>
+          </details>
+
+          <details class="ps-settings-dropdown" open>
+            <summary>
+              <div class="ps-dropdown-title"><i class="fa-solid fa-circle-question"></i> Help &amp; Support</div>
+              <i class="fa-solid fa-chevron-down ps-chevron"></i>
+            </summary>
+            <div class="ps-dropdown-content">
+              <div class="ps-legal-row" onclick="openSafetyTips()"><span>Dating Safety</span> <i class="fa-solid fa-shield-halved"></i></div>
+              <div class="ps-legal-row" onclick="openPremiumInfo()"><span>Membership Access</span> <i class="fa-solid fa-gem"></i></div>
+              <div class="ps-legal-row" onclick="openContactSupport()"><span>Contact Support</span> <i class="fa-solid fa-headset"></i></div>
+            </div>
+          </details>
+        </div>
       </section>
     </main>
 
-    <aside class="ps-right-sidebar ps-animate-enter ps-delay-3">
-      <div class="ps-search-box">
-        <i class="fa-solid fa-magnifying-glass"></i>
-        <input type="text" placeholder="Search..." class="ps-search-input" />
-      </div>
-      <div class="ps-glass-card">
+    <aside class="right-sidebar ps-right-sidebar animate-enter delay-3 ps-animate-enter ps-delay-3">
+      <div class="glass-card ps-glass-card ps-stats-card">
         <div class="ps-card-header-flex"><h3>Daily Swipes</h3></div>
         <div class="ps-stats-body">
-            <div class="ps-progress-ring">
-                <svg width="120" height="120">
-                    <circle class="ps-bg-ring" cx="60" cy="60" r="50"></circle>
-                    <circle class="ps-fg-ring" id="psStatsRingCircle" cx="60" cy="60" r="50"></circle>
-                </svg>
-                <div class="ps-progress-text"><h2 id="psStatsCountDisplay">0</h2><span>LEFT</span></div>
-            </div>
-            <p class="ps-tiny ps-muted" style="margin-top:10px; text-align:center;">Resets in 6h 25m 19s</p>
+          <div class="ps-progress-ring">
+            <svg width="120" height="120" viewBox="0 0 120 120">
+              <circle class="ps-bg-ring" cx="60" cy="60" r="50"></circle>
+              <circle class="ps-fg-ring" id="psStatsRingCircle" cx="60" cy="60" r="50"></circle>
+            </svg>
+            <div class="ps-progress-text"><h2 id="psStatsCountDisplay">0</h2><span>LEFT</span></div>
+          </div>
+          <p class="ps-tiny ps-muted" id="psStatsTimerDisplay" style="margin-top:10px; text-align:center;">Loading swipe stats...</p>
         </div>
       </div>
-      <div class="ps-glass-card">
+      <div class="glass-card ps-glass-card">
         <div class="ps-card-header-flex"><h3>Active Nearby</h3><span class="ps-live-pulse"><i class="fa-solid fa-circle"></i> LIVE</span></div>
         <div class="ps-active-grid" id="psActiveNearbyContainer"></div>
       </div>
-</aside>
+    </aside>
   </div>
-  
+
   <div id="psStoryViewer" class="ps-story-viewer">
-      <button class="ps-close-story" id="psBtnCloseStory"><i class="fa-solid fa-xmark"></i></button>
-      <div class="ps-story-content">
-          <div class="ps-story-progress-bar"><div class="ps-story-progress-fill" id="psStoryProgress"></div></div>
-          <div class="ps-story-header">
-              <img id="psStoryAvatar" src="" class="ps-story-avatar-small">
-              <span id="psStoryName">User</span>
-          </div>
-          <div id="psStoryImageDisplay" class="ps-story-full-img"></div>
-          <div class="ps-story-footer">
-              <input type="text" id="psStoryCommentInput" class="ps-story-input-field" placeholder="Send a message...">
-              <button class="ps-btn-story-emoji" onclick="toggleStoryEmoji()"><i class="fa-regular fa-face-smile"></i></button>
-              <button class="ps-btn-story-send" onclick="sendStoryComment()"><i class="fa-solid fa-paper-plane"></i></button>
-          </div>
-          <div id="psStoryEmojiPicker" class="ps-story-emoji-picker">
-              <span onclick="addStoryEmoji('❤️')">❤️</span>
-              <span onclick="addStoryEmoji('😂')">😂</span>
-              <span onclick="addStoryEmoji('😮')">😮</span>
-              <span onclick="addStoryEmoji('🔥')">🔥</span>
-          </div>
+    <button class="ps-close-story" id="psBtnCloseStory"><i class="fa-solid fa-xmark"></i></button>
+    <div class="ps-story-content">
+      <div class="ps-story-progress-bar"><div class="ps-story-progress-fill" id="psStoryProgress"></div></div>
+      <div class="ps-story-header">
+        <img id="psStoryAvatar" src="assets/images/truematch-mark.png" class="ps-story-avatar-small" alt="Avatar">
+        <span id="psStoryName">User</span>
       </div>
+      <div id="psStoryImageDisplay" class="ps-story-full-img"></div>
+      <div class="ps-story-footer">
+        <input type="text" id="psStoryCommentInput" class="ps-story-input-field" placeholder="Send a message...">
+        <button class="ps-btn-story-emoji" onclick="toggleStoryEmoji()"><i class="fa-regular fa-face-smile"></i></button>
+        <button class="ps-btn-story-send" onclick="sendStoryComment()"><i class="fa-solid fa-paper-plane"></i></button>
+      </div>
+      <div id="psStoryEmojiPicker" class="ps-story-emoji-picker">
+        <span onclick="addStoryEmoji('❤️')">❤️</span>
+        <span onclick="addStoryEmoji('😂')">😂</span>
+        <span onclick="addStoryEmoji('😮')">😮</span>
+        <span onclick="addStoryEmoji('🔥')">🔥</span>
+      </div>
+    </div>
   </div>
 
   <div id="psAddStoryModal" class="ps-add-story-modal">
     <div class="ps-add-story-card">
-        <div class="ps-add-story-header">
-            <h3>Create Moment</h3>
-            <button class="ps-btn-icon-sm" onclick="closeAddStory()"><i class="fa-solid fa-xmark"></i></button>
+      <div class="ps-add-story-header">
+        <h3>Create Moment</h3>
+        <button class="ps-btn-icon-sm" onclick="closeAddStory()"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="ps-add-story-body">
+        <textarea id="psStoryInput" class="ps-story-input" placeholder="What's on your mind?"></textarea>
+        <div class="ps-emoji-bar">
+          <span onclick="appendEmoji('😍')">😍</span>
+          <span onclick="appendEmoji('🔥')">🔥</span>
+          <span onclick="appendEmoji('😂')">😂</span>
+          <span onclick="appendEmoji('❤️')">❤️</span>
         </div>
-        <div class="ps-add-story-body">
-            <textarea id="psStoryInput" class="ps-story-input" placeholder="What's on your mind?"></textarea>
-            <div class="ps-emoji-bar">
-                <span onclick="appendEmoji('😍')">😍</span>
-                <span onclick="appendEmoji('🔥')">🔥</span>
-                <span onclick="appendEmoji('😂')">😂</span>
-                <span onclick="appendEmoji('❤️')">❤️</span>
-            </div>
-        </div>
-        <button class="ps-btn-share" onclick="postNewStory()">Share Moment</button>
+      </div>
+      <button class="ps-btn-share" onclick="postNewStory()">Share Moment</button>
     </div>
   </div>
 
@@ -316,8 +339,8 @@
     <div class="ps-edit-modal-card">
       <div class="ps-edit-modal-header-content">
         <div class="ps-header-text-group">
-            <h3>Edit Profile & Preferences</h3>
-            <p>Saving here updates your database immediately.</p>
+          <h3>Edit Profile &amp; Preferences</h3>
+          <p>Saving here updates your database immediately.</p>
         </div>
         <button class="ps-btn-close-clean" onclick="closeEditProfile()"><i class="fa-solid fa-xmark"></i></button>
       </div>
@@ -332,28 +355,28 @@
         </div>
         <div class="ps-edit-grid three-col">
           <div class="ps-edit-field">
-              <label>WEALTH STATUS</label>
-              <select id="psInputWealth" class="tm-select">
-                  <option>High Net Worth</option>
-                  <option>Ultra High Net Worth</option>
-                  <option>Emerging</option>
-              </select>
+            <label>WEALTH STATUS</label>
+            <select id="psInputWealth" class="tm-select">
+              <option>High Net Worth</option>
+              <option>Ultra High Net Worth</option>
+              <option>Emerging</option>
+            </select>
           </div>
           <div class="ps-edit-field">
-              <label>MONTHLY INCOME</label>
-              <select id="psInputIncome" class="tm-select">
-                  <option>$10k - $50k</option>
-                  <option>$50k - $100k</option>
-                  <option>$100k+</option>
-              </select>
+            <label>MONTHLY INCOME</label>
+            <select id="psInputIncome" class="tm-select">
+              <option>$10k - $50k</option>
+              <option>$50k - $100k</option>
+              <option>$100k+</option>
+            </select>
           </div>
           <div class="ps-edit-field">
-              <label>NET WORTH</label>
-              <select id="psInputNetWorth" class="tm-select">
-                  <option>$1M - $5M</option>
-                  <option>$5M - $10M</option>
-                  <option>$10M+</option>
-              </select>
+            <label>NET WORTH</label>
+            <select id="psInputNetWorth" class="tm-select">
+              <option>$1M - $5M</option>
+              <option>$5M - $10M</option>
+              <option>$10M+</option>
+            </select>
           </div>
         </div>
         <div class="ps-edit-field"><label>PRIMARY INCOME SOURCE</label><textarea id="psInputSource" class="tm-textarea" rows="2" placeholder="Briefly describe..."></textarea></div>
@@ -369,23 +392,21 @@
 
   <div id="psMatchOverlay" class="ps-match-overlay">
     <div class="ps-match-content">
-        <h1 class="ps-match-title">IT'S A <span class="ps-text-gradient">MATCH!</span></h1>
-        <div class="ps-match-avatars">
-            <div class="ps-avatar-container left"><img id="psMatchUserImg" src="assets/images/truematch-mark.png"></div>
-            <div class="ps-match-heart"><i class="fa-solid fa-heart"></i></div>
-            <div class="ps-avatar-container right"><img id="psMatchTargetImg" src=""></div>
-        </div>
-        <div class="ps-match-actions">
-            <button class="ps-btn-match-chat" onclick="openChatFromMatch()">SEND A MESSAGE</button>
-            <button class="ps-btn-match-keep" onclick="closeMatchOverlay()">KEEP SWIPING</button>
-        </div>
+      <h1 class="ps-match-title">IT'S A <span class="ps-text-gradient">MATCH!</span></h1>
+      <div class="ps-match-avatars">
+        <div class="ps-avatar-container left"><img id="psMatchUserImg" src="assets/images/truematch-mark.png" alt="You"></div>
+        <div class="ps-match-heart"><i class="fa-solid fa-heart"></i></div>
+        <div class="ps-avatar-container right"><img id="psMatchTargetImg" src="assets/images/truematch-mark.png" alt="Match"></div>
+      </div>
+      <div class="ps-match-actions">
+        <button class="ps-btn-match-chat" onclick="openChatFromMatch()">SEND A MESSAGE</button>
+        <button class="ps-btn-match-keep" onclick="closeMatchOverlay()">KEEP SWIPING</button>
+      </div>
     </div>
   </div>
 
-  <button id="psMobileNavToggle" class="ps-mobile-toggle"><i class="fa-solid fa-bars"></i></button>
-  <div id="ps-toast" class="ps-toast"></div>
+  <button id="psMobileNavToggle" class="mobile-nav-toggle ps-mobile-toggle"><i class="fa-solid fa-bars"></i></button>
+  <div id="ps-toast" class="toast ps-toast"></div>
   <script type="module" src="premium-society.js"></script>
 </body>
 </html>
-
-
