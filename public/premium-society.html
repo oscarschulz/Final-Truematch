@@ -95,6 +95,7 @@
             </div>
         </div>
         <div id="psDailyPickContainer" class="ps-hero-container" style="margin-bottom: 25px;"></div>
+        <div id="psStoriesContainer" class="ps-stories-rail" style="margin-bottom: 25px;"></div>
         <div class="ps-admirer-section">
             <h3 class="ps-section-title">Who Liked You <span class="ps-badge" id="psAdmirerCount">0 New</span></h3>
             <div class="ps-admirer-grid" id="psAdmirerContainer"></div>
@@ -123,7 +124,7 @@
         <div class="ps-matches-container">
             <div class="ps-search-bar-wrapper">
                 <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="text" id="psMatchesSearch" class="ps-input-search" placeholder="Search matches...">
+                <input type="text" class="ps-input-search" placeholder="Search matches...">
             </div>
             <div style="margin-bottom: 25px;">
                 <h3 class="ps-section-title" style="color:#ffd700;">New Matches <span class="ps-badge ps-bg-gold" id="psNewMatchCount">0</span></h3>
@@ -152,7 +153,7 @@
                         <i class="fa-regular fa-face-smile"></i>
                     </button>
                 </div>
-                <button id="psBtnSendChat" class="ps-btn-chat-send" onclick="sendChatMessage()"><i class="fa-solid fa-paper-plane"></i></button>
+                <button class="ps-btn-chat-send" onclick="sendChatMessage()"><i class="fa-solid fa-paper-plane"></i></button>
             </div>
         </div>
       </section>
@@ -194,11 +195,11 @@
                       </div>
                       <div class="ps-toggle-row">
                           <span>Matches</span>
-                          <label class="ps-switch-cyan"><input id="psToggleNotifMatches" type="checkbox" checked><span class="slider"></span></label>
+                          <label class="ps-switch-cyan"><input type="checkbox" checked><span class="slider"></span></label>
                       </div>
                       <div class="ps-toggle-row">
                           <span>Messages</span>
-                          <label class="ps-switch-cyan"><input id="psToggleNotifMessages" type="checkbox" checked><span class="slider"></span></label>
+                          <label class="ps-switch-cyan"><input type="checkbox" checked><span class="slider"></span></label>
                       </div>
                   </div>
               </div>
@@ -211,11 +212,11 @@
                   <div class="ps-dropdown-content">
                       <div class="ps-legal-row">
                           <span>Sound Effects</span> 
-                          <label class="ps-switch-mini"><input id="psToggleSoundEffects" type="checkbox" checked><span class="slider"></span></label>
+                          <label class="ps-switch-mini"><input type="checkbox" checked><span class="slider"></span></label>
                       </div>
                       <div class="ps-legal-row">
                           <span>Haptic Feedback</span> 
-                          <label class="ps-switch-mini"><input id="psToggleHapticFeedback" type="checkbox"><span class="slider"></span></label>
+                          <label class="ps-switch-mini"><input type="checkbox"><span class="slider"></span></label>
                       </div>
                       <div class="ps-legal-row" onclick="clearAppCache()" style="color: #8899a6;">
                           <span>Clear Media Cache</span> <i class="fa-solid fa-trash-can"></i>
@@ -230,7 +231,7 @@
                   </summary>
                   <div class="ps-dropdown-content">
                       <div class="ps-legal-row" onclick="openSafetyTips()">
-                          <span>Dating & Creator Safety</span> <i class="fa-solid fa-shield-halved"></i>
+                          <span>Dating Safety</span> <i class="fa-solid fa-shield-halved"></i>
                       </div>
                       <div class="ps-legal-row" onclick="openPremiumInfo()">
                           <span>Subscriptions & Diamonds</span> <i class="fa-solid fa-gem"></i>
@@ -323,7 +324,7 @@
       <div class="ps-edit-modal-body">
         <div class="ps-edit-grid two-col">
           <div class="ps-edit-field"><label>FULL NAME</label><input id="psInputName" type="text" class="tm-input" placeholder="Your full name"></div>
-          <div class="ps-edit-field"><label>EMAIL</label><input id="psInputEmail" type="email" class="tm-input" placeholder="Email address" readonly><small style="display:block; margin-top:6px; color:#8ea0b5; font-size:.78rem;">Email is managed from your main account settings.</small></div>
+          <div class="ps-edit-field"><label>EMAIL</label><input id="psInputEmail" type="email" class="tm-input" placeholder="Email address"></div>
         </div>
         <div class="ps-edit-grid two-col">
           <div class="ps-edit-field"><label>OCCUPATION / ROLE</label><input id="psInputOccupation" type="text" class="tm-input" placeholder="e.g., Entrepreneur"></div>
@@ -386,3 +387,5 @@
   <script type="module" src="premium-society.js"></script>
 </body>
 </html>
+
+

@@ -220,11 +220,9 @@ body.ps-theme {
         box-shadow: 0 5px 15px rgba(0,0,0,0.2); 
     }
     
-/* HIDE BUTTON KAPAG BUKAS ANG CHAT O CREATORS */
+/* HIDE BUTTON KAPAG BUKAS ANG CHAT */
     /* FIX: Tinanggal natin dito ang .ps-tab-matches para lumabas ang menu button sa Matches Tab */
-    body.ps-chat-open .ps-mobile-toggle,
-    body.ps-creator-open .ps-mobile-toggle,
-    body.ps-tab-creators .ps-mobile-toggle 
+    body.ps-chat-open .ps-mobile-toggle
     {
         display: none !important;
     }
@@ -237,9 +235,8 @@ body.ps-theme {
 /* 2. ITAGO ANG HAMBURGER MENU sa lahat ng sub-tabs para gesture navigation lang */
 /* --- HIDE HAMBURGER ON MOBILE GESTURE TABS --- */
 @media (max-width: 768px) {
-    /* Tatanggalin ang menu button sa Matches, Creators, Premium, at Settings */
+    /* Tatanggalin ang menu button sa Matches, Premium, at Settings */
     body.ps-tab-matches .ps-mobile-toggle,
-    body.ps-tab-creators .ps-mobile-toggle,
     body.ps-tab-premium .ps-mobile-toggle,
     body.ps-tab-settings .ps-mobile-toggle,
     body.ps-chat-open .ps-mobile-toggle {
@@ -264,9 +261,6 @@ body.ps-theme {
     /* Adjust Padding ng Panels para di matakpan ng Header/Toggle */
     .ps-panel { padding: 70px 15px 100px; } 
 
-    /* Creators Grid */
-    .ps-creators-grid { grid-template-columns: repeat(2, 1fr) !important; padding: 0 10px 100px; }
-    
     /* Swipe Stack */
     .ps-swipe-stack { width: 95%; height: 55vh; margin-top: 20px; }
     
@@ -295,7 +289,6 @@ body.ps-theme {
     .ps-swipe-controls { gap: 15px; }
     .ps-btn-round { width: 60px; height: 60px; font-size: 22px; }
     .ps-story-item { min-width: 55px; }
-    .ps-creators-grid { grid-template-columns: 1fr !important; }
 }
 /*mula sa layout.css*/
 /* assets/css/premium-society/layout.css */
@@ -989,186 +982,6 @@ body.ps-theme {
 .ps-notif-text p { margin: 0 0 4px; font-size: 0.85rem; color: #ddd; line-height: 1.3; }
 .ps-notif-text span { font-size: 0.7rem; color: #888; }
 
-/* --- CREATORS TAB STYLES --- */
-
-.ps-creators-filter {
-    display: flex;
-    gap: 15px;
-    padding: 0 20px 15px;
-    overflow-x: auto;
-    scrollbar-width: none;
-}
-.ps-creators-filter::-webkit-scrollbar { display: none; }
-
-.ps-filter-chip {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
-    padding: 8px 16px;
-    border-radius: 99px;
-    font-size: 0.85rem;
-    color: #aaa;
-    white-space: nowrap;
-    cursor: pointer;
-    transition: 0.2s;
-}
-.ps-filter-chip.active, .ps-filter-chip:hover {
-    background: rgba(0, 175, 240, 0.1);
-    border-color: var(--ps-brand-color);
-    color: #fff;
-}
-
-.ps-creators-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); 
-    gap: 15px;
-    padding: 0 20px 100px; 
-}
-
-/* Updated Creator Card (No Avatar Overlap) */
-.ps-creator-card-premium {
-    background: rgba(20, 20, 25, 0.6);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 16px;
-    overflow: hidden;
-    position: relative;
-    transition: 0.3s;
-    cursor: pointer;
-    display: flex;
-    flex-direction: column;
-}
-
-.ps-creator-card-premium:hover {
-    transform: translateY(-5px);
-    border-color: var(--ps-brand-color);
-    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-}
-
-.ps-creator-cover {
-    height: 120px;
-    width: 100%;
-    background-size: cover;
-    background-position: center;
-    position: relative;
-}
-
-.ps-creator-body {
-    padding: 15px;
-    text-align: center;
-    flex-grow: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-}
-
-.ps-creator-name {
-    margin: 0;
-    font-size: 1rem;
-    font-weight: 700;
-    color: #fff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-}
-
-.ps-creator-category {
-    font-size: 0.75rem;
-    color: var(--ps-text-muted);
-    margin: 5px 0 10px;
-    display: block;
-}
-
-.ps-creator-stats {
-    display: flex;
-    justify-content: center;
-    gap: 15px;
-    margin-bottom: 12px;
-    font-size: 0.8rem;
-    color: #ccc;
-}
-.ps-creator-stats span i { color: #ffd700; margin-right: 4px; }
-
-.ps-btn-view-profile {
-    width: 100%;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
-    color: #fff;
-    padding: 10px;
-    border-radius: 8px;
-    font-size: 0.85rem;
-    cursor: pointer;
-    transition: 0.2s;
-    font-weight: 600;
-}
-.ps-btn-view-profile:hover {
-    background: var(--ps-brand-color);
-    border-color: var(--ps-brand-color);
-}
-
-/* --- CREATOR PROFILE MODAL --- */
-.ps-profile-modal {
-    display: none;
-    position: fixed;
-    top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0,0,0,0.85);
-    z-index: 9500;
-    align-items: center;
-    justify-content: center;
-    backdrop-filter: blur(10px);
-    animation: psFadeIn 0.3s ease;
-}
-.ps-profile-modal.active { display: flex; }
-
-.ps-profile-card-lg {
-    width: 90%; max-width: 500px;
-    background: #15151e;
-    border-radius: 20px;
-    overflow: hidden;
-    position: relative;
-    border: 1px solid rgba(255,255,255,0.1);
-    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
-}
-
-.ps-btn-close-modal {
-    position: absolute; top: 15px; right: 15px;
-    background: rgba(0,0,0,0.5); color: #fff;
-    border: none; width: 35px; height: 35px; border-radius: 50%;
-    cursor: pointer; z-index: 10; font-size: 1.2rem;
-    display:flex; align-items:center; justify-content:center;
-}
-.ps-btn-close-modal:hover { background: rgba(0,0,0,0.8); }
-
-.ps-profile-cover-lg {
-    height: 200px;
-    background-size: cover;
-    background-position: center;
-}
-
-.ps-profile-body-lg { padding: 25px; text-align: center; }
-
-.ps-profile-info-header { display: flex; flex-direction: column; align-items: center; gap: 5px; margin-bottom: 15px; }
-.ps-profile-info-header h2 { margin: 0; font-size: 1.8rem; color: #fff; }
-.ps-verified-badge { color: #00aff0; font-size: 0.9rem; display: flex; align-items: center; gap: 5px; }
-
-.ps-profile-cat-lg { color: #888; margin: 0 0 20px; text-transform: uppercase; letter-spacing: 1px; font-size: 0.8rem; font-weight: 700; }
-
-.ps-profile-stats-row { 
-    display: flex; justify-content: space-around; 
-    padding: 15px 0; border-top: 1px solid rgba(255,255,255,0.1); border-bottom: 1px solid rgba(255,255,255,0.1);
-    margin-bottom: 20px;
-}
-.ps-stat-box { display: flex; flex-direction: column; }
-.ps-stat-box span { font-size: 1.2rem; font-weight: 800; color: #fff; }
-.ps-stat-box small { font-size: 0.75rem; color: #888; }
-
-.ps-profile-bio { font-size: 0.95rem; line-height: 1.5; color: #ddd; margin-bottom: 25px; }
-
-.ps-profile-actions { display: flex; gap: 15px; }
-.ps-btn-message-lg { flex: 1; background: transparent; border: 1px solid var(--ps-brand-color); color: var(--ps-brand-color); padding: 12px; border-radius: 12px; font-weight: 700; cursor: pointer; transition: 0.2s; display:flex; align-items:center; justify-content:center; gap:8px;}
-.ps-btn-message-lg:hover { background: rgba(0, 175, 240, 0.1); }
-
-.ps-btn-subscribe-lg { flex: 1; background: linear-gradient(90deg, #FFD700, #FFA500); border: none; color: #000; padding: 12px; border-radius: 12px; font-weight: 800; cursor: pointer; transition: 0.2s; display:flex; align-items:center; justify-content:center; gap:8px;}
-.ps-btn-subscribe-lg:hover { transform: scale(1.05); box-shadow: 0 5px 20px rgba(255, 215, 0, 0.4); }
 
 /* --- PREMIUM TAB STYLES (CYAN THEME) --- */
 .ps-premium-hero {
@@ -2267,9 +2080,6 @@ body.light-mode .ps-nav-btn:hover {
 
   /* Hide only when a full-screen overlay is intentionally open */
   body.ps-chat-open .ps-mobile-toggle,
-  body.ps-creator-open .ps-mobile-toggle {
-    display: none !important;
-  }
 
   /* Matches spacing (avoid overlap with hamburger) */
   .ps-panel[data-panel="matches"] .ps-matches-container {

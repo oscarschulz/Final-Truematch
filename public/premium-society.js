@@ -89,7 +89,6 @@ export const PS_DOM = {
   timerDisplay: document.querySelector(".ps-stats-body p.ps-tiny"),
 
   // Panels
-  panelCreatorsBody: document.getElementById("ps-panel-creators"),
   panelPremiumBody: document.getElementById("ps-panel-premium"),
 
   // Match & Gift
@@ -264,19 +263,6 @@ function initOverlayObservers() {
       });
     });
     chatObs.observe(chatWindow, { attributes: true });
-  }
-
-  const creatorModal = document.getElementById("psCreatorProfileModal");
-  if (creatorModal) {
-    const creatorObs = new MutationObserver((mutations) => {
-      mutations.forEach((m) => {
-        if (m.attributeName === "class") {
-          if (creatorModal.classList.contains("active")) body.classList.add("ps-creator-open");
-          else body.classList.remove("ps-creator-open");
-        }
-      });
-    });
-    creatorObs.observe(creatorModal, { attributes: true });
   }
 }
 
@@ -1340,8 +1326,6 @@ export async function initUI() {
   initNotifications();
   initChat();
   initStoryViewer();
-  initCreatorProfileModal();
-  initCreatorsLogic();
   initPremiumLogic();
   initProfileEditLogic();
   initSettingsLogic();
@@ -2470,104 +2454,6 @@ function initPremiumLogic() {
   };
 }
 
-function initCreatorsLogic() {
-  window.subscribeCreator = (name) => {
-    window.closeCreatorProfile();
-    Swal.fire({
-      title: `Subscribe to ${name}?`,
-      text: "Unlock exclusive content and direct messaging for $9.99/mo.",
-      icon: "question",
-      showCancelButton: true,
-      confirmButtonColor: "#00aff0",
-      cancelButtonColor: "#d33",
-      confirmButtonText: "Yes, Subscribe",
-      background: "#15151e",
-      color: "#fff",
-    }).then((result) => {
-      if (result.isConfirmed) {
-        Swal.fire({
-          title: "Subscribed!",
-          text: `You are now a premium member of ${name}'s circle.`,
-          icon: "success",
-          background: "#15151e",
-          color: "#fff",
-          confirmButtonColor: "#00aff0",
-        });
-      }
-    });
-  };
-
-  window.filterCreators = (element, category) => {
-    const chips = document.querySelectorAll(".ps-filter-chip");
-    chips.forEach((chip) => chip.classList.remove("active"));
-    element.classList.add("active");
-
-    // TODO: Call Backend with Filter
-    // fetchCreators(category);
-    showToast(`Filtering by: ${category}`);
-  };
-
-  // NOTE: Inalis na ang hardcoded creators list dito.
-  // Ang 'ps-creators-grid' ay dapat lamanin gamit ang fetch data.
-  if (PS_DOM.panelCreatorsBody) {
-    PS_DOM.panelCreatorsBody.innerHTML = `
-        <div class="ps-creators-filter">
-            <div class="ps-filter-chip active" onclick="filterCreators(this, 'All')">All</div>
-            <div class="ps-filter-chip" onclick="filterCreators(this, 'Trending')">Trending</div>
-            <div class="ps-filter-chip" onclick="filterCreators(this, 'New')">New</div>
-            <div class="ps-filter-chip" onclick="filterCreators(this, 'Near You')">Near You</div>
-            <div class="ps-filter-chip" onclick="filterCreators(this, 'Cosplay')">Cosplay</div>
-        </div>
-        <div class="ps-creators-grid">
-            <p style="grid-column: span 2; text-align: center; color: #666; margin-top: 50px;">Fetching Creators...</p>
-        </div>`;
-  }
-}
-
-function initCreatorProfileModal() {
-  const modal = document.getElementById("psCreatorProfileModal");
-
-  window.closeCreatorProfile = () => {
-    if (modal) modal.classList.remove("active");
-  };
-
-  window.openCreatorProfile = (name, cat, followers, color) => {
-    if (!modal) return;
-    document.getElementById("psProfModalName").textContent = name;
-    document.getElementById("psProfModalCat").textContent = cat;
-    document.getElementById("psProfModalFollowers").textContent = followers;
-    document.getElementById("psProfModalLikes").textContent = "0K";
-
-    const cover = document.getElementById("psProfModalCover");
-    if (cover) {
-      cover.style.backgroundColor = color;
-      cover.style.backgroundImage = "url('assets/images/truematch-mark.png')";
-    }
-
-    const subBtn = modal.querySelector(".ps-btn-subscribe-lg");
-    if (subBtn) {
-      subBtn.onclick = () => window.subscribeCreator(name);
-    }
-
-    modal.classList.add("active");
-  };
-
-  if (modal) {
-    modal.addEventListener("click", (e) => {
-      if (e.target === modal) window.closeCreatorProfile();
-    });
-  }
-
-  window.messageFromProfile = () => {
-    const name = document.getElementById("psProfModalName").textContent;
-    window.closeCreatorProfile();
-    const matchesBtn = document.querySelector('button[data-panel="matches"]');
-    if (matchesBtn) matchesBtn.click();
-    setTimeout(() => {
-      window.openChat(name);
-    }, 300);
-  };
-}
 
 function psEscapeHtml(value) {
   return String(value == null ? "" : value)
@@ -3380,7 +3266,6 @@ function switchTab(panelName) {
     "ps-tab-home",
     "ps-tab-swipe",
     "ps-tab-matches",
-    "ps-tab-creators",
     "ps-tab-premium",
     "ps-tab-settings",
   );
