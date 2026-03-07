@@ -1357,27 +1357,48 @@ function renderMessages(messages = []) {
 }
 
 // 3. Render Admirers
+const PS_HOME_STATE = {
+  lastFetchedAt: 0,
+  admirers: [],
+  admirerCount: 0,
+  activeNearby: []
+};
+
+function psNormalizeHomeProfile(item = {}) {
+  return {
+    name: _psSafeName(item.name || item.fullName || item.username || 'Member'),
+    city: String(item.city || item.loc || item.location || 'Nearby').trim() || 'Nearby',
+    age: (item.age !== undefined && item.age !== null && String(item.age).trim() !== '') ? String(item.age).trim() : '',
+    avatar: String(item.photoUrl || item.avatarUrl || item.avatar || 'assets/images/truematch-mark.png').trim() || 'assets/images/truematch-mark.png',
+    isOnline: !!item.isOnline,
+    raw: item
+  };
+}
+
 function renderAdmirers(admirers = []) {
     if (!PS_DOM.admirerContainer) return;
 
-    if (!Array.isArray(admirers) || admirers.length === 0) {
+    const safeList = Array.isArray(admirers) ? admirers : [];
+    if (!safeList.length) {
         PS_DOM.admirerContainer.innerHTML = `<div style="grid-column:span 3; text-align:center; color:#666; font-size:0.8rem;">No admirers yet. Boost your profile!</div>`;
         if (PS_DOM.admirerCount) PS_DOM.admirerCount.innerText = "0 New";
         return;
     }
 
     if (PS_DOM.admirerCount) {
-        PS_DOM.admirerCount.innerText = `${admirers.length} New`;
+        const countToShow = Math.max(0, Number(PS_HOME_STATE.admirerCount || safeList.length));
+        PS_DOM.admirerCount.innerText = `${countToShow} New`;
     }
 
-    PS_DOM.admirerContainer.innerHTML = admirers.map((a) => {
-        const name = psEscapeHtml(_psSafeName(a.name || a.fullName || a.username || 'Member'));
-        const city = psEscapeHtml(String(a.city || a.loc || a.location || 'Nearby').trim() || 'Nearby');
-        const age = (a.age !== undefined && a.age !== null && String(a.age).trim() !== '') ? `, ${psEscapeHtml(String(a.age))}` : '';
-        const avatar = psEscapeHtml(String(a.photoUrl || a.avatarUrl || a.avatar || 'assets/images/truematch-mark.png'));
+    PS_DOM.admirerContainer.innerHTML = safeList.map((item) => {
+        const profile = psNormalizeHomeProfile(item);
+        const name = psEscapeHtml(profile.name);
+        const city = psEscapeHtml(profile.city);
+        const age = profile.age ? `, ${psEscapeHtml(profile.age)}` : '';
+        const avatar = psEscapeHtml(profile.avatar);
         return `
     <div class="ps-admirer-card" title="${name}">
-        <img class="ps-admirer-img" src="${avatar}" alt="${name}" onerror="this.src='assets/images/truematch-mark.png'" style="background:${a.color || getRandomColor()}">
+        <img class="ps-admirer-img" src="${avatar}" alt="${name}" onerror="this.src='assets/images/truematch-mark.png'" style="background:${item.color || getRandomColor()}">
         <h4 style="margin:8px 0 0; font-size:0.85rem;">${name}</h4>
         <p class="ps-tiny ps-muted" style="margin:0;">${city}${age}</p>
     </div>`;
@@ -1387,16 +1408,18 @@ function renderAdmirers(admirers = []) {
 function renderActiveNearby(items = []) {
   if (!PS_DOM.activeNearbyContainer) return;
 
-  if (!Array.isArray(items) || items.length === 0) {
+  const safeList = Array.isArray(items) ? items : [];
+  if (!safeList.length) {
     PS_DOM.activeNearbyContainer.innerHTML = `<div style="grid-column:span 3; text-align:center; color:#666; font-size:0.82rem; padding:14px 8px;">No active members nearby right now.</div>`;
     return;
   }
 
-  PS_DOM.activeNearbyContainer.innerHTML = items.map((item) => {
-    const name = psEscapeHtml(_psSafeName(item.name || item.fullName || item.username || 'Member'));
-    const avatar = psEscapeHtml(String(item.photoUrl || item.avatarUrl || item.avatar || 'assets/images/truematch-mark.png'));
-    const city = psEscapeHtml(String(item.city || item.location || 'Nearby').trim() || 'Nearby');
-    const onlineLabel = item.isOnline ? 'Online now' : 'Recently active';
+  PS_DOM.activeNearbyContainer.innerHTML = safeList.map((item) => {
+    const profile = psNormalizeHomeProfile(item);
+    const name = psEscapeHtml(profile.name);
+    const avatar = psEscapeHtml(profile.avatar);
+    const city = psEscapeHtml(profile.city);
+    const onlineLabel = profile.isOnline ? 'Online now' : 'Recently active';
 
     return `
       <div class="ps-active-item" title="${name} • ${city}">
@@ -1404,7 +1427,7 @@ function renderActiveNearby(items = []) {
         <div style="position:absolute; inset:auto 0 0 0; padding:8px; background:linear-gradient(to top, rgba(0,0,0,.78), rgba(0,0,0,0));">
           <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
             <strong style="font-size:.8rem; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${name}</strong>
-            <span style="display:inline-flex; align-items:center; gap:5px; font-size:.66rem; color:${item.isOnline ? '#00ff88' : '#9be7ff'}; flex-shrink:0;">
+            <span style="display:inline-flex; align-items:center; gap:5px; font-size:.66rem; color:${profile.isOnline ? '#00ff88' : '#9be7ff'}; flex-shrink:0;">
               <i class="fa-solid fa-circle" style="font-size:.45rem;"></i>${onlineLabel}
             </span>
           </div>
@@ -1425,11 +1448,12 @@ function renderDailyPick(profile) {
     return;
   }
 
-  const name = psEscapeHtml(_psSafeName(profile.name || profile.fullName || profile.username || 'Member'));
-  const city = psEscapeHtml(String(profile.city || profile.location || 'Nearby').trim() || 'Nearby');
-  const avatar = psEscapeHtml(String(profile.photoUrl || profile.avatarUrl || profile.avatar || 'assets/images/truematch-mark.png'));
-  const age = (profile.age !== undefined && profile.age !== null && String(profile.age).trim() !== '') ? ` • ${psEscapeHtml(String(profile.age))}` : '';
-  const badge = profile.isOnline ? 'Online now' : "Today's Highlight";
+  const safeProfile = psNormalizeHomeProfile(profile);
+  const name = psEscapeHtml(safeProfile.name);
+  const city = psEscapeHtml(safeProfile.city);
+  const avatar = psEscapeHtml(safeProfile.avatar);
+  const age = safeProfile.age ? ` • ${psEscapeHtml(safeProfile.age)}` : '';
+  const badge = safeProfile.isOnline ? 'Online now' : "Today's Highlight";
 
   PS_DOM.dailyPickContainer.innerHTML = `
     <div style="display:flex; align-items:center; gap:16px; padding:18px; border:1px solid rgba(255,255,255,.08); border-radius:18px; background:linear-gradient(135deg, rgba(0,175,240,.15), rgba(255,255,255,.02));">
@@ -1487,12 +1511,18 @@ function psApplyMomentToViewer(moment) {
   }
 }
 
-let _psHomeWidgetsLastFetched = 0;
-
 async function psLoadHomeWidgets(force = false) {
   const now = Date.now();
-  if (!force && (now - _psHomeWidgetsLastFetched) < 5000) return;
-  _psHomeWidgetsLastFetched = now;
+  if (!force && (now - Number(PS_HOME_STATE.lastFetchedAt || 0)) < 5000) {
+    renderAdmirers(PS_HOME_STATE.admirers);
+    renderActiveNearby(PS_HOME_STATE.activeNearby);
+    renderDailyPick(PS_HOME_STATE.admirers[0] || PS_HOME_STATE.activeNearby[0] || null);
+    return {
+      admirers: PS_HOME_STATE.admirers,
+      activeNearby: PS_HOME_STATE.activeNearby,
+      admirerCount: PS_HOME_STATE.admirerCount
+    };
+  }
 
   const admirerPromise = fetch(`${API_BASE}/api/me/admirers?limit=12`, {
     method: 'GET',
@@ -1521,29 +1551,36 @@ async function psLoadHomeWidgets(force = false) {
 
   const [admirersResult, activeResult] = await Promise.allSettled([admirerPromise, activePromise]);
 
-  let admirers = [];
-  let admirerCount = 0;
+  let admirers = PS_HOME_STATE.admirers;
+  let admirerCount = PS_HOME_STATE.admirerCount;
   if (admirersResult.status === 'fulfilled') {
     admirers = admirersResult.value.items;
     admirerCount = admirersResult.value.count;
-  } else {
-    renderAdmirers([]);
   }
 
-  let activeNearby = [];
+  let activeNearby = PS_HOME_STATE.activeNearby;
   if (activeResult.status === 'fulfilled') {
     activeNearby = activeResult.value;
-  } else {
-    renderActiveNearby([]);
   }
 
-  renderAdmirers(admirers);
+  PS_HOME_STATE.admirers = Array.isArray(admirers) ? admirers : [];
+  PS_HOME_STATE.admirerCount = Math.max(0, Number(admirerCount || 0));
+  PS_HOME_STATE.activeNearby = Array.isArray(activeNearby) ? activeNearby : [];
+  PS_HOME_STATE.lastFetchedAt = Date.now();
+
+  renderAdmirers(PS_HOME_STATE.admirers);
   if (PS_DOM.admirerCount) {
-    const countToShow = admirerCount || admirers.length;
+    const countToShow = PS_HOME_STATE.admirerCount || PS_HOME_STATE.admirers.length;
     PS_DOM.admirerCount.innerText = `${countToShow} New`;
   }
-  renderActiveNearby(activeNearby);
-  renderDailyPick(admirers[0] || activeNearby[0] || null);
+  renderActiveNearby(PS_HOME_STATE.activeNearby);
+  renderDailyPick(PS_HOME_STATE.admirers[0] || PS_HOME_STATE.activeNearby[0] || null);
+
+  return {
+    admirers: PS_HOME_STATE.admirers,
+    activeNearby: PS_HOME_STATE.activeNearby,
+    admirerCount: PS_HOME_STATE.admirerCount
+  };
 }
 // ==========================================
 // 1. THE GLOBAL GESTURE ENGINE (Swipe Back)
