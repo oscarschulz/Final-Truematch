@@ -278,6 +278,7 @@ body.ps-theme {
     }
     
     /* Gift & Settings Grid */
+    .ps-gift-grid { grid-template-columns: repeat(2, 1fr) !important; }
     .ps-settings-dashboard { grid-template-columns: 1fr !important; padding: 70px 15px 100px; }
     
     /* Mobile Badge Position */
@@ -971,6 +972,9 @@ body.ps-theme {
 
 .ps-notif-item:hover { background: rgba(255, 255, 255, 0.05); }
 .ps-notif-item.unread { background: rgba(0, 175, 240, 0.08); }
+.ps-notif-item.is-unread { background: rgba(0, 175, 240, 0.08); }
+.ps-notif-empty, .ps-notif-loading, .ps-notif-error { cursor: default; }
+.ps-btn-text:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .ps-notif-icon {
     width: 35px; height: 35px; border-radius: 50%;
@@ -1353,6 +1357,28 @@ body.ps-theme {
 /* =========================================
    GIFT & PPV SYSTEM STYLES
    ========================================= */
+.ps-gift-balance {
+    display: flex; justify-content: space-between; align-items: center;
+    background: rgba(100, 233, 238, 0.1); padding: 15px; border-radius: 12px; 
+    margin-bottom: 20px; border: 1px solid rgba(100, 233, 238, 0.2);
+}
+.ps-coin-text { color: #64E9EE; font-weight: 800; font-size: 1.1rem; }
+
+.ps-gift-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 25px;
+}
+.ps-gift-item {
+    background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px; padding: 15px 5px; text-align: center; cursor: pointer;
+    transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); display: flex; 
+    flex-direction: column; align-items: center;
+}
+.ps-gift-item:hover { transform: translateY(-5px); background: rgba(255, 255, 255, 0.08); border-color: #64E9EE; }
+.ps-gift-item.active { border-color: #64E9EE; background: rgba(100, 233, 238, 0.15); box-shadow: 0 0 20px rgba(100, 233, 238, 0.2); }
+
+.ps-gift-emoji { font-size: 2.2rem; margin-bottom: 8px; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3)); }
+.ps-gift-item span { font-size: 0.8rem; font-weight: 700; color: #fff; }
+.ps-gift-item small { font-size: 0.7rem; color: #64E9EE; font-weight: 600; }
 
 /* =========================================
    EMOJI PICKER STYLES
@@ -1541,6 +1567,8 @@ emoji-picker.active {
 
 .ps-btn-chat-tool, .ps-btn-chat-send { background: none; border: none; color: #888; font-size: 1.3rem; cursor: pointer; transition: 0.2s; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 50%; }
 .ps-btn-chat-tool:hover { background: rgba(255,255,255,0.1); color: #fff; }
+.ps-btn-ppv { color: #FFD700; } 
+.ps-btn-ppv:hover { color: #FFA500; transform: scale(1.1); text-shadow: 0 0 10px rgba(255, 215, 0, 0.5); }
 
 .ps-btn-chat-send { color: var(--ps-brand-color); }
 .ps-btn-chat-send:hover { background: rgba(0, 175, 240, 0.15); transform: scale(1.1); }
