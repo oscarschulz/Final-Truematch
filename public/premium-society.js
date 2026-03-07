@@ -168,59 +168,61 @@ function psHydratePremiumSocietyState(me) {
 // 3. BACKEND SYNC: IDENTITY
 // ==========================================
 async function hydrateAccountIdentity() {
-    console.log("🔄 Syncing Identity with Server...");
+    console.log("🔄 Syncing Identity with Server (Port 3000)...");
     try {
-        const res = await fetch(`${API_BASE}/api/me`, {
-            method: 'GET',
-            credentials: 'include',
-            cache: 'no-store'
-        });
+        const res = await fetch(`${API_BASE}/api/me`, { credentials: 'include' }); 
+        if (res.ok) {
+            const data = await res.json();
+            if (data && data.ok && data.user) {
+                const u = data.user;
+                PS_STATE.me = u; 
+                psHydratePremiumSocietyState(u);
 
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data || data.ok !== true || !data.user) {
-            throw new Error((data && (data.message || data.error)) || 'Failed to load session.');
+                // --- ROBUST NAME LOGIC MULA SA LUMA ---
+                const displayName = (
+                    u.name || u.fullName || u.displayName || u.username ||
+                    (u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : "") ||
+                    u.applicantName || "Member"
+                ).trim();
+
+                const planKey = psNormalizePlanKey(u.plan || u.tier);
+                let planLabel = psPlanLabelFromKey(planKey);
+                if (u.planActive === false && planKey !== 'free') planLabel += " (Inactive)";
+                const avatarUrl = u.avatarUrl || u.photoUrl || u.avatar || 'assets/images/truematch-mark.png';
+
+                const els = {
+                    'psWelcomeName': displayName.split(' ')[0],
+                    'psMiniName': displayName,
+                    'psMiniPlan': planLabel,
+                    'psSNameDisplay': displayName,
+                    'psSEmailDisplay': u.email || '',
+                    'psSPlanBadge': planLabel
+                };
+                for (const [id, val] of Object.entries(els)) {
+                    const el = document.getElementById(id);
+                    if (el) el.textContent = val;
+                }
+
+                ['psHeaderAvatar', 'psMiniAvatar', 'psSAvatar', 'psMatchUserImg', 'psStoryAvatar'].forEach(id => {
+                    const img = document.getElementById(id);
+                    if (img) img.src = avatarUrl;
+                });
+
+                localStorage.setItem('tm_user', JSON.stringify(u));
+                return u; 
+            }
         }
-
-        const u = data.user;
-        PS_STATE.me = u;
-        psHydratePremiumSocietyState(u);
-
-        const displayName = (
-            u.name || u.fullName || u.displayName || u.username ||
-            (u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : "") ||
-            u.applicantName || "Member"
-        ).trim();
-
-        const planKey = psNormalizePlanKey(u.plan || u.tier);
-        let planLabel = psPlanLabelFromKey(planKey);
-        if (u.planActive === false && planKey !== 'free') planLabel += " (Inactive)";
-        const avatarUrl = u.avatarUrl || u.photoUrl || u.avatar || 'assets/images/truematch-mark.png';
-
-        const els = {
-            'psWelcomeName': displayName.split(' ')[0],
-            'psMiniName': displayName,
-            'psMiniPlan': planLabel,
-            'psSNameDisplay': displayName,
-            'psSEmailDisplay': u.email || '',
-            'psSPlanBadge': planLabel
-        };
-        for (const [id, val] of Object.entries(els)) {
-            const el = document.getElementById(id);
-            if (el) el.textContent = val;
-        }
-
-        ['psHeaderAvatar', 'psMiniAvatar', 'psSAvatar', 'psMatchUserImg', 'psStoryAvatar'].forEach(id => {
-            const img = document.getElementById(id);
-            if (img) img.src = avatarUrl;
-        });
-
-        localStorage.setItem('tm_user', JSON.stringify(u));
-        return u;
-    } catch (e) {
-        console.error("❌ Failed to sync account identity from server:", e);
-        PS_STATE.me = null;
-        return null;
+    } catch (e) { 
+        console.error("❌ Connection failed to server. Checking local cache..."); 
     }
+
+    const localUser = JSON.parse(localStorage.getItem('tm_user'));
+    if (localUser) {
+        PS_STATE.me = localUser;
+        psHydratePremiumSocietyState(localUser);
+        return localUser;
+    }
+    return null;
 }
 
 // ==========================================
@@ -396,6 +398,7 @@ export const SwipeController = (() => {
   let startY = 0;
   let isDragging = false;
   let currentX = 0;
+  let countdownTimerId = null;
 
   /**
    * INITIALIZATION
@@ -404,36 +407,33 @@ export const SwipeController = (() => {
     index = 0;
     isSwiping = false;
 
-    // Default: Premium Society is unlimited unless server returns a numeric cap
+    // Server-authoritative state only
     serverLimit = null;
     dailySwipes = Infinity;
     resetTime = 0;
 
-    // Optional local cache (ONLY as temporary display if server is slow/offline)
-    const savedSwipesRaw = localStorage.getItem("ps_swipes_left");
-    const savedTimeRaw = localStorage.getItem("ps_reset_time");
-    const savedSwipes = savedSwipesRaw != null ? Number(savedSwipesRaw) : NaN;
-    const savedTime = savedTimeRaw != null ? Number(savedTimeRaw) : NaN;
-    const now = Date.now();
-
-    if (Number.isFinite(savedSwipes) && Number.isFinite(savedTime) && now < savedTime) {
-      // We don't know the serverLimit yet, so treat this as a temporary number
-      dailySwipes = savedSwipes;
-      resetTime = savedTime;
-    }
+    // Clean any legacy local fallback keys so the UI cannot drift from server truth
+    try {
+      localStorage.removeItem("ps_swipes_left");
+      localStorage.removeItem("ps_reset_time");
+    } catch (_) {}
 
     startCountdown();
 
     if (PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove("active");
-    if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = "flex";
+    if (PS_DOM.swipeControls) {
+      PS_DOM.swipeControls.style.display = "flex";
+      PS_DOM.swipeControls.style.opacity = "1";
+      PS_DOM.swipeControls.style.pointerEvents = "auto";
+    }
 
-    // Render initial stats (will be corrected after fetchCandidates)
+    // Initial server-truth placeholder
     updateStats(dailySwipes, serverLimit);
 
     // Fetch live deck + limit from backend
     fetchCandidates();
 
-    // Button Listeners
+    // Button listeners
     if (PS_DOM.btnRefreshDeck) PS_DOM.btnRefreshDeck.onclick = refreshDeck;
     if (PS_DOM.btnSwipeLike) PS_DOM.btnSwipeLike.onclick = () => handleSwipe("like");
     if (PS_DOM.btnSwipePass) PS_DOM.btnSwipePass.onclick = () => handleSwipe("pass");
@@ -529,31 +529,43 @@ export const SwipeController = (() => {
    */
   async function fetchCandidates() {
     try {
-      const res = await fetch(`${API_BASE}/api/premium-society/candidates`, { credentials: 'include' });
-      const data = await res.json();
+      const res = await fetch(`${API_BASE}/api/premium-society/candidates`, {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store'
+      });
+      const data = await res.json().catch(() => ({}));
 
-      if (data && data.ok && data.candidates) {
-        candidates = data.candidates;
-
-        // Server truth:
-        // - data.limit === null/undefined  => unlimited
-        // - data.remaining can be null when unlimited
-        serverLimit = (data.limit === undefined || data.limit === null) ? null : Number(data.limit);
-
-        if (serverLimit === null) {
-          dailySwipes = Infinity;
-        } else {
-          const rem = (data.remaining === undefined || data.remaining === null) ? serverLimit : Number(data.remaining);
-          dailySwipes = Number.isFinite(rem) ? rem : serverLimit;
-        }
-
-        updateStats(dailySwipes, serverLimit);
-      } else { 
-        throw new Error("No live data"); 
+      if (!res.ok || !data || data.ok !== true || !Array.isArray(data.candidates)) {
+        throw new Error((data && (data.message || data.error)) || "Failed to load Premium Society deck.");
       }
+
+      candidates = data.candidates;
+
+      // Server truth:
+      // - data.limit === null/undefined => unlimited
+      // - data.remaining can be null when unlimited
+      serverLimit = (data.limit === undefined || data.limit === null) ? null : Number(data.limit);
+
+      if (serverLimit === null) {
+        dailySwipes = Infinity;
+      } else {
+        const rem = (data.remaining === undefined || data.remaining === null) ? serverLimit : Number(data.remaining);
+        dailySwipes = Number.isFinite(rem) ? rem : serverLimit;
+      }
+
+      const nextReset = Number(data.resetAt || 0);
+      resetTime = Number.isFinite(nextReset) && nextReset > 0 ? nextReset : 0;
+
+      updateStats(dailySwipes, serverLimit);
     } catch (err) {
-      console.warn("Using fallback profiles.");
-      candidates = window.mockCandidatesData || [];
+      console.error("Premium Society deck fetch failed:", err);
+      candidates = [];
+      serverLimit = null;
+      dailySwipes = Infinity;
+      resetTime = 0;
+      updateStats(dailySwipes, serverLimit);
+      showToast(String(err && err.message ? err.message : 'Failed to load Premium Society deck.'), 'error');
     }
     renderCards();
   }
@@ -634,7 +646,7 @@ export const SwipeController = (() => {
       }
       
       // C. SYNC STATS: Kunin ang "truth" mula sa server (Handle null as unlimited)
-      if (data && ('remaining' in data || 'limit' in data)) {
+      if (data && ('remaining' in data || 'limit' in data || 'resetAt' in data)) {
         serverLimit = (data.limit === undefined || data.limit === null) ? null : Number(data.limit);
 
         if (serverLimit === null) {
@@ -643,6 +655,9 @@ export const SwipeController = (() => {
           const rem = (data.remaining === undefined || data.remaining === null) ? serverLimit : Number(data.remaining);
           dailySwipes = Number.isFinite(rem) ? rem : serverLimit;
         }
+
+        const nextReset = Number(data.resetAt || 0);
+        resetTime = Number.isFinite(nextReset) && nextReset > 0 ? nextReset : 0;
 
         updateStats(dailySwipes, serverLimit);
       }
@@ -798,10 +813,11 @@ function createCard(person, position) {
   }
 
   function saveData() {
-    // Only persist numeric limits; Premium Society is typically unlimited.
-    if (!Number.isFinite(serverLimit) || !Number.isFinite(dailySwipes) || !Number.isFinite(resetTime)) return;
-    localStorage.setItem("ps_swipes_left", String(dailySwipes));
-    localStorage.setItem("ps_reset_time", String(resetTime));
+    // Legacy local swipe cache is intentionally disabled.
+    try {
+      localStorage.removeItem("ps_swipes_left");
+      localStorage.removeItem("ps_reset_time");
+    } catch (_) {}
   }
 
 function updateStats(curr, max) {
@@ -822,34 +838,33 @@ function updateStats(curr, max) {
    * Inayos para maging persistent gamit ang localStorage
    */
   function startCountdown() {
-    setInterval(() => {
-      // If unlimited, keep UI truthful and do not run local reset logic.
+    if (countdownTimerId) clearInterval(countdownTimerId);
+
+    countdownTimerId = setInterval(() => {
+      if (!PS_DOM.timerDisplay) return;
+
+      // Unlimited deck: keep the UI truthful.
       if (serverLimit === null || serverLimit === undefined || !Number.isFinite(serverLimit)) {
-        if (PS_DOM.timerDisplay) PS_DOM.timerDisplay.textContent = 'Unlimited swipes';
+        PS_DOM.timerDisplay.textContent = 'Unlimited swipes';
         return;
       }
 
-      const now = Date.now();
-      const savedResetTimeRaw = localStorage.getItem("ps_reset_time");
-      const savedResetTime = savedResetTimeRaw != null ? Number(savedResetTimeRaw) : NaN;
-
-      // If missing or expired, start a new local cycle (fallback UI only)
-      if (!Number.isFinite(savedResetTime) || now >= savedResetTime) {
-        dailySwipes = serverLimit;
-        resetTime = now + 12 * 60 * 60 * 1000; // 12-hour cycle (UI fallback)
-        saveData();
-        updateStats(dailySwipes, serverLimit);
-      } else {
-        resetTime = savedResetTime;
+      // Limited deck, but reset window not provided yet by server.
+      if (!Number.isFinite(resetTime) || resetTime <= 0) {
+        PS_DOM.timerDisplay.textContent = 'Daily limit active';
+        return;
       }
 
-      const diff = resetTime - now;
-      if (diff > 0 && PS_DOM.timerDisplay) {
-        const hrs = Math.floor((diff / (1000 * 60 * 60)) % 24);
-        const mins = Math.floor((diff / (1000 * 60)) % 60);
-        const secs = Math.floor((diff / 1000) % 60);
-        PS_DOM.timerDisplay.textContent = `Resets in ${hrs}h ${mins}m ${secs}s`;
+      const diff = resetTime - Date.now();
+      if (diff <= 0) {
+        PS_DOM.timerDisplay.textContent = 'Refreshing swipe window...';
+        return;
       }
+
+      const hrs = Math.floor((diff / (1000 * 60 * 60)) % 24);
+      const mins = Math.floor((diff / (1000 * 60)) % 60);
+      const secs = Math.floor((diff / 1000) % 60);
+      PS_DOM.timerDisplay.textContent = `Resets in ${hrs}h ${mins}m ${secs}s`;
     }, 1000);
   }
 
@@ -994,8 +1009,7 @@ async function psLoadMoments(force = false) {
   try {
     const res = await fetch(`${API_BASE}/api/moments/list?scope=matches`, {
       method: 'GET',
-      credentials: 'include',
-      cache: 'no-store'
+      credentials: 'include'
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data || data.ok !== true) {
@@ -1008,10 +1022,8 @@ async function psLoadMoments(force = false) {
     return items;
   } catch (err) {
     console.error('psLoadMoments error:', err);
-    PS_MOMENTS_STATE.lastFetchedAt = 0;
-    psSetMomentsState([]);
-    renderStories([]);
-    return [];
+    renderStories(PS_MOMENTS_STATE.items);
+    return PS_MOMENTS_STATE.items;
   }
 }
 
@@ -1498,39 +1510,56 @@ async function psLoadHomeWidgets(force = false) {
   if (!force && (now - _psHomeWidgetsLastFetched) < 5000) return;
   _psHomeWidgetsLastFetched = now;
 
-  try {
-    const res = await fetch(`${API_BASE}/api/premium-society/home?admirerLimit=12&activeLimit=9`, {
-      method: 'GET',
-      credentials: 'include',
-      cache: 'no-store'
-    });
-
+  const admirerPromise = fetch(`${API_BASE}/api/me/admirers?limit=12`, {
+    method: 'GET',
+    credentials: 'include'
+  }).then(async (res) => {
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data || data.ok !== true) {
-      throw new Error((data && (data.error || data.message)) || 'Failed to load Premium Society home.');
+      throw new Error((data && (data.error || data.message)) || 'Failed to load admirers.');
     }
+    return {
+      items: Array.isArray(data.items) ? data.items : [],
+      count: Math.max(0, Number(data.count || 0))
+    };
+  });
 
-    const admirers = Array.isArray(data.admirers) ? data.admirers : [];
-    const activeNearby = Array.isArray(data.activeNearby) ? data.activeNearby : [];
-    const admirerCount = Math.max(0, Number(data.admirerCount || admirers.length || 0));
-    const dailyPick = data.dailyPick || admirers[0] || activeNearby[0] || null;
-
-    renderAdmirers(admirers);
-    if (PS_DOM.admirerCount) {
-      PS_DOM.admirerCount.innerText = `${admirerCount} New`;
+  const activePromise = fetch(`${API_BASE}/api/me/active-nearby?limit=9`, {
+    method: 'GET',
+    credentials: 'include'
+  }).then(async (res) => {
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data || data.ok !== true) {
+      throw new Error((data && (data.error || data.message)) || 'Failed to load active nearby.');
     }
+    return Array.isArray(data.items) ? data.items : [];
+  });
 
-    renderActiveNearby(activeNearby);
-    renderDailyPick(dailyPick);
-    return { admirers, admirerCount, activeNearby, dailyPick };
-  } catch (err) {
-    console.error('psLoadHomeWidgets error:', err);
-    _psHomeWidgetsLastFetched = 0;
+  const [admirersResult, activeResult] = await Promise.allSettled([admirerPromise, activePromise]);
+
+  let admirers = [];
+  let admirerCount = 0;
+  if (admirersResult.status === 'fulfilled') {
+    admirers = admirersResult.value.items;
+    admirerCount = admirersResult.value.count;
+  } else {
     renderAdmirers([]);
-    renderActiveNearby([]);
-    renderDailyPick(null);
-    return { admirers: [], admirerCount: 0, activeNearby: [], dailyPick: null };
   }
+
+  let activeNearby = [];
+  if (activeResult.status === 'fulfilled') {
+    activeNearby = activeResult.value;
+  } else {
+    renderActiveNearby([]);
+  }
+
+  renderAdmirers(admirers);
+  if (PS_DOM.admirerCount) {
+    const countToShow = admirerCount || admirers.length;
+    PS_DOM.admirerCount.innerText = `${countToShow} New`;
+  }
+  renderActiveNearby(activeNearby);
+  renderDailyPick(admirers[0] || activeNearby[0] || null);
 }
 // ==========================================
 // 1. THE GLOBAL GESTURE ENGINE (Swipe Back)
@@ -2351,7 +2380,6 @@ function initCreatorProfileModal() {
   };
 }
 
-
 function psFormatNotifTime(ts) {
   const ms = Number(ts || 0);
   if (!Number.isFinite(ms) || ms <= 0) return '—';
@@ -2952,7 +2980,12 @@ function psEnforceSwipeAccess() {
 
   // 1. KUNG APPROVED: Buksan ang Swipe Deck (Galing sa current logic)
   if (approved) {
-    if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = '';
+    if (PS_DOM.swipeControls) {
+      PS_DOM.swipeControls.style.display = '';
+      PS_DOM.swipeControls.style.opacity = '1';
+      PS_DOM.swipeControls.style.pointerEvents = 'auto';
+    }
+    if (PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove('active');
     if (!PS_STATE.swipeInited) {
       PS_STATE.swipeInited = true;
       SwipeController.init();
@@ -2961,8 +2994,13 @@ function psEnforceSwipeAccess() {
   }
 
   // 2. KUNG HINDI APPROVED: Ipakita ang tamang status (Mula sa Backend logic ng luma)
-  if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = 'none';
-  
+  if (PS_DOM.swipeControls) {
+    PS_DOM.swipeControls.style.display = 'none';
+    PS_DOM.swipeControls.style.opacity = '0';
+    PS_DOM.swipeControls.style.pointerEvents = 'none';
+  }
+  if (PS_DOM.refreshPopover) PS_DOM.refreshPopover.classList.remove('active');
+
   let title = "Premium Society Locked";
   let msg = "Exclusive access for Elite & Concierge members.";
   let icon = "fa-lock";
@@ -3172,6 +3210,10 @@ function switchTab(panelName) {
   if (PS_DOM.sidebar && PS_DOM.sidebar.classList.contains("ps-is-open"))
     PS_DOM.sidebar.classList.remove("ps-is-open");
 
+  if (panelName === "swipe") {
+    psEnforceSwipeAccess();
+  }
+
   // Load Premium Society matches (isolated from dashboard matches)
   if (panelName === "matches") {
     psLoadMatches();
@@ -3322,7 +3364,7 @@ document.addEventListener("DOMContentLoaded", () => {
   try {
     // 1. Patakbuhin ang Modules
     if (typeof initSidebarLogic === 'function') initSidebarLogic();
-    if (SwipeController && typeof SwipeController.init === 'function') SwipeController.init();
+    // SwipeController is initialized lazily by psEnforceSwipeAccess() when the Swipe panel is opened.
     
     // 2. Patakbuhin ang UI Engine (Ito na ang bahala sa MockData, SwipeBack, at Settings)
     if (typeof initUI === 'function') {
