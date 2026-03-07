@@ -88,9 +88,6 @@ export const PS_DOM = {
   mobileSwipeBadge: document.getElementById("psMobileSwipeCount"),
   timerDisplay: document.querySelector(".ps-stats-body p.ps-tiny"),
 
-  // Panels
-  panelPremiumBody: document.getElementById("ps-panel-premium"),
-
   // Match & Gift
   matchOverlay: document.getElementById("psMatchOverlay"),
   matchUserImg: document.getElementById("psMatchUserImg"),
@@ -264,6 +261,7 @@ function initOverlayObservers() {
     });
     chatObs.observe(chatWindow, { attributes: true });
   }
+
 }
 
 
@@ -345,13 +343,7 @@ function initProfileMenu() {
 
 
 function initRightSidebarInteractions() {
-  const upgradeBtn = document.getElementById("psBtnSidebarSubscribe");
-  if (upgradeBtn) {
-    upgradeBtn.addEventListener("click", () => {
-      const premiumTab = document.querySelector('button[data-panel="premium"]');
-      if (premiumTab) { premiumTab.click(); window.scrollTo({ top: 0, behavior: "smooth" }); }
-    });
-  }
+  // No in-page upgrade flow on Premium Society. Access is managed from the dashboard.
 }
 
 function initMobileToggles() {
@@ -849,19 +841,19 @@ function updateStats(curr, max) {
     if (typeof Swal !== 'undefined') {
       Swal.fire({
         title: "Out of Swipes! 🛑",
-        text: "Naubos mo na ang daily swipe limit mo. Balik ka ulit bukas.",
+        text: "Naubos mo na ang available swipes mo sa ngayon. Balik ka ulit mamaya.",
         icon: "warning",
         background: "#15151e",
         color: "#fff",
         confirmButtonColor: "#00aff0",
-        confirmButtonText: "Upgrade Now"
+        confirmButtonText: "Back to Dashboard"
       }).then((result) => {
         if (result.isConfirmed) {
-          if (typeof switchTab === 'function') switchTab('premium');
+          window.location.href = 'dashboard.html';
         }
       });
     } else {
-      alert("Out of Swipes! Wait for reset or upgrade to Premium.");
+      alert("Out of swipes for now. Please return later or go back to your dashboard.");
     }
   }
 
@@ -1326,7 +1318,6 @@ export async function initUI() {
   initNotifications();
   initChat();
   initStoryViewer();
-  initPremiumLogic();
   initProfileEditLogic();
   initSettingsLogic();
   initGlobalSwipeBack();
@@ -1960,22 +1951,16 @@ export function initSettingsLogic() {
 
   window.openPremiumInfo = () => {
     Swal.fire({
-      title: '<i class="fa-solid fa-gem" style="color:#FFD700"></i> Premium Society',
+      title: '<i class="fa-solid fa-gem" style="color:#64E9EE"></i> Membership Access',
       html: `<div style="text-align: left; font-size: 0.85rem; color: #ccc;">
-                <p><b>Membership:</b> Auto-renew monthly ang iyong subscription.</p>
-                <p><b>Diamonds:</b> Digital gifts are final and non-refundable.</p>
+                <p><b>Applications:</b> Premium Society applications are handled from your dashboard.</p>
+                <p><b>Access:</b> Only approved Premium Society members can fully interact inside this page.</p>
+                <p><b>Support:</b> Contact support if you need help with membership access or your member account.</p>
             </div>`,
-      background: "#15151e", color: "#fff", confirmButtonColor: "#FFD700",
+      background: "#15151e", color: "#fff", confirmButtonColor: "#64E9EE",
     });
   };
 
-  window.openBillingInfo = () => {
-    Swal.fire({
-      title: '<i class="fa-solid fa-receipt"></i> Billing & Refunds',
-      html: `<p style="color:#ccc; font-size:0.9rem; text-align:left;">Request refunds within 48 hours via support ticket.</p>`,
-      background: "#15151e", color: "#fff", confirmButtonColor: "#333",
-    });
-  };
 
   window.openContactSupport = () => {
     const defaultName = String(
@@ -2352,107 +2337,6 @@ window.openChangePassword = () => {
     }
   });
 };
-
-
-function initPremiumLogic() {
-  // --- PREMIUM TAB POPULATION (UI Structure Only, no mock data needed) ---
-  if (PS_DOM.panelPremiumBody) {
-    PS_DOM.panelPremiumBody.innerHTML = `
-            <div class="ps-premium-hero">
-                <div style="font-size:3rem; margin-bottom:10px; color:#ffd700;"><i class="fa-solid fa-crown"></i></div>
-                <h1 class="ps-premium-title">iTrueMatch<br><span class="ps-premium-brand-accent">PREMIUM</span></h1>
-                <p class="ps-premium-subtitle">Unlock exclusive features and find your match faster.</p>
-            </div>
-
-            <div class="ps-premium-benefits">
-                <div class="ps-benefit-item">
-                    <div class="ps-benefit-icon"><i class="fa-solid fa-heart"></i></div>
-                    <div class="ps-benefit-text">
-                        <h4>See Who Likes You</h4>
-                        <p>View your secret admirers immediately.</p>
-                    </div>
-                </div>
-                <div class="ps-benefit-item">
-                    <div class="ps-benefit-icon"><i class="fa-solid fa-bolt"></i></div>
-                    <div class="ps-benefit-text">
-                        <h4>Unlimited Swipes</h4>
-                        <p>No more daily limits. Swipe all day.</p>
-                    </div>
-                </div>
-                <div class="ps-benefit-item">
-                    <div class="ps-benefit-icon"><i class="fa-solid fa-earth-americas"></i></div>
-                    <div class="ps-benefit-text">
-                        <h4>Passport Mode</h4>
-                        <p>Match with people anywhere in the world.</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="ps-plan-selector">
-                <div class="ps-plan-card" onclick="selectPlan(this)" data-price="$14.99">
-                    <span class="ps-plan-duration">1 <small>Month</small></span>
-                    <div class="ps-plan-monthly">$14.99/mo</div>
-                    <span class="ps-plan-price">$14.99</span>
-                </div>
-                
-                <div class="ps-plan-card active" onclick="selectPlan(this)" data-price="$44.99">
-                    <span class="ps-plan-badge">Most Popular</span>
-                    <span class="ps-plan-duration">6 <small>Months</small></span>
-                    <div class="ps-plan-monthly">$7.50/mo</div>
-                    <span class="ps-plan-price">$44.99</span>
-                    <span class="ps-plan-savings">Save 50%</span>
-                </div>
-                
-                <div class="ps-plan-card" onclick="selectPlan(this)" data-price="$59.99">
-                    <span class="ps-plan-badge">Best Value</span>
-                    <span class="ps-plan-duration">12 <small>Months</small></span>
-                    <div class="ps-plan-monthly">$5.00/mo</div>
-                    <span class="ps-plan-price">$59.99</span>
-                    <span class="ps-plan-savings">Save 60%</span>
-                </div>
-            </div>
-
-            <div class="ps-premium-action">
-                <button class="ps-btn-gold" onclick="subscribeGold()">CONTINUE</button>
-                <p style="font-size:0.7rem; color:#666; margin-top:15px;">Recurring billing, cancel anytime.</p>
-            </div>
-        `;
-  }
-
-  window.selectPlan = (element) => {
-    const plans = document.querySelectorAll(".ps-plan-card");
-    plans.forEach((plan) => plan.classList.remove("active"));
-    element.classList.add("active");
-  };
-
-  window.subscribeGold = () => {
-    Swal.fire({
-      title: "Confirm Subscription",
-      text: "Unlock all Premium features now?",
-      icon: "question",
-      showCancelButton: true,
-      confirmButtonColor: "#64E9EE",
-      cancelButtonColor: "#d33",
-      confirmButtonText: "Yes, Upgrade Me!",
-      background: "#15151e",
-      color: "#fff",
-    }).then((result) => {
-      if (result.isConfirmed) {
-        Swal.fire({
-          title: "Welcome to Premium!",
-          text: "You are now a Premium Member.",
-          icon: "success",
-          background: "#15151e",
-          color: "#fff",
-          confirmButtonColor: "#64E9EE",
-        });
-        if (PS_DOM.miniName)
-          PS_DOM.miniName.innerHTML +=
-            ' <i class="fa-solid fa-gem" style="color:#64E9EE"></i>';
-      }
-    });
-  };
-}
 
 
 function psEscapeHtml(value) {
@@ -3089,10 +2973,10 @@ function psEnforceSwipeAccess() {
   if (PS_DOM.swipeControls) PS_DOM.swipeControls.style.display = 'none';
   
   let title = "Premium Society Locked";
-  let msg = "Exclusive access for Elite & Concierge members.";
+  let msg = "Premium Society access is managed from your dashboard. Only approved members can interact here.";
   let icon = "fa-lock";
-  let btnText = "Upgrade Now";
-  let btnAction = "switchTab('premium')";
+  let btnText = "Back to Dashboard";
+  let btnAction = "window.location.href='dashboard.html'";
 
   // Pag-check ng detailed status mula sa PS_STATE
 // --- ETO ANG AYOS NA PENDING LOGIC (PHASE 7) ---
@@ -3113,11 +2997,11 @@ function psEnforceSwipeAccess() {
     btnAction = "window.openContactSupport()"; // Tatawag sa Swal support modal
   } 
   else if (eligible && status === 'none') {
-    title = "Action Required";
-    msg = "Eligible ka na sa Premium Society! Mag-apply ka na para makapag-swipe.";
+    title = "Application Required";
+    msg = "Eligible ka na sa Premium Society, pero sa dashboard ang tamang application flow. Mag-apply ka muna doon bago ka makapag-swipe rito.";
     icon = "fa-file-signature";
-    btnText = "Apply Now";
-    btnAction = "document.getElementById('psBtnEditProfile').click()"; // Buksan ang Edit Profile modal
+    btnText = "Go to Dashboard";
+    btnAction = "window.location.href='dashboard.html'";
   }
 
   // Render ang "Locked Card" sa loob ng swipe stack gamit ang iyong glass UI
@@ -3266,7 +3150,6 @@ function switchTab(panelName) {
     "ps-tab-home",
     "ps-tab-swipe",
     "ps-tab-matches",
-    "ps-tab-premium",
     "ps-tab-settings",
   );
   document.body.classList.add(`ps-tab-${panelName}`);

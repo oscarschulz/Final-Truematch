@@ -220,10 +220,8 @@ body.ps-theme {
         box-shadow: 0 5px 15px rgba(0,0,0,0.2); 
     }
     
-/* HIDE BUTTON KAPAG BUKAS ANG CHAT */
-    /* FIX: Tinanggal natin dito ang .ps-tab-matches para lumabas ang menu button sa Matches Tab */
-    body.ps-chat-open .ps-mobile-toggle
-    {
+/* Hide button only when chat is open */
+    body.ps-chat-open .ps-mobile-toggle {
         display: none !important;
     }
 
@@ -235,9 +233,8 @@ body.ps-theme {
 /* 2. ITAGO ANG HAMBURGER MENU sa lahat ng sub-tabs para gesture navigation lang */
 /* --- HIDE HAMBURGER ON MOBILE GESTURE TABS --- */
 @media (max-width: 768px) {
-    /* Tatanggalin ang menu button sa Matches, Premium, at Settings */
+    /* Tatanggalin ang menu button sa Matches at Settings para gesture navigation lang */
     body.ps-tab-matches .ps-mobile-toggle,
-    body.ps-tab-premium .ps-mobile-toggle,
     body.ps-tab-settings .ps-mobile-toggle,
     body.ps-chat-open .ps-mobile-toggle {
         display: none !important;
@@ -260,7 +257,7 @@ body.ps-theme {
 
     /* Adjust Padding ng Panels para di matakpan ng Header/Toggle */
     .ps-panel { padding: 70px 15px 100px; } 
-
+    
     /* Swipe Stack */
     .ps-swipe-stack { width: 95%; height: 55vh; margin-top: 20px; }
     
@@ -983,243 +980,6 @@ body.ps-theme {
 .ps-notif-text span { font-size: 0.7rem; color: #888; }
 
 
-/* --- PREMIUM TAB STYLES (CYAN THEME) --- */
-.ps-premium-hero {
-    text-align: center;
-    padding: 40px 20px 20px;
-    font-family: 'Montserrat', sans-serif;
-}
-.ps-premium-title {
-    font-size: 2.2rem;
-    font-weight: 900;
-    margin: 0;
-    color: #fff;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    line-height: 1.2;
-}
-.ps-premium-brand-accent { color: #fff; }
-.ps-premium-subtitle { color: #ccc; font-size: 0.9rem; margin-top: 10px; font-family: sans-serif; }
-
-.ps-premium-benefits { margin: 20px 0; padding: 0 20px; }
-.ps-benefit-item { display: flex; align-items: center; gap: 15px; padding: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); }
-
-/* CYAN ICONS */
-.ps-benefit-icon { width: 40px; height: 40px; border-radius: 50%; background: rgba(100, 233, 238, 0.15); color: #64E9EE; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
-.ps-benefit-text h4 { margin: 0; font-size: 1rem; color: #fff; font-family: 'Montserrat', sans-serif; font-weight: 600; }
-.ps-benefit-text p { margin: 3px 0 0; font-size: 0.8rem; color: #888; }
-
-.ps-plan-selector {
-    display: flex;
-    gap: 12px;
-    overflow-x: auto;
-    padding: 20px;
-    scrollbar-width: none;
-    justify-content: center;
-}
-.ps-plan-selector::-webkit-scrollbar { display: none; }
-
-.ps-plan-card {
-    flex: 1;
-    min-width: 110px;
-    max-width: 160px;
-    background: rgba(255,255,255,0.05);
-    border: 2px solid transparent;
-    border-radius: 16px;
-    padding: 25px 10px 15px;
-    text-align: center;
-    cursor: pointer;
-    position: relative;
-    transition: 0.3s;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-}
-
-/* ACTIVE CARD - CYAN GLOW */
-.ps-plan-card.active {
-    background: rgba(100, 233, 238, 0.15);
-    border-color: #64E9EE;
-    transform: scale(1.1);
-    box-shadow: 0 0 20px rgba(100, 233, 238, 0.2);
-    z-index: 10;
-}
-
-/* BADGE - CYAN BG */
-.ps-plan-badge {
-    position: absolute;
-    top: -12px; left: 50%; transform: translateX(-50%);
-    background: #64E9EE; color: #03151A;
-    font-size: 0.6rem; font-weight: 800;
-    padding: 4px 10px; border-radius: 99px;
-    text-transform: uppercase;
-    white-space: nowrap;
-    box-shadow: 0 5px 10px rgba(0,0,0,0.5);
-}
-
-.ps-plan-duration { 
-    font-size: 1.4rem; font-weight: 800; color: #fff; 
-    display: block; line-height: 1; font-family: 'Montserrat', sans-serif;
-}
-.ps-plan-duration small { font-size: 0.7rem; font-weight: 600; color: #aaa; text-transform: uppercase; }
-
-.ps-plan-price { font-size: 0.8rem; color: #888; margin-top: 5px; text-decoration: line-through; }
-
-/* MONTHLY PRICE - CYAN TEXT */
-.ps-plan-monthly {
-    color: #64E9EE;
-    font-weight: 700;
-    font-size: 0.95rem;
-    margin-top: 2px;
-}
-
-.ps-plan-savings { 
-    color: #00ff88; font-size: 0.7rem; font-weight: 700; margin-top: 8px; 
-    display: block; text-transform: uppercase; letter-spacing: 0.5px;
-}
-
-.ps-premium-action { padding: 30px 20px; text-align: center; }
-
-/* BUTTON - CYAN BG (COMPACT) */
-.ps-btn-gold {
-    background: #64E9EE; 
-    color: #03151A; 
-    font-weight: 800;
-    font-size: 1rem;
-    border: none;
-    width: auto;
-    padding: 12px 40px; /* Compact Size */
-    border-radius: 99px;
-    cursor: pointer;
-    box-shadow: 0 10px 30px rgba(100, 233, 238, 0.25);
-    transition: 0.3s;
-    display: inline-block;
-    font-family: 'Montserrat', sans-serif;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-.ps-btn-gold:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 15px 40px rgba(100, 233, 238, 0.4);
-    filter: brightness(1.1);
-}
-
-/* =========================================
-   NEW FEATURES: MATCH & GIFTS
-   ========================================= */
-
-/* --- MATCH OVERLAY STYLES --- */
-.ps-match-overlay {
-    display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0,0,0,0.92); z-index: 9999;
-    flex-direction: column; align-items: center; justify-content: center;
-    backdrop-filter: blur(15px); animation: psFadeIn 0.3s ease;
-}
-.ps-match-overlay.active { display: flex; }
-
-.ps-match-title {
-    font-size: 3rem; font-weight: 900; line-height: 1; text-align: center; color: #fff;
-    font-style: italic; margin-bottom: 10px; transform: rotate(-5deg);
-    text-shadow: 0 5px 20px rgba(0,0,0,0.5);
-}
-.ps-text-gradient {
-    background: linear-gradient(to right, #00aff0, #00ff88);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-}
-.ps-match-subtitle { color: #ccc; margin-bottom: 40px; font-size: 1rem; }
-
-.ps-match-avatars {
-    display: flex; align-items: center; justify-content: center; position: relative;
-    width: 300px; height: 160px; margin-bottom: 50px;
-}
-.ps-avatar-container {
-    width: 140px; height: 140px; border-radius: 50%; border: 4px solid #fff;
-    overflow: hidden; position: absolute; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-    transition: 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-.ps-avatar-container img { width: 100%; height: 100%; object-fit: cover; }
-
-/* Animation States */
-.ps-match-overlay.active .ps-avatar-container.left { left: 0; animation: slideMatchLeft 0.8s forwards; }
-.ps-match-overlay.active .ps-avatar-container.right { right: 0; animation: slideMatchRight 0.8s forwards; }
-.ps-match-heart {
-    position: absolute; z-index: 10; font-size: 2.5rem; color: #ff3366;
-    background: #fff; width: 60px; height: 60px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 5px 20px rgba(0,0,0,0.3); opacity: 0; transform: scale(0);
-}
-.ps-match-overlay.active .ps-match-heart { animation: popHeart 0.6s 0.6s forwards cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-
-@keyframes slideMatchLeft { from { transform: translateX(-100px) rotate(-20deg); opacity:0; } to { transform: translateX(20px) rotate(-10deg); opacity:1; } }
-@keyframes slideMatchRight { from { transform: translateX(100px) rotate(20deg); opacity:0; } to { transform: translateX(-20px) rotate(10deg); opacity:1; } }
-@keyframes popHeart { to { opacity: 1; transform: scale(1) rotate(10deg); } }
-
-.ps-match-actions { display: flex; flex-direction: column; gap: 15px; width: 80%; max-width: 300px; }
-.ps-btn-match-chat {
-    background: linear-gradient(90deg, #00aff0, #0072ff); color: #fff; border: none;
-    padding: 14px; border-radius: 99px; font-weight: 800; font-size: 1rem; cursor: pointer;
-    box-shadow: 0 10px 30px rgba(0, 175, 240, 0.4); transition: 0.2s;
-}
-.ps-btn-match-keep {
-    background: transparent; border: 2px solid rgba(255,255,255,0.2); color: #fff;
-    padding: 12px; border-radius: 99px; font-weight: 700; cursor: pointer; transition: 0.2s;
-}
-.ps-btn-match-keep:hover { border-color: #fff; background: rgba(255,255,255,0.05); }
-
-/* --- GIFT MODAL STYLES --- */
-/* =========================================
-   GIFT & PPV SYSTEM STYLES
-   ========================================= */
-.ps-gift-balance {
-    display: flex; justify-content: space-between; align-items: center;
-    background: rgba(100, 233, 238, 0.1); padding: 15px; border-radius: 12px; 
-    margin-bottom: 20px; border: 1px solid rgba(100, 233, 238, 0.2);
-}
-.ps-coin-text { color: #64E9EE; font-weight: 800; font-size: 1.1rem; }
-
-.ps-gift-grid {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 25px;
-}
-.ps-gift-item {
-    background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 16px; padding: 15px 5px; text-align: center; cursor: pointer;
-    transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); display: flex; 
-    flex-direction: column; align-items: center;
-}
-.ps-gift-item:hover { transform: translateY(-5px); background: rgba(255, 255, 255, 0.08); border-color: #64E9EE; }
-.ps-gift-item.active { border-color: #64E9EE; background: rgba(100, 233, 238, 0.15); box-shadow: 0 0 20px rgba(100, 233, 238, 0.2); }
-
-.ps-gift-emoji { font-size: 2.2rem; margin-bottom: 8px; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3)); }
-.ps-gift-item span { font-size: 0.8rem; font-weight: 700; color: #fff; }
-.ps-gift-item small { font-size: 0.7rem; color: #64E9EE; font-weight: 600; }
-
-/* =========================================
-   EMOJI PICKER STYLES
-   ========================================= */
-.ps-btn-chat-emoji { 
-    position: absolute; right: 15px; top: 50%; transform: translateY(-50%);
-    background: none; border: none; color: #888; font-size: 1.3rem; 
-    cursor: pointer; transition: 0.2s; z-index: 10;
-}
-.ps-btn-chat-emoji:hover { color: #64E9EE; transform: translateY(-50%) scale(1.1); }
-
-emoji-picker {
-    display: none; position: absolute; bottom: 85px; right: 20px; 
-    width: 320px; height: 400px; z-index: 999;
-    --background: rgba(15, 15, 20, 0.98); --border-color: rgba(255, 255, 255, 0.1);
-    --input-border-color: rgba(255, 255, 255, 0.2); --input-font-color: #fff;
-    --indicator-color: #00aff0; border-radius: 16px;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.8); backdrop-filter: blur(20px);
-    animation: psFadeIn 0.2s ease-out;
-}
-emoji-picker.active { display: flex; }
-
-/* Confetti Basics */
-.ps-confetti { position: absolute; width: 10px; height: 10px; background: #ffd700; top: -10px; z-index: 1; animation: fall 3s linear infinite; }
-.c1 { left: 10%; animation-delay: 0s; background: #00aff0; } .c2 { left: 30%; animation-delay: 0.5s; background: #ff3366; }
-.c3 { left: 50%; animation-delay: 1s; background: #00ff88; } .c4 { left: 70%; animation-delay: 0.2s; background: #ffd700; }
-@keyframes fall { to { transform: translateY(100vh) rotate(720deg); } }
-/*mula sa chat.css*/
 /* assets/css/premium-society/chat.css */
 
 /* MATCHES CONTAINER & SEARCH */
@@ -2079,7 +1839,9 @@ body.light-mode .ps-nav-btn:hover {
   }
 
   /* Hide only when a full-screen overlay is intentionally open */
-  body.ps-chat-open .ps-mobile-toggle,
+  body.ps-chat-open .ps-mobile-toggle {
+    display: none !important;
+  }
 
   /* Matches spacing (avoid overlap with hamburger) */
   .ps-panel[data-panel="matches"] .ps-matches-container {
