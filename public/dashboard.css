@@ -214,15 +214,7 @@ body::after {
 .notif-empty { padding: 16px; color: var(--text-muted); text-align: center; }
 
 @media (max-width: 520px) {
-  .notif-dropdown {
-    position: fixed !important;
-    top: calc(env(safe-area-inset-top, 0px) + 86px) !important;
-    left: 50% !important;
-    right: auto !important;
-    transform: translateX(-50%) !important;
-    width: min(360px, calc(100vw - 24px));
-    max-width: calc(100vw - 24px);
-  }
+  .notif-dropdown { right: 12px; }
   .notif-list { max-height: 55vh; }
 }
 
@@ -1117,4 +1109,262 @@ dialog::backdrop { background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-in
 }
 @media (max-width: 768px){
   #btnNavUpgrade { display: flex; }
+}
+
+
+/* =========================================
+   LANDING PAGE PALETTE ALIGNMENT OVERRIDES
+   Matches dashboard background + UI colors to landing page
+   ========================================= */
+:root {
+  --bg-dark: #000000;
+  --glass-bg: rgba(10, 15, 26, 0.58);
+  --sidebar-bg: rgba(10, 15, 26, 0.72);
+  --feed-bg: transparent;
+  --border-color: rgba(100, 233, 238, 0.16);
+  --brand-color: #64E9EE;
+  --text-main: #F6FAFF;
+  --text-muted: #C7D0DC;
+  --primary-ink: #03151A;
+  --brand-gradient: linear-gradient(135deg, rgba(100,233,238,.95), rgba(41,163,255,.85));
+}
+
+html,
+body {
+  background: #000000 !important;
+  background-color: #000000 !important;
+}
+
+body::before,
+body::after {
+  z-index: -3;
+}
+
+.layout::before {
+  background-image:
+    radial-gradient(1000px 620px at 50% 22%, rgba(100,233,238,.05), transparent 62%),
+    radial-gradient(760px 520px at 14% 88%, rgba(41,163,255,.035), transparent 58%),
+    radial-gradient(740px 500px at 86% 78%, rgba(94,240,255,.03), transparent 60%);
+}
+
+.sidebar,
+.right-sidebar {
+  background: rgba(10, 15, 26, 0.72);
+  border-color: var(--border-color);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+}
+
+.main-feed {
+  background: transparent;
+}
+
+.feed-header,
+.mobile-topbar {
+  background: rgba(2, 4, 10, 0.82) !important;
+  border-color: rgba(100, 233, 238, 0.12) !important;
+}
+
+.search-box,
+.glass-card,
+.settings-item,
+.match-card,
+.admirer-row,
+.tm-dialog,
+.conc-card,
+#panel-home #homeMobileWidgets.home-mobile-widgets .glass-card {
+  background: rgba(10, 15, 26, 0.58);
+  border-color: rgba(100, 233, 238, 0.14);
+  box-shadow: 0 18px 48px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.03);
+}
+
+.home-bottom-wrapper {
+  background: rgba(2, 4, 10, 0.58);
+  border-top-color: rgba(100, 233, 238, 0.10);
+}
+
+.home-top-bar {
+  background: rgba(10, 15, 26, 0.42) !important;
+  border-left: 3px solid var(--brand-color);
+}
+
+.nav-btn:hover {
+  background: rgba(100, 233, 238, 0.08);
+  color: #fff;
+}
+
+.nav-btn.is-active {
+  background: rgba(100, 233, 238, 0.12);
+  border-left-color: var(--brand-color);
+  box-shadow: inset 0 0 0 1px rgba(100, 233, 238, 0.12);
+}
+
+.search-box {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(100, 233, 238, 0.12);
+}
+
+.notif-icon-box {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(100,233,238,0.14);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.28);
+}
+
+.notif-icon-box:hover {
+  background: rgba(100,233,238,0.12);
+}
+
+.notif-dot {
+  background: var(--brand-color);
+  border-color: #03151A;
+  box-shadow: 0 0 0 3px rgba(100,233,238,0.16);
+}
+
+.notif-dropdown {
+  background: rgba(6, 10, 18, 0.96);
+  border: 1px solid rgba(100,233,238,0.18);
+  box-shadow: 0 18px 50px rgba(0,0,0,0.55);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.notif-header {
+  background: rgba(255,255,255,0.04);
+  border-bottom-color: rgba(100,233,238,0.10);
+}
+
+.notif-item {
+  border-bottom-color: rgba(255,255,255,0.04);
+}
+
+.notif-item:hover {
+  background: rgba(100,233,238,0.06);
+}
+
+.notif-item.unread,
+.notif-item.is-unread {
+  background: rgba(100,233,238,0.10);
+  border-left-color: var(--brand-color);
+}
+
+.notif-icon {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(100,233,238,0.12);
+}
+
+.notif-icon i,
+.verified-icon,
+.settings-group h4 {
+  color: var(--brand-color);
+}
+
+.badge-pill,
+.story-ring,
+.btn--primary,
+.cat-pill.active {
+  background: var(--brand-gradient);
+}
+
+.badge-pill,
+.btn--primary,
+.cat-pill.active {
+  color: var(--primary-ink);
+}
+
+.badge-pill {
+  box-shadow: 0 10px 24px rgba(100,233,238,0.24);
+}
+
+.cat-pill {
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(100,233,238,0.12);
+}
+
+.cat-pill.active {
+  border-color: rgba(100,233,238,0.28);
+  box-shadow: 0 10px 28px rgba(100,233,238,0.22);
+}
+
+.admirer-row:hover,
+.match-card:hover,
+.settings-item:hover {
+  background: rgba(100, 233, 238, 0.07);
+}
+
+.active-item {
+  border-color: rgba(100,233,238,0.14);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.28);
+}
+
+.online-dot {
+  border-color: #03151A;
+}
+
+.btn--primary {
+  box-shadow: 0 12px 30px rgba(100,233,238,0.26);
+}
+
+.btn--ghost {
+  border-color: rgba(100,233,238,0.18);
+  color: var(--text-main);
+}
+
+.btn-round {
+  background: rgba(10,15,26,0.74);
+  box-shadow: 0 14px 32px rgba(0,0,0,0.34);
+}
+
+.btn-round--like {
+  color: var(--brand-color);
+  border-color: var(--brand-color);
+}
+
+.btn-round--super {
+  color: #9BEFF3;
+  border-color: #9BEFF3;
+}
+
+.tm-input {
+  background: rgba(8, 12, 20, 0.78);
+  border-color: rgba(100,233,238,0.14);
+  color: var(--text-main);
+}
+
+.tm-input:focus {
+  border-color: var(--brand-color);
+  background: rgba(8, 12, 20, 0.92);
+  box-shadow: 0 0 0 4px rgba(100,233,238,0.10);
+}
+
+.toast {
+  background: rgba(6, 10, 18, 0.94);
+  border-color: rgba(100,233,238,0.16);
+}
+
+.settings-label i {
+  color: rgba(199,208,220,0.72);
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    background: rgba(10, 15, 26, 0.95);
+    border-color: rgba(100,233,238,0.18);
+  }
+
+  .home-top-bar {
+    background: transparent !important;
+  }
+
+  .swipe-mobile-stats {
+    background: rgba(10, 15, 26, 0.62);
+    border: 1px solid rgba(100,233,238,0.14);
+    box-shadow: 0 18px 42px rgba(0,0,0,0.28);
+  }
+
+  .swipe-mobile-stats circle.bg {
+    stroke: rgba(255,255,255,0.12);
+  }
+
+  .mobile-topbar-title {
+    color: var(--text-main);
+  }
 }
