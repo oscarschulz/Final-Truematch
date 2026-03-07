@@ -91,14 +91,11 @@ export const PS_DOM = {
   // Panels
   panelPremiumBody: document.getElementById("ps-panel-premium"),
 
-  // Match & Gift
+  // Match Overlay
   matchOverlay: document.getElementById("psMatchOverlay"),
   matchUserImg: document.getElementById("psMatchUserImg"),
   matchTargetImg: document.getElementById("psMatchTargetImg"),
   matchName: document.getElementById("psMatchName"),
-  giftModal: document.getElementById("psGiftModal"),
-  btnPPV: document.querySelector(".ps-btn-ppv"),
-  giftPriceBtn: document.getElementById("psGiftPriceBtn"),
 };
 
 // --- API BASE ---
@@ -884,22 +881,6 @@ function saveHistory() {
   localStorage.setItem("ps_chat_history", JSON.stringify(conversationHistory));
 }
 
-function psDisableGiftFeatures() {
-  if (PS_DOM.btnPPV) {
-    PS_DOM.btnPPV.style.display = 'none';
-    PS_DOM.btnPPV.disabled = true;
-    PS_DOM.btnPPV.setAttribute('aria-hidden', 'true');
-    PS_DOM.btnPPV.setAttribute('aria-disabled', 'true');
-    PS_DOM.btnPPV.onclick = null;
-  }
-
-  if (PS_DOM.giftModal) {
-    PS_DOM.giftModal.classList.remove('active');
-    PS_DOM.giftModal.style.display = 'none';
-    PS_DOM.giftModal.setAttribute('aria-hidden', 'true');
-  }
-}
-
 
 const PS_CHAT_STATE = {
   activePeerEmail: '',
@@ -1241,8 +1222,6 @@ export async function initUI() {
   const lastTab = localStorage.getItem("ps_last_tab") || "home";
   switchTab(lastTab);
 
-  // Gift / PPV disabled until dedicated purchase or debit logic exists
-  psDisableGiftFeatures();
 }
 
 // ==========================================
@@ -3038,13 +3017,8 @@ function initCanvasParticles() {
 }
 
 // ==========================================
-// NEW FEATURES: MATCH & GIFT LOGIC
+// MATCH OVERLAY LOGIC
 // ==========================================
-
-// --- 1. GIFT SYSTEM LOGIC (TEMP DISABLED) ---
-window.closeGiftModal = () => {
-  if (PS_DOM.giftModal) PS_DOM.giftModal.classList.remove("active");
-};
 
 window.selectGift = () => {
   showToast('Gift feature is temporarily unavailable.');
@@ -3056,7 +3030,6 @@ window.sendSelectedGift = async () => {
   return { ok: false, disabled: true };
 };
 
-// --- 2. MATCH OVERLAY LOGIC ---
 window.triggerMatchOverlay = (person) => {
   if (!PS_DOM.matchOverlay) return;
 
